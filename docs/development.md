@@ -24,12 +24,19 @@ independent random credentials and refuses to overwrite an existing file.
 The Compose project follows Langfuse's official self-hosted architecture:
 Langfuse web and worker containers, PostgreSQL, ClickHouse, Redis, and MinIO.
 
+> **Known current issue:** `langfuse-web` is restarting because the non-cluster
+> ClickHouse deployment does not set `CLICKHOUSE_CLUSTER_ENABLED=false`; the
+> worker consequently reports missing analytical tables. Roadmap Step 1 owns a
+> non-destructive repair and image pinning. The commands below describe the
+> scaffold but must not currently be interpreted as a healthy-stack guarantee.
+> Do not delete or recreate named volumes to clear this error.
+
     docker compose up -d
     docker compose ps
 
-The first command downloads images when they are unavailable locally. Once
-healthy, the UI and API are available at http://localhost:3000. Retrieve the
-generated bootstrap login with:
+The first command downloads images when they are unavailable locally. After the
+Step 1 repair and a verified healthy state, the UI and API are expected at
+http://localhost:3000. Retrieve the generated bootstrap login with:
 
     rg '^LANGFUSE_INIT_USER_(EMAIL|PASSWORD)=' .env
 

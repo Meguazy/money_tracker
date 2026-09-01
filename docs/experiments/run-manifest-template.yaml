@@ -1,0 +1,93 @@
+# Documentation template only. The Step 1 runner will emit a validated manifest.
+# Never put secrets, personal messages, Telegram identifiers, file URLs, or raw
+# receipt contents in this file.
+manifest_schema_version: "1"
+run_id: "EXP-XXX-RUN-YYYYMMDD-HHMMSS"
+experiment_id: "EXP-XXX"
+started_at: "YYYY-MM-DDTHH:MM:SSZ"
+
+source:
+  git_commit: "FULL_SHA"
+  working_tree_clean: true
+  application_version: "0.0.0"
+  python_version: "3.12.x"
+  uv_lock_hash: "sha256:..."
+
+dataset:
+  suite: "routing/intent-it"
+  dataset_id: "intent-it"
+  version: "immutable-version-or-timestamp"
+  content_hash: "sha256:..."
+  item_count: 0
+  private_dataset: false
+  tags: []
+
+contracts:
+  graph_version: "planned"
+  workflow_schema_version: "planned"
+  prompt_ids_and_versions: {}
+  output_schema_versions: {}
+  tool_registry_version: "planned"
+  taxonomy_version: "2026-09-01-v1-seed"
+  category_policy_version: "2026-09-01-v1"
+  receipt_pipeline_version: null
+
+model:
+  provider: "local-openai-compatible"
+  endpoint_kind: "llama.cpp"
+  model_alias: ""
+  gguf_filename: ""
+  gguf_sha256: ""
+  quantization: ""
+  vision_projector_sha256: null
+  chat_template_hash: ""
+  context_size: 0
+  temperature: 0.0
+  seed: null
+  structured_output_method: ""
+
+inference_server:
+  name: "llama.cpp"
+  git_commit_or_version: ""
+  binary_hash: "sha256:..."
+  launch_profile_version: ""
+  relevant_flags: []
+
+environment:
+  os: "Ubuntu"
+  kernel: ""
+  cpu: ""
+  ram_mib: 0
+  gpu: "NVIDIA GeForce RTX 5070 Ti"
+  vram_mib: 16303
+  driver_version: ""
+  warm_run: true
+  concurrency: 1
+  timezone: "Europe/Rome"
+
+graders:
+  deterministic: []
+  human_rubric_version: null
+  model_judge:
+    enabled: false
+    model_hash: null
+    prompt_version: null
+    calibration_dataset_version: null
+
+results:
+  blocking_gates_passed: false
+  metrics: {}
+  latency_ms: {}
+  resource_metrics: {}
+  failure_counts_by_tag: {}
+  local_artifact_path: "artifacts/evals/..."
+  langfuse_run_reference: null
+
+privacy:
+  contains_private_data: false
+  committed_artifact_safe: false
+  reviewer: ""
+
+decision:
+  eligible_for_promotion: false
+  decision_log_entry: null

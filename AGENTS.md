@@ -32,8 +32,19 @@ These instructions apply to the entire repository.
 - Docstrings must explain behavior, contracts, and important constraints rather
   than restating names or type annotations.
 
-## 3. Architecture Documentation
+## 3. Architecture and Documentation
 
+- Design the architecture for long-term maintainability and extensibility.
+- Separate the system into cohesive components when responsibilities, lifecycle,
+  data ownership, external boundaries, or reasons to change are distinct.
+- Give components explicit, narrow interfaces and keep implementation details
+  private. Depend on stable contracts so infrastructure, model providers,
+  storage, and workflow steps can be replaced or extended independently.
+- Keep domain logic separate from framework and infrastructure adapters, and
+  keep dependency direction clear.
+- Avoid both monolithic components and premature fragmentation: introduce a
+  component only when it creates a meaningful boundary, not merely to reduce
+  file size.
 - Place project documentation under `docs/`. Root-level files required by
   repository tooling, such as `README.md`, `AGENTS.md`, and `LICENSE`, are
   exceptions; keep the README as a short entry point that links to `docs/`.

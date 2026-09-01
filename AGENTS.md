@@ -66,7 +66,47 @@ These instructions apply to the entire repository.
 - Update existing diagrams and runtime or deployment views whenever a component
   changes their behavior or relationships.
 
-## 4. Git Commits
+## 4. Using the Project Documentation
+
+- Treat the documentation as an implementation input, not as optional
+  background reading. Before planning or changing a feature, read the following
+  sources in order:
+  1. `docs/product/README.md` and the linked product baseline for goals, V1
+     scope, user journeys, domain language, and taxonomy.
+  2. `docs/roadmap.md` to identify the active delivery step, prerequisites, and
+     exit criteria.
+  3. `docs/arc42/README.md` for current and target architecture, component
+     boundaries, runtime interactions, deployment, and cross-cutting rules.
+  4. `docs/arc42/decisions/README.md` and every ADR relevant to the change.
+  5. `docs/experiments/README.md` and the evaluation matrix when the work
+     affects prompts, models, routing, tools, categorization, advice, or receipt
+     extraction.
+  6. `docs/operations/README.md` and the relevant runbook when the work affects
+     Telegram, processes, credentials, storage, backup, restore, or recovery.
+- Distinguish documented target state from repository truth. Components and
+  commands marked `planned` do not exist yet. Inspect source, migrations,
+  manifests, and tests before describing a capability as implemented.
+- Accepted ADRs are binding implementation constraints. Do not contradict one
+  silently. If a requested change supersedes an ADR, call out the conflict and
+  update the decision record, arc42 views, product documentation, and roadmap in
+  the same change.
+- Work within the active roadmap step unless the user explicitly changes scope.
+  Do not implement later-step infrastructure opportunistically.
+- When a roadmap item is completed, update its status and evidence. Keep
+  `implemented`, `planned`, and experiment-gated decisions accurate across the
+  roadmap, arc42, ADR index, and operations guides.
+- Do not promote a model, prompt, routing threshold, tool contract, taxonomy
+  policy, or receipt pipeline without satisfying the documented evaluation
+  gates and recording the result in `docs/experiments/decision-log.md`.
+- Add or update documentation in the same commit as code that changes behavior,
+  interfaces, ownership, deployment, security, or operations. Link new
+  documents from the appropriate index so future agents can discover them.
+- If documents disagree, stop and resolve the drift rather than choosing the
+  most convenient statement. Repository-level instructions and explicit user
+  direction take precedence; record the resulting decision in the canonical
+  documentation.
+
+## 5. Git Commits
 
 - Use the Conventional Commits format:
   `<type>(<optional-scope>): <imperative summary>`.

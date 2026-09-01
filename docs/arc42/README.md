@@ -1,273 +1,523 @@
 # Money Tracker Architecture
 
-This document follows the arc42 template. It describes the current scaffold and
-must evolve in the same change as any architectural component.
+This is the arc42 architecture source of truth for Money Tracker. It documents
+both the executable scaffold and the accepted target architecture. Components
+marked `planned` do not exist yet; their inclusion records a decision, not an
+implementation claim.
+
+Read the [product baseline](../product/README.md), this document, the
+[architecture decision index](decisions/README.md), and the
+[roadmap](../roadmap.md) together before changing an architectural boundary.
 
 ## 1. Introduction and Goals
 
-### Requirements
+### Product goal
 
-Money Tracker will ingest personal spending data, categorize transactions, and
-produce weekly, monthly, and yearly insights. The current increment establishes
-the local agent runtime and its observability platform without introducing a
-transaction-storage design prematurely.
+Money Tracker will be a personal, local-first expense assistant. The owner will
+primarily send Italian natural-language messages and receipt images through a
+private Telegram bot. The system will extract, categorize, persist, and analyze
+expenses and refunds. A local web dashboard will provide review, corrections,
+budgets, wallet balances, charts, and operational controls.
+
+The approved V1 scope is defined in
+[Vision and Requirements](../product/vision-and-requirements.md). The current
+repository remains an inference and observability scaffold: it has no finance
+database, Telegram adapter, web application, receipt pipeline, or persistent
+workflow state.
 
 ### Quality goals
 
 | Priority | Goal | Meaning |
 | --- | --- | --- |
-| 1 | Privacy | Prompts, responses, traces, and service data remain local. |
-| 2 | Replaceability | The inference engine is replaceable through an HTTP contract. |
-| 3 | Traceability | Graph and model activity can be inspected in local Langfuse. |
-| 4 | Reproducibility | UV and its lockfile reproduce the Python environment. |
-| 5 | Testability | Unit, integration, and end-to-end boundaries are explicit. |
+| 1 | Financial correctness | A retry, resume, or duplicate message must never duplicate a financial write; monetary and allocation invariants are deterministic. |
+| 2 | Privacy | Finance storage and AI processing remain local; Telegram is the sole approved external data boundary. |
+| 3 | Recoverability | Authoritative data and retained receipt images have encrypted, tested backups. |
+| 4 | Explainability | Every categorization, proposal, correction, tool result, and advice figure can be traced to source data and a versioned decision. |
+| 5 | Replaceability | Model, receipt extractor, transport, persistence, and UI adapters depend on narrow contracts. |
+| 6 | Testability | Deterministic tests and versioned evaluations cover behavior and real external protocols at the appropriate boundary. |
+| 7 | Operability | Core services recover automatically after workstation startup and expose actionable health and failure state. |
 
 ### Stakeholders
 
-- The user owns financial data and operates all services.
-- Developers extend graph behavior and future finance components.
-- Operators maintain local models, containers, credentials, and volumes.
+- The owner supplies financial information, approves taxonomy changes, reviews
+  receipts, configures budgets and wallets, and operates the workstation.
+- Developers and coding agents implement roadmap steps without reopening
+  accepted decisions implicitly.
+- The operator installs models, Docker services, systemd units, Telegram
+  credentials, and backup destinations.
 
 ## 2. Architecture Constraints
 
-- Python 3.12 and UV define the application runtime.
+### Accepted product constraints
+
+- The V1 is single-owner but application records retain a stable profile scope.
+- User-facing conversation and UI are Italian; code and technical documents are
+  English.
+- EUR is the sole operational currency in V1. Contracts retain an ISO currency
+  field for future extension.
+- Calendar behavior uses `Europe/Rome`; a reporting week starts on Monday.
+- The dashboard binds to the workstation loopback interface only.
+- The workstation may be powered off. Telegram's unconsumed update backlog is
+  accepted as recoverable for at most 24 hours; no cloud relay is planned.
+- Receipt images are retained locally until the owner deletes them.
+- Advice is on demand. Proactive coaching and budget notifications are outside
+  V1.
+
+### Technology and repository constraints
+
+- Python 3.12 and UV define the application runtime and dependency lock.
 - LangChain and LangGraph define model and orchestration interfaces.
-- NVIDIA inference runs out of process and is not installed into the Python
-  environment.
-- The default inference contract is the OpenAI-compatible HTTP API.
-- Langfuse and its data stores are self-hosted; cloud services are not runtime
-  dependencies.
-- The current target is one Linux workstation with an RTX 5070 Ti and 16 GB
-  VRAM.
-- Secrets live in a generated, Git-ignored environment file.
-- Python code uses Google-style docstrings.
-- Tests mirror the source tree and use real services at integration boundaries.
+- Local NVIDIA inference runs out of process behind an OpenAI-compatible HTTP
+  contract.
+- The target workstation is Ubuntu Linux with an RTX 5070 Ti and 16 GB VRAM.
+- PostgreSQL will own authoritative finance data, durable messaging, and graph
+  checkpoints; Langfuse stores remain separate.
+- React and TypeScript will implement the planned dashboard; FastAPI will expose
+  and serve it locally.
+- Secrets remain in generated, mode-restricted, Git-ignored configuration.
+- Python uses Google-style docstrings. Tests and documentation obey `AGENTS.md`.
 
 ## 3. Context and Scope
 
-### Business context
+### Business context: target
 
-    User
-      |
-      | prompt and CLI output
-      v
-    Money Tracker
-      |                         |
-      | chat-completions API    | trace ingestion API
-      v                         v
-    Local inference          Local Langfuse
+```text
+                         receipt photos and messages
+Owner <------------------------------------------------> Telegram Bot API
+  |                                                               |
+  | localhost dashboard                                           | long polling
+  v                                                               v
+Web browser -----------------------> Money Tracker <---------- Telegram gateway
+                                          |
+                                          | local inference and extraction
+                                          v
+                                Local model/OCR/VLM services
+                                          |
+                                          | optional local traces/evaluations
+                                          v
+                                      Langfuse
+```
 
-The user supplies prompts and receives advice. Money Tracker owns orchestration
-and the finance-assistant contract. The inference server owns model execution.
-Langfuse owns trace ingestion, storage, and visualization.
+Telegram is external and stores bot-chat data according to Telegram's own
+policies. All other finance processing and persistence are local. The bot API
+boundary is not end-to-end encrypted and must not be described as local storage.
 
 ### Technical interfaces
 
-| Boundary | Protocol | Data |
-| --- | --- | --- |
-| User to CLI | Process arguments and stdout | Prompt and assistant response |
-| App to inference | HTTP OpenAI chat completions | Messages and model settings |
-| App to Langfuse | Langfuse SDK over HTTP/OTLP | Graph and model observations |
-| Browser to Langfuse | HTTP on localhost:3000 | UI and project administration |
-| Browser to MinIO | Signed HTTP on localhost:9090 | Trace media objects |
+| Boundary | Protocol | Data | Status |
+| --- | --- | --- | --- |
+| Owner to CLI | Process arguments/stdin/stdout | One prompt and response | Implemented scaffold |
+| Application to inference | OpenAI-compatible HTTP | Messages, schemas, tool calls, model settings | Implemented basic chat |
+| Application to Langfuse | SDK over local HTTP/OTLP | Redacted graph/model observations and scores | Implemented but current deployment unhealthy |
+| Telegram gateway to Bot API | HTTPS long polling and send methods | Updates, callback queries, messages, file metadata and downloads | Planned |
+| Browser to application API | Same-origin HTTP JSON | Finance resources, settings, reviews, analytics and operations | Planned |
+| Application to PostgreSQL | PostgreSQL protocol | Finance ledger, messaging state, audit and checkpoints | Planned |
+| Application to receipt archive | Private host filesystem | Original and derived receipt files keyed by content hash | Planned |
+| Backup process to repository | Restic repository protocol | Database dump, receipts and recovery configuration | Planned |
+
+### Out of scope for V1
+
+- Income tracking, complete asset/liability accounts, transfers, bank sync, and
+  statement reconciliation.
+- Historical import from another application.
+- Household or multiuser access.
+- LAN or remote dashboard access.
+- Cloud LLM, OCR, vision, trace, or finance storage.
+- A cloud relay for Telegram updates older than 24 hours.
+- Automatic posting of extracted receipts.
 
 ## 4. Solution Strategy
 
-- Compile a small LangGraph with one assistant node as the first executable
-  slice.
-- Adapt LangChain ChatOpenAI to a configurable local API instead of linking a
-  CUDA runtime into Python.
-- Default to llama-server for explicit Blackwell and GGUF tuning while retaining
-  compatibility with Ollama and vLLM.
-- Attach Langfuse through LangChain callbacks only when local project keys are
-  configured.
-- Provision the observability platform with Docker Compose and persistent named
-  volumes.
-- Generate credentials locally with OpenSSL and prohibit committed secrets.
+- Preserve the local OpenAI-compatible inference adapter and benchmark local
+  models instead of selecting one by reputation.
+- Put finance rules in framework-independent domain and application services.
+- Use one dedicated application PostgreSQL for transactions, durable inbox and
+  outbox, idempotency, audit, and LangGraph checkpoints, with separate logical
+  ownership inside it.
+- Use a typed root graph that routes to bounded specialist workflows. Keep
+  writes deterministic and expose only read tools to query/advice agents.
+- Model a purchase once, then reconcile both category allocations and payment
+  allocations against its total.
+- Classify by spending purpose through a controlled two-level taxonomy and
+  require explicit approval for every new node.
+- Ingest Telegram updates before acknowledging them and process the durable
+  inbox sequentially.
+- Select receipt extraction through a local, versioned OCR/VLM experiment and
+  require owner preview for every V1 receipt.
+- Serve a React dashboard through same-origin FastAPI on localhost.
+- Run host application processes under systemd, keep core PostgreSQL in Docker,
+  and start Langfuse only for development and evaluation.
+- Promote prompts, models, tools, and extractors only through the evaluation
+  gates in [the experiment documentation](../experiments/README.md).
 
 ## 5. Building-Block View
 
-### Python application
+### Level 1: target containers and processes
 
-| Component | Responsibility | Interface and dependencies | Data ownership |
-| --- | --- | --- | --- |
-| cli | Parse one prompt, invoke the graph, print output, flush traces | Python entry point; graph and observability modules | No persistent data |
-| config | Convert environment variables into immutable settings | Standard process environment | Runtime configuration only |
-| graph | Define assistant state, system contract, and execution flow | LangGraph and a BaseChatModel | Conversation state for one invocation |
-| llm | Construct the OpenAI-compatible model adapter | LangChain ChatOpenAI and config | No persistent data |
-| observability | Enable and flush Langfuse callbacks | Langfuse SDK and project keys | Buffered telemetry until flush |
+```text
+Money Tracker workstation
+├── Host processes
+│   ├── FastAPI application and compiled React UI        [planned]
+│   ├── Telegram gateway                                [planned]
+│   ├── Sequential workflow worker                      [planned]
+│   └── llama.cpp/OpenAI-compatible inference           [scaffolded]
+├── Private host data
+│   ├── Receipt archive                                 [planned]
+│   ├── Evaluation data and artifacts                   [planned]
+│   └── Restic staging/configuration                    [planned]
+└── Docker Compose
+    ├── Application PostgreSQL                          [planned core]
+    └── Langfuse, PostgreSQL, ClickHouse, Redis, MinIO  [implemented optional]
+```
 
-### Local runtime scripts
+### Current Python scaffold
 
-| Component | Responsibility | Interface and dependencies | Data ownership |
-| --- | --- | --- | --- |
-| generate_local_env | Generate local application and service credentials | Bash and OpenSSL | The uncommitted .env file |
-| run_llama_server | Launch a configured GGUF model with GPU acceleration | Bash and llama-server | Model process; model file remains external |
+| Component | Responsibility | Interface/dependencies | Data ownership | Deployment/security |
+| --- | --- | --- | --- | --- |
+| `cli` | Parse one prompt, invoke the graph, print output, flush traces | Python entry point; graph and observability | No persistent data | Host process; user terminal |
+| `config` | Convert environment variables into immutable model settings | Process environment | Runtime configuration | Secrets are not returned or logged |
+| `graph` | Define the initial one-node assistant | LangGraph and `BaseChatModel` | In-memory messages for one invocation | Stateless host process |
+| `llm` | Construct an OpenAI-compatible chat adapter | LangChain `ChatOpenAI` | No persistent data | Loopback endpoint by default |
+| `observability` | Enable and flush optional Langfuse callbacks | Langfuse SDK and environment keys | Buffered telemetry until flush | Local Langfuse only |
 
-### Self-hosted services
+### Planned domain and application blocks
 
-| Component | Responsibility | Interfaces | Data ownership |
-| --- | --- | --- | --- |
-| llama-server | Tokenization and GPU model inference | localhost:8080/v1 | In-memory model and KV cache |
-| Langfuse web | UI, API, authentication, and trace queries | localhost:3000 | Delegates persistence to its stores |
-| Langfuse worker | Asynchronous trace ingestion and processing | Internal Compose network | Queued work while processing |
-| PostgreSQL | Transactional Langfuse state and configuration | Internal PostgreSQL protocol | Users, organizations, projects, metadata |
-| ClickHouse | Analytical trace storage | Internal HTTP and native protocols | Observations, scores, and trace analytics |
-| Redis | Queue and cache operations | Internal Redis protocol | Ephemeral queues and cache state |
-| MinIO | S3-compatible blob storage | Internal port 9000; localhost:9090 for media | Events, media, and exported blobs |
+| Component | Responsibility | Narrow interfaces/dependencies | Data ownership | Deployment/security |
+| --- | --- | --- | --- | --- |
+| Finance domain | Enforce money, expense/refund, allocation, budget, category and wallet invariants | Pure value objects and domain policies | No infrastructure state | Python application; no framework imports |
+| Application services | Execute validated commands and queries transactionally | Repository ports, clock, ID and media ports | Command idempotency and audit semantics | FastAPI/worker host processes; profile scope injected |
+| Finance repositories | Persist authoritative domain records and analytics projections | PostgreSQL protocol through explicit repository contracts | Expenses, allocations, categories, budgets, wallets, audit | Dedicated application database; least-privilege credentials |
+| Messaging inbox/outbox | Receive, order, retry, dead-letter, replay and dispatch transport work | PostgreSQL and Telegram adapter | Raw updates, offsets, delivery attempts, result references | Gateway and worker; bot token never stored in rows |
+| Workflow runtime | Route intents and execute specialist graphs | LangGraph, typed model gateway, application services, checkpointer | Small versioned workflow state only | Sequential worker; no images or service objects in checkpoints |
+| Receipt service | Validate media, invoke extractor, reconcile lines, prepare review | Media store, extractor port, finance service | Receipt metadata, extraction versions, review state | Private filesystem; untrusted image boundary |
+| Analytics service | Compute time, category, budget and funding summaries | Read repositories and deterministic calendar policies | No separate authoritative data | FastAPI and read-only agent tools |
+| Backup service | Create consistent encrypted backups and verify restores | `pg_dump`, Restic, receipt/configuration paths | Backup snapshots in owner repository | Scheduled locally; recovery secret stored off-device |
+
+### Planned adapters and presentation blocks
+
+| Component | Responsibility | Interfaces/dependencies | Data ownership | Deployment/security |
+| --- | --- | --- | --- | --- |
+| Root router and subgraphs | Route one intent and coordinate extraction, review, query or advice | Versioned Pydantic schemas, scoped tool registries | Checkpoint references and workflow IDs | Worker; mutation paths are deterministic |
+| Telegram adapter | Pair owner, long poll, download media and send/edit responses | Telegram Bot API and messaging services | No authoritative finance data | Separate host service; private chats only |
+| FastAPI adapter | Expose versioned REST resources and health/operations endpoints | Application services | No independent data | Loopback, allowed Host/Origin, CSRF protection |
+| React dashboard | Display and edit finance, review, budget, wallet and operational state | Same-origin REST API | Browser session/UI state only | Compiled static assets; no secrets |
+| Local model gateway | Provide typed chat, schema and tool capabilities | OpenAI-compatible local endpoint | No persistent domain data | Replaceable host inference process |
+| Receipt extractor adapter | Produce a versioned structured receipt draft | Selected local OCR/VLM pipeline | No authoritative data until validated | Local-only; selection remains evaluation-gated |
+| Langfuse adapter | Record redacted traces and experiment scores | Local Langfuse SDK | Observability copies, not source of truth | Optional development/evaluation profile |
+
+Detailed finance concepts and the initial taxonomy live in
+[Domain and Taxonomy](../product/domain-and-taxonomy.md).
 
 ## 6. Runtime View
 
-### One assistant turn
+### Current CLI turn
 
-1. The CLI reads a prompt and creates optional Langfuse callbacks.
-2. The graph receives a HumanMessage.
-3. The assistant node prepends the finance system contract.
-4. ChatOpenAI sends the messages to the configured local inference API.
-5. The inference server executes the model on the GPU and returns a response.
-6. LangGraph appends the response and emits callback events.
-7. The CLI prints the response and flushes buffered Langfuse events.
-8. Langfuse workers persist transactional, analytical, queue, and blob data in
-   their respective local stores.
+1. The CLI reads a prompt and creates optional callbacks.
+2. The graph receives a human message and prepends its system contract.
+3. The model adapter calls the configured local inference API.
+4. The graph returns one assistant message; the CLI prints it and flushes traces.
 
-### Startup
+No state survives the process and no financial write occurs.
 
-1. The environment generator creates application keys and independent service
-   secrets.
-2. Docker Compose waits for all four data services to report healthy.
-3. Langfuse initializes the local organization, project, API keys, and user.
-4. llama-server loads the selected GGUF model independently of Compose.
-5. The Python process reads the same endpoint and project keys from .env.
+### Planned text expense turn
+
+1. A normalized channel message receives a source and command idempotency key.
+2. The root router produces a typed intent decision.
+3. The expense workflow extracts amount, time, description, merchant and payment
+   allocations, using the profile's default funding source when omitted.
+4. Deterministic validation rejects malformed money, missing invariants, and
+   ambiguous data before any write.
+5. Category resolution selects an adequate existing node or persists a proposal
+   and interrupts the workflow.
+6. A high-confidence existing assignment posts atomically with audit and an
+   outbound acknowledgement. Lower-confidence input remains a draft and asks a
+   targeted question.
+7. The owner receives a summary with modify and undo actions.
+
+### Planned category review
+
+1. The workflow persists a proposal and emits a serializable review payload.
+2. The owner approves it, requests the best existing category, names an existing
+   category, requests another proposal, or cancels.
+3. The inbound reply maps to the exact pending workflow and resumes its
+   checkpoint.
+4. Creation and expense posting occur only after the interrupt in an idempotent
+   database transaction.
+5. A re-proposal excludes candidates rejected in the current review; after
+   three rejections the interface requires existing-list or manual resolution.
+
+### Planned receipt review
+
+1. Telegram media metadata is durably ingested before processing.
+2. The worker downloads and validates the image, hashes it, and stores it outside
+   the web root.
+3. The selected local extractor emits a versioned draft with source evidence and
+   confidence.
+4. Deterministic reconciliation checks total, receipt lines, category
+   allocations, payment allocations, discounts, and rounding.
+5. The owner reviews the complete draft through Telegram or the dashboard.
+6. Only an approved, reconciled draft is posted; otherwise it remains in review.
+
+### Planned Telegram recovery and processing
+
+1. The gateway requests the earliest unconfirmed batch through long polling.
+2. It inserts raw updates under unique `update_id` values and commits.
+3. Only then does it request the next offset, confirming prior Telegram updates.
+4. The worker locks the oldest eligible inbox record and processes one at a
+   time. A waiting human workflow does not block unrelated later messages.
+5. Transient failures retry five times with backoff. Exhausted messages become
+   dead-letter records visible for manual replay.
+6. Domain changes and response outbox records commit atomically. The Telegram
+   dispatcher sends outstanding responses independently.
+
+### Planned insight request
+
+1. The router selects a spending, budget, wallet, or advice workflow.
+2. A bounded agent receives only the read tools needed for that route.
+3. Tools compute amounts, periods, budget status, and comparisons
+   deterministically from posted allocations.
+4. The final answer may narrate only facts returned by tools and states its
+   period and interpretation of `too much`.
 
 ## 7. Deployment View
 
-All components run on one Linux workstation.
+### Current deployment
 
-    Host
-    ├── Python process managed by UV
-    ├── llama-server process
-    │   └── NVIDIA RTX 5070 Ti
-    └── Docker Compose network
-        ├── Langfuse web       -> 127.0.0.1:3000
-        ├── Langfuse worker
-        ├── PostgreSQL         -> named volume
-        ├── ClickHouse         -> named volumes
-        ├── Redis              -> named volume
-        └── MinIO              -> 127.0.0.1:9090 and named volume
+```text
+Ubuntu workstation
+├── UV-managed Python CLI
+├── optional llama-server on 127.0.0.1:8080
+└── Docker Compose observability stack
+    ├── Langfuse web on 127.0.0.1:3000  [currently restarting]
+    ├── Langfuse worker
+    ├── PostgreSQL
+    ├── ClickHouse
+    ├── Redis
+    └── MinIO on 127.0.0.1:9090
+```
 
-Database ports are not published. Public host bindings use the loopback
-interface. Container images require an initial registry pull, but runtime data
-processing does not require cloud services.
+The Langfuse web container currently fails its ClickHouse migration because the
+non-cluster deployment does not set `CLICKHOUSE_CLUSTER_ENABLED=false`. Step 1
+must repair and pin this stack without deleting existing volumes.
+
+### Target deployment
+
+```text
+Ubuntu workstation
+├── systemd host services
+│   ├── money-tracker-api       -> 127.0.0.1, same-origin API and UI
+│   ├── money-tracker-telegram  -> Telegram HTTPS API
+│   ├── money-tracker-worker    -> application PostgreSQL and local models
+│   └── llama-server            -> 127.0.0.1 OpenAI-compatible API
+├── private application data
+│   ├── receipt archive
+│   └── private evaluation artifacts
+└── Docker Compose
+    ├── core profile: application PostgreSQL and persistent volume
+    └── observability profile: Langfuse stack and independent volumes
+
+External backup folder/disk
+└── encrypted Restic repository
+```
+
+Systemd user services use lingering, or an equivalent host setup, to recover
+without a manual application start. Each service tolerates delayed database,
+network, and inference readiness through health checks and retry policies.
 
 ## 8. Cross-Cutting Concepts
 
+### Money and time
+
+- Monetary values use integer minor units plus ISO currency; binary floats are
+  prohibited at storage and public interfaces.
+- Both category and payment allocations reconcile exactly with the parent total.
+- The occurrence time, not processing time, controls reports and budgets.
+- Relative Italian dates resolve against the source message timestamp in
+  `Europe/Rome`.
+
+### Identity, authorization, and idempotency
+
+- One paired profile owns all V1 data. Profile identifiers come from trusted
+  runtime context, never model-generated tool arguments.
+- Every external update and financial command has a stable idempotency key.
+- Callback and free-text follow-up map to explicit pending actions and workflow
+  IDs instead of assuming one global chat thread.
+
 ### Configuration and secrets
 
-Settings enter through environment variables. The committed example contains
-placeholders; the generator creates cryptographically random local values.
-Compose fails early when a required secret is absent.
+- Environment files remain mode-restricted and ignored by Git.
+- Telegram tokens, database credentials, Restic secrets, and signed media URLs
+  are redacted from logs, errors, traces, and frontend responses.
+- Production prompts, schemas, taxonomy seeds, and tool definitions are
+  versioned in code. Langfuse cannot silently change runtime contracts.
 
-### Privacy and network security
+### Privacy and untrusted content
 
-Services bind only to localhost, Langfuse telemetry is disabled, the in-app AI
-agent is disabled, and no external LLM provider is configured. The API key used
-by a local inference server is a compatibility credential, not a cloud secret.
+- Telegram transport is an accepted external boundary; local-first must not be
+  described as end-to-end local communication.
+- Receipt pixels, OCR text, captions, and user prompts are untrusted data, never
+  system instructions.
+- Validate content type, decoded image limits, dimensions, and storage paths.
+- Do not trace image bytes or download URLs.
 
-### Observability
+### Persistence and consistency
 
-LangChain callbacks propagate graph and model events. Tracing is optional:
-missing Langfuse keys produce an empty callback list, leaving inference
-functional.
+- PostgreSQL owns authoritative state. Workflow checkpoints and Langfuse traces
+  are supporting records, not finance ledgers.
+- Posting, audit, and outbox creation share a transaction where possible.
+- Categories and financial history use stable IDs. Archive and void replace
+  destructive deletion for referenced records.
 
-### Testing
+### Observability and evaluation
 
-Unit tests exercise production settings code with the real process environment.
-Integration tests use the production HTTP model adapter against a running local
-service. End-to-end tests launch the packaged module and traverse the CLI,
-graph, adapter, and real model.
+- Daily operation works when Langfuse is stopped.
+- Traces use pseudonymous profile/session identifiers and component versions.
+- Deterministic evaluators guard monetary, schema, routing, tool, reconciliation,
+  and idempotency behavior. Human or model review supplements subjective quality.
+- Private receipt and finance datasets never enter Git.
 
 ### Error handling
 
-Invalid numeric configuration fails with an actionable ValueError. Missing
-service credentials make Compose configuration fail. Inference transport and
-model errors currently propagate to the CLI, preserving diagnostic detail.
+- Expected domain failures return typed, user-actionable outcomes.
+- Infrastructure failures remain distinguishable for retry and dead-letter
+  handling; they are not converted into fabricated assistant explanations.
+- Structured-output parsing gets one corrective retry, then clarification.
+- Receipt or payment mismatches remain visible drafts.
+
+### Backup and retention
+
+- Daily encrypted Restic backups include a consistent application database dump,
+  retained receipt files, and required recovery configuration.
+- Default snapshot retention is seven daily, five weekly, and twelve monthly.
+- The recovery secret has an off-workstation copy. A tested restore is a release
+  gate.
+- Langfuse backup is optional and separate because it is not authoritative.
+
+### Testing
+
+- Unit tests exercise production domain behavior and replace only genuine
+  external boundaries when isolation is the goal.
+- Integration tests use real PostgreSQL, inference, Langfuse, Telegram, and
+  media protocols for the components in scope.
+- End-to-end tests traverse real user entry points and clean isolated persistent
+  records.
+- Agent quality experiments complement rather than replace correctness tests.
 
 ## 9. Architecture Decisions
 
+The full accepted decision set and maintenance policy are indexed in
+[Architecture Decisions](decisions/README.md).
+
 ### AD-001: Out-of-process inference
 
-Status: accepted.
+- Status: accepted
+- Implementation: implemented
 
 Use an OpenAI-compatible local inference server rather than Python CUDA,
-Transformers, or llama-cpp-python dependencies.
+Transformers, or `llama-cpp-python` dependencies.
 
-Consequences:
-
-- Python dependency resolution remains small and independent of CUDA.
-- llama.cpp can be built and tuned directly for compute capability 12.0.
-- A local HTTP process must be operated before inference.
-- Ollama or vLLM can replace llama-server through configuration.
+Consequences include a small Python environment, direct llama.cpp tuning for
+the GPU, an independently operated inference process, and configuration-based
+replacement with another compatible server.
 
 ### AD-002: Self-hosted Langfuse
 
-Status: accepted.
+- Status: accepted
+- Implementation: implemented but currently unhealthy
 
-Operate the complete Langfuse stack locally with telemetry disabled.
-
-Consequences:
-
-- Prompts and traces remain under user control.
-- PostgreSQL, ClickHouse, Redis, MinIO, web, and worker services consume local
-  resources and require backup and upgrade procedures.
-- The core application continues without tracing when Langfuse is unavailable
-  and its keys are removed.
+Operate Langfuse locally with telemetry disabled and keep tracing optional.
+Prompts, traces, scores, and service storage remain on the workstation. Core
+finance operation must not depend on Langfuse availability.
 
 ### AD-003: Headless local initialization
 
-Status: accepted.
+- Status: accepted
+- Implementation: implemented
 
-Generate credentials once and use the same project keys to initialize Langfuse
-and configure the SDK.
+Generate credentials locally and use the same project keys for Langfuse
+initialization and SDK configuration. Never overwrite or commit the sensitive
+environment file.
 
-Consequences:
+### Planned accepted decisions
 
-- Startup requires no manual cloud or UI provisioning.
-- The .env file becomes sensitive local state and must not be committed.
-- Existing environments are never overwritten by the generator.
+- [AD-004: Local-first privacy with Telegram boundary](decisions/AD-004-local-first-telegram-boundary.md)
+- [AD-005: Dedicated application PostgreSQL](decisions/AD-005-application-postgresql.md)
+- [AD-006: Bounded typed agent workflows](decisions/AD-006-bounded-agent-workflows.md)
+- [AD-007: Expense and dual-allocation model](decisions/AD-007-expense-allocation-model.md)
+- [AD-008: Controlled two-level taxonomy](decisions/AD-008-controlled-taxonomy.md)
+- [AD-009: Local FastAPI and React web application](decisions/AD-009-local-web-application.md)
+- [AD-010: Telegram long polling and durable messaging](decisions/AD-010-telegram-durable-messaging.md)
+- [AD-011: Evaluation-gated receipt extraction](decisions/AD-011-receipt-extraction.md)
+- [AD-012: Evaluation-driven model and prompt promotion](decisions/AD-012-evaluation-driven-promotion.md)
+- [AD-013: Host runtime and encrypted backup](decisions/AD-013-local-runtime-and-backup.md)
 
 ## 10. Quality Requirements
 
 | Scenario | Expected response |
 | --- | --- |
-| Langfuse keys are absent | The CLI performs inference without trace callbacks. |
-| An inference backend changes | Endpoint and model variables change; graph code does not. |
-| A numeric setting is invalid | Startup raises an error naming the variable and value. |
-| The process exits after a traced call | Buffered Langfuse events are flushed. |
-| A database container restarts | Named-volume data remains available. |
-| A non-local host connects | Loopback bindings prevent access by default. |
-| A developer runs unit tests without services | Unit tests pass; real-service suites report skips. |
+| Telegram redelivers an update after a crash | Inbox deduplication and command idempotency produce exactly one financial write. |
+| The workstation restarts within 24 hours | The gateway durably ingests the remaining Telegram backlog and the worker processes it in order. |
+| The workstation was offline longer than 24 hours | The owner receives a possible-loss warning; documentation requests manual resend and makes no recovery claim. |
+| A model emits malformed structured output | One corrective retry occurs, then the workflow asks for clarification without writing. |
+| An expense has mixed categories and payment sources | Both independent allocation sums reconcile exactly before posting. |
+| A category does not fit | The workflow interrupts and creates nothing without explicit approval. |
+| A receipt total and extracted lines differ | The receipt remains in review with the unexplained difference visible. |
+| Langfuse is stopped | Core ingestion, finance, Telegram, API, and dashboard behavior continues without traces. |
+| A user outside the paired owner contacts the bot | The gateway rejects the update without exposing finance state. |
+| A browser uses a non-loopback route or disallowed origin | The API refuses access or mutation. |
+| A restore is performed on an empty installation | Database, receipt references, retained media, and required configuration recover consistently. |
+| A model or prompt candidate misses a safety gate | It is not promoted; the current accepted configuration remains active. |
+
+Quantitative evaluation gates are maintained in
+[Evaluation Matrix](../experiments/evaluation-matrix.md), not duplicated here.
 
 ## 11. Risks and Technical Debt
 
-- No transaction ingestion, categorization, storage, or reporting component has
-  been designed yet.
-- The graph is stateless between CLI invocations and has no checkpointer.
-- The CLI exposes raw transport exceptions and lacks user-oriented recovery.
-- Docker volumes have no automated backup or retention policy.
-- Container tags follow major releases rather than immutable image digests.
-- The llama.cpp build and GGUF acquisition are documented but not automated.
-- The local Langfuse stack has not yet been load-tested on the workstation.
-- Integration and end-to-end tests require explicit live-service execution.
+### Current scaffold risks
+
+- No target finance, messaging, workflow, Telegram, media, API, or web component
+  is implemented.
+- The graph is stateless and has one unconstrained assistant node.
+- No local GGUF/model configuration has passed the planned capability suite.
+- Langfuse web is in a restart loop because its non-cluster ClickHouse migration
+  configuration is incomplete.
+- Container tags are mobile rather than immutable digests.
+- Existing integration and E2E tests are opt-in smoke checks with weak
+  behavioral assertions.
+
+### Target architecture risks
+
+- Telegram cannot guarantee update recovery beyond 24 hours without an external
+  always-on component.
+- Local models may not meet Italian routing, schema, tool, or receipt quality
+  gates within 16 GB VRAM.
+- OCR/VLM receipt extraction may require extensive private annotation and manual
+  correction.
+- A localhost-only dashboard still needs browser-origin and local-process threat
+  controls.
+- PostgreSQL, retained media, systemd, Docker, models, and Restic increase local
+  operational responsibility.
+- The lightweight expense model intentionally postpones full accounting and may
+  require a consequential migration later.
+
+Risk mitigation and delivery order are defined in the
+[roadmap](../roadmap.md) and [operations guides](../operations/README.md).
 
 ## 12. Glossary
 
+The product-wide canonical definitions live in the
+[Product Glossary](../product/glossary.md). Architecture-specific terms include:
+
 | Term | Meaning |
 | --- | --- |
-| arc42 | Template used to structure this architecture documentation |
-| GGUF | Model file format optimized for llama.cpp-style local inference |
-| LangGraph | Stateful graph orchestration library used by the application |
-| Langfuse | Self-hosted tracing and LLM engineering platform |
-| llama-server | llama.cpp HTTP server exposing an OpenAI-compatible API |
-| Observation | A traced span, generation, event, or related Langfuse record |
-| OpenAI-compatible | HTTP contract compatible with commonly used OpenAI API clients |
-| UV | Python project, environment, and lockfile manager |
+| Application PostgreSQL | Dedicated authoritative database for finance, messaging, audit, and workflow checkpoints; not the Langfuse database. |
+| Category allocation | A portion of an expense assigned to one category or subcategory. |
+| Command idempotency key | Stable identifier that makes repeated execution produce at most one domain mutation. |
+| Dead letter | Inbox work that exhausted automatic retry and awaits manual replay or resolution. |
+| Funding source | Cash, card, meal voucher, welfare, or another resource used to pay an expense. |
+| Outbox | Transactionally recorded outbound message awaiting delivery. |
+| Payment allocation | A portion of an expense paid by one funding source. |
+| Pending action | Durable mapping between a user-facing question and the exact suspended workflow. |
+| Posted | Validated financial state included in reports and budgets. |
+| Receipt extractor | Replaceable local adapter that transforms a receipt image into a structured draft. |
+| Workflow checkpoint | Persisted orchestration state used to resume a graph; never the finance source of truth. |

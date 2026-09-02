@@ -318,7 +318,12 @@ own tests and documentation, and none may ship a later step's behavior.
 3. The pinned `routing/intent-it`, `ingestion/expense-it`,
    `categorization/purpose-it`, and `workflow/category-review-it` datasets and
    suites, then calibration of the routing confidence bar and the auto-post
-   eligibility policy on held-out labels.
+   eligibility policy on held-out labels. An ad-hoc check against an unscreened
+   local model already confused the advice route with the query route on the
+   product baseline's own `Per cosa sto spendendo troppo` example, and returned
+   only coarse self-reported confidences, so the intent dataset should cover
+   that boundary and the bar must be calibrated on held-out labels rather than
+   on model self-report.
 4. Promotion of the model, prompts, schemas, and thresholds through
    [Decision Log](experiments/decision-log.md), which currently records that no
    routing confidence bar and no auto-post threshold are promoted.
@@ -480,8 +485,10 @@ own tests and documentation, and none may ship a later step's behavior.
   capability screen validated against the real llama.cpp build, returns raw
   text so retry policy stays deterministic, and refuses non-text content rather
   than coercing it. A recording chat model verifies the request and repair-turn
-  shape without an inference server; a real-endpoint test is opt-in and skips
-  transparently.
+  shape without an inference server. The opt-in real-endpoint test has been
+  executed against a running local server and passes; it asserts schema-valid
+  boundary behaviour only. No routing accuracy gate is met by it, and the model
+  used for that run is not one of the Step 1 screened candidates.
 - Two hundred eighteen workflow-contract unit tests cover the taxonomy
   authority invariants, the
   message contract, command parsing, every pre-routing precedence branch, every

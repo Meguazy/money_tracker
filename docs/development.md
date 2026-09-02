@@ -183,6 +183,14 @@ runs. Start the server:
     set +a
     ./scripts/run_llama_server.sh
 
+The launcher reads the shell environment rather than `.env`, because it starts
+outside the UV entry points that load `.env` themselves. It validates its
+inputs before exec and names the exact fix for each failure, since an unset
+variable and a leftover placeholder path are otherwise indistinguishable at the
+llama.cpp boundary: an unset `MODEL_PATH` reports the sourcing command above, a
+`MODEL_PATH` or `MMPROJ_PATH` that names no readable file reports that path, and
+an unresolvable `LLAMA_SERVER_BIN` reports the build step.
+
 The launcher binds to loopback, requires the configured local API key, offloads
 model layers, enables Flash Attention, uses one inference slot, uses the
 embedded Jinja chat template, attaches the optional vision projector, and

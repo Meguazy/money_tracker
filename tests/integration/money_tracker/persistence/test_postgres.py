@@ -35,6 +35,7 @@ from money_tracker.domain import (
     MonthlyBudget,
     PaymentAllocation,
     Profile,
+    ReceiptMetadata,
     WalletEntry,
     WalletEntryType,
     WalletError,
@@ -1318,3 +1319,219 @@ def test_category_proposal_rolls_back_when_audit_fails(postgres_url: str) -> Non
 
     with pytest.raises(AggregateNotFoundError, match="does not exist"):
         repository.get_category_proposal(profile.id, proposal.id)
+
+
+def _receipt_metadata(
+    profile: Profile,
+    *,
+    digest: str = "b" * 64,
+    media_type: str = "image/png",
+    byte_size: int = 4096,
+) -> ReceiptMetadata:
+    """Build validated metadata for content stored outside PostgreSQL."""
+
+    return ReceiptMetadata(
+        id=uuid4(),
+        profile_id=profile.id,
+        content_sha256=digest,
+        media_type=media_type,
+        byte_size=byte_size,
+        stored_at=datetime(2026, 9, 2, 21, tzinfo=UTC),
+        source_reference="integration:receipt",
+        original_filename="ricevuta.png",
+    )
+
+
+@pytest.mark.postgres
+def test_receipt_metadata_round_trip_is_profile_scoped_and_audited(
+    postgres_url: str,
+) -> None:
+    """Persist safe metadata without database paths or media payloads."""
+
+    upgrade_database(postgres_url)
+    repository, profile, _, _ = _repository_fixture(postgres_url)
+    metadata = _receipt_metadata(profile)
+
+    result = repository.create_receipt_metadata(
+        metadata,
+        audit_event=_generic_audit(
+            profile_id=profile.id,
+            aggregate_type="receipt",
+            aggregate_id=metadata.id,
+            action="create",
+            prior_version=None,
+            current_version=1,
+        ),
+    )
+
+    assert result == metadata
+    assert repository.get_receipt_metadata(profile.id, metadata.id) == metadata
+    with pytest.raises(AggregateNotFoundError, match="does not exist"):
+        repository.get_receipt_metadata(uuid4(), metadata.id)
+    with connect(postgres_url) as connection:
+        assert connection.execute(
+            "SELECT count(*) FROM finance.audit_events WHERE aggregate_id = %s",
+            (metadata.id,),
+        ).fetchone() == (1,)
+
+
+@pytest.mark.postgres
+def test_receipt_digest_retry_returns_first_record_and_audits_once(
+    postgres_url: str,
+) -> None:
+    """Use profile plus SHA-256 as natural idempotency for repeated uploads."""
+
+    upgrade_database(postgres_url)
+    repository, profile, _, _ = _repository_fixture(postgres_url)
+    first = _receipt_metadata(profile)
+    repository.create_receipt_metadata(
+        first,
+        audit_event=_generic_audit(
+            profile_id=profile.id,
+            aggregate_type="receipt",
+            aggregate_id=first.id,
+            action="create",
+            prior_version=None,
+            current_version=1,
+        ),
+    )
+    retry = replace(
+        first,
+        id=uuid4(),
+        source_reference="integration:receipt-retry",
+        original_filename="copia.png",
+    )
+
+    result = repository.create_receipt_metadata(
+        retry,
+        audit_event=_generic_audit(
+            profile_id=profile.id,
+            aggregate_type="receipt",
+            aggregate_id=retry.id,
+            action="create",
+            prior_version=None,
+            current_version=1,
+        ),
+    )
+
+    assert result == first
+    with connect(postgres_url) as connection:
+        assert connection.execute(
+            "SELECT count(*) FROM finance.receipts"
+        ).fetchone() == (1,)
+        assert connection.execute(
+            "SELECT count(*) FROM finance.audit_events "
+            "WHERE aggregate_type = 'receipt'",
+        ).fetchone() == (1,)
+
+
+@pytest.mark.postgres
+def test_concurrent_receipt_digest_retries_converge_on_one_record(
+    postgres_url: str,
+) -> None:
+    """Deduplicate two real concurrent inserts and retain one creation audit."""
+
+    upgrade_database(postgres_url)
+    repository, profile, _, _ = _repository_fixture(postgres_url)
+    candidates = (
+        _receipt_metadata(profile),
+        replace(
+            _receipt_metadata(profile),
+            source_reference="integration:receipt-concurrent",
+            original_filename="seconda-copia.png",
+        ),
+    )
+    barrier = Barrier(2)
+
+    def attempt(candidate: ReceiptMetadata) -> ReceiptMetadata:
+        """Race one registration after both database writers are ready."""
+
+        barrier.wait()
+        return repository.create_receipt_metadata(
+            candidate,
+            audit_event=_generic_audit(
+                profile_id=profile.id,
+                aggregate_type="receipt",
+                aggregate_id=candidate.id,
+                action="create",
+                prior_version=None,
+                current_version=1,
+            ),
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = tuple(executor.map(attempt, candidates))
+
+    assert results[0] == results[1]
+    assert results[0] in candidates
+    with connect(postgres_url) as connection:
+        assert connection.execute(
+            "SELECT count(*) FROM finance.receipts"
+        ).fetchone() == (1,)
+        assert connection.execute(
+            "SELECT count(*) FROM finance.audit_events "
+            "WHERE aggregate_type = 'receipt'",
+        ).fetchone() == (1,)
+
+
+@pytest.mark.postgres
+def test_receipt_digest_metadata_conflict_preserves_first_record(
+    postgres_url: str,
+) -> None:
+    """Reject inconsistent size/type claims for an already registered digest."""
+
+    upgrade_database(postgres_url)
+    repository, profile, _, _ = _repository_fixture(postgres_url)
+    first = _receipt_metadata(profile)
+    repository.create_receipt_metadata(
+        first,
+        audit_event=_generic_audit(
+            profile_id=profile.id,
+            aggregate_type="receipt",
+            aggregate_id=first.id,
+            action="create",
+            prior_version=None,
+            current_version=1,
+        ),
+    )
+    conflict = replace(first, id=uuid4(), byte_size=first.byte_size + 1)
+
+    with pytest.raises(ValueError, match="conflicts"):
+        repository.create_receipt_metadata(
+            conflict,
+            audit_event=_generic_audit(
+                profile_id=profile.id,
+                aggregate_type="receipt",
+                aggregate_id=conflict.id,
+                action="create",
+                prior_version=None,
+                current_version=1,
+            ),
+        )
+
+    assert repository.get_receipt_metadata(profile.id, first.id) == first
+
+
+@pytest.mark.postgres
+def test_receipt_metadata_rolls_back_when_audit_fails(postgres_url: str) -> None:
+    """Roll back newly inserted metadata if its audit cannot commit."""
+
+    upgrade_database(postgres_url)
+    repository, profile, _, _ = _repository_fixture(postgres_url)
+    metadata = _receipt_metadata(profile)
+
+    with pytest.raises(errors.ForeignKeyViolation):
+        repository.create_receipt_metadata(
+            metadata,
+            audit_event=_generic_audit(
+                profile_id=uuid4(),
+                aggregate_type="receipt",
+                aggregate_id=metadata.id,
+                action="create",
+                prior_version=None,
+                current_version=1,
+            ),
+        )
+
+    with pytest.raises(AggregateNotFoundError, match="does not exist"):
+        repository.get_receipt_metadata(profile.id, metadata.id)

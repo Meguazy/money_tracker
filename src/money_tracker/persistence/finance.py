@@ -32,6 +32,8 @@ from money_tracker.domain import (
     MonthlyBudget,
     PaymentAllocation,
     Profile,
+    ReceiptMetadata,
+    ReceiptStatus,
     Taxonomy,
     WalletEntry,
     WalletEntryType,
@@ -311,6 +313,98 @@ class PostgresFinanceRepository:
                 ),
             )
             self._insert_audit(connection, audit_event)
+
+    def get_receipt_metadata(
+        self,
+        profile_id: UUID,
+        receipt_id: UUID,
+    ) -> ReceiptMetadata:
+        """Load one receipt metadata record inside its owner scope.
+
+        Args:
+            profile_id: Trusted owner scope.
+            receipt_id: Stable receipt identifier.
+
+        Returns:
+            Content-addressed receipt metadata without media bytes or paths.
+
+        Raises:
+            AggregateNotFoundError: If the receipt is outside the profile.
+        """
+
+        with connect(self._database_url) as connection:
+            row = connection.execute(
+                "SELECT id, profile_id, content_sha256, media_type, byte_size, "
+                "stored_at, source_reference, status, original_filename "
+                "FROM finance.receipts WHERE id = %s AND profile_id = %s",
+                (receipt_id, profile_id),
+            ).fetchone()
+        if row is None:
+            raise AggregateNotFoundError("receipt metadata does not exist in profile")
+        return self._receipt_metadata_from_row(row)
+
+    def create_receipt_metadata(
+        self,
+        metadata: ReceiptMetadata,
+        *,
+        audit_event: AuditEvent,
+    ) -> ReceiptMetadata:
+        """Create metadata once per profile and content digest.
+
+        An identical content retry returns the first record without appending a
+        second audit event. A size or media-type disagreement for an existing
+        digest is treated as corrupted caller state rather than a retry.
+
+        Args:
+            metadata: Validated initial metadata from a separate media store.
+            audit_event: Matching immutable creation audit.
+
+        Returns:
+            Newly persisted metadata or the pre-existing content record.
+
+        Raises:
+            ValueError: If status is not initial or digest metadata conflicts.
+        """
+
+        if metadata.status is not ReceiptStatus.STORED:
+            raise ValueError("new receipt metadata must be stored")
+        with connect(self._database_url) as connection:
+            inserted = connection.execute(
+                "INSERT INTO finance.receipts "
+                "(id, profile_id, content_sha256, media_type, byte_size, stored_at, "
+                "source_reference, status, original_filename) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) "
+                "ON CONFLICT (profile_id, content_sha256) DO NOTHING RETURNING id",
+                (
+                    metadata.id,
+                    metadata.profile_id,
+                    metadata.content_sha256,
+                    metadata.media_type,
+                    metadata.byte_size,
+                    metadata.stored_at,
+                    metadata.source_reference,
+                    metadata.status.value,
+                    metadata.original_filename,
+                ),
+            ).fetchone()
+            if inserted is not None:
+                self._insert_audit(connection, audit_event)
+                return metadata
+            row = connection.execute(
+                "SELECT id, profile_id, content_sha256, media_type, byte_size, "
+                "stored_at, source_reference, status, original_filename "
+                "FROM finance.receipts WHERE profile_id = %s AND content_sha256 = %s",
+                (metadata.profile_id, metadata.content_sha256),
+            ).fetchone()
+            if row is None:
+                raise RuntimeError("receipt content conflict disappeared")
+            existing = self._receipt_metadata_from_row(row)
+            if (
+                existing.media_type != metadata.media_type
+                or existing.byte_size != metadata.byte_size
+            ):
+                raise ValueError("receipt digest conflicts with stored media metadata")
+            return existing
 
     def get_funding_sources(self, profile_id: UUID) -> tuple[FundingSource, ...]:
         """Load all funding sources for one profile.
@@ -911,4 +1005,20 @@ class PostgresFinanceRepository:
                 note=row[9],
             )
             for row in rows
+        )
+
+    @staticmethod
+    def _receipt_metadata_from_row(row: tuple[Any, ...]) -> ReceiptMetadata:
+        """Reconstruct safe receipt metadata from a database result row."""
+
+        return ReceiptMetadata(
+            id=row[0],
+            profile_id=row[1],
+            content_sha256=row[2],
+            media_type=row[3],
+            byte_size=row[4],
+            stored_at=row[5],
+            source_reference=row[6],
+            status=ReceiptStatus(row[7]),
+            original_filename=row[8],
         )

@@ -13,8 +13,10 @@ from money_tracker.application.ports import (
     FinanceAdministrationRepository,
     FinanceRepository,
     IdGenerator,
+    ReceiptMetadataRepository,
 )
 from money_tracker.application.proposals import CategoryProposalService
+from money_tracker.application.receipts import ReceiptMetadataService
 
 __all__ = [
     "AggregateNotFoundError",
@@ -28,4 +30,6 @@ __all__ = [
     "IdGenerator",
     "IdempotencyConflictError",
     "OptimisticConcurrencyError",
+    "ReceiptMetadataRepository",
+    "ReceiptMetadataService",
 ]

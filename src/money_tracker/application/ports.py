@@ -13,6 +13,7 @@ from money_tracker.domain import (
     FundingSource,
     MonthlyBudget,
     Profile,
+    ReceiptMetadata,
     Taxonomy,
     WalletEntry,
 )
@@ -106,3 +107,15 @@ class CategoryProposalRepository(Protocol):
         audit_event: AuditEvent,
     ) -> None:
         """Persist one pending proposal and matching audit atomically."""
+
+
+class ReceiptMetadataRepository(Protocol):
+    """Register immutable content-addressed receipt metadata."""
+
+    def create_receipt_metadata(
+        self,
+        metadata: ReceiptMetadata,
+        *,
+        audit_event: AuditEvent,
+    ) -> ReceiptMetadata:
+        """Create metadata or return the existing record for the same content."""

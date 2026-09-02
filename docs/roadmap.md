@@ -146,8 +146,8 @@ foundation. No model is promoted merely because the capability probe responds.
 Status: **In progress.** The framework-independent domain, initial taxonomy,
 finance schema, expense/wallet/budget repositories, pending category-proposal
 submission, audit, idempotency, and concurrency foundation are implemented.
-API, proposal resolution, receipt persistence, media storage, backup, and
-restore evidence remain open.
+API, proposal resolution, receipt lifecycle transitions, media storage, backup,
+and restore evidence remain open.
 
 ### Deliverables
 
@@ -200,13 +200,18 @@ restore evidence remain open.
   name against the active profile taxonomy, then persist with audit in one
   transaction. Owner resolution and category creation remain Step 3 workflow
   work and cannot be pre-resolved by the submission service.
-- Forty-three domain tests and ten wallet/budget/proposal application-service
-  tests pass. Twenty-four real PostgreSQL integration tests cover migration,
+- Receipt metadata registration accepts only initial `stored` records, uses the
+  profile/content SHA-256 pair as natural idempotency, rejects conflicting
+  size/type claims, and audits only the first insert. It stores no media bytes or
+  filesystem paths; the media port and lifecycle transitions remain open.
+- Forty-three domain tests and fifteen wallet/budget/proposal/receipt
+  application-service tests pass. Twenty-nine real PostgreSQL integration
+  tests cover migration, concurrent receipt deduplication and rollback,
   proposal scoping and atomic rollback, constraints, restart persistence,
   immutable history, exact taxonomy seeding,
   retry idempotency, concurrent expense writers, concurrent wallet debits, and
   concurrent/stale budget versions. The complete service-independent suite
-  passes with 78 tests and 27 explicit real-service skips; focused
+  passes with 83 tests and 32 explicit real-service skips; focused
   domain/application branch coverage is 91%.
 
 ## Step 3: Evaluated text workflows

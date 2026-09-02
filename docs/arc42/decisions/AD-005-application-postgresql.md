@@ -2,8 +2,8 @@
 
 - Status: accepted
 - Implementation: foundation, finance schema, expense/wallet/budget repository
-  operations, and pending-proposal persistence implemented; remaining finance
-  adapters and messaging persistence planned
+  operations, pending-proposal persistence, and receipt-metadata registration
+  implemented; remaining finance adapters and messaging persistence planned
 - Date: 2026-09-01
 
 ## Context
@@ -40,12 +40,14 @@ persistent volume, loopback port, initialization administrator, and
 least-privilege application role. Roadmap Step 2 adds authoritative finance
 tables, deferred database invariants, immutable audit and wallet history,
 taxonomy/profile bootstrap, and transactional expense, wallet, and budget
-repository operations plus taxonomy-scoped pending proposal submission. Expense idempotency, expense/budget optimistic
+repository operations, taxonomy-scoped pending proposal submission, and
+content-idempotent receipt metadata registration. Expense idempotency,
+expense/budget optimistic
 concurrency, and source-row locking for balance-safe wallet debits are enforced.
 Real PostgreSQL tests cover migration, constraints, rollback, restart
 persistence, identical retry, stale versions, and concurrent expense and wallet
-writers. Proposal resolution, receipt persistence, messaging persistence, and
-backup are still open.
+writers. Proposal resolution, receipt lifecycle/media storage, messaging
+persistence, and backup are still open.
 
 ## Consequences
 

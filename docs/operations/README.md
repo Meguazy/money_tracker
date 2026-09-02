@@ -5,7 +5,8 @@
   PostgreSQL, migrations/checkpoint bootstrap, optional healthy Langfuse, and
   capability evaluation
 - Implemented Step 2 core: authoritative finance schema and transactional
-  expense, wallet, budget, and pending category-proposal repository operations
+  expense, wallet, budget, pending category-proposal, and receipt-metadata
+  repository operations
 - Planned operations: Telegram, systemd services, finance backup/restore, web
   API, workflow worker, and receipt storage
 
@@ -55,10 +56,11 @@ the referenced file or entry point exists in the repository.
 - Installed model paths remain workstation-owned and outside the repository.
   Three pinned profiles pass the Step 1 capability screen, but no model is
   promoted to a product role.
-- Expense, wallet, budget, and pending-proposal repository operations exist;
-  proposal resolution and receipt persistence remain open. No Telegram
-  bot/adapter, finance backup, API/dashboard, workflow worker, receipt store, or
-  systemd unit exists yet.
+- Expense, wallet, budget, pending-proposal, and content-idempotent receipt
+  metadata repository operations exist; proposal/receipt lifecycle transitions
+  and receipt media storage remain open. No Telegram bot/adapter, finance
+  backup, API/dashboard, workflow worker, receipt store, or systemd unit exists
+  yet.
 
 ## When to update these guides
 

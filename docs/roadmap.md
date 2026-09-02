@@ -288,9 +288,11 @@ pre-routing, the strict versioned router and expense/refund extraction model
 boundaries with their deterministic policy vetoes, the versioned category-fit
 boundary, pure resolution of occurrence time, amount sign, and both reconciled
 allocation dimensions, and the strict-schema retry boundary behind a narrow
-model port. No LangGraph assembly, real model adapter, specialist subgraph,
-persistent interrupt, or evaluation dataset exists yet, and no confidence bar,
-prompt, or model is promoted.
+model port. The typed root router is assembled as a LangGraph state graph over
+the persistent PostgreSQL checkpointer, with a local structured-output adapter.
+No specialist subgraph, persistent owner interrupt, channel wiring, or
+evaluation dataset exists yet, and no confidence bar, prompt, or model is
+promoted.
 
 ### Prerequisites
 
@@ -303,23 +305,18 @@ step's gates and the experiment decision log.
 This order is a handoff aid, not new scope. Each increment must land with its
 own tests and documentation, and none may ship a later step's behavior.
 
-1. The LangGraph root router assembly: the versioned workflow state holding
-   only small serializable values and stable references, a real
-   `StructuredOutputModel` adapter over the local OpenAI-compatible endpoint,
-   and the persistent PostgreSQL checkpointer already available from Step 1.
-   The retry policy the assembly consumes is implemented.
-2. Deterministic expense/refund mutation paths that call the existing
+1. Deterministic expense/refund mutation paths that call the existing
    application services with a stable command idempotency key, plus the
    read-only query and advice routes with scoped tool registries.
-3. Persistent human-in-the-loop category review over the existing pending
+2. Persistent human-in-the-loop category review over the existing pending
    proposal port, covering approve, best existing, named existing, re-propose,
    cancel, unrelated input, and the three-rejection transition, with side
    effects placed after the interrupt and made idempotent for replay.
-4. The pinned `routing/intent-it`, `ingestion/expense-it`,
+3. The pinned `routing/intent-it`, `ingestion/expense-it`,
    `categorization/purpose-it`, and `workflow/category-review-it` datasets and
    suites, then calibration of the routing confidence bar and the auto-post
    eligibility policy on held-out labels.
-5. Promotion of the model, prompts, schemas, and thresholds through
+4. Promotion of the model, prompts, schemas, and thresholds through
    [Decision Log](experiments/decision-log.md), which currently records that no
    routing confidence bar and no auto-post threshold are promoted.
 
@@ -428,13 +425,38 @@ own tests and documentation, and none may ship a later step's behavior.
   the offered routes cannot drift from the taxonomy and no deterministic-only
   route is ever offered. They are labelled `CANDIDATE_` and versioned
   `candidate-`, and the decision log records that no prompt is promoted.
-- Two hundred eighteen unit tests cover the taxonomy authority invariants, the
+- The compiled root router is a LangGraph state graph whose deterministic node
+  ends the graph before any inference call whenever the channel already stated
+  the decision, verified by asserting the port received zero requests for
+  image, command, callback, and uncorrelated-callback messages. Its
+  classification node re-imposes the confidence bar and every routing veto on
+  the model answer, and converts an exhausted retry budget into a clarification
+  decision carrying the `invalid_model_output` reason instead of failing the
+  invocation. Instruction text and confidence bar are required arguments with
+  no defaults, so the assembly cannot imply a production configuration.
+- Workflow state is a versioned contract of JSON primitives and stable string
+  references. Round-trip tests reconstruct the message, the trusted context,
+  and every deterministic and model decision, and a real checkpoint written to
+  and read back from PostgreSQL across separate connections is asserted to
+  contain no reconstructed rich object. A round-trip test caught and fixed a
+  real defect: the decision's own callback action differs from the message's
+  whenever an uncorrelated callback is clarified, so the two are stored
+  separately.
+- The local adapter requests the exact strict `json_schema` mechanism the Step 1
+  capability screen validated against the real llama.cpp build, returns raw
+  text so retry policy stays deterministic, and refuses non-text content rather
+  than coercing it. A recording chat model verifies the request and repair-turn
+  shape without an inference server; a real-endpoint test is opt-in and skips
+  transparently.
+- Two hundred eighteen workflow-contract unit tests cover the taxonomy
+  authority invariants, the
   message contract, command parsing, every pre-routing precedence branch, every
   category-review callback branch, every acceptance veto, every extraction and
   category-fit cross-field invariant, the occurrence resolver including both
   daylight-saving edges, every allocation shape and refusal in both dimensions,
   and every branch of the retry boundary through a scripted port
-  implementation, at 100% branch coverage of the component. Both resolved
+  implementation. With the state conversions and the runtime assembly, the
+  `workflows` and `runtime` components pass at 100% branch coverage. Both resolved
   dimensions are verified by building a real domain aggregate rather than
   restating its rules, and routing decisions are asserted to contain no owner
   text and only small serializable values and stable references.

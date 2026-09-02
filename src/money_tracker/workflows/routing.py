@@ -66,6 +66,8 @@ class RoutingReason(StrEnum):
         NO_PENDING_REVIEW: No paused category review exists to continue.
         AMBIGUOUS_PENDING_REVIEW: Several reviews are pending and uncorrelated.
         NO_CORRECTABLE_MOVEMENT: No movement is available to correct or void.
+        INVALID_MODEL_OUTPUT: The model could not satisfy the routing schema
+            within its retry budget.
     """
 
     CALLBACK_ACTION = "callback_action"
@@ -79,6 +81,7 @@ class RoutingReason(StrEnum):
     NO_PENDING_REVIEW = "no_pending_review"
     AMBIGUOUS_PENDING_REVIEW = "ambiguous_pending_review"
     NO_CORRECTABLE_MOVEMENT = "no_correctable_movement"
+    INVALID_MODEL_OUTPUT = "invalid_model_output"
 
 
 @dataclass(frozen=True, slots=True)
@@ -176,11 +179,11 @@ def pre_route(message: ChannelMessage) -> RoutingDecision | None:
         )
     text = message.normalized_text
     if not text:
-        return _clarify(RoutingReason.EMPTY_INPUT, RoutingSource.DETERMINISTIC)
+        return clarify(RoutingReason.EMPTY_INPUT, RoutingSource.DETERMINISTIC)
     if text.startswith(_COMMAND_PREFIX):
         command = parse_command(text)
         if command is None:
-            return _clarify(RoutingReason.UNKNOWN_COMMAND, RoutingSource.DETERMINISTIC)
+            return clarify(RoutingReason.UNKNOWN_COMMAND, RoutingSource.DETERMINISTIC)
         return RoutingDecision(
             intent=WorkflowIntent.COMMAND,
             source=RoutingSource.DETERMINISTIC,
@@ -226,7 +229,7 @@ def accept_classification(
             f"intent {classification.intent.value} is assigned deterministically"
         )
     if classification.confidence < minimum_confidence:
-        return _clarify(
+        return clarify(
             RoutingReason.LOW_CONFIDENCE,
             RoutingSource.MODEL,
             confidence=classification.confidence,
@@ -255,9 +258,7 @@ def _route_callback(
     """
 
     if pending_action_id is None:
-        return _clarify(
-            RoutingReason.UNCORRELATED_CALLBACK, RoutingSource.DETERMINISTIC
-        )
+        return clarify(RoutingReason.UNCORRELATED_CALLBACK, RoutingSource.DETERMINISTIC)
     if action in CATEGORY_REVIEW_ACTIONS:
         intent = WorkflowIntent.CATEGORY_FOLLOW_UP
     elif action is CallbackAction.MODIFY_EXPENSE:
@@ -287,14 +288,14 @@ def _route_category_follow_up(
 
     pending = context.pending_category_review_ids
     if not pending:
-        return _clarify(
+        return clarify(
             RoutingReason.NO_PENDING_REVIEW,
             RoutingSource.MODEL,
             confidence=classification.confidence,
         )
     if message.reply_to_action_id is not None:
         if message.reply_to_action_id not in pending:
-            return _clarify(
+            return clarify(
                 RoutingReason.NO_PENDING_REVIEW,
                 RoutingSource.MODEL,
                 confidence=classification.confidence,
@@ -303,7 +304,7 @@ def _route_category_follow_up(
     elif len(pending) == 1:
         correlated = pending[0]
     else:
-        return _clarify(
+        return clarify(
             RoutingReason.AMBIGUOUS_PENDING_REVIEW,
             RoutingSource.MODEL,
             confidence=classification.confidence,
@@ -325,7 +326,7 @@ def _route_movement_change(
 
     target = context.latest_correctable_movement_id
     if target is None:
-        return _clarify(
+        return clarify(
             RoutingReason.NO_CORRECTABLE_MOVEMENT,
             RoutingSource.MODEL,
             confidence=classification.confidence,
@@ -339,13 +340,25 @@ def _route_movement_change(
     )
 
 
-def _clarify(
+def clarify(
     reason: RoutingReason,
     source: RoutingSource,
     *,
     confidence: float | None = None,
 ) -> RoutingDecision:
-    """Build the safe fallback decision that asks instead of acting."""
+    """Build the safe fallback decision that asks instead of acting.
+
+    Every routing veto and every boundary failure ends here, so the safe
+    default is one named operation rather than a shape each caller rebuilds.
+
+    Args:
+        reason: Stable justification code for the fallback.
+        source: Which half of the router reached it.
+        confidence: Model self-report when a classification was involved.
+
+    Returns:
+        A clarification decision that mutates nothing.
+    """
 
     return RoutingDecision(
         intent=WorkflowIntent.CLARIFICATION,

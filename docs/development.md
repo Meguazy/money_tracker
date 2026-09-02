@@ -207,6 +207,21 @@ staging, and receipt directories, and use the same isolated test database:
       uv run --env-file .env pytest -q \
       tests/integration/money_tracker/backup
 
+Real root-router checkpoint tests need only the application database; the
+deterministic half decides without any inference call:
+
+    RUN_POSTGRES_INTEGRATION_TESTS=1 \
+      uv run --env-file .env pytest -q \
+      tests/integration/money_tracker/runtime
+
+Add a running local model to also exercise the strict `json_schema` boundary
+through the real endpoint:
+
+    RUN_POSTGRES_INTEGRATION_TESTS=1 \
+      RUN_INFERENCE_INTEGRATION_TESTS=1 \
+      uv run --env-file .env pytest -q \
+      tests/integration/money_tracker/runtime
+
 Real inference checks remain opt-in and never substitute a mock service:
 
     RUN_CAPABILITY_INTEGRATION_TESTS=1 \\

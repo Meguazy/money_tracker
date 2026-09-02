@@ -1,0 +1,281 @@
+"""Versioned root-router workflow state and its conversions.
+
+Step 3 requires graph state to hold only small serializable values and stable
+references, with domain data left in repositories. This module is the single
+place that decides what enters a checkpoint, so that requirement is enforceable
+by inspection and by test rather than by convention.
+
+Every value is a JSON primitive or a list of primitives. Identifiers are stored
+as strings and timestamps as ISO text, which keeps the state safe under the
+strict msgpack serializer the checkpointer is configured with and survives a
+round trip through PostgreSQL unchanged. No domain aggregate, money value,
+media reference, service object, or credential is representable here.
+
+Owner message text is present because the classification step needs it. That
+text is not new exposure: the durable channel inbox already stores the raw
+update, and `source_reference` points at that record.
+
+Conversions are exhaustive in both directions and are tested by round trip, so
+adding a routing field cannot silently fail to reach a resumed thread.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime
+from typing import TypedDict
+from uuid import UUID
+
+from money_tracker.workflows.intents import WorkflowIntent
+from money_tracker.workflows.messages import (
+    CallbackAction,
+    ChannelMessage,
+    SupportedCommand,
+)
+from money_tracker.workflows.routing import (
+    RoutingContext,
+    RoutingDecision,
+    RoutingReason,
+    RoutingSource,
+)
+
+WORKFLOW_STATE_VERSION = "v1"
+"""Version of the root-router state shape.
+
+A thread interrupted under one version is resumed under that version, so a
+breaking change requires a new value and a documented migration for pending
+threads rather than an edit in place.
+"""
+
+
+class RouterState(TypedDict, total=False):
+    """Root-router state as it is checkpointed.
+
+    Keys are individually optional because graph nodes contribute partial
+    updates that the runtime merges. Accessors below require what they read.
+
+    Attributes:
+        state_version: Shape version this thread was created under.
+        source_reference: Stable reference to the durable inbound record.
+        received_at: ISO timestamp the channel assigned to the message.
+        text: Owner text when present, including an image caption.
+        callback_action: Explicit interface decision value when one was used.
+        pending_action_id: Pending-action reference a callback answers.
+        reply_to_action_id: Pending-action reference a free-text reply answers.
+        has_image: Whether the message carried image media.
+        pending_category_review_ids: Reviews awaiting this owner.
+        latest_correctable_movement_id: Movement available to correct or void.
+        intent: Selected destination once routing has decided.
+        routing_source: Which half of the router decided.
+        routing_reason: Stable justification code for the decision.
+        routing_confidence: Model self-report when the model decided.
+        command: Supported command when the intent is a channel command.
+        decision_callback_action: Interface decision the router acted on. This
+            is not the message's own action: an uncorrelated callback is
+            clarified, so the message carries an action the decision does not.
+        resolved_pending_action_id: Correlated pending action for a follow-up.
+        target_movement_id: Correlated movement for a correction or undo.
+    """
+
+    state_version: str
+    source_reference: str
+    received_at: str
+    text: str | None
+    callback_action: str | None
+    pending_action_id: str | None
+    reply_to_action_id: str | None
+    has_image: bool
+    pending_category_review_ids: list[str]
+    latest_correctable_movement_id: str | None
+    intent: str | None
+    routing_source: str | None
+    routing_reason: str | None
+    routing_confidence: float | None
+    command: str | None
+    decision_callback_action: str | None
+    resolved_pending_action_id: str | None
+    target_movement_id: str | None
+
+
+def initial_router_state(
+    message: ChannelMessage,
+    *,
+    context: RoutingContext,
+) -> RouterState:
+    """Build the state one inbound message and its trusted context start from.
+
+    Args:
+        message: Normalized inbound work unit.
+        context: Trusted runtime facts the model may not choose.
+
+    Returns:
+        A complete initial state with no routing outcome yet.
+    """
+
+    return RouterState(
+        state_version=WORKFLOW_STATE_VERSION,
+        source_reference=message.source_reference,
+        received_at=message.received_at.isoformat(),
+        text=message.text,
+        callback_action=(
+            message.callback_action.value
+            if message.callback_action is not None
+            else None
+        ),
+        pending_action_id=_optional_str(message.pending_action_id),
+        reply_to_action_id=_optional_str(message.reply_to_action_id),
+        has_image=message.has_image,
+        pending_category_review_ids=[
+            str(item) for item in context.pending_category_review_ids
+        ],
+        latest_correctable_movement_id=_optional_str(
+            context.latest_correctable_movement_id
+        ),
+        intent=None,
+        routing_source=None,
+        routing_reason=None,
+        routing_confidence=None,
+        command=None,
+        decision_callback_action=None,
+        resolved_pending_action_id=None,
+        target_movement_id=None,
+    )
+
+
+def channel_message_from_state(state: RouterState) -> ChannelMessage:
+    """Reconstruct the inbound work unit a resumed thread was created from.
+
+    Args:
+        state: Checkpointed router state.
+
+    Returns:
+        The normalized inbound message.
+
+    Raises:
+        KeyError: If the state omits a field the message requires.
+        DomainError: If the stored message no longer satisfies its contract.
+    """
+
+    callback = state["callback_action"]
+    return ChannelMessage(
+        source_reference=state["source_reference"],
+        received_at=datetime.fromisoformat(state["received_at"]),
+        text=state["text"],
+        callback_action=CallbackAction(callback) if callback is not None else None,
+        pending_action_id=_optional_uuid(state["pending_action_id"]),
+        reply_to_action_id=_optional_uuid(state["reply_to_action_id"]),
+        has_image=state["has_image"],
+    )
+
+
+def routing_context_from_state(state: RouterState) -> RoutingContext:
+    """Reconstruct the trusted routing context stored with a thread.
+
+    Args:
+        state: Checkpointed router state.
+
+    Returns:
+        The trusted runtime facts recorded when the thread started.
+
+    Raises:
+        KeyError: If the state omits a context field.
+    """
+
+    return RoutingContext(
+        pending_category_review_ids=tuple(
+            UUID(item) for item in state["pending_category_review_ids"]
+        ),
+        latest_correctable_movement_id=_optional_uuid(
+            state["latest_correctable_movement_id"]
+        ),
+    )
+
+
+def routing_update(decision: RoutingDecision) -> RouterState:
+    """Build the partial state update one routing decision contributes.
+
+    Args:
+        decision: The selected destination for this message.
+
+    Returns:
+        Only the keys the decision determines.
+    """
+
+    return RouterState(
+        intent=decision.intent.value,
+        routing_source=decision.source.value,
+        routing_reason=decision.reason.value,
+        routing_confidence=decision.confidence,
+        command=decision.command.value if decision.command is not None else None,
+        decision_callback_action=(
+            decision.callback_action.value
+            if decision.callback_action is not None
+            else None
+        ),
+        resolved_pending_action_id=_optional_str(decision.pending_action_id),
+        target_movement_id=_optional_str(decision.target_movement_id),
+    )
+
+
+def routing_decision_from_state(state: RouterState) -> RoutingDecision | None:
+    """Reconstruct the routing decision a thread reached, when it reached one.
+
+    The decision's callback action is stored separately from the message's own.
+    They differ whenever a callback arrives without a pending action: the
+    message names an action, but the router clarifies instead of acting on it.
+
+    Args:
+        state: Checkpointed router state.
+
+    Returns:
+        The decision, or None while routing has not decided yet.
+
+    Raises:
+        KeyError: If a decided state omits one of its own fields.
+    """
+
+    intent = state.get("intent")
+    if intent is None:
+        return None
+    callback = state["decision_callback_action"]
+    command = state["command"]
+    return RoutingDecision(
+        intent=WorkflowIntent(intent),
+        source=RoutingSource(_require(state["routing_source"], "routing_source")),
+        reason=RoutingReason(_require(state["routing_reason"], "routing_reason")),
+        command=SupportedCommand(command) if command is not None else None,
+        callback_action=CallbackAction(callback) if callback is not None else None,
+        pending_action_id=_optional_uuid(state["resolved_pending_action_id"]),
+        target_movement_id=_optional_uuid(state["target_movement_id"]),
+        confidence=state["routing_confidence"],
+    )
+
+
+def _require(value: str | None, field: str) -> str:
+    """Require a field a decided state must carry.
+
+    Args:
+        value: Stored value.
+        field: State key, used only to name the defect.
+
+    Returns:
+        The present value.
+
+    Raises:
+        KeyError: If a decided state omits the field.
+    """
+
+    if value is None:
+        raise KeyError(f"decided router state requires {field}")
+    return value
+
+
+def _optional_str(value: UUID | None) -> str | None:
+    """Render an optional identifier as stable text."""
+
+    return None if value is None else str(value)
+
+
+def _optional_uuid(value: str | None) -> UUID | None:
+    """Read an optional identifier back from stable text."""
+
+    return None if value is None else UUID(value)

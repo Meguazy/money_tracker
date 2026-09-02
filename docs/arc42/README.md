@@ -167,7 +167,7 @@ Money Tracker workstation
 │   ├── FastAPI application and compiled React UI        [planned]
 │   ├── Telegram gateway                                [planned]
 │   ├── Sequential workflow worker                      [planned]
-│   │   └── typed root router                          [deterministic half implemented]
+│   │   └── typed root router                          [implemented, unwired to a channel]
 │   └── llama.cpp/OpenAI-compatible inference           [scaffolded]
 ├── Private host data
 │   ├── Receipt archive adapter                         [implemented, admin CLI wired]
@@ -191,6 +191,7 @@ Money Tracker workstation
 | `domain` | Enforce exact money, expense/refund, dual-allocation, taxonomy, wallet, budget, receipt-metadata, and audit contracts | Pure Python value objects and policies; no framework or infrastructure import | No infrastructure state | Shared host-process library; deterministic validation of untrusted inputs |
 | `application` | Coordinate idempotent expense lifecycle and receipt registration/review, audited wallet/budget mutations, and pending proposal submission through narrow ports | Finance, administration, proposal, and receipt-metadata repository ports plus clock and ID contracts | Command, concurrency, review-boundary, and audit semantics, not stored state | Shared by future CLI/API/worker; profile scope comes from trusted caller context; proposal decisions and receipt deletion are not exposed |
 | `workflows` | Own the bounded intent taxonomy, the normalized channel work unit, deterministic pre-routing, the strict versioned router and extraction model boundaries with their policy vetoes, and deterministic resolution of occurrence time, amount sign, and both reconciled allocation dimensions, and the strict-schema retry boundary behind a narrow model port | Pydantic, `zoneinfo`, and pure domain values; no LangGraph, model client, repository, or transport import | Routing destinations, authority classes, stable routing and resolution reason codes, and the product calendar; no persistent state | Shared by the planned worker; a model can select no deterministic route and supply no profile/timezone/authorization field, no resolved instant, no amount sign, and no funding-source identifier; reason codes carry no owner text |
+| `runtime` | Assemble the compiled root-router graph and adapt the local endpoint to the structured-output port | LangGraph, LangChain, the persistent checkpointer, and the `workflows` contracts | No state of its own; checkpoint contents are owned by the state contract | Host worker process; holds no routing policy, so the framework cannot change how a decision is made |
 | `api.contracts` | Define strict, versioned finance request/response, mutation-header, and problem wire shapes | Pydantic and domain response values; no web framework | No state; stable JSON field semantics only | Shared by future FastAPI adapter; no endpoint, network listener, credentials, or private media fields |
 | `backup` | Create verified encrypted authoritative snapshots, report their freshness, and restore only into explicitly empty isolated targets | Restic and PostgreSQL client executables, psycopg identity/receipt queries, private archive and configuration paths | Snapshot contents and the versioned integrity manifest in the owner repository; no finance state of its own | Host CLI under an exclusive lock; absolute-path and owner-only input checks, recovery secret passed only by file path, failures name no argument or environment |
 | `administration` | Expose bounded local receipt storage/registration for development and bootstrap | Database URL, absolute archive setting, media and metadata services | No independent state; emits safe identifiers/facts only | Host CLI; active-profile preflight, no-follow bounded input, no private paths in JSON |
@@ -207,7 +208,7 @@ Money Tracker workstation
 | Application services (expense/wallet/budget, proposal submission, and receipt registration/review implemented) | Execute validated commands and queries transactionally | Narrow repository ports, clock, ID and future media ports | Command/content idempotency, versioning, review boundary, and audit semantics | Future FastAPI/worker host processes; profile scope injected; proposal decisions and product receipt review remain workflow-owned |
 | Finance repositories (expense/wallet/budget/proposal/versioned receipt metadata implemented) | Persist authoritative domain records and analytics projections | PostgreSQL protocol through explicit repository contracts | Finance schema implemented; proposal decisions and receipt deletion open | Dedicated application database; least-privilege credentials; optimistic versions and source locks protect concurrent mutations; no media payloads |
 | Messaging inbox/outbox | Receive, order, retry, dead-letter, replay and dispatch transport work | PostgreSQL and Telegram adapter | Raw updates, offsets, delivery attempts, result references | Gateway and worker; bot token never stored in rows |
-| Workflow runtime (routing contracts implemented) | Route intents and execute specialist graphs | LangGraph, typed model gateway, application services, checkpointer | Small versioned workflow state only | Sequential worker; no images or service objects in checkpoints |
+| Workflow runtime (root router implemented) | Route intents and execute specialist graphs | LangGraph, typed model gateway, application services, checkpointer | Small versioned workflow state only | Sequential worker; no images or service objects in checkpoints |
 | Receipt service | Validate media, invoke extractor, reconcile lines, prepare review | Implemented media-store port, planned extractor, finance service | Receipt metadata, extraction versions, review state | Private filesystem; untrusted image boundary; orchestration planned |
 | Analytics service | Compute time, category, budget and funding summaries | Read repositories and deterministic calendar policies | No separate authoritative data | FastAPI and read-only agent tools |
 | Backup service (implemented, unscheduled) | Create consistent encrypted backups and verify restores | `pg_dump`, Restic, receipt/configuration paths | Backup snapshots in owner repository | Owner-invoked today; systemd timer and clean-machine qualification planned; recovery secret stored off-device |
@@ -394,6 +395,34 @@ Both resolved dimensions are verified against the real domain aggregate, which
 independently enforces non-zero rows, unique identifiers, matching polarity,
 and exact reconciliation. The graph node, prompts, and owner-approval interrupt
 that would turn a resolved draft into a stored expense remain open.
+
+### Current compiled root router
+
+1. A caller builds the initial state from one normalized channel message and
+   the trusted routing context, then invokes the compiled graph under a thread
+   identifier so the checkpointer can resume it.
+2. The `pre_route` node decides from stated channel facts alone. When it
+   decides, a conditional edge ends the graph, so an explicit interface
+   decision, an attached image, a supported command, and blank input never
+   reach an inference call.
+3. Only unresolved free text continues to `classify`, which asks the model
+   through the strict boundary and then re-imposes deterministic policy on the
+   answer with the confidence bar the caller stated.
+4. An exhausted retry budget is not an error path: the node converts it into a
+   clarification decision carrying the `invalid_model_output` reason, because
+   AD-006 requires routing to ask rather than loop or fail.
+5. The persistent PostgreSQL checkpointer stores only the versioned state
+   contract, so a resumed thread reconstructs its message, trusted context, and
+   decision from JSON primitives and stable string references.
+
+Both the instruction text and the confidence bar are required arguments with no
+defaults, so the assembly cannot imply a production configuration for either.
+The graph holds no routing policy of its own; every decision it makes is
+implemented and tested in the framework-independent component.
+
+The router is not wired to a channel or a worker process, produces no owner
+response, and reaches no application service. Specialist workflows and the
+persistent owner-approval interrupt remain open.
 
 ### Current version-one finance wire contracts
 

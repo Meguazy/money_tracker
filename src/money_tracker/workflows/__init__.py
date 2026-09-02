@@ -63,8 +63,18 @@ from money_tracker.workflows.routing import (
     RoutingReason,
     RoutingSource,
     accept_classification,
+    clarify,
     parse_command,
     pre_route,
+)
+from money_tracker.workflows.state import (
+    WORKFLOW_STATE_VERSION,
+    RouterState,
+    channel_message_from_state,
+    initial_router_state,
+    routing_context_from_state,
+    routing_decision_from_state,
+    routing_update,
 )
 
 __all__ = [
@@ -93,6 +103,7 @@ __all__ = [
     "RepairRequest",
     "ResolutionReason",
     "RouteClassification",
+    "RouterState",
     "RoutingContext",
     "RoutingDecision",
     "RoutingReason",
@@ -101,9 +112,13 @@ __all__ = [
     "StructuredOutputModel",
     "SupportedCommand",
     "UnresolvedExtractionError",
+    "WORKFLOW_STATE_VERSION",
     "WorkflowIntent",
     "accept_classification",
     "build_category_proposal",
+    "channel_message_from_state",
+    "clarify",
+    "initial_router_state",
     "normalize_owner_text",
     "parse_command",
     "parse_with_one_repair",
@@ -115,5 +130,8 @@ __all__ = [
     "resolve_occurrence_for",
     "resolve_occurrence_time",
     "resolve_payment_allocations",
+    "routing_context_from_state",
+    "routing_decision_from_state",
+    "routing_update",
     "summarize_validation_error",
 ]

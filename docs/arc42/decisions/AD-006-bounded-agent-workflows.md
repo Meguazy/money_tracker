@@ -100,8 +100,21 @@ intent vocabulary from the code so text and taxonomy cannot drift. They are not
 promoted: no routing dataset exists, and the decision log records that no V1
 production prompt has been selected.
 
-Specialist subgraphs, the graph assembly and its persistent interrupts, and
-workflow state are not implemented yet.
+The typed root router is now assembled as a LangGraph state graph over the
+persistent PostgreSQL checkpointer. Its deterministic node ends the graph
+without an inference call whenever the channel already stated the decision, and
+its classification node re-imposes deterministic policy on the model answer. An
+exhausted retry budget becomes a clarification decision rather than a failure,
+which is this decision's "route to clarification instead of looping" rule made
+executable. The assembly holds no policy: every rule it applies is implemented
+and tested without LangGraph, a model, or a database.
+
+Workflow state is a versioned contract holding only JSON primitives and stable
+string references, verified by round trip and by a real checkpoint written to
+and read from PostgreSQL across separate connections.
+
+Specialist subgraphs and the persistent owner-approval interrupt are not
+implemented yet, and the router is not wired to a channel or worker process.
 
 ## Consequences
 

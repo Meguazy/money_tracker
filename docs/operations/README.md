@@ -1,10 +1,11 @@
 # Operations Guide
 
-- Status: Step 1 platform foundation complete; product operations planned
+- Status: Step 1 platform foundation and Step 2 finance core complete;
+  product operations planned
 - Current executable operations: local inference/CLI, dedicated application
   PostgreSQL, migrations/checkpoint bootstrap, optional healthy Langfuse, and
   capability evaluation, plus profile-scoped administrative receipt storage
-- Implemented Step 2 core: authoritative finance schema and transactional
+- Implemented Step 2: authoritative finance schema and transactional
   expense, wallet, budget, pending category-proposal, and versioned receipt-review
   repository operations, a safe local receipt-media adapter, and verified
   encrypted backup with an isolated restore drill

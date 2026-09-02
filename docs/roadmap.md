@@ -15,8 +15,8 @@ step unless the owner explicitly changes scope.
 | --- | --- | --- |
 | 0 | Decision-complete documentation baseline | Complete (2026-09-01) |
 | 1 | Healthy platform and evaluation foundation | Complete (2026-09-02) |
-| 2 | Deterministic finance domain and persistence | In progress |
-| 3 | Evaluated text workflows | Planned |
+| 2 | Deterministic finance domain and persistence | Complete (2026-09-02) |
+| 3 | Evaluated text workflows | Next |
 | 4 | Durable Telegram MVP | Planned |
 | 5 | Local dashboard, budgets, analytics, and advice | Planned |
 | 6 | Evaluated receipt workflow | Planned |
@@ -27,7 +27,8 @@ only when all exit criteria pass; merged code alone is insufficient.
 
 ## Step 0: Documentation baseline
 
-Status: **Complete (2026-09-01).** Step 1 is complete; Step 2 is next.
+Status: **Complete (2026-09-01).** Steps 1 and 2 are complete; Step 3 is
+next.
 
 ### Intent
 
@@ -143,16 +144,21 @@ foundation. No model is promoted merely because the capability probe responds.
 
 ## Step 2: Finance domain and persistence
 
-Status: **In progress.** The framework-independent domain, initial taxonomy,
-finance schema, expense/wallet/budget repositories, pending category-proposal
-submission, audit, idempotency, and concurrency foundation are implemented.
-The private content-addressed receipt-media adapter, versioned receipt
-review-state transitions, and strict V1 finance wire contracts are implemented.
-Encrypted authoritative backup, snapshot verification, retention, and an
-isolated restore drill are implemented and verified against real Restic and
-PostgreSQL. The FastAPI adapter, worker media wiring, proposal lifecycle, and
-receipt deletion remain open; a minimal local administration command exercises
-the archive and metadata boundary.
+Status: **Complete (2026-09-02).** All four exit criteria have evidence below.
+The framework-independent domain, initial taxonomy, finance schema,
+expense/wallet/budget repositories, pending category-proposal submission,
+audit, idempotency, and concurrency foundation are implemented, together with
+the private content-addressed receipt-media adapter, versioned receipt
+review-state transitions, strict V1 finance wire contracts, a minimal local
+administration command, and verified encrypted backup with an isolated restore
+drill.
+
+Work this step deliberately does not contain, with its owning step: the FastAPI
+listener and HTTP security belong to Step 5, proposal decisions and the owner
+review workflow to Step 3, worker media wiring to Steps 3 and 4, receipt
+extraction and media deletion to Step 6, and backup scheduling plus the
+clean-machine restore drill to Step 7. Step 2 fixes their contracts without
+shipping their behavior.
 
 ### Deliverables
 
@@ -184,7 +190,7 @@ the archive and metadata boundary.
 - Backup and restore reconstruct a non-production isolated finance fixture and
   its media references.
 
-### Current implementation evidence
+### Completion evidence
 
 - Pure production contracts cover EUR minor units, profile scope,
   expense/refund polarity, dual allocations, lifecycle, correction/void,
@@ -258,6 +264,20 @@ the archive and metadata boundary.
   complete service-independent suite passes with 151 tests and 42 explicit
   real-service skips; focused domain/application/media/api branch coverage is
   91% and backup branch coverage is 87% with the real drills.
+
+Exit-criteria evidence:
+
+| Exit criterion | Evidence |
+| --- | --- |
+| Domain invariant tests | [`tests/unit/money_tracker/domain`](../tests/unit/money_tracker/domain) and [`tests/unit/money_tracker/application`](../tests/unit/money_tracker/application) |
+| Real PostgreSQL integration tests | [`tests/integration/money_tracker/persistence`](../tests/integration/money_tracker/persistence) and [`tests/integration/money_tracker/media`](../tests/integration/money_tracker/media) |
+| API contract tests | [`tests/unit/money_tracker/api`](../tests/unit/money_tracker/api) |
+| Backup and restore reconstruct an isolated fixture | [`tests/integration/money_tracker/backup`](../tests/integration/money_tracker/backup) and [Backup and Restore](operations/backup-and-restore.md) |
+
+The real Restic and PostgreSQL 17 client executables are host prerequisites, not
+vendored dependencies. The drill was verified with Restic 0.18.1 and
+`pg_dump`/`pg_restore` 17.11 against the pinned PostgreSQL 17 service; the
+backup runbook records how to install them.
 
 ## Step 3: Evaluated text workflows
 

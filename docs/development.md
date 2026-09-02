@@ -26,8 +26,8 @@ environment non-destructively after reviewing its permissions:
 
     ./scripts/upgrade_local_env.sh
 
-The upgrade script appends only missing Step 1 database and llama.cpp profile
-settings and never changes existing values.
+The upgrade script appends only missing database, llama.cpp profile, receipt
+archive, and backup settings, and never changes existing values.
 
 ## Application PostgreSQL and migrations
 
@@ -41,7 +41,7 @@ the persistent LangGraph checkpointer:
 The service binds to `127.0.0.1:5433`, owns an independent persistent volume,
 and exposes the non-superuser `money_tracker` role to the application. The
 first migration creates the `finance`, `messaging`, and `workflow` schema
-boundaries. The active Step 2 migration adds authoritative finance tables,
+boundaries. The Step 2 migration adds authoritative finance tables,
 deferred reconciliation constraints, immutable audit/wallet rows, taxonomy
 bootstrap support, and expense idempotency/version state. Messaging tables
 remain planned.

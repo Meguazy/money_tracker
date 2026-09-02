@@ -87,9 +87,21 @@ Category fit follows the same rule and is recorded in
 [AD-008](AD-008-controlled-taxonomy.md): the model names categories, never
 identifies them, and no deterministic path creates a taxonomy node.
 
-Specialist subgraphs, production prompts, the model call and its single
-corrective retry, persistent interrupts, and workflow state are not implemented
-yet.
+The single corrective retry this decision fixes is implemented as a narrow
+`StructuredOutputModel` port plus deterministic parse, repair, and failure
+policy. The budget is straight-line code rather than a loop, so the boundary
+cannot retry twice however it is called, and a persistent failure raises a typed
+error carrying only the attempt count for the caller to answer with
+clarification. A scripted port implementation exercises every branch, which
+keeps the schema-validity gate testable without an inference server.
+
+Candidate router instructions exist under a `CANDIDATE_` name and derive their
+intent vocabulary from the code so text and taxonomy cannot drift. They are not
+promoted: no routing dataset exists, and the decision log records that no V1
+production prompt has been selected.
+
+Specialist subgraphs, the graph assembly and its persistent interrupts, and
+workflow state are not implemented yet.
 
 ## Consequences
 

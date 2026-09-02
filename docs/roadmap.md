@@ -286,10 +286,11 @@ resolution foundation is implemented: the bounded intent taxonomy with
 partitioned mutation authority, the normalized channel work unit, deterministic
 pre-routing, the strict versioned router and expense/refund extraction model
 boundaries with their deterministic policy vetoes, the versioned category-fit
-boundary, and pure resolution of occurrence time, amount sign, and both
-reconciled allocation dimensions. No LangGraph node, prompt, model call,
-specialist subgraph, persistent interrupt, or evaluation dataset exists yet,
-and no confidence bar or model is promoted.
+boundary, pure resolution of occurrence time, amount sign, and both reconciled
+allocation dimensions, and the strict-schema retry boundary behind a narrow
+model port. No LangGraph assembly, real model adapter, specialist subgraph,
+persistent interrupt, or evaluation dataset exists yet, and no confidence bar,
+prompt, or model is promoted.
 
 ### Prerequisites
 
@@ -302,10 +303,11 @@ step's gates and the experiment decision log.
 This order is a handoff aid, not new scope. Each increment must land with its
 own tests and documentation, and none may ship a later step's behavior.
 
-1. The LangGraph root router node: the real model call against the strict
-   schema, the single corrective retry required by AD-006, the versioned
-   workflow state holding only small serializable values and stable references,
+1. The LangGraph root router assembly: the versioned workflow state holding
+   only small serializable values and stable references, a real
+   `StructuredOutputModel` adapter over the local OpenAI-compatible endpoint,
    and the persistent PostgreSQL checkpointer already available from Step 1.
+   The retry policy the assembly consumes is implemented.
 2. Deterministic expense/refund mutation paths that call the existing
    application services with a stable command idempotency key, plus the
    read-only query and advice routes with scoped tool registries.
@@ -414,12 +416,25 @@ own tests and documentation, and none may ship a later step's behavior.
 - The purpose dimension is one allocation carrying the whole signed total,
   recording the boundary version that classified it and whether the owner
   forced the category. An archived category cannot receive an allocation.
-- Two hundred four unit tests cover the taxonomy authority invariants, the
+- The strict-schema boundary implements the AD-006 retry budget as
+  straight-line code behind a narrow `StructuredOutputModel` port, so it cannot
+  retry twice however it is called. A repair restates the same instructions and
+  message and adds only rejected field paths and reasons, never the rejected
+  values, and truncates the quoted completion so a runaway output cannot
+  outgrow the context. A persistent failure raises a typed error carrying only
+  the attempt count, with neither owner nor model text in its message.
+  Non-JSON output is treated exactly like an invalid document.
+- Candidate router instructions derive their intent vocabulary from the code, so
+  the offered routes cannot drift from the taxonomy and no deterministic-only
+  route is ever offered. They are labelled `CANDIDATE_` and versioned
+  `candidate-`, and the decision log records that no prompt is promoted.
+- Two hundred eighteen unit tests cover the taxonomy authority invariants, the
   message contract, command parsing, every pre-routing precedence branch, every
   category-review callback branch, every acceptance veto, every extraction and
   category-fit cross-field invariant, the occurrence resolver including both
-  daylight-saving edges, and every allocation shape and refusal in both
-  dimensions, at 100% branch coverage of the component. Both resolved
+  daylight-saving edges, every allocation shape and refusal in both dimensions,
+  and every branch of the retry boundary through a scripted port
+  implementation, at 100% branch coverage of the component. Both resolved
   dimensions are verified by building a real domain aggregate rather than
   restating its rules, and routing decisions are asserted to contain no owner
   text and only small serializable values and stable references.

@@ -7,7 +7,10 @@ do not rewrite historical outcomes when a later experiment supersedes them.
 
 - Text model: no evaluated production model selected.
 - Structured-output method: no capability-gated method selected.
-- Routing/category/tool prompts: scaffold prompt only; no V1 production prompts.
+- Routing/category/tool prompts: no V1 production prompt. Unpromoted
+  candidate router instructions exist in code under a `CANDIDATE_` name and
+  a `candidate-` version identifier so a runtime cannot mistake them for a
+  promoted configuration.
 - Auto-post threshold: disabled until categorization precision gates pass.
 - Routing confidence bar: none promoted. The implemented router requires the
   value as an explicit argument and has no default, so no runtime can adopt

@@ -1,8 +1,9 @@
 # AD-008: Controlled Two-Level Taxonomy
 
 - Status: accepted
-- Implementation: domain policy, stable 10-root/14-child seed, schema, and
-  PostgreSQL bootstrap implemented; owner-management services planned
+- Implementation: domain policy, stable 10-root/14-child seed, schema,
+  PostgreSQL bootstrap, and pending-proposal submission implemented; owner
+  decisions and category mutation planned
 - Date: 2026-09-01
 
 ## Context
@@ -38,3 +39,12 @@ in review.
 - Category IDs, not display names, anchor history and budgets.
 - Merchants, brands, payment sources, and occasions require separate metadata.
 - Taxonomy changes and agent proposals are auditable.
+
+## Implementation evidence
+
+The application now accepts only domain-valid `pending` proposals through a
+narrow port. PostgreSQL validates the active same-profile root and alternatives,
+rejects normalized category/alias duplicates, and commits the proposal with its
+audit atomically. The service deliberately cannot approve, reject, cancel, or
+create a category; those decisions require the bounded owner-review workflow
+and its evaluation gates.

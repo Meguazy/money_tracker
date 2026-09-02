@@ -144,9 +144,10 @@ foundation. No model is promoted merely because the capability probe responds.
 ## Step 2: Finance domain and persistence
 
 Status: **In progress.** The framework-independent domain, initial taxonomy,
-finance schema, expense/wallet/budget repositories, audit, idempotency, and
-concurrency foundation are implemented. API, proposal and receipt repositories,
-media storage, backup, and restore evidence remain open.
+finance schema, expense/wallet/budget repositories, pending category-proposal
+submission, audit, idempotency, and concurrency foundation are implemented.
+API, proposal resolution, receipt persistence, media storage, backup, and
+restore evidence remain open.
 
 ### Deliverables
 
@@ -195,12 +196,17 @@ media storage, backup, and restore evidence remain open.
   wallet entries. Expense and budget mutations use optimistic version checks;
   ledger debits serialize on the funding source so concurrent writers cannot
   overdraw it. Every mutation stores audit in the same transaction.
-- Forty-three domain tests and six wallet/budget application-service tests pass.
-  Nineteen real PostgreSQL integration tests cover migration, constraints,
-  rollback, restart persistence, immutable history, exact taxonomy seeding,
+- Pending category proposals validate their parent, alternatives, and normalized
+  name against the active profile taxonomy, then persist with audit in one
+  transaction. Owner resolution and category creation remain Step 3 workflow
+  work and cannot be pre-resolved by the submission service.
+- Forty-three domain tests and ten wallet/budget/proposal application-service
+  tests pass. Twenty-four real PostgreSQL integration tests cover migration,
+  proposal scoping and atomic rollback, constraints, restart persistence,
+  immutable history, exact taxonomy seeding,
   retry idempotency, concurrent expense writers, concurrent wallet debits, and
   concurrent/stale budget versions. The complete service-independent suite
-  passes with 74 tests and 22 explicit real-service skips; focused
+  passes with 78 tests and 27 explicit real-service skips; focused
   domain/application branch coverage is 91%.
 
 ## Step 3: Evaluated text workflows

@@ -20,6 +20,8 @@ from money_tracker.domain import (
     BalanceMode,
     Category,
     CategoryAllocation,
+    CategoryProposal,
+    CategoryProposalStatus,
     CategoryStatus,
     Expense,
     ExpenseStatus,
@@ -182,6 +184,133 @@ class PostgresFinanceRepository:
                 for row in rows
             )
         )
+
+    def get_category_proposal(
+        self,
+        profile_id: UUID,
+        proposal_id: UUID,
+    ) -> CategoryProposal:
+        """Load one proposal inside its trusted profile scope.
+
+        Args:
+            profile_id: Trusted owner scope.
+            proposal_id: Stable proposal identifier.
+
+        Returns:
+            Reconstructed proposal review state.
+
+        Raises:
+            AggregateNotFoundError: If the proposal is outside the profile.
+        """
+
+        with connect(self._database_url) as connection:
+            row = connection.execute(
+                "SELECT id, profile_id, proposed_name, description, parent_id, "
+                "rationale, alternative_category_ids, excluded_names, "
+                "source_reference, status FROM finance.category_proposals "
+                "WHERE id = %s AND profile_id = %s",
+                (proposal_id, profile_id),
+            ).fetchone()
+        if row is None:
+            raise AggregateNotFoundError("category proposal does not exist in profile")
+        return CategoryProposal(
+            id=row[0],
+            profile_id=row[1],
+            proposed_name=row[2],
+            description=row[3],
+            parent_id=row[4],
+            rationale=row[5],
+            alternative_category_ids=tuple(row[6]),
+            excluded_names=tuple(row[7]),
+            source_reference=row[8],
+            status=CategoryProposalStatus(row[9]),
+        )
+
+    def create_category_proposal(
+        self,
+        proposal: CategoryProposal,
+        *,
+        audit_event: AuditEvent,
+    ) -> None:
+        """Persist a pending category candidate and audit atomically.
+
+        The adapter validates only deterministic taxonomy relationships. It does
+        not approve the candidate or create a category; those owner decisions
+        belong to a later bounded workflow.
+
+        Args:
+            proposal: Validated pending proposal.
+            audit_event: Matching immutable creation audit.
+
+        Raises:
+            ValueError: If status, name, parent, or alternatives violate the
+                current active taxonomy.
+        """
+
+        if proposal.status is not CategoryProposalStatus.PENDING:
+            raise ValueError("new category proposal must be pending")
+        normalized_name = normalize_category_name(proposal.proposed_name)
+        with connect(self._database_url) as connection:
+            if proposal.parent_id is not None:
+                parent = connection.execute(
+                    "SELECT parent_id, status FROM finance.categories "
+                    "WHERE id = %s AND profile_id = %s",
+                    (proposal.parent_id, proposal.profile_id),
+                ).fetchone()
+                if parent is None or parent[0] is not None or parent[1] != "active":
+                    raise ValueError("proposal parent must be an active profile root")
+            if proposal.alternative_category_ids:
+                rows = connection.execute(
+                    "SELECT id FROM finance.categories WHERE profile_id = %s "
+                    "AND status = 'active' AND id = ANY(%s)",
+                    (
+                        proposal.profile_id,
+                        list(proposal.alternative_category_ids),
+                    ),
+                ).fetchall()
+                if {row[0] for row in rows} != set(proposal.alternative_category_ids):
+                    raise ValueError(
+                        "proposal alternatives must be active profile categories"
+                    )
+            duplicate = connection.execute(
+                "SELECT 1 FROM finance.categories WHERE profile_id = %s "
+                "AND status = 'active' AND normalized_name = %s "
+                "UNION ALL SELECT 1 FROM finance.category_aliases alias "
+                "JOIN finance.categories category ON category.id = alias.category_id "
+                "WHERE category.profile_id = %s AND category.status = 'active' "
+                "AND alias.normalized_alias = %s LIMIT 1",
+                (
+                    proposal.profile_id,
+                    normalized_name,
+                    proposal.profile_id,
+                    normalized_name,
+                ),
+            ).fetchone()
+            if duplicate is not None:
+                raise ValueError("proposal name duplicates an active category or alias")
+            connection.execute(
+                "INSERT INTO finance.category_proposals "
+                "(id, profile_id, proposed_name, normalized_name, description, "
+                "parent_id, rationale, alternative_category_ids, excluded_names, "
+                "source_reference, status, created_at, updated_at) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                (
+                    proposal.id,
+                    proposal.profile_id,
+                    proposal.proposed_name,
+                    normalized_name,
+                    proposal.description,
+                    proposal.parent_id,
+                    proposal.rationale,
+                    list(proposal.alternative_category_ids),
+                    list(proposal.excluded_names),
+                    proposal.source_reference,
+                    proposal.status.value,
+                    audit_event.occurred_at,
+                    audit_event.occurred_at,
+                ),
+            )
+            self._insert_audit(connection, audit_event)
 
     def get_funding_sources(self, profile_id: UUID) -> tuple[FundingSource, ...]:
         """Load all funding sources for one profile.

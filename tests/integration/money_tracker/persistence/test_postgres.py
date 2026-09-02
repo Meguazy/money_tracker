@@ -17,6 +17,7 @@ from langgraph.graph import END, START, StateGraph
 from psycopg import Connection, connect, errors, sql
 
 from money_tracker.application import (
+    AggregateNotFoundError,
     IdempotencyConflictError,
     OptimisticConcurrencyError,
 )
@@ -25,6 +26,7 @@ from money_tracker.domain import (
     AuditEvent,
     BalanceMode,
     CategoryAllocation,
+    CategoryProposal,
     Expense,
     ExpenseStatus,
     FundingClass,
@@ -198,7 +200,7 @@ def _insert_posted_expense(
 
 def _repository_fixture(
     postgres_url: str,
-) -> tuple[PostgresFinanceRepository, Profile, FundingSource, object]:
+) -> tuple[PostgresFinanceRepository, Profile, FundingSource, UUID]:
     """Bootstrap a real repository with accepted taxonomy and one source."""
 
     repository = PostgresFinanceRepository(postgres_url)
@@ -220,9 +222,9 @@ def _repository_fixture(
 def _domain_draft(
     profile: Profile,
     source: FundingSource,
-    category_id: object,
+    category_id: UUID,
     *,
-    expense_id: object | None = None,
+    expense_id: UUID | None = None,
     idempotency_key: str = "integration:command",
 ) -> Expense:
     """Build a reconciled draft using real persisted references."""
@@ -1153,3 +1155,166 @@ def test_concurrent_budget_replacements_allow_exactly_one_winner(
             "SELECT count(*) FROM finance.audit_events "
             "WHERE aggregate_type = 'monthly_budget'",
         ).fetchone() == (2,)
+
+
+def _category_proposal(
+    profile: Profile,
+    *,
+    parent_id: UUID | None,
+    alternative_category_ids: tuple[UUID, ...],
+    proposed_name: str = "Mobilità dolce",
+) -> CategoryProposal:
+    """Build a pending proposal against persisted taxonomy identifiers."""
+
+    return CategoryProposal(
+        id=uuid4(),
+        profile_id=profile.id,
+        proposed_name=proposed_name,
+        description="Biciclette, monopattini e relativa manutenzione.",
+        parent_id=parent_id,
+        rationale="La distinzione cambia report e decisioni di spesa.",
+        alternative_category_ids=alternative_category_ids,
+        excluded_names=("Micromobilità una tantum",),
+        source_reference="integration:proposal",
+    )
+
+
+@pytest.mark.postgres
+def test_category_proposal_round_trip_is_taxonomy_scoped_and_audited(
+    postgres_url: str,
+) -> None:
+    """Persist arrays and relationships through the real PostgreSQL protocol."""
+
+    upgrade_database(postgres_url)
+    repository, profile, _, root_id = _repository_fixture(postgres_url)
+    alternative_id = initial_taxonomy().categories[-1].id
+    proposal = _category_proposal(
+        profile,
+        parent_id=root_id,
+        alternative_category_ids=(alternative_id,),
+    )
+
+    repository.create_category_proposal(
+        proposal,
+        audit_event=_generic_audit(
+            profile_id=profile.id,
+            aggregate_type="category_proposal",
+            aggregate_id=proposal.id,
+            action="create",
+            prior_version=None,
+            current_version=1,
+        ),
+    )
+
+    assert repository.get_category_proposal(profile.id, proposal.id) == proposal
+    with pytest.raises(AggregateNotFoundError, match="does not exist"):
+        repository.get_category_proposal(uuid4(), proposal.id)
+    with connect(postgres_url) as connection:
+        assert connection.execute(
+            "SELECT normalized_name FROM finance.category_proposals WHERE id = %s",
+            (proposal.id,),
+        ).fetchone() == ("mobilita dolce",)
+        assert connection.execute(
+            "SELECT count(*) FROM finance.audit_events WHERE aggregate_id = %s",
+            (proposal.id,),
+        ).fetchone() == (1,)
+
+
+@pytest.mark.postgres
+def test_category_proposal_rejects_existing_name_without_partial_rows(
+    postgres_url: str,
+) -> None:
+    """Reject active category and alias duplicates before proposal insertion."""
+
+    upgrade_database(postgres_url)
+    repository, profile, _, root_id = _repository_fixture(postgres_url)
+    existing = initial_taxonomy().categories[0]
+    proposal = _category_proposal(
+        profile,
+        parent_id=root_id,
+        alternative_category_ids=(),
+        proposed_name=existing.name,
+    )
+
+    with pytest.raises(ValueError, match="duplicates"):
+        repository.create_category_proposal(
+            proposal,
+            audit_event=_generic_audit(
+                profile_id=profile.id,
+                aggregate_type="category_proposal",
+                aggregate_id=proposal.id,
+                action="create",
+                prior_version=None,
+                current_version=1,
+            ),
+        )
+
+    with connect(postgres_url) as connection:
+        assert connection.execute(
+            "SELECT count(*) FROM finance.category_proposals"
+        ).fetchone() == (0,)
+        assert connection.execute(
+            "SELECT count(*) FROM finance.audit_events WHERE aggregate_id = %s",
+            (proposal.id,),
+        ).fetchone() == (0,)
+
+
+@pytest.mark.postgres
+@pytest.mark.parametrize("invalid_relationship", ["parent", "alternative"])
+def test_category_proposal_rejects_out_of_scope_relationships(
+    postgres_url: str,
+    invalid_relationship: str,
+) -> None:
+    """Require every relationship to resolve inside the active profile taxonomy."""
+
+    upgrade_database(postgres_url)
+    repository, profile, _, root_id = _repository_fixture(postgres_url)
+    proposal = _category_proposal(
+        profile,
+        parent_id=uuid4() if invalid_relationship == "parent" else root_id,
+        alternative_category_ids=(uuid4(),)
+        if invalid_relationship == "alternative"
+        else (),
+    )
+
+    with pytest.raises(ValueError, match=invalid_relationship):
+        repository.create_category_proposal(
+            proposal,
+            audit_event=_generic_audit(
+                profile_id=profile.id,
+                aggregate_type="category_proposal",
+                aggregate_id=proposal.id,
+                action="create",
+                prior_version=None,
+                current_version=1,
+            ),
+        )
+
+
+@pytest.mark.postgres
+def test_category_proposal_rolls_back_when_audit_fails(postgres_url: str) -> None:
+    """Keep proposal and audit atomic when the audit violates profile scope."""
+
+    upgrade_database(postgres_url)
+    repository, profile, _, root_id = _repository_fixture(postgres_url)
+    proposal = _category_proposal(
+        profile,
+        parent_id=root_id,
+        alternative_category_ids=(),
+    )
+
+    with pytest.raises(errors.ForeignKeyViolation):
+        repository.create_category_proposal(
+            proposal,
+            audit_event=_generic_audit(
+                profile_id=uuid4(),
+                aggregate_type="category_proposal",
+                aggregate_id=proposal.id,
+                action="create",
+                prior_version=None,
+                current_version=1,
+            ),
+        )
+
+    with pytest.raises(AggregateNotFoundError, match="does not exist"):
+        repository.get_category_proposal(profile.id, proposal.id)

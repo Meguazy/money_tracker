@@ -8,6 +8,7 @@ from uuid import UUID
 
 from money_tracker.domain import (
     AuditEvent,
+    CategoryProposal,
     Expense,
     FundingSource,
     MonthlyBudget,
@@ -93,3 +94,15 @@ class FinanceAdministrationRepository(Protocol):
         audit_event: AuditEvent,
     ) -> None:
         """Create or replace a complete budget under optimistic concurrency."""
+
+
+class CategoryProposalRepository(Protocol):
+    """Persist category candidates without granting taxonomy mutation authority."""
+
+    def create_category_proposal(
+        self,
+        proposal: CategoryProposal,
+        *,
+        audit_event: AuditEvent,
+    ) -> None:
+        """Persist one pending proposal and matching audit atomically."""

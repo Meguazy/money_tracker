@@ -173,6 +173,26 @@ Build upstream llama.cpp for Blackwell compute capability 12.0:
       -DGGML_CUDA_FA_ALL_QUANTS=ON
     cmake --build llama.cpp/build --config Release -j
 
+### Where installed models live
+
+Model weights are workstation-owned and never enter the repository, so only the
+layout is recorded here. Installed candidates go under the XDG data directory,
+beside the receipt archive that already lives there:
+
+```text
+${XDG_DATA_HOME:-$HOME/.local/share}/money-tracker/models/
+├── text/<profile>/<weights>.gguf
+├── vision/<profile>/<weights>.gguf
+│                   └── mmproj-*.gguf
+└── shared/<profile>/            weights exercised as both text and vision
+```
+
+The profile directory name matches the candidate identifier in the
+[shortlist](experiments/local-model-shortlist-2026-09-01.md), so a `MODEL_PATH`
+can be traced back to the exact screened artifact and its capability result.
+Nothing enforces this layout: it is the convention the environment generator
+writes and this guide assumes.
+
 Set `LLAMA_SERVER_BIN` in `.env` to the installed `llama-server` and
 `MODEL_PATH` to an installed GGUF. For vision, also set `MMPROJ_PATH` to the
 projector shipped for that exact model revision; leave it empty for text-only

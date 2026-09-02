@@ -35,6 +35,15 @@ Artifact sizes exclude KV cache, CUDA/runtime allocations, and temporary prompt
 state. Fit therefore remains an empirical gate at the configured context and
 must not be inferred from weight size alone.
 
+## Local installation layout
+
+Weights are workstation-owned and are never committed. Installed candidates go
+under `${XDG_DATA_HOME:-$HOME/.local/share}/money-tracker/models/` in
+`text/`, `vision/`, and `shared/` subtrees, one directory per profile named
+after that profile's identifier in the table above, with a vision projector
+kept beside the weights it belongs to. See
+[Development](../development.md) for the launcher settings that select one.
+
 ## Sources and packaging boundary
 
 - [OpenAI GPT-OSS 20B](https://huggingface.co/openai/gpt-oss-20b) and the

@@ -21,6 +21,7 @@ random_hex() {
 app_postgres_password="$(random_hex 24)"
 app_postgres_admin_password="$(random_hex 24)"
 receipt_archive_root="${XDG_DATA_HOME:-${HOME}/.local/share}/money-tracker/receipts"
+model_root="${XDG_DATA_HOME:-${HOME}/.local/share}/money-tracker/models"
 backup_password_file="${XDG_CONFIG_HOME:-${HOME}/.config}/money-tracker/restic-password"
 backup_lock_file="${XDG_STATE_HOME:-${HOME}/.local/state}/money-tracker/backup.lock"
 backup_staging_parent="${XDG_CACHE_HOME:-${HOME}/.cache}/money-tracker/backup-staging"
@@ -70,7 +71,7 @@ MONEY_TRACKER_PG_RESTORE_BINARY=/usr/lib/postgresql/17/bin/pg_restore
 
 LANGGRAPH_STRICT_MSGPACK=true
 
-MODEL_PATH=/absolute/path/to/model.gguf
+MODEL_PATH=${model_root}/text/<profile>/<weights>.gguf
 MMPROJ_PATH=
 LLAMA_SERVER_BIN=llama-server
 LLAMA_MODEL_ALIAS=local-model

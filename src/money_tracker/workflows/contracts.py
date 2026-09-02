@@ -117,6 +117,13 @@ EXTRACTION_CONTRACT_VERSION = "v1"
 
 Versioned independently of the router boundary so that one can change without
 invalidating interrupted threads that only depend on the other.
+
+The pin starts binding at promotion. Until a configuration is promoted through
+the experiment decision log, no durable thread has been created by one, so this
+boundary is still being designed rather than migrated: removing the abstention
+channel was such a redesign and kept `v1`. Once promoted, a breaking change
+here requires a new version and a documented migration for the wire forms
+already checkpointed.
 """
 
 
@@ -134,26 +141,6 @@ class ExpensePolarity(StrEnum):
 
     EXPENSE = "expense"
     REFUND = "refund"
-
-
-class ExtractionField(StrEnum):
-    """Aspect an extraction may declare explicitly unresolved.
-
-    Declaring a field unknown is a first-class outcome: the workflow asks one
-    targeted question instead of writing a guess. A description is absent from
-    this set because the owner message itself always supplies one.
-
-    Attributes:
-        AMOUNT: The total could not be determined.
-        OCCURRED_AT: A stated time could not be expressed unambiguously.
-        MERCHANT: A referenced merchant could not be identified.
-        PAYMENT: A referenced funding arrangement could not be separated.
-    """
-
-    AMOUNT = "amount"
-    OCCURRED_AT = "occurred_at"
-    MERCHANT = "merchant"
-    PAYMENT = "payment"
 
 
 class ExtractedPaymentPart(_WorkflowContract):
@@ -177,19 +164,21 @@ class ExtractedPaymentPart(_WorkflowContract):
 class ExpenseExtraction(_WorkflowContract):
     """One model-produced expense or refund candidate awaiting resolution.
 
-    Cross-field validation keeps a declared unknown and a supplied value
-    mutually exclusive, so an extraction can never both claim it could not
-    resolve an aspect and provide a guess for it.
+    The model reports what the message says and omits what it does not. It makes
+    no judgment about its own uncertainty, because every such case is already
+    detectable deterministically and the deterministic side knows more: an
+    absent amount cannot be resolved, temporal words are readable only if they
+    match a supported Italian form the model has no list of, and funding words
+    resolve only against the profile's configured sources the model never sees.
 
-    Absence is not the same as unknown. No temporal words means the movement
+    Omission therefore carries meaning. No temporal words means the movement
     occurred when the message was sent; no funding words means the profile
-    default applies; no merchant means none was mentioned. Each of those is a
-    deterministic default, whereas an entry in `unknowns` is a question.
+    default applies; no merchant means none was mentioned.
 
     Attributes:
         polarity: Whether money left or returned to the owner.
         amount_minor_units: Positive total magnitude in cents, or None when the
-            amount is declared unknown. No currency accompanies it: V1 operates
+            message states no amount. No currency accompanies it: V1 operates
             in one currency, so restating it would be operational configuration
             the model has no basis to supply and no freedom to vary.
         occurred_at_text: Verbatim temporal words when the message states a
@@ -197,7 +186,6 @@ class ExpenseExtraction(_WorkflowContract):
         description: Owner-facing description of the movement.
         merchant: Merchant metadata when the message names one.
         payment_parts: Funding portions as the owner named them.
-        unknowns: Aspects the model explicitly could not resolve.
         evidence: Short verbatim span supporting the extraction.
     """
 
@@ -207,29 +195,7 @@ class ExpenseExtraction(_WorkflowContract):
     description: NonEmptyText
     merchant: NonEmptyText | None = None
     payment_parts: tuple[ExtractedPaymentPart, ...] = ()
-    unknowns: tuple[ExtractionField, ...] = ()
     evidence: EvidenceText
-
-    @field_validator("unknowns")
-    @classmethod
-    def _reject_repeated_unknown_fields(
-        cls, unknowns: tuple[ExtractionField, ...]
-    ) -> tuple[ExtractionField, ...]:
-        """Keep the unresolved-aspect list a set.
-
-        Args:
-            unknowns: Declared unresolved aspects.
-
-        Returns:
-            The validated unknowns.
-
-        Raises:
-            ValueError: If an aspect was declared unknown more than once.
-        """
-
-        if len(set(unknowns)) != len(unknowns):
-            raise ValueError("unknowns must be distinct")
-        return unknowns
 
     @field_validator("payment_parts")
     @classmethod
@@ -259,31 +225,6 @@ class ExpenseExtraction(_WorkflowContract):
         if len(parts) > 1 and any(part.amount_minor_units is None for part in parts):
             raise ValueError("a split payment must quantify every part")
         return parts
-
-    def declares_unknown(self, field: ExtractionField) -> bool:
-        """Return whether the model abstained on one aspect.
-
-        A declared unknown always wins over a value supplied alongside it.
-        Strict constrained decoding requires every property to be present, so a
-        model routinely fills a field and flags it in the same answer. The safe
-        reading of that combination is the flag, because it leads to a question
-        instead of a stored guess, and it is applied deterministically rather
-        than refused at the boundary.
-
-        Args:
-            field: Aspect to test.
-
-        Returns:
-            Whether the model declared that aspect unresolved.
-        """
-
-        return field in self.unknowns
-
-    @property
-    def is_resolvable(self) -> bool:
-        """Return whether no declared unknown blocks deterministic resolution."""
-
-        return not self.unknowns
 
 
 CATEGORY_FIT_CONTRACT_VERSION = "v1"

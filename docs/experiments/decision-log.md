@@ -10,10 +10,24 @@ do not rewrite historical outcomes when a later experiment supersedes them.
 - Routing/category/tool prompts: no V1 production prompt. Unpromoted candidate
   router, extraction, and category-fit instructions exist in code under
   `CANDIDATE_` names and `candidate-` version identifiers so a runtime cannot
-  mistake them for a promoted configuration. The candidate extraction text is
-  known to over-declare unknowns against the screened Qwen3 14B profile, so
-  clear messages reach a clarification instead of a draft; that is a gap for
-  the `ingestion/expense-it` suite to measure rather than to tune by hand.
+  mistake them for a promoted configuration. Two candidate-quality gaps are
+  known against the screened Qwen3 14B profile and remain open for the pinned
+  suites to measure rather than to tune by hand:
+  - `candidate-extraction-it-v2` fabricates a payment method when the message
+    names none, including the literal placeholder the text forbids. It fails
+    safe, because deterministic resolution refuses words matching no configured
+    source, but it costs a question the documented default should have
+    answered. Gap for `ingestion/expense-it`.
+  - `candidate-category-fit-it-v1` prefers a new proposal over an adequate
+    existing category, sometimes proposing a name the taxonomy already has, and
+    names a non-root parent. Deterministic acceptance refuses both. Gap for
+    `categorization/purpose-it`.
+  The earlier over-declaration gap in `candidate-extraction-it-v1` is closed.
+  It was a boundary-design defect rather than a prompt-tuning problem: the
+  schema let the model judge its own uncertainty, which the deterministic side
+  was better placed to decide. Removing that channel resolved it. No row is
+  added below, because no experiment concluded and nothing was promoted; the
+  change is recorded in the Step 3 evidence of [Roadmap](../roadmap.md).
 - Auto-post threshold: disabled until categorization precision gates pass.
 - Routing confidence bar: none promoted. The implemented router requires the
   value as an explicit argument and has no default, so no runtime can adopt

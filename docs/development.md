@@ -155,13 +155,24 @@ funding source; see [Bootstrapping the owner profile](#bootstrapping-the-owner-p
 promoted. The output adds the outcome, the stored movement identifier, any
 pending candidate, and the clarification reason when nothing was stored.
 
-Expect clarifications on clear messages for now. The candidate extraction
-instructions over-declare unknowns against the screened model, so an unstated
-time or payment method is reported as unresolved instead of taking its
-documented default. That is a measured gap for the pinned
-`ingestion/expense-it` suite, recorded in
-[Decision Log](experiments/decision-log.md); the mechanism itself completes and
-stores a reconciled draft when the extraction declares no unknowns.
+Expect clarifications on clear messages for now, but no longer from
+extraction. Removing the extraction boundary's abstention channel cleared that
+blockage: every V1 acceptance example now parses and resolves. Two candidate
+prompt gaps remain, both open for the pinned suites to measure and both
+recorded in [Decision Log](experiments/decision-log.md):
+
+- The candidate extraction instructions fabricate a payment method when the
+  message names none, including the literal placeholder they forbid. The
+  fabrication fails safe, because deterministic resolution refuses words that
+  match no configured source, but it costs the owner a question the documented
+  default should have answered. Gap for `ingestion/expense-it`.
+- The candidate category-fit instructions prefer a new proposal over an
+  adequate existing category, sometimes proposing a name the taxonomy already
+  has, and name a non-root parent. Deterministic acceptance refuses both, so
+  the run clarifies instead of drafting. Gap for `categorization/purpose-it`.
+
+The mechanism itself completes: a message whose funding words resolve and whose
+purpose matches an active category stores a reconciled draft end to end.
 
 ## Authoritative backup
 

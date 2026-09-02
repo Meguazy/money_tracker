@@ -254,20 +254,12 @@ def test_excluded_candidate_is_refused_on_re_proposal() -> None:
     ("overrides", "reason"),
     [
         (
-            {"amount_minor_units": None, "unknowns": ["amount"]},
+            {"amount_minor_units": None},
             ResolutionReason.AMOUNT_UNKNOWN,
-        ),
-        (
-            {"unknowns": ["occurred_at"]},
-            ResolutionReason.OCCURRENCE_UNKNOWN,
         ),
         (
             {"occurred_at_text": "l'altro giorno"},
             ResolutionReason.OCCURRENCE_UNREADABLE,
-        ),
-        (
-            {"unknowns": ["payment"]},
-            ResolutionReason.PAYMENT_UNKNOWN,
         ),
         (
             {"payment_parts": [{"funding_source_text": "bancomat"}]},

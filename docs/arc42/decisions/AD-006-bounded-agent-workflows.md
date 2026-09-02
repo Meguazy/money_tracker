@@ -67,10 +67,20 @@ does not authorize a value: calibration on the pinned routing dataset and an
 entry in the experiment decision log precede any runtime use.
 
 The versioned `ExpenseExtraction` boundary applies the same rule to expense and
-refund candidates. It is versioned independently of the router boundary, keeps
-every declared unknown mutually exclusive with its own value, requires a split
-payment to quantify every distinct portion, and exposes no resolved instant and
-no signed amount. Occurrence time and amount sign are resolved by pure
+refund candidates. It is versioned independently of the router boundary,
+requires a split payment to quantify every distinct portion, and exposes no
+resolved instant and no signed amount.
+
+Unlike the router boundary, it offers the model no channel for declaring its
+own uncertainty. Routing abstention is useful because only the model can judge
+whether a message is ambiguous, but every extraction aspect a model might
+abstain on is already detectable deterministically, and the deterministic side
+knows strictly more: it holds the profile's configured funding sources and the
+Italian date forms the resolver reads, neither of which the model is shown. A
+self-report channel could therefore only turn a resolvable message into a
+question, which is what an over-cautious candidate model was observed to do.
+The model reports what the message states and omits what it does not; omission
+is read as the documented default. Occurrence time and amount sign are resolved by pure
 deterministic code instead: the model reports the owner's temporal words
 verbatim and a positive magnitude, so timezone, daylight-saving, and sign
 arithmetic stay exactly reproducible across a retry, a resume, and an

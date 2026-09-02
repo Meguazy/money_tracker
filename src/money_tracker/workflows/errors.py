@@ -19,14 +19,10 @@ class ResolutionReason(StrEnum):
     """Why an extraction could not become a trusted domain value.
 
     Attributes:
-        AMOUNT_UNKNOWN: The extraction declared the total unresolved.
-        OCCURRENCE_UNKNOWN: The extraction declared the occurrence time
-            unresolved.
+        AMOUNT_UNKNOWN: The message stated no amount that could be extracted.
         OCCURRENCE_UNREADABLE: Stated temporal words matched no supported
             Italian form.
         OCCURRENCE_IN_FUTURE: Stated words resolved to a day after the message.
-        PAYMENT_UNKNOWN: The extraction declared the funding arrangement
-            unresolved.
         NO_DEFAULT_FUNDING_SOURCE: No funding words were stated and the profile
             configures no active default source.
         FUNDING_SOURCE_UNRESOLVED: Stated funding words match no active source.
@@ -44,10 +40,8 @@ class ResolutionReason(StrEnum):
     """
 
     AMOUNT_UNKNOWN = "amount_unknown"
-    OCCURRENCE_UNKNOWN = "occurrence_unknown"
     OCCURRENCE_UNREADABLE = "occurrence_unreadable"
     OCCURRENCE_IN_FUTURE = "occurrence_in_future"
-    PAYMENT_UNKNOWN = "payment_unknown"
     NO_DEFAULT_FUNDING_SOURCE = "no_default_funding_source"
     FUNDING_SOURCE_UNRESOLVED = "funding_source_unresolved"
     FUNDING_SOURCE_REPEATED = "funding_source_repeated"

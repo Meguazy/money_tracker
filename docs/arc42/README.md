@@ -350,7 +350,8 @@ is a nondeterministic suggestion that deterministic policy then re-checks.
    schema that carries an intent, a diagnostic confidence, a short verbatim
    evidence span, and explicitly declared unknowns. The schema exposes no
    profile, timezone, funding-source, authorization, or idempotency field and
-   rejects the two deterministic-only routes.
+   rejects the two deterministic-only routes. This declared-unknown channel
+   belongs to routing alone: the extraction boundary deliberately has none.
 5. Deterministic acceptance then vetoes an impossible route: a category
    follow-up requires exactly one correlated pending review, a correction or
    undo requires a movement the runtime resolved, and every decision must meet
@@ -366,14 +367,18 @@ imports no model client, repository, or transport module.
 
 ### Current extraction boundary and deterministic resolution
 
-1. The extraction schema carries a direction word, a positive amount magnitude
-   with its currency, the owner's verbatim temporal words, a description,
-   optional merchant metadata, funding portions as the owner named them, an
-   evidence span, and explicitly declared unknowns.
-2. Cross-field validation keeps every declared unknown mutually exclusive with
-   its own value, so an extraction cannot both abstain and guess. An absent
-   amount must be declared unknown; an absent time, merchant, or funding
-   portion is instead the documented default.
+1. The extraction schema carries a direction word, a positive amount magnitude,
+   the owner's verbatim temporal words, a description, optional merchant
+   metadata, funding portions as the owner named them, and an evidence span. It
+   carries no currency, because V1 operates in one currency the model has no
+   basis to supply, and no abstention channel.
+2. The boundary offers the model no way to declare its own uncertainty. Every
+   aspect it might abstain on is already detectable deterministically, and the
+   deterministic side knows strictly more: it holds the profile's configured
+   funding sources and the Italian date forms the resolver reads, neither of
+   which the model is shown. Omission therefore carries meaning: an absent
+   amount is unresolvable, while an absent time, merchant, or funding portion
+   is the documented default.
 3. A split payment must quantify every portion and name distinct sources,
    because an unquantified split could never reconcile against the total.
 4. Deterministic resolution converts the untrusted extraction into domain
@@ -393,7 +398,7 @@ imports no model client, repository, or transport module.
    Every allocation carries the total's sign, so a refund returns value to its
    sources instead of inverting one dimension against the other.
 7. Each failure reports a stable resolution reason code, so the workflow can
-   ask the one question that matches the failing step: an unknown amount, an
+   ask the one question that matches the failing step: an unstated amount, an
    unreadable date, a missing default source, unresolved funding words, two
    portions naming one source, or a split that does not reconcile.
 
@@ -465,7 +470,7 @@ without extending the taxonomy.
    complete draft or stores nothing.
 
 Funding words are resolved during assembly, after the purpose boundary, so a
-message naming an unknown funding source still costs one purpose call. That is
+message naming an unresolvable funding source still costs one purpose call. That is
 a deliberate trade: every write-deciding rule stays inside one atomic function,
 and the latency target applies to successful runs.
 

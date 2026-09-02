@@ -13,10 +13,6 @@ dimension resolved and its purpose dimension deliberately empty, because
 AD-008 lets only owner approval extend the taxonomy while the product baseline
 expects the draft to survive the pause.
 
-A merchant the model declared unknown is treated as absent rather than stored,
-because strict constrained decoding requires every property to be present and a
-model may fill a field and flag it in the same answer. The flag always wins.
-
 The command key is derived from the durable inbound record rather than
 generated, so a redelivered message claims the same key and the repository
 returns the first result instead of creating a second movement.
@@ -56,10 +52,9 @@ from money_tracker.workflows.contracts import (
     CategoryFit,
     CategoryFitOutcome,
     ExpenseExtraction,
-    ExtractionField,
 )
 from money_tracker.workflows.messages import ChannelMessage
-from money_tracker.workflows.resolution import resolve_amount, resolve_occurrence_for
+from money_tracker.workflows.resolution import resolve_amount, resolve_occurrence_time
 
 EXPENSE_COMMAND_PREFIX = "expense"
 """Namespace for the movement-creation command key.
@@ -202,7 +197,9 @@ def prepare_expense_draft(
         DomainError: If the assembled aggregate violates a domain invariant.
     """
 
-    occurred_at = resolve_occurrence_for(extraction, received_at=message.received_at)
+    occurred_at = resolve_occurrence_time(
+        extraction.occurred_at_text, received_at=message.received_at
+    )
     amount = resolve_amount(extraction)
     payment_allocations = resolve_payment_allocations(
         extraction, funding_sources=funding_sources
@@ -262,11 +259,7 @@ def _draft(
         amount=amount,
         occurred_at=occurred_at,
         description=extraction.description,
-        merchant=(
-            None
-            if extraction.declares_unknown(ExtractionField.MERCHANT)
-            else extraction.merchant
-        ),
+        merchant=extraction.merchant,
         status=ExpenseStatus.DRAFT,
         category_allocations=category_allocations,
         payment_allocations=payment_allocations,

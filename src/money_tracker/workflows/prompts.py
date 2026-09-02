@@ -90,7 +90,7 @@ You are only choosing where the message goes.
 """Unpromoted candidate instructions for the root router boundary."""
 
 
-CANDIDATE_EXTRACTION_INSTRUCTIONS_VERSION = "candidate-extraction-it-v1"
+CANDIDATE_EXTRACTION_INSTRUCTIONS_VERSION = "candidate-extraction-it-v2"
 """Identifier recorded by an evaluation run; not a promoted configuration."""
 
 CANDIDATE_EXTRACTION_INSTRUCTIONS = """\
@@ -104,17 +104,15 @@ is 1200. Twelve euro and fifty cents is 1250.
 - Italian writes decimals with a comma. `12,50` is 1250 cents.
 - Set polarity to refund only when money came back to the owner, and to \
 expense otherwise. Never express direction with a negative amount.
-- If the message states no amount you can be sure of, omit it and declare \
-amount unknown.
+- If the message states no amount, set the amount to null. Never guess one \
+and never round a vague quantity into a figure.
 
 Time:
 - Copy the owner's own temporal words verbatim into the occurrence field, for \
 example `ieri`, `l'altro ieri`, `il 3 marzo`, `lunedì scorso`. Do not convert \
 them into a date and do not invent a date.
-- If the message states no time at all, omit the field. That is not unknown: \
-it means the movement just happened.
-- Declare the occurrence unknown only when the message does refer to a time \
-you cannot copy as a short phrase.
+- If the message states no time at all, set the field to null. It means the \
+movement just happened.
 
 Funding:
 - Copy the owner's own words for each payment method, for example \
@@ -137,22 +135,20 @@ Never write a placeholder such as `unknown`, `n/a`, or `sconosciuto` as if it \
 were a value: it would be recorded as the merchant's name or as a payment \
 method. Use null for a field the message does not fill.
 
-The unknowns list is not for missing information. It has one narrow use: the \
-message refers to something you cannot read. Silence is not something you \
-cannot read.
+Report what the message says and leave out what it does not. Do not judge \
+whether the assistant can act on your answer: it decides that itself, knowing \
+the owner's configured payment methods and the date phrases it can read, none \
+of which you are shown. Copying words you cannot interpret is correct; \
+withholding them is not.
 
 - `Ho pagato 25 euro di benzina` states no time and no payment method. Set \
-occurrence and funding to null and leave unknowns empty. The assistant knows \
-the movement just happened and which method to use.
-- `Ho speso 12 euro l'altro giorno` refers to a time you cannot copy as one of \
-the supported phrases. Put `occurred_at` in unknowns.
-- `Ho speso 12 euro, non ricordo con cosa` refers to a payment method you \
-cannot identify. Put `payment` in unknowns.
-- `Ho speso un po' al bar` states no amount you can be sure of. Put `amount` in \
-unknowns.
-
-Every entry in unknowns costs the owner a question, so an empty list is the \
-normal and correct answer for a clear message.
+both to null. The assistant knows the movement just happened and which method \
+to use.
+- `Ho speso 12 euro l'altro giorno` states a time. Copy `l'altro giorno` even \
+though it is vague; the assistant decides whether it can resolve it.
+- `Ho speso 12 euro, non ricordo con cosa` names no payment method. Leave \
+funding empty rather than copying the words that say there is none.
+- `Ho speso un po' al bar` states no figure. Set the amount to null.
 """
 """Unpromoted candidate instructions for the expense extraction boundary."""
 

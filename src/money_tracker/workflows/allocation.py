@@ -44,7 +44,6 @@ from money_tracker.workflows.contracts import (
     CategoryFit,
     CategoryFitOutcome,
     ExpenseExtraction,
-    ExtractionField,
 )
 from money_tracker.workflows.errors import (
     ResolutionReason,
@@ -118,13 +117,12 @@ def resolve_payment_allocations(
         Allocations whose signed amounts sum exactly to the resolved total.
 
     Raises:
-        UnresolvedExtractionError: If the funding arrangement or the total was
-            declared unknown, a source cannot be resolved, two portions resolve
-            to one source, or the stated portions do not reconcile.
+        UnresolvedExtractionError: If the total is absent, a stated source
+            cannot be resolved, no default is configured for an unstated one,
+            two portions resolve to one source, or the stated portions do not
+            reconcile.
     """
 
-    if extraction.declares_unknown(ExtractionField.PAYMENT):
-        raise UnresolvedExtractionError(ResolutionReason.PAYMENT_UNKNOWN)
     total = resolve_amount(extraction)
     sign = -1 if total.minor_units < 0 else 1
 
@@ -296,7 +294,7 @@ def resolve_category_allocations(
         One allocation equal to the resolved total.
 
     Raises:
-        UnresolvedExtractionError: If the total was declared unknown.
+        UnresolvedExtractionError: If the message stated no total.
         TaxonomyError: If the category no longer accepts allocations.
     """
 

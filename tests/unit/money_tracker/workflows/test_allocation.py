@@ -264,18 +264,10 @@ def test_two_portions_resolving_to_one_source_are_refused() -> None:
     assert _reason(extraction) is ResolutionReason.FUNDING_SOURCE_REPEATED
 
 
-def test_declared_unknown_payment_is_a_question() -> None:
-    """Honor an explicit abstention instead of applying the default."""
-
-    extraction = _extraction(unknowns=["payment"])
-
-    assert _reason(extraction) is ResolutionReason.PAYMENT_UNKNOWN
-
-
-def test_unknown_amount_blocks_the_payment_dimension() -> None:
+def test_an_unstated_amount_blocks_the_payment_dimension() -> None:
     """Refuse to allocate against a total that was never determined."""
 
-    extraction = _extraction(amount_minor_units=None, unknowns=["amount"])
+    extraction = _extraction(amount_minor_units=None)
 
     assert _reason(extraction) is ResolutionReason.AMOUNT_UNKNOWN
 

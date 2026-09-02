@@ -25,11 +25,7 @@ from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from money_tracker.domain import Money
-from money_tracker.workflows.contracts import (
-    ExpenseExtraction,
-    ExpensePolarity,
-    ExtractionField,
-)
+from money_tracker.workflows.contracts import ExpenseExtraction, ExpensePolarity
 from money_tracker.workflows.errors import (
     ResolutionReason,
     UnresolvedExtractionError,
@@ -347,40 +343,13 @@ def resolve_amount(extraction: ExpenseExtraction) -> Money:
         Exact signed money in the operational currency.
 
     Raises:
-        UnresolvedExtractionError: If the amount was declared unknown or is
-            absent. A declared unknown wins over a value supplied alongside it.
+        UnresolvedExtractionError: If the message stated no amount the model
+            could extract.
     """
 
-    if (
-        extraction.declares_unknown(ExtractionField.AMOUNT)
-        or extraction.amount_minor_units is None
-    ):
+    if extraction.amount_minor_units is None:
         raise UnresolvedExtractionError(ResolutionReason.AMOUNT_UNKNOWN)
     magnitude = extraction.amount_minor_units
     if extraction.polarity is ExpensePolarity.REFUND:
         return Money(-magnitude)
     return Money(magnitude)
-
-
-def resolve_occurrence_for(
-    extraction: ExpenseExtraction,
-    *,
-    received_at: datetime,
-) -> datetime:
-    """Resolve one extraction's occurrence time, honoring a declared unknown.
-
-    Args:
-        extraction: Schema-valid extraction.
-        received_at: Aware timestamp the channel assigned to the message.
-
-    Returns:
-        An aware occurrence instant in the product timezone.
-
-    Raises:
-        UnresolvedExtractionError: If the occurrence time was declared unknown
-            or its stated words cannot be resolved.
-    """
-
-    if extraction.declares_unknown(ExtractionField.OCCURRED_AT):
-        raise UnresolvedExtractionError(ResolutionReason.OCCURRENCE_UNKNOWN)
-    return resolve_occurrence_time(extraction.occurred_at_text, received_at=received_at)

@@ -17,7 +17,6 @@ from money_tracker.workflows.contracts import (
     ExpenseExtraction,
     ExpensePolarity,
     ExtractedPaymentPart,
-    ExtractionField,
     RouteClassification,
 )
 from money_tracker.workflows.errors import (
@@ -66,7 +65,6 @@ from money_tracker.workflows.resolution import (
     PRODUCT_TIMEZONE,
     normalize_owner_text,
     resolve_amount,
-    resolve_occurrence_for,
     resolve_occurrence_time,
 )
 from money_tracker.workflows.routing import (
@@ -123,7 +121,6 @@ __all__ = [
     "ExpensePolarity",
     "ExpenseWorkflowState",
     "ExtractedPaymentPart",
-    "ExtractionField",
     "RepairRequest",
     "ResolutionReason",
     "RouteClassification",
@@ -156,7 +153,6 @@ __all__ = [
     "resolve_category_allocations",
     "resolve_existing_category",
     "resolve_funding_source",
-    "resolve_occurrence_for",
     "resolve_occurrence_time",
     "resolve_payment_allocations",
     "routing_context_from_state",

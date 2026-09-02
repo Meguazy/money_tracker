@@ -292,9 +292,10 @@ model port. The typed root router is assembled as a LangGraph state graph over
 the persistent PostgreSQL checkpointer, with a local structured-output adapter
 and a local command for exercising it by hand. The expense and refund
 specialist workflow runs end to end, storing a draft through the existing
-application services or reporting the question it owes. No persistent owner
-interrupt, read-only tool registry, channel wiring, or evaluation dataset
-exists yet, and no confidence bar, prompt, or model is promoted.
+application services or reporting the question it owes, and the extraction
+boundary no longer blocks that path. No persistent owner interrupt, read-only
+tool registry, channel wiring, or evaluation dataset exists yet, and no
+confidence bar, prompt, or model is promoted.
 
 ### Prerequisites
 
@@ -336,8 +337,7 @@ own tests and documentation, and none may ship a later step's behavior.
 - Typed root router with deterministic handling for channel commands/callbacks
   and specialist routes for expense, refund, queries, advice, category follow-up,
   correction/undo, and clarification.
-- Versioned structured extraction and category-fit contracts with evidence and
-  explicit unknowns.
+- Versioned structured extraction and category-fit contracts with evidence.
 - Deterministic expense/refund mutation paths that call application services;
   query/advice agents remain read-only.
 - Persistent human-in-the-loop category review covering approve, best existing,
@@ -387,13 +387,13 @@ own tests and documentation, and none may ship a later step's behavior.
   explicitly supplied confidence bar. Correlation targets come from trusted
   context, never from the classification.
 - The `ExpenseExtraction` boundary is strict, versioned independently of the
-  router boundary, and parsed from the real JSON transport shape. Cross-field
-  validation keeps every declared unknown mutually exclusive with its own
-  value, requires an absent amount to be declared unknown, keeps currency and
-  amount inseparable, requires a split payment to quantify every portion and
-  name distinct sources, and rejects a non-operational currency. Absence of
-  temporal words, merchant, or funding portion is the documented default rather
-  than a question.
+  router boundary, and parsed from the real JSON transport shape. It requires a
+  split payment to quantify every portion and name distinct sources. It offers
+  the model no channel for declaring its own uncertainty, and no currency:
+  both are judgments the deterministic side is better placed to make, and the
+  boundary is asserted to expose neither. Absence of temporal words, merchant,
+  or funding portion is the documented default rather than a question, and an
+  absent amount is simply unresolvable.
 - Occurrence time and amount sign are resolved by pure deterministic code, not
   by the model. The resolver anchors same-day, previous-day, counted day and
   week offsets, named past weekdays, and explicit Italian dates to the message
@@ -412,7 +412,8 @@ own tests and documentation, and none may ship a later step's behavior.
   non-zero rows, unique sources, matching polarity, and exact reconciliation.
 - Every resolution failure reports a stable machine-readable reason code, so a
   workflow can ask the one question matching the failing step instead of
-  retrying blindly or parsing prose. Like routing justification codes, these
+  retrying blindly or parsing prose. The codes describe what the deterministic
+  side could not do with the message, never what the model said about itself. Like routing justification codes, these
   carry no owner text.
 - Category fit is one versioned judgment with two outcomes, validated as a flat
   schema with conditional fields rather than a discriminated union, because no
@@ -480,26 +481,47 @@ own tests and documentation, and none may ship a later step's behavior.
   taxonomy, leave the database untouched on every clarification path, store
   exactly one movement for a redelivered record, and resume a finished thread
   from a checkpoint across separate connections.
-- Three boundary-design defects were found by running the workflow against the
-  real screened model, and all three were mine rather than the model's. The
+- Four boundary-design defects were found by running the workflow against the
+  real screened model, and all four were mine rather than the model's. The
   extraction schema required the model to restate the V1 currency, which is
   operational configuration it has no basis to supply; the schema handed to the
   endpoint left optional properties out of `required`, which constrained
   decoding does not enforce, so a model could omit a field and fail the whole
-  answer; and cross-field mutual-exclusion rules were incompatible with
-  requiring every property, because a model then fills a field and flags it in
-  the same answer. Boundaries now validate shape only, every property is
-  required with optionality expressed as an admitted null, and a declared
-  unknown wins over a value supplied beside it.
-- With those fixed, both boundaries return schema-valid answers for real
-  Italian input and the mechanism completes: one split-funding message stored a
-  reconciled draft end to end. The candidate extraction instructions then
-  over-declare unknowns, treating an unstated time or payment method as
-  unresolved rather than as the documented default, so most clear messages
-  reach a clarification instead of a draft. Two prompt revisions did not fix it
-  and further ad-hoc tuning is prohibited by AD-012: this is a prompt and model
-  quality gap for the `ingestion/expense-it` dataset and its 0.98 ambiguity
-  gate to measure, not a mechanism gap.
+  answer; cross-field mutual-exclusion rules were incompatible with requiring
+  every property, because a model then fills a field and flags it in the same
+  answer; and the extraction boundary offered an abstention channel at all.
+- That last one was the blocking defect. Two prompt revisions failed to stop
+  the model over-declaring unknowns, which looked like a prompt-quality gap for
+  `ingestion/expense-it` to measure. It was not. The boundary was asking the
+  model to judge whether an aspect was resolvable, a judgment the deterministic
+  side is strictly better placed to make: it holds the profile's configured
+  funding sources and the Italian date forms the resolver reads, and the model
+  is shown neither. No prompt could close that information gap, so the channel
+  was removed rather than tuned. Boundaries now validate shape only, every
+  property is required with optionality expressed as an admitted null, and
+  omission carries the documented default.
+- With the channel removed, extraction no longer blocks the mechanism. Every
+  V1 acceptance example, both split-funding phrasings, and the relative-date
+  and refund journeys return schema-valid answers whose amounts, polarity,
+  temporal words, and split portions are correct against the real screened
+  Qwen3 14B profile. This is an ad-hoc check over ten messages, not a
+  measurement: it establishes that the mechanism completes, and the pinned
+  suite still owns the accuracy claim.
+- Two candidate-prompt gaps remain, and AD-012 prohibits tuning either by hand.
+  Both are recorded in [Decision Log](experiments/decision-log.md):
+  - The extraction text fabricates a payment method when the message names
+    none, including the literal placeholder it forbids. It fails safe, because
+    deterministic resolution refuses words matching no configured source, but
+    it costs the owner a question the documented default should have answered,
+    and it defeats that default path whenever the configured source is not
+    named exactly as the model guessed. Gap for `ingestion/expense-it`.
+  - The category-fit text prefers a new proposal over an adequate existing
+    category, sometimes proposing a name the taxonomy already has while its own
+    rationale cites that name as the match, and names a non-root parent.
+    Deterministic acceptance refuses both, so the run clarifies with
+    `category_parent_invalid` instead of drafting. The purpose boundary is now
+    the binding constraint on end-to-end behaviour. Gap for
+    `categorization/purpose-it`.
 - `money-tracker-admin profile-init`, `profile-list`, and
   `funding-source-add` make the finance components reachable without
   hand-written Python. Until they existed, every command taking a profile

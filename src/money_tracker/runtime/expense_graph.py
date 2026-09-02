@@ -20,14 +20,14 @@ disagree the run clarifies rather than picking one, because recording a
 purchase as a reimbursement is exactly the ambiguity the product baseline says
 must not reach a write.
 
-Which unknowns block a draft is not decided here. Deterministic assembly
-already reports the precise reason for an unresolved amount, occurrence, or
-funding arrangement, and already treats an unnamed merchant as absent rather
-than blocking, so this module reports whatever reason assembly raises.
+What blocks a draft is not decided here. Deterministic assembly already
+reports the precise reason for an unresolved amount, occurrence, or funding
+arrangement, and already treats an unnamed merchant as absent rather than
+blocking, so this module reports whatever reason assembly raises.
 
 Keeping every write-deciding rule inside that one atomic function costs one
 inference call on a failure path: funding words are resolved during assembly,
-so a message naming an unknown funding source still reaches the purpose
+so a message naming an unresolvable funding source still reaches the purpose
 boundary first. That is a deliberate trade. Splitting assembly to fail earlier
 would move policy into this module, and the latency target applies to
 successful runs.

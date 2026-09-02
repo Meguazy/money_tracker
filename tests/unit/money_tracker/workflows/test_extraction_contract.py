@@ -12,7 +12,6 @@ from money_tracker.workflows import (
     EXTRACTION_CONTRACT_VERSION,
     ExpenseExtraction,
     ExpensePolarity,
-    ExtractionField,
     ResolutionReason,
     UnresolvedExtractionError,
     resolve_amount,
@@ -26,6 +25,13 @@ FORBIDDEN_AUTHORITY_FIELDS = (
     "idempotency_key",
     "actor",
     "occurred_at",
+)
+
+FORBIDDEN_ABSTENTION_FIELDS = (
+    "unknowns",
+    "unresolved",
+    "confidence",
+    "needs_clarification",
 )
 
 
@@ -55,16 +61,15 @@ def test_contract_version_is_pinned_independently_of_the_router() -> None:
 
 
 def test_extraction_accepts_a_minimal_clear_expense() -> None:
-    """Parse the canonical clear-expense journey without unknowns."""
+    """Parse the canonical clear-expense journey."""
 
     extraction = _parse()
 
     assert extraction.polarity is ExpensePolarity.EXPENSE
     assert extraction.amount_minor_units == 1200
     assert extraction.occurred_at_text is None
+    assert extraction.merchant is None
     assert extraction.payment_parts == ()
-    assert extraction.unknowns == ()
-    assert extraction.is_resolvable
 
 
 def test_extraction_exposes_no_authority_or_resolved_field() -> None:
@@ -100,52 +105,30 @@ def test_an_absent_amount_is_unresolvable() -> None:
     assert error.value.reason is ResolutionReason.AMOUNT_UNKNOWN
 
 
-@pytest.mark.parametrize(
-    ("field", "value", "declared"),
-    [
-        ("amount_minor_units", 1200, "amount"),
-        ("occurred_at_text", "ieri", "occurred_at"),
-        ("merchant", "Conad", "merchant"),
-    ],
-)
-def test_a_declared_unknown_wins_over_a_value_supplied_beside_it(
-    field: str,
-    value: object,
-    declared: str,
-) -> None:
-    """Read the abstention, not the guess, when a model supplies both.
+@pytest.mark.parametrize("field", FORBIDDEN_ABSTENTION_FIELDS)
+def test_extraction_offers_the_model_no_way_to_abstain(field: str) -> None:
+    """Keep the judgment of what is resolvable on the deterministic side.
 
-    Strict constrained decoding requires every property to be present, so a
-    model routinely fills a field and flags it in the same answer. The boundary
-    accepts that shape and the deterministic layer prefers the flag, because a
-    flag leads to a question while a guess would be stored.
+    Every aspect a model might abstain on is already detectable downstream, and
+    the deterministic side knows more: it holds the profile's configured funding
+    sources and the Italian date forms the resolver reads, neither of which the
+    model is shown. A self-report channel would only let an over-cautious model
+    turn a resolvable message into a question.
     """
 
-    extraction = _parse(**{field: value}, unknowns=[declared])
-
-    assert extraction.declares_unknown(ExtractionField(declared))
-    assert not extraction.is_resolvable
-
-
-def test_unknown_payment_wins_over_itemized_parts() -> None:
-    """Ask about funding rather than charging portions the model doubted."""
-
-    extraction = _parse(
-        payment_parts=[{"funding_source_text": "carta"}],
-        unknowns=["payment"],
-    )
-
-    assert extraction.payment_parts != ()
-    assert extraction.declares_unknown(ExtractionField.PAYMENT)
+    assert field not in ExpenseExtraction.model_fields
+    with pytest.raises(ValidationError):
+        ExpenseExtraction.model_validate_json(json.dumps(_payload(**{field: []})))
 
 
-def test_absent_optional_values_are_defaults_not_unknowns() -> None:
+def test_absent_optional_values_are_documented_defaults() -> None:
     """Treat silence as the documented default rather than a question."""
 
     extraction = _parse(occurred_at_text=None, merchant=None, payment_parts=[])
 
-    assert extraction.unknowns == ()
-    assert extraction.is_resolvable
+    assert extraction.occurred_at_text is None
+    assert extraction.merchant is None
+    assert extraction.payment_parts == ()
 
 
 def test_single_named_source_may_omit_its_amount() -> None:
@@ -219,23 +202,12 @@ def test_extraction_requires_description_and_evidence() -> None:
         _parse(evidence="   ")
 
 
-def test_extraction_rejects_unknown_fields_and_repeated_unknowns() -> None:
-    """Fail closed on an extended or self-contradicting extraction."""
+def test_extraction_rejects_an_extended_document() -> None:
+    """Fail closed on a field the boundary never declared."""
 
     with pytest.raises(ValidationError):
         ExpenseExtraction.model_validate_json(
             json.dumps(_payload(profile_id="00000000-0000-0000-0000-000000000001"))
         )
-    with pytest.raises(ValidationError, match="distinct"):
-        _parse(
-            amount_minor_units=None,
-            currency=None,
-            unknowns=["amount", "amount"],
-        )
-
-
-def test_extraction_rejects_an_unsupported_unknown_field() -> None:
-    """Keep the abstention vocabulary closed."""
-
     with pytest.raises(ValidationError):
-        _parse(unknowns=["description"])
+        _parse(currency="EUR")

@@ -15,7 +15,6 @@ from money_tracker.workflows import (
     ResolutionReason,
     UnresolvedExtractionError,
     resolve_amount,
-    resolve_occurrence_for,
     resolve_occurrence_time,
 )
 
@@ -269,44 +268,15 @@ def test_refund_amount_becomes_negative_from_polarity_alone() -> None:
     assert resolve_amount(_extraction(polarity="refund")) == Money(-1200)
 
 
-def test_unknown_amount_cannot_be_resolved() -> None:
+def test_an_unstated_amount_cannot_be_resolved() -> None:
     """Ask instead of inventing a total."""
 
-    extraction = _extraction(amount_minor_units=None, unknowns=["amount"])
+    extraction = _extraction(amount_minor_units=None)
 
     with pytest.raises(UnresolvedExtractionError) as error:
         resolve_amount(extraction)
 
     assert error.value.reason is ResolutionReason.AMOUNT_UNKNOWN
-
-
-def test_extraction_occurrence_resolves_through_its_declared_words() -> None:
-    """Resolve the extraction's own temporal words against the message."""
-
-    resolved = resolve_occurrence_for(
-        _extraction(occurred_at_text="ieri"), received_at=RECEIVED_AT
-    )
-
-    assert resolved.astimezone(PRODUCT_TIMEZONE).day == 1
-
-
-def test_extraction_without_temporal_words_uses_the_message_timestamp() -> None:
-    """Apply the documented default for a movement that just happened."""
-
-    resolved = resolve_occurrence_for(_extraction(), received_at=RECEIVED_AT)
-
-    assert resolved == RECEIVED_AT
-
-
-def test_declared_unknown_occurrence_is_not_defaulted() -> None:
-    """Keep an explicit abstention distinct from silence."""
-
-    extraction = _extraction(unknowns=["occurred_at"])
-
-    with pytest.raises(UnresolvedExtractionError) as error:
-        resolve_occurrence_for(extraction, received_at=RECEIVED_AT)
-
-    assert error.value.reason is ResolutionReason.OCCURRENCE_UNKNOWN
 
 
 @pytest.mark.parametrize(

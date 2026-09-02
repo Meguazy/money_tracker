@@ -270,7 +270,7 @@ def test_unresolvable_amount_writes_nothing() -> None:
 
     state, store, _ = _run(
         [
-            _extraction(amount_minor_units=None, unknowns=["amount"]),
+            _extraction(amount_minor_units=None),
             _fit(),
         ]
     )
@@ -282,7 +282,7 @@ def test_unresolvable_amount_writes_nothing() -> None:
 def test_unnamed_merchant_does_not_block_a_draft() -> None:
     """Treat an absent merchant as absent rather than as a question."""
 
-    state, store, _ = _run([_extraction(unknowns=["merchant"]), _fit()])
+    state, store, _ = _run([_extraction(merchant=None), _fit()])
 
     assert state["outcome"] == ExpenseOutcome.DRAFTED.value
     assert store.expenses[UUID(state["expense_id"])].merchant is None

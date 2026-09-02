@@ -353,11 +353,11 @@ def test_refund_category_allocation_is_negative() -> None:
     assert allocations[0].amount == Money(-1200)
 
 
-def test_unknown_amount_blocks_the_category_dimension() -> None:
+def test_an_unstated_amount_blocks_the_category_dimension() -> None:
     """Refuse to allocate against a total that was never determined."""
 
     category = resolve_existing_category(_fit(), taxonomy=TAXONOMY)
-    extraction = _extraction(amount_minor_units=None, unknowns=["amount"])
+    extraction = _extraction(amount_minor_units=None)
 
     assert (
         _reason(lambda: resolve_category_allocations(extraction, category=category))

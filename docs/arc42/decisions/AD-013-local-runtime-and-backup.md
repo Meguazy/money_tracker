@@ -1,7 +1,8 @@
 # AD-013: Host Runtime and Encrypted Backup
 
 - Status: accepted
-- Implementation: Compose topology implemented; systemd and Restic planned
+- Implementation: Compose topology and encrypted Restic backup/restore
+  implemented; systemd units and scheduling planned
 - Date: 2026-09-01
 
 ## Context
@@ -35,8 +36,21 @@ test restore before declaring the personal release ready.
 Roadmap Step 1 implements application PostgreSQL as the default Compose service
 and isolates the healthy, digest-pinned Langfuse stack behind the
 `observability` profile. Core database and migration/checkpoint checks pass
-without Langfuse. Host systemd services, authoritative Restic backup, retention,
-and restore verification remain planned.
+without Langfuse.
+
+Roadmap Step 2 implements `money-tracker-backup`. It creates encrypted Restic
+snapshots of a consistent `pg_dump`, the private receipt archive, and the
+runtime configuration, guarded by database-identity and receipt-hash preflight,
+repository and snapshot verification before staging removal, and the seven
+daily/five weekly/twelve monthly retention grouped by host and tag. Its restore
+drill reconstructs a snapshot only into an explicitly named empty database and
+empty receipt directory, verifying the versioned manifest and every checksum in
+staging and again at the destination. Real Restic and PostgreSQL integration
+tests cover the create/status/restore cycle through both the service and the
+operator CLI.
+
+Host systemd services, daily scheduling, off-device recovery-secret
+verification, and the clean-machine restore drill remain planned for Step 7.
 
 ## Consequences
 

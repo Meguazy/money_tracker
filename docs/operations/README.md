@@ -6,9 +6,11 @@
   capability evaluation, plus profile-scoped administrative receipt storage
 - Implemented Step 2 core: authoritative finance schema and transactional
   expense, wallet, budget, pending category-proposal, and versioned receipt-review
-  repository operations plus a safe local receipt-media adapter
-- Planned operations: Telegram, systemd services, finance backup/restore, web
-  API, workflow worker receipt wiring, and media deletion
+  repository operations, a safe local receipt-media adapter, and verified
+  encrypted backup with an isolated restore drill
+- Planned operations: Telegram, systemd services, backup scheduling and
+  clean-machine restore, web API, workflow worker receipt wiring, and media
+  deletion
 
 These guides describe accepted operational behavior and the controls future
 steps must implement. A section labelled `planned` is not a runnable procedure.
@@ -23,8 +25,9 @@ the referenced file or entry point exists in the repository.
   topology, startup/recovery, health, and deployment ownership.
 - [Container Versions](container-versions.md): immutable image baseline,
   verification evidence, controlled upgrades, and rollback constraints.
-- [Backup and Restore](backup-and-restore.md): authoritative restore set,
-  encryption, retention, verification, and recovery acceptance.
+- [Backup and Restore](backup-and-restore.md): host prerequisites, backup
+  configuration, the implemented `money-tracker-backup` sequence, retention,
+  the isolated restore drill, and recovery acceptance.
 - [Security and Troubleshooting](security-and-troubleshooting.md): trust
   boundaries, secret handling, logging, incident response, and failure triage.
 - [Development](../development.md): commands verified for the current scaffold.
@@ -60,9 +63,16 @@ the referenced file or entry point exists in the repository.
   metadata operations exist. Receipt review/approval transitions are versioned,
   audited, and concurrency-safe; proposal decisions and receipt extraction or
   deletion remain open. The private content-addressed receipt adapter is
-  integration-tested through the local administration CLI. No Telegram
-  bot/adapter, finance backup, API/dashboard, workflow worker, media deletion,
-  or systemd unit exists yet.
+  integration-tested through the local administration CLI.
+- `money-tracker-backup` creates verified encrypted snapshots of the
+  authoritative database, receipt archive, and runtime configuration, reports
+  snapshot age, and restores only into explicitly empty isolated targets. It
+  requires Restic and PostgreSQL 17 client tools on the host and points at an
+  owner-selected external repository that the environment generator leaves as a
+  deliberate placeholder. No scheduling timer, off-device secret check, or
+  clean-machine drill exists yet.
+- No Telegram bot/adapter, API/dashboard, workflow worker, media deletion, or
+  systemd unit exists yet.
 
 ## When to update these guides
 

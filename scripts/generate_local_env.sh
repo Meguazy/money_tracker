@@ -21,6 +21,9 @@ random_hex() {
 app_postgres_password="$(random_hex 24)"
 app_postgres_admin_password="$(random_hex 24)"
 receipt_archive_root="${XDG_DATA_HOME:-${HOME}/.local/share}/money-tracker/receipts"
+backup_password_file="${XDG_CONFIG_HOME:-${HOME}/.config}/money-tracker/restic-password"
+backup_lock_file="${XDG_STATE_HOME:-${HOME}/.local/state}/money-tracker/backup.lock"
+backup_staging_parent="${XDG_CACHE_HOME:-${HOME}/.cache}/money-tracker/backup-staging"
 
 umask 077
 cat >"${env_file}" <<EOF
@@ -54,6 +57,16 @@ MONEY_TRACKER_POSTGRES_PASSWORD=${app_postgres_password}
 MONEY_TRACKER_DATABASE_URL=postgresql://money_tracker:${app_postgres_password}@127.0.0.1:5433/money_tracker
 MONEY_TRACKER_TEST_DATABASE_URL=postgresql://money_tracker:${app_postgres_password}@127.0.0.1:5433/money_tracker_test
 MONEY_TRACKER_RECEIPT_ARCHIVE_ROOT=${receipt_archive_root}
+
+MONEY_TRACKER_BACKUP_EXPECTED_DATABASE=money_tracker
+MONEY_TRACKER_BACKUP_CONFIG_FILE=${env_file}
+MONEY_TRACKER_RESTIC_REPOSITORY=/absolute/path/to/external/money-tracker-restic
+MONEY_TRACKER_RESTIC_PASSWORD_FILE=${backup_password_file}
+MONEY_TRACKER_BACKUP_LOCK_FILE=${backup_lock_file}
+MONEY_TRACKER_BACKUP_STAGING_PARENT=${backup_staging_parent}
+MONEY_TRACKER_RESTIC_BINARY=/usr/bin/restic
+MONEY_TRACKER_PG_DUMP_BINARY=/usr/lib/postgresql/17/bin/pg_dump
+MONEY_TRACKER_PG_RESTORE_BINARY=/usr/lib/postgresql/17/bin/pg_restore
 
 LANGGRAPH_STRICT_MSGPACK=true
 

@@ -148,9 +148,11 @@ finance schema, expense/wallet/budget repositories, pending category-proposal
 submission, audit, idempotency, and concurrency foundation are implemented.
 The private content-addressed receipt-media adapter, versioned receipt
 review-state transitions, and strict V1 finance wire contracts are implemented.
-The FastAPI adapter, worker media wiring, proposal lifecycle, receipt
-extraction/deletion, backup, and restore evidence remain open; a minimal local
-administration command exercises the archive and metadata boundary.
+Encrypted authoritative backup, snapshot verification, retention, and an
+isolated restore drill are implemented and verified against real Restic and
+PostgreSQL. The FastAPI adapter, worker media wiring, proposal lifecycle, and
+receipt deletion remain open; a minimal local administration command exercises
+the archive and metadata boundary.
 
 ### Deliverables
 
@@ -223,8 +225,25 @@ administration command exercises the archive and metadata boundary.
   configured archive root, refuses symlink/non-file/oversized inputs, then
   stores and registers metadata idempotently. Its JSON output omits private
   paths.
-- Forty-three domain tests, twenty-two wallet/budget/proposal/receipt application
-  tests, and twenty-two media/configuration/administration tests pass.
+- `money-tracker-backup` implements the runbook sequence: exclusive host lock,
+  database-identity and receipt-hash preflight, a mode-600 `pg_dump` and
+  versioned integrity manifest in private mode-700 staging, one tagged Restic
+  snapshot of dump, receipt archive, and runtime configuration, repository and
+  exact-snapshot verification before staging removal, then seven daily/five
+  weekly/twelve monthly retention grouped by host and tag so per-run staging
+  paths cannot defeat the policy. `status` reports the newest snapshot and its
+  age. Credentials reach subprocesses only through libpq environment variables
+  and the Restic password-file path; failures name the failing executable alone.
+- `restore-drill` reconstructs a snapshot only into an explicitly named empty
+  isolated database and an absent or empty real receipt directory. It requires
+  exactly one compatible manifest, verifies dump, configuration, and every
+  referenced receipt hash in staging, refuses symlinked restored paths, imports
+  with `pg_restore --exit-on-error`, and re-verifies each receipt hash at the
+  destination. Backup and restore are unavailable, not silently degraded, when
+  Restic or matching PostgreSQL client tools are absent.
+- Forty-three domain tests, twenty-nine wallet/budget/proposal/receipt
+  application tests, twenty-five media/configuration/administration tests, and
+  twenty-three backup safety/CLI tests pass.
   Sixteen strict API contract tests cover the version-one wire boundary at
   100% branch coverage.
   Thirty-seven real PostgreSQL/media integration tests cover migration, full
@@ -232,9 +251,13 @@ administration command exercises the archive and metadata boundary.
   and version conflicts, receipt audit rollback, proposal scoping and atomic
   rollback, constraints, restart persistence, immutable history, exact taxonomy
   seeding, retry idempotency, concurrent expense writers, concurrent wallet
-  debits, and concurrent/stale budget versions. The complete service-independent
-  suite passes with 128 tests and 40 explicit real-service skips; focused
-  domain/application/media branch coverage is 91%.
+  debits, and concurrent/stale budget versions. Two real Restic drills
+  reconstruct the isolated finance fixture and its receipt media through the
+  service and through the operator CLI, and assert one retention group across
+  runs, snapshot freshness, empty-target refusal, and redacted output. The
+  complete service-independent suite passes with 151 tests and 42 explicit
+  real-service skips; focused domain/application/media/api branch coverage is
+  91% and backup branch coverage is 87% with the real drills.
 
 ## Step 3: Evaluated text workflows
 
@@ -359,8 +382,9 @@ identified viable local OCR/VLM candidates.
 
 - End-to-end fault matrix across Docker, PostgreSQL, host services, Telegram,
   inference, media, Langfuse-off operation, backup, and restore.
-- Daily Restic timer, retention enforcement, off-device recovery-secret check,
-  and clean-machine restore drill.
+- Daily Restic timer over the Step 2 backup command, observed retention
+  enforcement across scheduled runs, off-device recovery-secret check, and a
+  clean-machine restore drill.
 - Export of authoritative finance records and documented portability contract.
 - Data/checkpoint/log/trace retention and secure deletion procedures.
 - Performance profiling on the target workstation and remediation of missed

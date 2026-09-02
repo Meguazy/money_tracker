@@ -67,6 +67,54 @@ if ! has_setting MONEY_TRACKER_RECEIPT_ARCHIVE_ROOT; then
   updated=true
 fi
 
+if ! has_setting MONEY_TRACKER_BACKUP_EXPECTED_DATABASE; then
+  printf 'MONEY_TRACKER_BACKUP_EXPECTED_DATABASE=money_tracker\n' >>"${env_file}"
+  updated=true
+fi
+
+if ! has_setting MONEY_TRACKER_BACKUP_CONFIG_FILE; then
+  printf 'MONEY_TRACKER_BACKUP_CONFIG_FILE=%s\n' "${env_file}" >>"${env_file}"
+  updated=true
+fi
+
+if ! has_setting MONEY_TRACKER_RESTIC_REPOSITORY; then
+  printf 'MONEY_TRACKER_RESTIC_REPOSITORY=/absolute/path/to/external/money-tracker-restic\n' >>"${env_file}"
+  updated=true
+fi
+
+if ! has_setting MONEY_TRACKER_RESTIC_PASSWORD_FILE; then
+  backup_password_file="${XDG_CONFIG_HOME:-${HOME}/.config}/money-tracker/restic-password"
+  printf 'MONEY_TRACKER_RESTIC_PASSWORD_FILE=%s\n' "${backup_password_file}" >>"${env_file}"
+  updated=true
+fi
+
+if ! has_setting MONEY_TRACKER_BACKUP_LOCK_FILE; then
+  backup_lock_file="${XDG_STATE_HOME:-${HOME}/.local/state}/money-tracker/backup.lock"
+  printf 'MONEY_TRACKER_BACKUP_LOCK_FILE=%s\n' "${backup_lock_file}" >>"${env_file}"
+  updated=true
+fi
+
+if ! has_setting MONEY_TRACKER_BACKUP_STAGING_PARENT; then
+  backup_staging_parent="${XDG_CACHE_HOME:-${HOME}/.cache}/money-tracker/backup-staging"
+  printf 'MONEY_TRACKER_BACKUP_STAGING_PARENT=%s\n' "${backup_staging_parent}" >>"${env_file}"
+  updated=true
+fi
+
+if ! has_setting MONEY_TRACKER_RESTIC_BINARY; then
+  printf 'MONEY_TRACKER_RESTIC_BINARY=/usr/bin/restic\n' >>"${env_file}"
+  updated=true
+fi
+
+if ! has_setting MONEY_TRACKER_PG_DUMP_BINARY; then
+  printf 'MONEY_TRACKER_PG_DUMP_BINARY=/usr/lib/postgresql/17/bin/pg_dump\n' >>"${env_file}"
+  updated=true
+fi
+
+if ! has_setting MONEY_TRACKER_PG_RESTORE_BINARY; then
+  printf 'MONEY_TRACKER_PG_RESTORE_BINARY=/usr/lib/postgresql/17/bin/pg_restore\n' >>"${env_file}"
+  updated=true
+fi
+
 if ! has_setting MMPROJ_PATH; then
   printf 'MMPROJ_PATH=\n' >>"${env_file}"
   updated=true

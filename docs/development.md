@@ -8,6 +8,9 @@
 - NVIDIA CUDA toolkit 12.8 or newer for the RTX 5070 Ti
 - An upstream llama.cpp build and a compatible GGUF model for real inference
   and capability checks
+- Restic, plus `pg_dump`/`pg_restore` from the same PostgreSQL major version as
+  the pinned server, for authoritative backup and its restore drill. See
+  [Backup and Restore](operations/backup-and-restore.md).
 
 ## Initial setup
 
@@ -71,6 +74,23 @@ original with:
 The command refuses final input symlinks, directories, unsupported/oversized
 images, and unknown profiles. It prints only safe JSON metadata, not file paths
 or bytes. Retrying the same content returns the first database record.
+
+## Authoritative backup
+
+Point `MONEY_TRACKER_RESTIC_REPOSITORY` at the owner-selected external
+repository, create the mode-600 recovery secret, then initialize once and back
+up the authoritative database, receipt archive, and runtime configuration:
+
+    uv run --env-file .env money-tracker-backup init
+    uv run --env-file .env money-tracker-backup create
+    uv run --env-file .env money-tracker-backup status
+
+Every path setting must be absolute. The `create` command verifies database
+identity and receipt hashes first, verifies the snapshot before applying
+retention, and prints only safe JSON. `restore-drill` reconstructs a snapshot
+into an explicitly named empty database and empty receipt directory. Full
+configuration, guardrails, and the drill procedure are in
+[Backup and Restore](operations/backup-and-restore.md).
 
 ## Optional self-hosted Langfuse
 
@@ -174,6 +194,18 @@ Real application PostgreSQL integration tests are explicit:
     RUN_POSTGRES_INTEGRATION_TESTS=1 \\
       uv run --env-file .env pytest -q \\
       tests/integration/money_tracker/persistence
+
+Real encrypted backup and restore drills need Restic and matching PostgreSQL
+client tools. They create and destroy only their own temporary repository,
+staging, and receipt directories, and use the same isolated test database:
+
+    RUN_POSTGRES_INTEGRATION_TESTS=1 \
+      RUN_BACKUP_INTEGRATION_TESTS=1 \
+      MONEY_TRACKER_TEST_RESTIC_BINARY=/usr/bin/restic \
+      MONEY_TRACKER_TEST_PG_DUMP_BINARY=/usr/lib/postgresql/17/bin/pg_dump \
+      MONEY_TRACKER_TEST_PG_RESTORE_BINARY=/usr/lib/postgresql/17/bin/pg_restore \
+      uv run --env-file .env pytest -q \
+      tests/integration/money_tracker/backup
 
 Real inference checks remain opt-in and never substitute a mock service:
 

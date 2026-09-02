@@ -171,7 +171,7 @@ Money Tracker workstation
 ├── Private host data
 │   ├── Receipt archive adapter                         [implemented, admin CLI wired]
 │   ├── Evaluation data and artifacts                   [implemented foundation]
-│   └── Restic staging/configuration                    [planned]
+│   └── Restic staging/configuration                    [implemented, unscheduled]
 └── Docker Compose
     ├── Application PostgreSQL                          [implemented finance core]
     └── Langfuse, PostgreSQL, ClickHouse, Redis, MinIO  [implemented optional]
@@ -190,6 +190,7 @@ Money Tracker workstation
 | `domain` | Enforce exact money, expense/refund, dual-allocation, taxonomy, wallet, budget, receipt-metadata, and audit contracts | Pure Python value objects and policies; no framework or infrastructure import | No infrastructure state | Shared host-process library; deterministic validation of untrusted inputs |
 | `application` | Coordinate idempotent expense lifecycle and receipt registration/review, audited wallet/budget mutations, and pending proposal submission through narrow ports | Finance, administration, proposal, and receipt-metadata repository ports plus clock and ID contracts | Command, concurrency, review-boundary, and audit semantics, not stored state | Shared by future CLI/API/worker; profile scope comes from trusted caller context; proposal decisions and receipt deletion are not exposed |
 | `api.contracts` | Define strict, versioned finance request/response, mutation-header, and problem wire shapes | Pydantic and domain response values; no web framework | No state; stable JSON field semantics only | Shared by future FastAPI adapter; no endpoint, network listener, credentials, or private media fields |
+| `backup` | Create verified encrypted authoritative snapshots, report their freshness, and restore only into explicitly empty isolated targets | Restic and PostgreSQL client executables, psycopg identity/receipt queries, private archive and configuration paths | Snapshot contents and the versioned integrity manifest in the owner repository; no finance state of its own | Host CLI under an exclusive lock; absolute-path and owner-only input checks, recovery secret passed only by file path, failures name no argument or environment |
 | `administration` | Expose bounded local receipt storage/registration for development and bootstrap | Database URL, absolute archive setting, media and metadata services | No independent state; emits safe identifiers/facts only | Host CLI; active-profile preflight, no-follow bounded input, no private paths in JSON |
 | `persistence.finance` | Bootstrap profile/taxonomy, persist complete expense and budget aggregates, append balance-safe wallet movements, validate/store pending proposals, and register/transition receipt metadata transactionally | psycopg and narrow application repository contracts | Finance tables, allocations, budgets/overrides, wallet ledger, proposals, versioned receipt metadata, audit, and idempotency records | Dedicated application PostgreSQL; no receipt bytes or paths; optimistic versions protect mutable aggregates |
 | `media.local` | Decode, validate, atomically retain, and integrity-check private receipt originals | Receipt-media port, Pillow, private filesystem | Original bytes under sharded SHA-256 keys; no database state | Host library outside web roots; `0700` directories, `0600` files, no-follow verified reads; root wired explicitly by admin CLI, API/worker planned |
@@ -207,7 +208,7 @@ Money Tracker workstation
 | Workflow runtime | Route intents and execute specialist graphs | LangGraph, typed model gateway, application services, checkpointer | Small versioned workflow state only | Sequential worker; no images or service objects in checkpoints |
 | Receipt service | Validate media, invoke extractor, reconcile lines, prepare review | Implemented media-store port, planned extractor, finance service | Receipt metadata, extraction versions, review state | Private filesystem; untrusted image boundary; orchestration planned |
 | Analytics service | Compute time, category, budget and funding summaries | Read repositories and deterministic calendar policies | No separate authoritative data | FastAPI and read-only agent tools |
-| Backup service | Create consistent encrypted backups and verify restores | `pg_dump`, Restic, receipt/configuration paths | Backup snapshots in owner repository | Scheduled locally; recovery secret stored off-device |
+| Backup service (implemented, unscheduled) | Create consistent encrypted backups and verify restores | `pg_dump`, Restic, receipt/configuration paths | Backup snapshots in owner repository | Owner-invoked today; systemd timer and clean-machine qualification planned; recovery secret stored off-device |
 
 ### Planned adapters and presentation blocks
 
@@ -321,6 +322,35 @@ API/worker entry point. Extraction and the product review workflow remain planne
 No FastAPI application, socket, route handler, Host/Origin policy, or CSRF
 mechanism is implemented by this contract-only component.
 
+### Current authoritative backup and restore drill
+
+1. `money-tracker-backup create` validates executables and owner-only
+   secret/configuration files, then takes an exclusive host lock instead of
+   queueing behind another operation.
+2. It requires the connected database name to equal the configured expected
+   name, reads the Alembic revision, and re-hashes every receipt the database
+   references before anything is written.
+3. A mode-600 `pg_dump` and a versioned manifest of application version,
+   revision, dump/configuration checksums, and receipt hashes are staged in a
+   private mode-700 directory.
+4. Restic backs up staging, the receipt archive, and the runtime configuration
+   as one tagged snapshot. Repository check and exact snapshot verification run
+   before staging is discarded.
+5. Retention applies only afterwards, grouped by host and tag so that
+   per-run staging paths cannot defeat the daily/weekly/monthly policy.
+6. `money-tracker-backup status` reports the newest snapshot and its age for
+   local health checks.
+7. `money-tracker-backup restore-drill` accepts a hexadecimal snapshot and
+   requires both an empty isolated database and an absent or empty real receipt
+   directory. It verifies manifest compatibility and every checksum in staging,
+   refuses symlinked restored paths, imports the dump, then re-verifies each
+   receipt hash at the destination.
+
+Credentials reach subprocesses only through libpq environment variables and the
+Restic password-file path. Failures name the failing executable alone. No timer
+schedules this yet, and business reconciliation of restored aggregates remains a
+manual acceptance check.
+
 ### Planned text expense turn
 
 1. A normalized channel message receives a source and command idempotency key.
@@ -389,6 +419,8 @@ mechanism is implemented by this contract-only component.
 Ubuntu workstation
 ├── UV-managed Python CLIs
 ├── optional llama-server on 127.0.0.1:8080  [not installed/configured here]
+├── private receipt archive and Restic staging  [owner-configured absolute paths]
+├── external Restic repository                  [owner-selected, unscheduled]
 └── Docker Compose
     ├── application-postgres on 127.0.0.1:5433  [default, healthy]
     └── observability profile                    [optional, healthy]
@@ -498,11 +530,20 @@ network, and inference readiness through health checks and retry policies.
 
 ### Backup and retention
 
-- Daily encrypted Restic backups include a consistent application database dump,
-  retained receipt files, and required recovery configuration.
-- Default snapshot retention is seven daily, five weekly, and twelve monthly.
-- The recovery secret has an off-workstation copy. A tested restore is a release
-  gate.
+- Encrypted Restic backups include a consistent application database dump,
+  retained receipt files, and required recovery configuration. The command is
+  implemented and verified; daily scheduling is not.
+- Snapshot retention is seven daily, five weekly, and twelve monthly, grouped by
+  host and tag rather than by per-run staging paths.
+- Every snapshot carries a versioned manifest of application version, migration
+  revision, dump/configuration checksums, and referenced receipt hashes.
+  Integrity is verified before backup, in restore staging, and again at the
+  restore destination.
+- Restore refuses a populated database or receipt directory and a snapshot from
+  a different application version, so a drill cannot damage live data.
+- The recovery secret has an off-workstation copy and is passed to Restic only
+  as a file path. A tested restore is a release gate; the isolated drill passes
+  and the clean-machine drill remains open.
 - Langfuse backup is optional and separate because it is not authoritative.
 
 ### Testing
@@ -569,7 +610,9 @@ environment file.
   capability runner, artifact contract, and passing technical candidates
   implemented; product-role promotion remains experiment-gated.
 - [AD-013: Host runtime and encrypted backup](decisions/AD-013-local-runtime-and-backup.md):
-  Compose topology implemented; systemd and Restic planned.
+  Compose topology, encrypted Restic backup, verification, retention, and the
+  isolated restore drill implemented; systemd units, scheduling, and the
+  clean-machine restore remain planned.
 - [AD-011: Evaluation-gated receipt extraction](decisions/AD-011-receipt-extraction.md):
   private original-media boundary implemented; extractor evaluation and review
   workflow planned.
@@ -578,8 +621,8 @@ environment file.
   security, React application, and deployment planned.
 - [AD-014: Private content-addressed receipt archive](decisions/AD-014-private-receipt-archive.md):
   safe local adapter, versioned review state, and real filesystem/PostgreSQL
-  integration implemented; administration CLI wiring implemented; API/worker
-  wiring, deletion, and backup planned.
+  integration implemented; administration CLI wiring and encrypted archive
+  backup/restore implemented; API/worker wiring and deletion planned.
 
 ### Planned accepted decisions
 

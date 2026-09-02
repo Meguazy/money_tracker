@@ -41,7 +41,7 @@ in this table:
 | Receipt extractor dependencies | Host process/adapter | Local OCR/VLM selected by evaluation | Yes after Step 6 |
 | Receipt archive adapter | Host library/private filesystem | Implemented decoded-image validation and content-addressed original retention; admin CLI wired, API/worker planned | Yes once receipt ingestion is exposed |
 | Langfuse stack | Optional Compose profile | Implemented local traces and aggregate experiment scores | No |
-| Restic backup timer | Host systemd | Encrypted authoritative backup and retention | Yes once finance data exists |
+| Restic backup | Host CLI today, systemd timer planned | Implemented encrypted authoritative backup, verification, retention, and isolated restore drill; scheduling planned | Yes once finance data exists |
 
 Python and llama.cpp stay on the host to keep GPU/model paths and loopback
 networking explicit. Application PostgreSQL runs separately from the Langfuse

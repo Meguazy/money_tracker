@@ -145,8 +145,8 @@ Before changing state:
 | Budget/chart total differs (planned) | Compare posted category allocations, occurrence timezone, refund/void status, and parent roll-up. | Add parent expense totals to receipt-line totals. |
 | Receipt will not reconcile (planned) | Inspect visible line totals, discount/rounding, payment split, and unexplained difference. | Force posted status or invent a balancing line silently. |
 | Unauthorized bot access (planned critical incident) | Stop gateway, rotate token if exposed, preserve redacted source IDs/audit, verify owner mapping. | Reply with finance data or expose which user is authorized. |
-| Backup failed (planned) | Check destination mount, free space, repository access, dump/checksum status, and last verified snapshot age. | Prune old snapshots or delete staging before preserving diagnostics. |
-| Restore mismatch (planned) | Keep restored target isolated; compare manifest, dump/media hashes, versions and integrity checks. | Point production services at the partial restore. |
+| Backup failed | Check destination mount, free space, repository access, absolute-path and owner-only input settings, and `money-tracker-backup status` for the last verified snapshot age. | Prune old snapshots or delete staging before preserving diagnostics. |
+| Restore mismatch | Keep the restored target isolated; compare manifest, dump/media hashes, application/migration versions, and integrity checks. | Point production services at the partial restore. |
 
 ## Critical incident priorities
 

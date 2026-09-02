@@ -6,6 +6,13 @@ inference server, or a database. This package holds the parts that cannot:
 the local structured-output adapter and the compiled root-router graph.
 """
 
+from money_tracker.runtime.expense_graph import (
+    CLASSIFY_CATEGORY_NODE,
+    EXTRACT_NODE,
+    PERSIST_NODE,
+    ProfileConfigurationReader,
+    build_expense_graph,
+)
 from money_tracker.runtime.model import LocalStructuredOutputModel
 from money_tracker.runtime.router_graph import (
     CLASSIFY_NODE,
@@ -14,8 +21,13 @@ from money_tracker.runtime.router_graph import (
 )
 
 __all__ = [
+    "CLASSIFY_CATEGORY_NODE",
     "CLASSIFY_NODE",
+    "EXTRACT_NODE",
+    "PERSIST_NODE",
     "PRE_ROUTE_NODE",
     "LocalStructuredOutputModel",
+    "ProfileConfigurationReader",
+    "build_expense_graph",
     "build_router_graph",
 ]

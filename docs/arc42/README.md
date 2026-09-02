@@ -191,7 +191,7 @@ Money Tracker workstation
 | `domain` | Enforce exact money, expense/refund, dual-allocation, taxonomy, wallet, budget, receipt-metadata, and audit contracts | Pure Python value objects and policies; no framework or infrastructure import | No infrastructure state | Shared host-process library; deterministic validation of untrusted inputs |
 | `application` | Coordinate idempotent expense lifecycle and receipt registration/review, audited wallet/budget mutations, and pending proposal submission through narrow ports | Finance, administration, proposal, and receipt-metadata repository ports plus clock and ID contracts | Command, concurrency, review-boundary, and audit semantics, not stored state | Shared by future CLI/API/worker; profile scope comes from trusted caller context; proposal decisions and receipt deletion are not exposed |
 | `workflows` | Own the bounded intent taxonomy, the normalized channel work unit, deterministic pre-routing, the strict versioned router and extraction model boundaries with their policy vetoes, and deterministic resolution of occurrence time, amount sign, and both reconciled allocation dimensions, draft assembly with its stable command key, and the strict-schema retry boundary behind a narrow model port | Pydantic, `zoneinfo`, and pure domain values; no LangGraph, model client, repository, or transport import | Routing destinations, authority classes, stable routing and resolution reason codes, and the product calendar; no persistent state | Shared by the planned worker; a model can select no deterministic route and supply no profile/timezone/authorization field, no resolved instant, no amount sign, and no funding-source identifier; reason codes carry no owner text |
-| `runtime` | Assemble the compiled root-router graph and adapt the local endpoint to the structured-output port | LangGraph, LangChain, the persistent checkpointer, and the `workflows` contracts | No state of its own; checkpoint contents are owned by the state contract | Host worker process; holds no routing policy, so the framework cannot change how a decision is made |
+| `runtime` | Assemble the compiled root-router and movement graphs and adapt the local endpoint to the structured-output port | LangGraph, LangChain, the persistent checkpointer, and the `workflows` contracts | No state of its own; checkpoint contents are owned by the state contract | Host worker process; holds no routing policy, so the framework cannot change how a decision is made |
 | `api.contracts` | Define strict, versioned finance request/response, mutation-header, and problem wire shapes | Pydantic and domain response values; no web framework | No state; stable JSON field semantics only | Shared by future FastAPI adapter; no endpoint, network listener, credentials, or private media fields |
 | `backup` | Create verified encrypted authoritative snapshots, report their freshness, and restore only into explicitly empty isolated targets | Restic and PostgreSQL client executables, psycopg identity/receipt queries, private archive and configuration paths | Snapshot contents and the versioned integrity manifest in the owner repository; no finance state of its own | Host CLI under an exclusive lock; absolute-path and owner-only input checks, recovery secret passed only by file path, failures name no argument or environment |
 | `administration` | Expose bounded local receipt storage/registration and one-shot routing for development and bootstrap | Database URL, absolute archive setting, media and metadata services, the compiled router and its local adapter | No independent state; emits safe identifiers/facts only | Host CLI; active-profile preflight for storage, no-follow bounded input, explicit routing context, no private paths or message content in JSON |
@@ -441,6 +441,33 @@ Real PostgreSQL tests store a draft against a seeded profile's taxonomy and
 funding sources, replay one inbound record into exactly one movement, refuse a
 changed request on that record, and keep a pending proposal alongside its draft
 without extending the taxonomy.
+
+### Current expense and refund workflow
+
+1. A routed movement message enters a specialist graph with the trusted profile
+   scope injected by the runtime. No model-facing schema has a field for that
+   scope, so a model cannot influence whose data is read or written.
+2. The extraction boundary reads the movement, and routing and extraction judge
+   the direction of money independently. A disagreement clarifies rather than
+   picking one, because recording a purchase as a reimbursement is the kind of
+   ambiguity the product baseline forbids reaching a write.
+3. The purpose boundary receives the owner's own active category names rendered
+   from their taxonomy at call time, so a model can only name a category the
+   owner actually has.
+4. Deterministic assembly then either produces a complete draft or reports the
+   stable reason that selects the question to ask. Only then do the application
+   services store the draft, and a pending candidate is submitted through the
+   existing proposal port.
+5. Each boundary's answer is carried in the state as its own wire form, so a
+   resumed thread never re-asks the model, and the stored movement is
+   referenced by identifier only.
+6. Every node either advances or records a clarification, so a run stores a
+   complete draft or stores nothing.
+
+Funding words are resolved during assembly, after the purpose boundary, so a
+message naming an unknown funding source still costs one purpose call. That is
+a deliberate trade: every write-deciding rule stays inside one atomic function,
+and the latency target applies to successful runs.
 
 ### Current compiled root router
 
@@ -732,6 +759,18 @@ network, and inference readiness through health checks and retry policies.
 - Expected domain failures return typed, user-actionable outcomes.
 - Infrastructure failures remain distinguishable for retry and dead-letter
   handling; they are not converted into fabricated assistant explanations.
+- Strict constrained decoding requires every schema property to be present, so
+  a boundary schema marks them all required and expresses optionality as an
+  admitted null. An optional-in-schema property is not enforced by the decoding
+  grammar, and a model that omits one turns an otherwise correct answer into a
+  schema failure.
+- A model boundary therefore validates shape, not cross-field exclusivity. When
+  a model both supplies a value and flags it unresolved, the deterministic layer
+  prefers the flag, because a flag leads to a question while a guess would be
+  stored.
+- Operational constants never enter a model boundary. The V1 currency is one:
+  the money contract enforces it, so restating it would be configuration the
+  model has no basis to supply and no freedom to vary.
 - Structured-output parsing gets one corrective retry, then clarification. The
   implemented boundary expresses that budget as straight-line code rather than
   a loop, so it structurally cannot retry twice, and a persistent failure

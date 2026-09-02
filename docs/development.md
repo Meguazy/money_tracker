@@ -115,9 +115,26 @@ which is the policy veto rather than a failure. The command reads no database,
 writes nothing, keeps no thread, and prints no message content: a routing
 decision carries none by contract.
 
-It reports routing only. Extraction, category fit, and posting a movement are
-implemented as contracts and resolvers but are not yet wired to a workflow, so
-this command cannot yet show a draft expense.
+Add `--profile-id` to also run the expense or refund workflow when routing
+selects one, storing a draft through the real application services:
+
+    uv run --env-file .env money-tracker-admin route \
+      --text 'Ho speso 50 euro al supermercato, 30 con i buoni pasto e 20 con la carta' \
+      --minimum-confidence 0.5 \
+      --profile-id PROFILE_UUID
+
+The profile must already be bootstrapped with at least one active default
+funding source. A stored movement is always a draft: no auto-post policy is
+promoted. The output adds the outcome, the stored movement identifier, any
+pending candidate, and the clarification reason when nothing was stored.
+
+Expect clarifications on clear messages for now. The candidate extraction
+instructions over-declare unknowns against the screened model, so an unstated
+time or payment method is reported as unresolved instead of taking its
+documented default. That is a measured gap for the pinned
+`ingestion/expense-it` suite, recorded in
+[Decision Log](experiments/decision-log.md); the mechanism itself completes and
+stores a reconciled draft when the extraction declares no unknowns.
 
 ## Authoritative backup
 

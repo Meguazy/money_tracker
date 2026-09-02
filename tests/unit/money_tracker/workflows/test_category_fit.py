@@ -72,7 +72,6 @@ def _extraction(**overrides: Any) -> ExpenseExtraction:
     payload: dict[str, Any] = {
         "polarity": "expense",
         "amount_minor_units": 1200,
-        "currency": "EUR",
         "description": "croccantini per i gatti",
         "evidence": "ho speso 12 euro per i croccantini",
     }
@@ -129,11 +128,20 @@ def test_existing_resolution_rejects_a_proposal_judgment() -> None:
         resolve_existing_category(_proposal_fit(), taxonomy=TAXONOMY)
 
 
-def test_existing_outcome_cannot_carry_proposal_fields() -> None:
-    """Refuse a judgment that claims both outcomes at once."""
+def test_existing_outcome_ignores_the_unread_proposal_fields() -> None:
+    """Read only the half the selected outcome names.
 
-    with pytest.raises(ValidationError, match="cannot carry proposal fields"):
-        _fit(rationale="perché no")
+    Strict constrained decoding requires every property to be present, so a
+    model fills the whole object. Refusing the unread half would reject answers
+    whose selected half is complete and correct.
+    """
+
+    resolved = resolve_existing_category(
+        _fit(rationale="ignorato", proposed_name="Ignorato"),
+        taxonomy=TAXONOMY,
+    )
+
+    assert resolved.name == "Cibo e accessori"
 
 
 def test_existing_outcome_must_name_a_category() -> None:
@@ -152,8 +160,15 @@ def test_proposal_outcome_requires_its_own_fields() -> None:
         CategoryFit.model_validate_json(
             json.dumps({"outcome": "proposal", "evidence": "polizza"})
         )
-    with pytest.raises(ValidationError, match="cannot also resolve"):
-        _proposal_fit(category_name="Animali")
+    proposal = build_category_proposal(
+        _proposal_fit(category_name="Animali"),
+        taxonomy=TAXONOMY,
+        profile_id=PROFILE_ID,
+        proposal_id=uuid4(),
+        source_reference="workflow:draft-1",
+    )
+
+    assert proposal.proposed_name == "Assicurazione animali"
 
 
 def test_repeated_considered_candidates_are_refused() -> None:
@@ -342,9 +357,7 @@ def test_unknown_amount_blocks_the_category_dimension() -> None:
     """Refuse to allocate against a total that was never determined."""
 
     category = resolve_existing_category(_fit(), taxonomy=TAXONOMY)
-    extraction = _extraction(
-        amount_minor_units=None, currency=None, unknowns=["amount"]
-    )
+    extraction = _extraction(amount_minor_units=None, unknowns=["amount"])
 
     assert (
         _reason(lambda: resolve_category_allocations(extraction, category=category))

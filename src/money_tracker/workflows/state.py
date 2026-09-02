@@ -22,6 +22,7 @@ adding a routing field cannot silently fail to reach a resumed thread.
 from __future__ import annotations
 
 from datetime import datetime
+from enum import StrEnum
 from typing import TypedDict
 from uuid import UUID
 
@@ -279,3 +280,121 @@ def _optional_uuid(value: str | None) -> UUID | None:
     """Read an optional identifier back from stable text."""
 
     return None if value is None else UUID(value)
+
+
+class ExpenseOutcome(StrEnum):
+    """How one expense or refund workflow run ended.
+
+    Attributes:
+        DRAFTED: A complete draft movement was stored.
+        AWAITING_CATEGORY_APPROVAL: A draft was stored without a purpose, and a
+            candidate category is pending owner approval.
+        CLARIFICATION: Nothing was stored and one targeted question is owed.
+    """
+
+    DRAFTED = "drafted"
+    AWAITING_CATEGORY_APPROVAL = "awaiting_category_approval"
+    CLARIFICATION = "clarification"
+
+
+class ExpenseWorkflowState(TypedDict, total=False):
+    """Expense or refund workflow state as it is checkpointed.
+
+    The same rule as the router state applies: JSON primitives and stable
+    string references only. The stored movement lives in the repository and is
+    referenced here by identifier, never embedded.
+
+    The profile scope is present because repository reads need it, and it
+    arrives from trusted runtime context. No model-facing schema has a field
+    for it, so a model cannot influence which owner's data is read or written.
+
+    Attributes:
+        state_version: Shape version this thread was created under.
+        profile_id: Trusted owner scope injected by the runtime.
+        source_reference: Stable reference to the durable inbound record.
+        received_at: ISO timestamp anchoring relative Italian dates.
+        text: Owner text the boundaries interpret.
+        routed_intent: Whether the router selected the expense or refund route.
+        extraction_json: The extraction boundary's answer, carried forward as
+            its own wire form so a resumed thread never re-asks the model.
+        category_fit_json: The purpose boundary's answer, carried the same way.
+        outcome: How the run ended, once it has ended.
+        expense_id: Stored draft movement, when one was stored.
+        proposal_id: Pending category candidate, when one was submitted.
+        clarification_reason: Stable reason selecting the question to ask.
+    """
+
+    state_version: str
+    profile_id: str
+    source_reference: str
+    received_at: str
+    text: str
+    routed_intent: str
+    extraction_json: str | None
+    category_fit_json: str | None
+    outcome: str | None
+    expense_id: str | None
+    proposal_id: str | None
+    clarification_reason: str | None
+
+
+def initial_expense_state(
+    message: ChannelMessage,
+    *,
+    profile_id: UUID,
+    routed_intent: WorkflowIntent,
+) -> ExpenseWorkflowState:
+    """Build the state one routed expense or refund message starts from.
+
+    Args:
+        message: Normalized inbound work unit carrying owner text.
+        profile_id: Trusted owner scope.
+        routed_intent: The route the router selected.
+
+    Returns:
+        A complete initial state with no outcome yet.
+
+    Raises:
+        ValueError: If the route is not a movement route, or the message
+            carries no text for the boundaries to interpret.
+    """
+
+    if routed_intent not in {WorkflowIntent.EXPENSE, WorkflowIntent.REFUND}:
+        raise ValueError("expense workflow accepts only a movement route")
+    text = message.normalized_text
+    if not text:
+        raise ValueError("expense workflow requires owner text")
+    return ExpenseWorkflowState(
+        state_version=WORKFLOW_STATE_VERSION,
+        profile_id=str(profile_id),
+        source_reference=message.source_reference,
+        received_at=message.received_at.isoformat(),
+        text=text,
+        routed_intent=routed_intent.value,
+        extraction_json=None,
+        category_fit_json=None,
+        outcome=None,
+        expense_id=None,
+        proposal_id=None,
+        clarification_reason=None,
+    )
+
+
+def expense_message_from_state(state: ExpenseWorkflowState) -> ChannelMessage:
+    """Reconstruct the inbound record a resumed movement thread started from.
+
+    Args:
+        state: Checkpointed expense workflow state.
+
+    Returns:
+        The normalized inbound message.
+
+    Raises:
+        KeyError: If the state omits a field the message requires.
+    """
+
+    return ChannelMessage(
+        source_reference=state["source_reference"],
+        received_at=datetime.fromisoformat(state["received_at"]),
+        text=state["text"],
+    )

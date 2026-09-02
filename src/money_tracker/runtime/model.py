@@ -14,12 +14,48 @@ behaviour cannot quietly change how many attempts a boundary gets.
 
 from __future__ import annotations
 
+from typing import Any
+
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel
 
 from money_tracker.llm import create_chat_model
 from money_tracker.workflows import RepairRequest
+
+
+def strict_json_schema(schema: type[BaseModel]) -> dict[str, Any]:
+    """Render a contract's JSON Schema for strict constrained decoding.
+
+    Every property of every object is marked required. A property a contract
+    treats as optional already admits null, so requiring the key costs the
+    model nothing and removes its ability to omit one: an optional-in-schema
+    field is not enforced by the decoding grammar at all, and a model that
+    forgets one turns an otherwise correct answer into a schema failure that
+    burns the retry budget. Strict structured-output modes require this
+    anyway.
+
+    Args:
+        schema: Contract to render.
+
+    Returns:
+        A JSON Schema whose objects require every property they declare.
+    """
+
+    def require_all(node: Any) -> Any:
+        if isinstance(node, dict):
+            transformed = {key: require_all(value) for key, value in node.items()}
+            properties = transformed.get("properties")
+            if isinstance(properties, dict):
+                transformed["required"] = sorted(properties)
+            return transformed
+        if isinstance(node, list):
+            return [require_all(item) for item in node]
+        return node
+
+    rendered: Any = require_all(schema.model_json_schema())
+    return dict(rendered)
+
 
 REPAIR_INSTRUCTION = (
     "Your previous reply did not satisfy the required schema. "
@@ -88,7 +124,7 @@ class LocalStructuredOutputModel:
                 "json_schema": {
                     "name": schema.__name__,
                     "strict": True,
-                    "schema": schema.model_json_schema(),
+                    "schema": strict_json_schema(schema),
                 },
             }
         )

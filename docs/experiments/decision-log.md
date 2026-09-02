@@ -7,10 +7,13 @@ do not rewrite historical outcomes when a later experiment supersedes them.
 
 - Text model: no evaluated production model selected.
 - Structured-output method: no capability-gated method selected.
-- Routing/category/tool prompts: no V1 production prompt. Unpromoted
-  candidate router instructions exist in code under a `CANDIDATE_` name and
-  a `candidate-` version identifier so a runtime cannot mistake them for a
-  promoted configuration.
+- Routing/category/tool prompts: no V1 production prompt. Unpromoted candidate
+  router, extraction, and category-fit instructions exist in code under
+  `CANDIDATE_` names and `candidate-` version identifiers so a runtime cannot
+  mistake them for a promoted configuration. The candidate extraction text is
+  known to over-declare unknowns against the screened Qwen3 14B profile, so
+  clear messages reach a clarification instead of a draft; that is a gap for
+  the `ingestion/expense-it` suite to measure rather than to tune by hand.
 - Auto-post threshold: disabled until categorization precision gates pass.
 - Routing confidence bar: none promoted. The implemented router requires the
   value as an explicit argument and has no default, so no runtime can adopt

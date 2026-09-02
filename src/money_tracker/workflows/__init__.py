@@ -54,8 +54,13 @@ from money_tracker.workflows.preparation import (
     prepare_expense_draft,
 )
 from money_tracker.workflows.prompts import (
+    CANDIDATE_CATEGORY_FIT_INSTRUCTIONS,
+    CANDIDATE_CATEGORY_FIT_INSTRUCTIONS_VERSION,
+    CANDIDATE_EXTRACTION_INSTRUCTIONS,
+    CANDIDATE_EXTRACTION_INSTRUCTIONS_VERSION,
     CANDIDATE_ROUTER_INSTRUCTIONS,
     CANDIDATE_ROUTER_INSTRUCTIONS_VERSION,
+    render_active_categories,
 )
 from money_tracker.workflows.resolution import (
     PRODUCT_TIMEZONE,
@@ -76,8 +81,12 @@ from money_tracker.workflows.routing import (
 )
 from money_tracker.workflows.state import (
     WORKFLOW_STATE_VERSION,
+    ExpenseOutcome,
+    ExpenseWorkflowState,
     RouterState,
     channel_message_from_state,
+    expense_message_from_state,
+    initial_expense_state,
     initial_router_state,
     routing_context_from_state,
     routing_decision_from_state,
@@ -85,6 +94,10 @@ from money_tracker.workflows.state import (
 )
 
 __all__ = [
+    "CANDIDATE_CATEGORY_FIT_INSTRUCTIONS",
+    "CANDIDATE_CATEGORY_FIT_INSTRUCTIONS_VERSION",
+    "CANDIDATE_EXTRACTION_INSTRUCTIONS",
+    "CANDIDATE_EXTRACTION_INSTRUCTIONS_VERSION",
     "CANDIDATE_ROUTER_INSTRUCTIONS",
     "CANDIDATE_ROUTER_INSTRUCTIONS_VERSION",
     "CATEGORY_FIT_CONTRACT_VERSION",
@@ -106,7 +119,9 @@ __all__ = [
     "CategoryFitOutcome",
     "ChannelMessage",
     "ExpenseExtraction",
+    "ExpenseOutcome",
     "ExpensePolarity",
+    "ExpenseWorkflowState",
     "ExtractedPaymentPart",
     "ExtractionField",
     "RepairRequest",
@@ -130,6 +145,8 @@ __all__ = [
     "clarify",
     "initial_router_state",
     "expense_command_key",
+    "expense_message_from_state",
+    "initial_expense_state",
     "normalize_owner_text",
     "parse_command",
     "parse_with_one_repair",
@@ -144,6 +161,7 @@ __all__ = [
     "resolve_payment_allocations",
     "routing_context_from_state",
     "routing_decision_from_state",
+    "render_active_categories",
     "routing_update",
     "summarize_validation_error",
 ]

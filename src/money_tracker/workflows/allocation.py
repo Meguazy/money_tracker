@@ -123,7 +123,7 @@ def resolve_payment_allocations(
             to one source, or the stated portions do not reconcile.
     """
 
-    if ExtractionField.PAYMENT in extraction.unknowns:
+    if extraction.declares_unknown(ExtractionField.PAYMENT):
         raise UnresolvedExtractionError(ResolutionReason.PAYMENT_UNKNOWN)
     total = resolve_amount(extraction)
     sign = -1 if total.minor_units < 0 else 1

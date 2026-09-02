@@ -42,7 +42,6 @@ def _extraction(**overrides: Any) -> ExpenseExtraction:
     payload: dict[str, Any] = {
         "polarity": "expense",
         "amount_minor_units": 5000,
-        "currency": "EUR",
         "description": "spesa al supermercato",
         "evidence": "ho speso 50 euro al supermercato",
     }

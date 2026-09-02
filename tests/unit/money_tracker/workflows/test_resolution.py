@@ -29,7 +29,6 @@ def _extraction(**overrides: Any) -> ExpenseExtraction:
     payload: dict[str, Any] = {
         "polarity": "expense",
         "amount_minor_units": 1200,
-        "currency": "EUR",
         "description": "croccantini",
         "evidence": "12 euro di croccantini",
     }
@@ -273,9 +272,7 @@ def test_refund_amount_becomes_negative_from_polarity_alone() -> None:
 def test_unknown_amount_cannot_be_resolved() -> None:
     """Ask instead of inventing a total."""
 
-    extraction = _extraction(
-        amount_minor_units=None, currency=None, unknowns=["amount"]
-    )
+    extraction = _extraction(amount_minor_units=None, unknowns=["amount"])
 
     with pytest.raises(UnresolvedExtractionError) as error:
         resolve_amount(extraction)

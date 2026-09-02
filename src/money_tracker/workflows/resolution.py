@@ -347,10 +347,14 @@ def resolve_amount(extraction: ExpenseExtraction) -> Money:
         Exact signed money in the operational currency.
 
     Raises:
-        UnresolvedExtractionError: If the amount was declared unknown.
+        UnresolvedExtractionError: If the amount was declared unknown or is
+            absent. A declared unknown wins over a value supplied alongside it.
     """
 
-    if extraction.amount_minor_units is None:
+    if (
+        extraction.declares_unknown(ExtractionField.AMOUNT)
+        or extraction.amount_minor_units is None
+    ):
         raise UnresolvedExtractionError(ResolutionReason.AMOUNT_UNKNOWN)
     magnitude = extraction.amount_minor_units
     if extraction.polarity is ExpensePolarity.REFUND:
@@ -377,6 +381,6 @@ def resolve_occurrence_for(
             or its stated words cannot be resolved.
     """
 
-    if ExtractionField.OCCURRED_AT in extraction.unknowns:
+    if extraction.declares_unknown(ExtractionField.OCCURRED_AT):
         raise UnresolvedExtractionError(ResolutionReason.OCCURRENCE_UNKNOWN)
     return resolve_occurrence_time(extraction.occurred_at_text, received_at=received_at)

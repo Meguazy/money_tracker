@@ -62,7 +62,6 @@ def _extraction(**overrides: Any) -> ExpenseExtraction:
     payload: dict[str, Any] = {
         "polarity": "expense",
         "amount_minor_units": 5000,
-        "currency": "EUR",
         "description": "spesa al supermercato",
         "evidence": "ho speso 50 euro al supermercato",
     }
@@ -276,9 +275,7 @@ def test_declared_unknown_payment_is_a_question() -> None:
 def test_unknown_amount_blocks_the_payment_dimension() -> None:
     """Refuse to allocate against a total that was never determined."""
 
-    extraction = _extraction(
-        amount_minor_units=None, currency=None, unknowns=["amount"]
-    )
+    extraction = _extraction(amount_minor_units=None, unknowns=["amount"])
 
     assert _reason(extraction) is ResolutionReason.AMOUNT_UNKNOWN
 

@@ -12,7 +12,7 @@ Deterministic validation of a parsed classification lives in
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Annotated, Literal, Self
+from typing import Annotated, Self
 
 from pydantic import (
     BaseModel,
@@ -189,8 +189,9 @@ class ExpenseExtraction(_WorkflowContract):
     Attributes:
         polarity: Whether money left or returned to the owner.
         amount_minor_units: Positive total magnitude in cents, or None when the
-            amount is declared unknown.
-        currency: Operational V1 currency, present exactly when an amount is.
+            amount is declared unknown. No currency accompanies it: V1 operates
+            in one currency, so restating it would be operational configuration
+            the model has no basis to supply and no freedom to vary.
         occurred_at_text: Verbatim temporal words when the message states a
             time, resolved deterministically against the message timestamp.
         description: Owner-facing description of the movement.
@@ -202,7 +203,6 @@ class ExpenseExtraction(_WorkflowContract):
 
     polarity: ExpensePolarity
     amount_minor_units: int | None = Field(default=None, gt=0)
-    currency: Literal["EUR"] | None = None
     occurred_at_text: NonEmptyText | None = None
     description: NonEmptyText
     merchant: NonEmptyText | None = None
@@ -260,35 +260,24 @@ class ExpenseExtraction(_WorkflowContract):
             raise ValueError("a split payment must quantify every part")
         return parts
 
-    @model_validator(mode="after")
-    def _validate_unknown_consistency(self) -> Self:
-        """Keep every declared unknown mutually exclusive with its value.
+    def declares_unknown(self, field: ExtractionField) -> bool:
+        """Return whether the model abstained on one aspect.
+
+        A declared unknown always wins over a value supplied alongside it.
+        Strict constrained decoding requires every property to be present, so a
+        model routinely fills a field and flags it in the same answer. The safe
+        reading of that combination is the flag, because it leads to a question
+        instead of a stored guess, and it is applied deterministically rather
+        than refused at the boundary.
+
+        Args:
+            field: Aspect to test.
 
         Returns:
-            The validated extraction.
-
-        Raises:
-            ValueError: If a field is both declared unknown and supplied, if an
-                amount lacks its currency, or if a known amount is absent.
+            Whether the model declared that aspect unresolved.
         """
 
-        declared = set(self.unknowns)
-        if (self.amount_minor_units is None) != (ExtractionField.AMOUNT in declared):
-            raise ValueError(
-                "an absent amount must be declared unknown and a known amount "
-                "must not be"
-            )
-        if (self.currency is None) != (self.amount_minor_units is None):
-            raise ValueError("currency must accompany an amount")
-        if ExtractionField.OCCURRED_AT in declared and (
-            self.occurred_at_text is not None
-        ):
-            raise ValueError("an unknown occurrence time cannot also be stated")
-        if ExtractionField.MERCHANT in declared and self.merchant is not None:
-            raise ValueError("an unknown merchant cannot also be named")
-        if ExtractionField.PAYMENT in declared and self.payment_parts:
-            raise ValueError("an unknown payment cannot also be itemized")
-        return self
+        return field in self.unknowns
 
     @property
     def is_resolvable(self) -> bool:
@@ -377,33 +366,26 @@ class CategoryFit(_WorkflowContract):
         return names
 
     @model_validator(mode="after")
-    def _validate_outcome_shape(self) -> Self:
-        """Require exactly the fields the selected outcome defines.
+    def _require_the_selected_outcome_fields(self) -> Self:
+        """Require the fields the selected outcome reads, and no more.
+
+        Fields belonging to the other outcome are ignored rather than refused.
+        Strict constrained decoding requires every property to be present, so a
+        model fills the whole object and the `outcome` field alone decides which
+        half is meaningful. Refusing the unread half would reject answers whose
+        selected half is complete and correct.
 
         Returns:
             The validated judgment.
 
         Raises:
-            ValueError: If the judgment carries fields belonging to the other
-                outcome, or omits one its own outcome requires.
+            ValueError: If the selected outcome omits a field it needs.
         """
 
         if self.outcome is CategoryFitOutcome.EXISTING:
             if self.category_name is None:
                 raise ValueError("an existing outcome must name a category")
-            if any(
-                value is not None
-                for value in (
-                    self.proposed_name,
-                    self.parent_name,
-                    self.description,
-                    self.rationale,
-                )
-            ):
-                raise ValueError("an existing outcome cannot carry proposal fields")
             return self
-        if self.category_name is not None:
-            raise ValueError("a proposal cannot also resolve to an existing category")
         if (
             self.proposed_name is None
             or self.description is None

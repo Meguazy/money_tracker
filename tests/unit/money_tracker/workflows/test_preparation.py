@@ -58,7 +58,6 @@ def _extraction(**overrides: Any) -> ExpenseExtraction:
     payload: dict[str, Any] = {
         "polarity": "expense",
         "amount_minor_units": 1200,
-        "currency": "EUR",
         "description": "croccantini per i gatti",
         "evidence": "ho speso 12 euro per i croccantini",
     }
@@ -255,7 +254,7 @@ def test_excluded_candidate_is_refused_on_re_proposal() -> None:
     ("overrides", "reason"),
     [
         (
-            {"amount_minor_units": None, "currency": None, "unknowns": ["amount"]},
+            {"amount_minor_units": None, "unknowns": ["amount"]},
             ResolutionReason.AMOUNT_UNKNOWN,
         ),
         (

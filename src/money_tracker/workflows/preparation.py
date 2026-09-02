@@ -13,6 +13,10 @@ dimension resolved and its purpose dimension deliberately empty, because
 AD-008 lets only owner approval extend the taxonomy while the product baseline
 expects the draft to survive the pause.
 
+A merchant the model declared unknown is treated as absent rather than stored,
+because strict constrained decoding requires every property to be present and a
+model may fill a field and flag it in the same answer. The flag always wins.
+
 The command key is derived from the durable inbound record rather than
 generated, so a redelivered message claims the same key and the repository
 returns the first result instead of creating a second movement.
@@ -52,6 +56,7 @@ from money_tracker.workflows.contracts import (
     CategoryFit,
     CategoryFitOutcome,
     ExpenseExtraction,
+    ExtractionField,
 )
 from money_tracker.workflows.messages import ChannelMessage
 from money_tracker.workflows.resolution import resolve_amount, resolve_occurrence_for
@@ -257,7 +262,11 @@ def _draft(
         amount=amount,
         occurred_at=occurred_at,
         description=extraction.description,
-        merchant=extraction.merchant,
+        merchant=(
+            None
+            if extraction.declares_unknown(ExtractionField.MERCHANT)
+            else extraction.merchant
+        ),
         status=ExpenseStatus.DRAFT,
         category_allocations=category_allocations,
         payment_allocations=payment_allocations,

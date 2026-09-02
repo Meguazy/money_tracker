@@ -37,6 +37,10 @@ class ResolutionReason(StrEnum):
             alias, so an adequate node already exists.
         CATEGORY_PARENT_INVALID: A proposed parent is not an active root.
         CATEGORY_EXCLUDED: A proposed name was already rejected in this review.
+        POLARITY_DISAGREEMENT: Routing and extraction disagreed about whether
+            money left or returned to the owner.
+        MODEL_OUTPUT_INVALID: A model boundary could not produce a schema-valid
+            answer within its retry budget.
     """
 
     AMOUNT_UNKNOWN = "amount_unknown"
@@ -52,6 +56,8 @@ class ResolutionReason(StrEnum):
     CATEGORY_ALREADY_EXISTS = "category_already_exists"
     CATEGORY_PARENT_INVALID = "category_parent_invalid"
     CATEGORY_EXCLUDED = "category_excluded"
+    POLARITY_DISAGREEMENT = "polarity_disagreement"
+    MODEL_OUTPUT_INVALID = "model_output_invalid"
 
 
 class UnresolvedExtractionError(ValueError):

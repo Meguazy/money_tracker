@@ -20,6 +20,8 @@ from uuid import UUID, uuid4
 from langchain_core.exceptions import ModelConnectionError
 
 from money_tracker.application import (
+    CategoryProposalService,
+    FinanceService,
     ReceiptMediaError,
     ReceiptMetadataService,
 )
@@ -30,12 +32,22 @@ from money_tracker.media import LocalReceiptMediaStore, ReceiptArchiveSettings
 from money_tracker.media.local import MAX_RECEIPT_BYTES
 from money_tracker.persistence.database import database_url_from_env
 from money_tracker.persistence.finance import PostgresFinanceRepository
-from money_tracker.runtime import LocalStructuredOutputModel, build_router_graph
+from money_tracker.runtime import (
+    LocalStructuredOutputModel,
+    build_expense_graph,
+    build_router_graph,
+)
 from money_tracker.workflows import (
+    CANDIDATE_CATEGORY_FIT_INSTRUCTIONS,
+    CANDIDATE_EXTRACTION_INSTRUCTIONS,
     CANDIDATE_ROUTER_INSTRUCTIONS,
     ChannelMessage,
+    ExpenseWorkflowState,
     RouterState,
     RoutingContext,
+    RoutingDecision,
+    WorkflowIntent,
+    initial_expense_state,
     initial_router_state,
     routing_decision_from_state,
 )
@@ -89,6 +101,15 @@ def _parser() -> argparse.ArgumentParser:
         type=UUID,
         metavar="UUID",
         help="the movement a correction or undo would target",
+    )
+    route.add_argument(
+        "--profile-id",
+        type=UUID,
+        metavar="UUID",
+        help=(
+            "run the expense or refund workflow for this profile when routing "
+            "selects one, storing a draft; routing only when omitted"
+        ),
     )
     return parser
 
@@ -232,6 +253,20 @@ def _route(args: argparse.Namespace) -> dict[str, object]:
     decision = routing_decision_from_state(final)
     if decision is None:
         raise SystemExit("router reached no decision")
+    routed = _routing_facts(decision)
+    if args.profile_id is None or decision.intent not in {
+        WorkflowIntent.EXPENSE,
+        WorkflowIntent.REFUND,
+    }:
+        return routed
+    return routed | _run_movement_workflow(
+        message, profile_id=args.profile_id, intent=decision.intent
+    )
+
+
+def _routing_facts(decision: RoutingDecision) -> dict[str, object]:
+    """Render the safe facts of one routing decision."""
+
     return {
         "command": decision.command.value if decision.command else None,
         "confidence": decision.confidence,
@@ -244,6 +279,68 @@ def _route(args: argparse.Namespace) -> dict[str, object]:
         "target_movement_id": (
             str(decision.target_movement_id) if decision.target_movement_id else None
         ),
+    }
+
+
+def _run_movement_workflow(
+    message: ChannelMessage,
+    *,
+    profile_id: UUID,
+    intent: WorkflowIntent,
+) -> dict[str, object]:
+    """Run the expense or refund workflow and return its safe outcome.
+
+    The profile scope is supplied by the operator, which is what makes this a
+    development command: a channel would derive it from owner pairing instead.
+    Nothing is stored unless every part of the message resolves, and a stored
+    movement is always a draft.
+
+    Args:
+        message: The inbound record routing accepted.
+        profile_id: Trusted owner scope for repository reads and writes.
+        intent: The movement route routing selected.
+
+    Returns:
+        Outcome facts, including the stored draft's identifier when one exists.
+
+    Raises:
+        SystemExit: If the profile does not exist or the local endpoint is
+            unreachable.
+    """
+
+    repository = PostgresFinanceRepository(database_url_from_env())
+    if not repository.profile_exists(profile_id):
+        raise SystemExit("active profile does not exist")
+    graph = build_expense_graph(
+        model=LocalStructuredOutputModel(),
+        configuration=repository,
+        finance=FinanceService(repository, clock=SystemClock(), ids=UUID4Generator()),
+        proposals=CategoryProposalService(
+            repository, clock=SystemClock(), ids=UUID4Generator()
+        ),
+        ids=UUID4Generator(),
+        extraction_instructions=CANDIDATE_EXTRACTION_INSTRUCTIONS,
+        category_instructions=CANDIDATE_CATEGORY_FIT_INSTRUCTIONS,
+    )
+    try:
+        final = cast(
+            ExpenseWorkflowState,
+            graph.invoke(
+                initial_expense_state(
+                    message, profile_id=profile_id, routed_intent=intent
+                )
+            ),
+        )
+    except ModelConnectionError as error:
+        raise SystemExit(
+            "the expense workflow needs the local inference server; start it "
+            "with scripts/run_llama_server.sh"
+        ) from error
+    return {
+        "clarification_reason": final.get("clarification_reason"),
+        "expense_id": final.get("expense_id"),
+        "outcome": final.get("outcome"),
+        "proposal_id": final.get("proposal_id"),
     }
 
 

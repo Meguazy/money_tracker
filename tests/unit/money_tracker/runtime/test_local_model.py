@@ -62,13 +62,40 @@ def test_adapter_requests_strict_json_schema_for_the_contract() -> None:
     )
     response_format = chat_model.requests[0]["kwargs"]["response_format"]
 
+    rendered = response_format["json_schema"]["schema"]
+
     assert response_format["type"] == "json_schema"
     assert response_format["json_schema"]["strict"] is True
     assert response_format["json_schema"]["name"] == "RouteClassification"
     assert (
-        response_format["json_schema"]["schema"]
-        == RouteClassification.model_json_schema()
+        rendered["properties"]
+        == (RouteClassification.model_json_schema()["properties"])
     )
+
+
+def test_every_property_is_required_for_constrained_decoding() -> None:
+    """Force the model to emit every key rather than silently omit one.
+
+    An optional-in-schema property is not enforced by the decoding grammar, so
+    a model can drop it and turn an otherwise correct answer into a schema
+    failure that burns the retry budget. Optional fields already admit null, so
+    requiring the key costs nothing.
+    """
+
+    chat_model = RecordingChatModel(completions=[COMPLETION])
+
+    LocalStructuredOutputModel(chat_model).complete_json(
+        instructions="classify",
+        message="ho speso 12 euro",
+        schema=RouteClassification,
+    )
+    rendered = chat_model.requests[0]["kwargs"]["response_format"]["json_schema"][
+        "schema"
+    ]
+
+    assert rendered["required"] == sorted(rendered["properties"])
+    assert "unknowns" in rendered["required"]
+    assert "unknowns" not in RouteClassification.model_json_schema()["required"]
 
 
 def test_adapter_returns_raw_text_for_the_deterministic_parser() -> None:

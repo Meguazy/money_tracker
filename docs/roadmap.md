@@ -290,11 +290,11 @@ boundary, pure resolution of occurrence time, amount sign, and both reconciled
 allocation dimensions, and the strict-schema retry boundary behind a narrow
 model port. The typed root router is assembled as a LangGraph state graph over
 the persistent PostgreSQL checkpointer, with a local structured-output adapter
-and a local command for exercising it by hand. Draft assembly turns resolved
-model output into a stored movement with a stable command key. No specialist
-subgraph, persistent owner interrupt, read-only tool registry, channel wiring,
-or evaluation dataset exists yet, and no confidence bar, prompt, or model is
-promoted.
+and a local command for exercising it by hand. The expense and refund
+specialist workflow runs end to end, storing a draft through the existing
+application services or reporting the question it owes. No persistent owner
+interrupt, read-only tool registry, channel wiring, or evaluation dataset
+exists yet, and no confidence bar, prompt, or model is promoted.
 
 ### Prerequisites
 
@@ -307,10 +307,8 @@ step's gates and the experiment decision log.
 This order is a handoff aid, not new scope. Each increment must land with its
 own tests and documentation, and none may ship a later step's behavior.
 
-1. The expense and refund subgraphs that call draft assembly and the existing
-   application services from the router, plus the read-only query and advice
-   routes with scoped tool registries. Deterministic assembly and the stable
-   command key are implemented.
+1. The read-only query and advice routes with scoped tool registries. The
+   movement workflow is implemented.
 2. Persistent human-in-the-loop category review over the existing pending
    proposal port, covering approve, best existing, named existing, re-propose,
    cancel, unrelated input, and the three-rejection transition, with side
@@ -318,7 +316,9 @@ own tests and documentation, and none may ship a later step's behavior.
 3. The pinned `routing/intent-it`, `ingestion/expense-it`,
    `categorization/purpose-it`, and `workflow/category-review-it` datasets and
    suites, then calibration of the routing confidence bar and the auto-post
-   eligibility policy on held-out labels. An ad-hoc check against the screened
+   eligibility policy on held-out labels. This increment now blocks usable
+   end-to-end behaviour, not just promotion: see the extraction finding in the
+   evidence below. An ad-hoc check against the screened
    Qwen3 14B profile routed the expense, refund, split-funding, query, budget,
    advice, and non-finance journeys as the product baseline expects, but routed
    `Vorrei caricare 100 euro di buoni pasto` to the expense route instead of
@@ -467,6 +467,38 @@ own tests and documentation, and none may ship a later step's behavior.
   redelivery must replay the stored record unchanged, its channel timestamp
   included; a test that re-read the clock instead surfaced that precondition,
   which is now documented.
+- The expense and refund workflow is a LangGraph graph over the same
+  checkpointer, wiring the two model boundaries and deterministic assembly to
+  the existing application services. Routing and extraction judge the direction
+  of money independently and a disagreement clarifies rather than picking one.
+  The purpose boundary receives the owner's own active category names rendered
+  from their taxonomy at call time. Every node either advances or records a
+  clarification, so a run stores a complete draft or stores nothing.
+- Real PostgreSQL tests store a reconciled draft and the split-funding journey
+  against a seeded profile, submit a pending candidate without extending the
+  taxonomy, leave the database untouched on every clarification path, store
+  exactly one movement for a redelivered record, and resume a finished thread
+  from a checkpoint across separate connections.
+- Three boundary-design defects were found by running the workflow against the
+  real screened model, and all three were mine rather than the model's. The
+  extraction schema required the model to restate the V1 currency, which is
+  operational configuration it has no basis to supply; the schema handed to the
+  endpoint left optional properties out of `required`, which constrained
+  decoding does not enforce, so a model could omit a field and fail the whole
+  answer; and cross-field mutual-exclusion rules were incompatible with
+  requiring every property, because a model then fills a field and flags it in
+  the same answer. Boundaries now validate shape only, every property is
+  required with optionality expressed as an admitted null, and a declared
+  unknown wins over a value supplied beside it.
+- With those fixed, both boundaries return schema-valid answers for real
+  Italian input and the mechanism completes: one split-funding message stored a
+  reconciled draft end to end. The candidate extraction instructions then
+  over-declare unknowns, treating an unstated time or payment method as
+  unresolved rather than as the documented default, so most clear messages
+  reach a clarification instead of a draft. Two prompt revisions did not fix it
+  and further ad-hoc tuning is prohibited by AD-012: this is a prompt and model
+  quality gap for the `ingestion/expense-it` dataset and its 0.98 ambiguity
+  gate to measure, not a mechanism gap.
 - `money-tracker-admin route` sends one message through the real compiled
   router and prints only the decision it reached. It takes the trusted routing
   context from flags rather than the database, so it needs no active profile

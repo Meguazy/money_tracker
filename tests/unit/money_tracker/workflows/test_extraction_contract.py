@@ -13,6 +13,9 @@ from money_tracker.workflows import (
     ExpenseExtraction,
     ExpensePolarity,
     ExtractionField,
+    ResolutionReason,
+    UnresolvedExtractionError,
+    resolve_amount,
 )
 
 FORBIDDEN_AUTHORITY_FIELDS = (
@@ -32,7 +35,6 @@ def _payload(**overrides: Any) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "polarity": "expense",
         "amount_minor_units": 1200,
-        "currency": "EUR",
         "description": "croccantini per i gatti",
         "evidence": "ho speso 12 euro per i croccantini",
     }
@@ -87,71 +89,54 @@ def test_refund_polarity_is_stated_as_a_word_not_a_sign() -> None:
         _parse(amount_minor_units=0)
 
 
-def test_absent_amount_must_be_declared_unknown() -> None:
-    """Refuse an amountless extraction that does not say so explicitly."""
+def test_an_absent_amount_is_unresolvable() -> None:
+    """Refuse to store a movement whose total was never determined."""
 
-    with pytest.raises(ValidationError, match="declared unknown"):
-        _parse(amount_minor_units=None, currency=None)
-
-    extraction = _parse(amount_minor_units=None, currency=None, unknowns=["amount"])
+    extraction = _parse(amount_minor_units=None)
 
     assert extraction.amount_minor_units is None
-    assert not extraction.is_resolvable
-
-
-def test_known_amount_may_not_also_be_declared_unknown() -> None:
-    """Prevent an extraction from guessing and abstaining at once."""
-
-    with pytest.raises(ValidationError, match="must not be"):
-        _parse(unknowns=["amount"])
-
-
-def test_currency_must_accompany_an_amount() -> None:
-    """Keep exact money and its currency inseparable at the boundary."""
-
-    with pytest.raises(ValidationError, match="currency must accompany"):
-        _parse(currency=None, amount_minor_units=1200, unknowns=[])
-    with pytest.raises(ValidationError, match="currency must accompany"):
-        _parse(amount_minor_units=None, unknowns=["amount"])
-
-
-def test_only_the_operational_currency_is_accepted() -> None:
-    """Refuse a currency V1 does not operate in."""
-
-    with pytest.raises(ValidationError):
-        _parse(currency="USD")
+    with pytest.raises(UnresolvedExtractionError) as error:
+        resolve_amount(extraction)
+    assert error.value.reason is ResolutionReason.AMOUNT_UNKNOWN
 
 
 @pytest.mark.parametrize(
-    ("field", "value"),
+    ("field", "value", "declared"),
     [
-        ("occurred_at_text", "ieri"),
-        ("merchant", "Conad"),
+        ("amount_minor_units", 1200, "amount"),
+        ("occurred_at_text", "ieri", "occurred_at"),
+        ("merchant", "Conad", "merchant"),
     ],
 )
-def test_a_declared_unknown_cannot_also_carry_a_value(
+def test_a_declared_unknown_wins_over_a_value_supplied_beside_it(
     field: str,
-    value: str,
+    value: object,
+    declared: str,
 ) -> None:
-    """Keep every declared unknown mutually exclusive with its own value."""
+    """Read the abstention, not the guess, when a model supplies both.
 
-    unknown = {
-        "occurred_at_text": ExtractionField.OCCURRED_AT,
-        "merchant": ExtractionField.MERCHANT,
-    }[field]
+    Strict constrained decoding requires every property to be present, so a
+    model routinely fills a field and flags it in the same answer. The boundary
+    accepts that shape and the deterministic layer prefers the flag, because a
+    flag leads to a question while a guess would be stored.
+    """
 
-    with pytest.raises(ValidationError, match="cannot also"):
-        _parse(**{field: value}, unknowns=[unknown.value])
+    extraction = _parse(**{field: value}, unknowns=[declared])
+
+    assert extraction.declares_unknown(ExtractionField(declared))
+    assert not extraction.is_resolvable
 
 
-def test_unknown_payment_cannot_also_be_itemized() -> None:
-    """Refuse an abstention that still names funding portions."""
+def test_unknown_payment_wins_over_itemized_parts() -> None:
+    """Ask about funding rather than charging portions the model doubted."""
 
-    with pytest.raises(ValidationError, match="cannot also be itemized"):
-        _parse(
-            payment_parts=[{"funding_source_text": "carta"}],
-            unknowns=["payment"],
-        )
+    extraction = _parse(
+        payment_parts=[{"funding_source_text": "carta"}],
+        unknowns=["payment"],
+    )
+
+    assert extraction.payment_parts != ()
+    assert extraction.declares_unknown(ExtractionField.PAYMENT)
 
 
 def test_absent_optional_values_are_defaults_not_unknowns() -> None:

@@ -1,7 +1,8 @@
 # AD-006: Bounded Typed Agent Workflows
 
 - Status: accepted
-- Implementation: checkpoint foundation implemented; typed workflows planned
+- Implementation: checkpoint foundation and deterministic root routing with
+  its typed model boundary implemented; specialist subgraphs planned
 - Date: 2026-09-01
 
 ## Context
@@ -40,8 +41,32 @@ Roadmap Step 1 supplies a narrow PostgreSQL checkpointer factory with
 `autocommit`, dictionary rows, the dedicated `workflow` search path, and strict
 message serialization enabled by default. Bootstrap invokes the checkpointer's
 real schema setup, and an integration test writes and reads a checkpoint across
-separate connections. The typed router, specialist nodes, interrupts, and
-product workflow state are not implemented yet.
+separate connections.
+
+Roadmap Step 3 implements the framework-independent `workflows` component. The
+bounded intent taxonomy partitions every destination into exactly one authority
+class, so a read-only, inert, or non-finance route cannot reach a mutation, and
+the two deterministic-only routes cannot be selected by a model. Deterministic
+pre-routing resolves explicit interface decisions, image media, supported
+commands, and blank input by a total precedence order without consulting a
+model, and it clarifies an uncorrelated callback rather than applying it to an
+arbitrary pending action.
+
+The strict versioned `RouteClassification` schema forbids unknown fields,
+requires a short verbatim evidence span, records explicitly declared unknowns,
+and exposes no profile, timezone, funding-source, authorization, or idempotency
+field. Deterministic acceptance then vetoes a category follow-up without
+exactly one correlated pending review, a correction or undo without a
+runtime-resolved movement, and any decision below an explicitly supplied
+confidence bar; every veto falls back to clarification.
+
+The confidence bar is a required argument with no default. This decision record
+does not authorize a value: calibration on the pinned routing dataset and an
+entry in the experiment decision log precede any runtime use.
+
+Specialist subgraphs, production prompts, the model call and its single
+corrective retry, persistent interrupts, and workflow state are not implemented
+yet.
 
 ## Consequences
 

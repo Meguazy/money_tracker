@@ -9,6 +9,10 @@ do not rewrite historical outcomes when a later experiment supersedes them.
 - Structured-output method: no capability-gated method selected.
 - Routing/category/tool prompts: scaffold prompt only; no V1 production prompts.
 - Auto-post threshold: disabled until categorization precision gates pass.
+- Routing confidence bar: none promoted. The implemented router requires the
+  value as an explicit argument and has no default, so no runtime can adopt
+  one before calibration on the pinned `routing/intent-it` dataset is
+  recorded here.
 - Receipt pipeline: no pipeline selected; receipt extraction remains planned.
 - Langfuse: optional local integration; the Step 1 capability runner emits
   deterministic local reports and can publish only redacted aggregate scores.

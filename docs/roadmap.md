@@ -16,7 +16,7 @@ step unless the owner explicitly changes scope.
 | 0 | Decision-complete documentation baseline | Complete (2026-09-01) |
 | 1 | Healthy platform and evaluation foundation | Complete (2026-09-02) |
 | 2 | Deterministic finance domain and persistence | Complete (2026-09-02) |
-| 3 | Evaluated text workflows | Next |
+| 3 | Evaluated text workflows | In progress |
 | 4 | Durable Telegram MVP | Planned |
 | 5 | Local dashboard, budgets, analytics, and advice | Planned |
 | 6 | Evaluated receipt workflow | Planned |
@@ -27,8 +27,8 @@ only when all exit criteria pass; merged code alone is insufficient.
 
 ## Step 0: Documentation baseline
 
-Status: **Complete (2026-09-01).** Steps 1 and 2 are complete; Step 3 is
-next.
+Status: **Complete (2026-09-01).** Steps 1 and 2 are complete; Step 3 is in
+progress.
 
 ### Intent
 
@@ -281,6 +281,48 @@ backup runbook records how to install them.
 
 ## Step 3: Evaluated text workflows
 
+Status: **In progress.** The framework-independent routing foundation is
+implemented: the bounded intent taxonomy with partitioned mutation authority,
+the normalized channel work unit, deterministic pre-routing, and the strict
+versioned router model boundary with its deterministic policy vetoes. No
+LangGraph node, prompt, model call, specialist subgraph, persistent interrupt,
+or evaluation dataset exists yet, and no confidence bar or model is promoted.
+
+### Prerequisites
+
+Step 2 complete. A capability-screened local candidate exists from Step 1, but
+no candidate is promoted to a product role; promotion happens through this
+step's gates and the experiment decision log.
+
+### Remaining increments
+
+This order is a handoff aid, not new scope. Each increment must land with its
+own tests and documentation, and none may ship a later step's behavior.
+
+1. Versioned expense/refund extraction and category-fit contracts with evidence
+   and explicit unknowns, plus the deterministic resolvers those contracts
+   deliberately keep away from the model: relative Italian occurrence time in
+   `Europe/Rome` against the message timestamp, and funding-source resolution
+   from trusted profile context.
+2. The LangGraph root router node: the real model call against the strict
+   schema, the single corrective retry required by AD-006, the versioned
+   workflow state holding only small serializable values and stable references,
+   and the persistent PostgreSQL checkpointer already available from Step 1.
+3. Deterministic expense/refund mutation paths that call the existing
+   application services with a stable command idempotency key, plus the
+   read-only query and advice routes with scoped tool registries.
+4. Persistent human-in-the-loop category review over the existing pending
+   proposal port, covering approve, best existing, named existing, re-propose,
+   cancel, unrelated input, and the three-rejection transition, with side
+   effects placed after the interrupt and made idempotent for replay.
+5. The pinned `routing/intent-it`, `ingestion/expense-it`,
+   `categorization/purpose-it`, and `workflow/category-review-it` datasets and
+   suites, then calibration of the routing confidence bar and the auto-post
+   eligibility policy on held-out labels.
+6. Promotion of the model, prompts, schemas, and thresholds through
+   [Decision Log](experiments/decision-log.md), which currently records that no
+   routing confidence bar and no auto-post threshold are promoted.
+
 ### Deliverables
 
 - Typed root router with deterministic handling for channel commands/callbacks
@@ -306,6 +348,40 @@ backup runbook records how to install them.
   real local model in integration/evaluation runs.
 - Graph state contains only small serializable values and stable references;
   domain data remains in repositories.
+
+### Current implementation evidence
+
+- The `workflows` component is framework-independent: it imports Pydantic and
+  the domain error type, and no LangGraph, model client, repository, or
+  transport module. It owns no persistent state.
+- Every intent belongs to exactly one authority class, and the classes are
+  disjoint and exhaustive over the taxonomy. Query, advice, non-finance,
+  unsupported, clarification, and receipt routes are outside the mutating set,
+  so a non-write request has no routing path to a financial write.
+- Deterministic pre-routing applies a total precedence order over explicit
+  interface decisions, image media, supported commands, and blank input. Image
+  media outranks its own caption, and a callback naming no pending action is
+  clarified instead of applied to an arbitrary pending action. Commands are
+  matched exactly and never inferred from prose; a routing decision carries no
+  command argument, keeping a one-use pairing code out of routing telemetry.
+- The `RouteClassification` schema is strict, versioned, parsed from the real
+  JSON transport shape, and rejects unknown fields, coerced numbers,
+  out-of-range confidence, repeated unknowns, blank or oversized evidence, and
+  the two deterministic-only routes. It exposes no profile, timezone,
+  funding-source, authorization, or idempotency field.
+- Deterministic acceptance vetoes a category follow-up without exactly one
+  correlated pending review, a stale or foreign reply reference, a correction
+  or undo without a runtime-resolved movement, and any decision below the
+  explicitly supplied confidence bar. Correlation targets come from trusted
+  context, never from the classification.
+- Seventy unit tests cover the taxonomy authority invariants, the message
+  contract, command parsing, every pre-routing precedence branch, every
+  category-review callback branch, and every acceptance veto, at 100% branch
+  coverage of the component. Routing decisions are asserted to contain no owner
+  text and only small serializable values and stable references.
+- No exit criterion is met yet. Every gate in the
+  [Evaluation Matrix](experiments/evaluation-matrix.md) requires the model
+  half, the specialist workflows, and pinned datasets that remain open.
 
 ## Step 4: Durable Telegram MVP
 

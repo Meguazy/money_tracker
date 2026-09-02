@@ -167,6 +167,7 @@ Money Tracker workstation
 │   ├── FastAPI application and compiled React UI        [planned]
 │   ├── Telegram gateway                                [planned]
 │   ├── Sequential workflow worker                      [planned]
+│   │   └── typed root router                          [deterministic half implemented]
 │   └── llama.cpp/OpenAI-compatible inference           [scaffolded]
 ├── Private host data
 │   ├── Receipt archive adapter                         [implemented, admin CLI wired]
@@ -189,6 +190,7 @@ Money Tracker workstation
 | `persistence` | Apply versioned migrations and bootstrap persistent LangGraph checkpoints | Alembic, psycopg, PostgreSQL checkpointer | Foundation schemas and workflow checkpoints | Host administration CLI; least-privilege loopback database role |
 | `domain` | Enforce exact money, expense/refund, dual-allocation, taxonomy, wallet, budget, receipt-metadata, and audit contracts | Pure Python value objects and policies; no framework or infrastructure import | No infrastructure state | Shared host-process library; deterministic validation of untrusted inputs |
 | `application` | Coordinate idempotent expense lifecycle and receipt registration/review, audited wallet/budget mutations, and pending proposal submission through narrow ports | Finance, administration, proposal, and receipt-metadata repository ports plus clock and ID contracts | Command, concurrency, review-boundary, and audit semantics, not stored state | Shared by future CLI/API/worker; profile scope comes from trusted caller context; proposal decisions and receipt deletion are not exposed |
+| `workflows` | Own the bounded intent taxonomy, the normalized channel work unit, deterministic pre-routing, and the strict versioned router model boundary with its policy vetoes | Pydantic and the domain error type; no LangGraph, model client, repository, or transport import | Routing destinations, authority classes, and stable justification codes; no persistent state | Shared by the planned worker; a model can select no deterministic route and no profile/timezone/authorization field; justification codes carry no owner text |
 | `api.contracts` | Define strict, versioned finance request/response, mutation-header, and problem wire shapes | Pydantic and domain response values; no web framework | No state; stable JSON field semantics only | Shared by future FastAPI adapter; no endpoint, network listener, credentials, or private media fields |
 | `backup` | Create verified encrypted authoritative snapshots, report their freshness, and restore only into explicitly empty isolated targets | Restic and PostgreSQL client executables, psycopg identity/receipt queries, private archive and configuration paths | Snapshot contents and the versioned integrity manifest in the owner repository; no finance state of its own | Host CLI under an exclusive lock; absolute-path and owner-only input checks, recovery secret passed only by file path, failures name no argument or environment |
 | `administration` | Expose bounded local receipt storage/registration for development and bootstrap | Database URL, absolute archive setting, media and metadata services | No independent state; emits safe identifiers/facts only | Host CLI; active-profile preflight, no-follow bounded input, no private paths in JSON |
@@ -205,7 +207,7 @@ Money Tracker workstation
 | Application services (expense/wallet/budget, proposal submission, and receipt registration/review implemented) | Execute validated commands and queries transactionally | Narrow repository ports, clock, ID and future media ports | Command/content idempotency, versioning, review boundary, and audit semantics | Future FastAPI/worker host processes; profile scope injected; proposal decisions and product receipt review remain workflow-owned |
 | Finance repositories (expense/wallet/budget/proposal/versioned receipt metadata implemented) | Persist authoritative domain records and analytics projections | PostgreSQL protocol through explicit repository contracts | Finance schema implemented; proposal decisions and receipt deletion open | Dedicated application database; least-privilege credentials; optimistic versions and source locks protect concurrent mutations; no media payloads |
 | Messaging inbox/outbox | Receive, order, retry, dead-letter, replay and dispatch transport work | PostgreSQL and Telegram adapter | Raw updates, offsets, delivery attempts, result references | Gateway and worker; bot token never stored in rows |
-| Workflow runtime | Route intents and execute specialist graphs | LangGraph, typed model gateway, application services, checkpointer | Small versioned workflow state only | Sequential worker; no images or service objects in checkpoints |
+| Workflow runtime (routing contracts implemented) | Route intents and execute specialist graphs | LangGraph, typed model gateway, application services, checkpointer | Small versioned workflow state only | Sequential worker; no images or service objects in checkpoints |
 | Receipt service | Validate media, invoke extractor, reconcile lines, prepare review | Implemented media-store port, planned extractor, finance service | Receipt metadata, extraction versions, review state | Private filesystem; untrusted image boundary; orchestration planned |
 | Analytics service | Compute time, category, budget and funding summaries | Read repositories and deterministic calendar policies | No separate authoritative data | FastAPI and read-only agent tools |
 | Backup service (implemented, unscheduled) | Create consistent encrypted backups and verify restores | `pg_dump`, Restic, receipt/configuration paths | Backup snapshots in owner repository | Owner-invoked today; systemd timer and clean-machine qualification planned; recovery secret stored off-device |
@@ -214,7 +216,7 @@ Money Tracker workstation
 
 | Component | Responsibility | Interfaces/dependencies | Data ownership | Deployment/security |
 | --- | --- | --- | --- | --- |
-| Root router and subgraphs | Route one intent and coordinate extraction, review, query or advice | Versioned Pydantic schemas, scoped tool registries | Checkpoint references and workflow IDs | Worker; mutation paths are deterministic |
+| Root router and subgraphs (deterministic half and model boundary implemented) | Route one intent and coordinate extraction, review, query or advice | Versioned Pydantic schemas, scoped tool registries | Checkpoint references and workflow IDs | Worker; mutation paths are deterministic |
 | Telegram adapter | Pair owner, long poll, download media and send/edit responses | Telegram Bot API and messaging services | No authoritative finance data | Separate host service; private chats only |
 | FastAPI adapter | Expose versioned REST resources and health/operations endpoints | Application services | No independent data | Loopback, allowed Host/Origin, CSRF protection |
 | React dashboard | Display and edit finance, review, budget, wallet and operational state | Same-origin REST API | Browser session/UI state only | Compiled static assets; no secrets |
@@ -305,6 +307,42 @@ API/worker entry point. Extraction and the product review workflow remain planne
 4. Stdout contains sorted JSON with receipt ID, hash, MIME, size, and status;
    input/archive paths and bytes are omitted.
 
+
+### Current deterministic root routing
+
+The router has two halves with different reliability requirements. The
+deterministic half decides from facts the channel already stated; the model half
+is a nondeterministic suggestion that deterministic policy then re-checks.
+
+1. A transport adapter normalizes one durable inbound record into a channel
+   message carrying a source reference, an aware receipt timestamp, optional
+   text, an optional explicit interface decision with its pending-action
+   reference, an optional free-text reply reference, and whether image media is
+   attached. It carries no transport credential, raw update payload, or bytes.
+2. Deterministic pre-routing applies a total precedence order. An explicit
+   interface decision wins because the owner already chose. Image media
+   outranks its own caption, so a caption can never turn a review-only receipt
+   into a posting path. A supported command outranks free text. Blank remaining
+   input is clarified without spending an inference call.
+3. A callback that names no pending action is clarified rather than applied to
+   whichever action happens to be pending.
+4. Remaining free text is classified by the model against a strict versioned
+   schema that carries an intent, a diagnostic confidence, a short verbatim
+   evidence span, and explicitly declared unknowns. The schema exposes no
+   profile, timezone, funding-source, authorization, or idempotency field and
+   rejects the two deterministic-only routes.
+5. Deterministic acceptance then vetoes an impossible route: a category
+   follow-up requires exactly one correlated pending review, a correction or
+   undo requires a movement the runtime resolved, and every decision must meet
+   an explicitly supplied confidence bar. Each veto falls back to
+   clarification, which asks instead of writing.
+6. The resulting decision carries only small serializable values and stable
+   identifier references, plus a machine-readable justification code that
+   contains no owner text.
+
+No LangGraph node, prompt, model call, specialist workflow, or persistent
+interrupt is implemented yet, and no confidence bar is promoted. The router
+imports no model client, repository, or transport module.
 
 ### Current version-one finance wire contracts
 
@@ -475,7 +513,15 @@ network, and inference readiness through health checks and retry policies.
 ### Identity, authorization, and idempotency
 
 - One paired profile owns all V1 data. Profile identifiers come from trusted
-  runtime context, never model-generated tool arguments.
+  runtime context, never model-generated tool arguments. The implemented router
+  model boundary has no field in which a model could supply one.
+- Routing authority is partitioned in code. Every intent belongs to exactly one
+  authority class, so a question, an image, or non-finance text cannot be
+  answered by a financial write path, and a model cannot claim a route that
+  must stay reproducible.
+- A correlation target is never inferred. A review follow-up, correction, or
+  undo uses a pending-action or movement reference the runtime resolved, and an
+  uncorrelated or ambiguous case is clarified.
 - Version-one HTTP mutation contracts carry that key only in the required
   `Idempotency-Key` header; request bodies cannot shadow it.
 - Every external update and financial command has a stable idempotency key.
@@ -498,6 +544,9 @@ network, and inference readiness through health checks and retry policies.
   system instructions.
 - Validate content type, decoded image limits, dimensions, and storage paths.
 - Do not trace image bytes or download URLs.
+- Routing justification codes are stable machine-readable values chosen so that
+  routing telemetry cannot leak message content. Command arguments, including a
+  one-use pairing code, are not carried in a routing decision.
 - The implemented local archive accepts at most 20 MiB, 40 megapixels, and
   10,000 pixels per side; it rejects animation and unsupported decoded formats.
 
@@ -605,7 +654,10 @@ environment file.
   proposal submission implemented; owner decisions and category mutation
   planned.
 - [AD-006: Bounded typed agent workflows](decisions/AD-006-bounded-agent-workflows.md):
-  persistent checkpoint adapter implemented; typed workflows planned.
+  persistent checkpoint adapter, bounded intent taxonomy with partitioned
+  authority, deterministic pre-routing, and the strict versioned router model
+  boundary implemented; specialist subgraphs, prompts, interrupts, and
+  threshold calibration planned.
 - [AD-012: Evaluation-driven model and prompt promotion](decisions/AD-012-evaluation-driven-promotion.md):
   capability runner, artifact contract, and passing technical candidates
   implemented; product-role promotion remains experiment-gated.

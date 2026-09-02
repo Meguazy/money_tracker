@@ -289,9 +289,11 @@ boundaries with their deterministic policy vetoes, the versioned category-fit
 boundary, pure resolution of occurrence time, amount sign, and both reconciled
 allocation dimensions, and the strict-schema retry boundary behind a narrow
 model port. The typed root router is assembled as a LangGraph state graph over
-the persistent PostgreSQL checkpointer, with a local structured-output adapter.
-No specialist subgraph, persistent owner interrupt, channel wiring, or
-evaluation dataset exists yet, and no confidence bar, prompt, or model is
+the persistent PostgreSQL checkpointer, with a local structured-output adapter
+and a local command for exercising it by hand. Draft assembly turns resolved
+model output into a stored movement with a stable command key. No specialist
+subgraph, persistent owner interrupt, read-only tool registry, channel wiring,
+or evaluation dataset exists yet, and no confidence bar, prompt, or model is
 promoted.
 
 ### Prerequisites
@@ -305,9 +307,10 @@ step's gates and the experiment decision log.
 This order is a handoff aid, not new scope. Each increment must land with its
 own tests and documentation, and none may ship a later step's behavior.
 
-1. Deterministic expense/refund mutation paths that call the existing
-   application services with a stable command idempotency key, plus the
-   read-only query and advice routes with scoped tool registries.
+1. The expense and refund subgraphs that call draft assembly and the existing
+   application services from the router, plus the read-only query and advice
+   routes with scoped tool registries. Deterministic assembly and the stable
+   command key are implemented.
 2. Persistent human-in-the-loop category review over the existing pending
    proposal port, covering approve, best existing, named existing, re-propose,
    cancel, unrelated input, and the three-rejection transition, with side
@@ -437,6 +440,25 @@ own tests and documentation, and none may ship a later step's behavior.
   decision carrying the `invalid_model_output` reason instead of failing the
   invocation. Instruction text and confidence bar are required arguments with
   no defaults, so the assembly cannot imply a production configuration.
+- Deterministic draft assembly turns one extraction and one purpose judgment
+  into a complete movement, or reports the stable reason selecting the question
+  to ask. Every movement is created as a draft, because no auto-post policy is
+  promoted. A movement whose purpose needs a new category is still assembled
+  with its funding dimension resolved and its purpose dimension empty alongside
+  a pending proposal, which the domain admits as a draft and refuses to post.
+  The result type rejects a combination that both resolved a purpose and
+  proposed one.
+- The creation key is derived from the durable inbound record and the request
+  digest from the request's own semantics, excluding lifecycle status, version,
+  and generated identifiers, and normalizing the occurrence instant to UTC so
+  the same moment expressed with a different offset matches. Real PostgreSQL
+  tests store a draft against a seeded profile's taxonomy and funding sources,
+  replay one inbound record into exactly one movement, refuse a changed request
+  on that record as a conflict, persist the split-funding journey, and keep a
+  pending proposal alongside its draft without extending the taxonomy. A
+  redelivery must replay the stored record unchanged, its channel timestamp
+  included; a test that re-read the clock instead surfaced that precondition,
+  which is now documented.
 - `money-tracker-admin route` sends one message through the real compiled
   router and prints only the decision it reached. It takes the trusted routing
   context from flags rather than the database, so it needs no active profile

@@ -1,0 +1,25 @@
+suite_schema_version: "1"
+suite: capabilities/local-model
+version: "1.1.0"
+dataset: ../../datasets/capabilities-local-model-v1.1.jsonl
+runner: money-tracker-eval capabilities
+private_data: false
+required_probes:
+  - server_metadata
+  - strict_structured_output
+  - tool_calling
+  - tool_result_sequencing
+conditional_probes:
+  - name: image_input
+    condition: image fixture supplied and model is evaluated for vision
+blocking_rules:
+  - every required probe passes
+  - exact GGUF SHA-256 and quantization are recorded
+  - exact llama.cpp binary SHA-256 and version are recorded
+  - exact chat-template SHA-256 is recorded
+  - configured context size is recorded
+publication:
+  local_artifacts: required
+  langfuse: optional
+  content: aggregate scores and artifact hashes only
+promotion_effect: none

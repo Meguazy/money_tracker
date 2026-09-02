@@ -1,7 +1,7 @@
 # AD-012: Evaluation-Driven Model and Prompt Promotion
 
 - Status: accepted
-- Implementation: planned
+- Implementation: executable foundation implemented; promotion gates pending
 - Date: 2026-09-01
 
 ## Context
@@ -30,6 +30,16 @@ decision log.
   correctness.
 - Runtime prompts controlled only from Langfuse would make daily operation
   depend on the observability stack.
+
+## Implementation evidence
+
+Roadmap Step 1 adds versioned synthetic capability cases, ignored private/raw
+artifact locations, deterministic machine-readable reports, and collection of
+model alias, GGUF/build/template/context/projector metadata. Real
+OpenAI-compatible probes cover strict structured output, tool calls,
+tool-result continuation, and optional images. Local reports remain available
+without Langfuse; publication is explicit and aggregate-only. No target model or
+prompt has passed a promotion gate.
 
 ## Consequences
 

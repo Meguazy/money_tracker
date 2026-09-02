@@ -1,9 +1,9 @@
 """Unit tests for environment-based application settings."""
 
-from collections.abc import Iterator, Mapping
-from contextlib import contextmanager
 import os
 import unittest
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
 
 from money_tracker.config import Settings
 

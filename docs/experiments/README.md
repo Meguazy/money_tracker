@@ -1,9 +1,13 @@
 # Experiments and Evaluations
 
-- Status: accepted process
-- Executable infrastructure: planned for Roadmap Step 1
+- Status: accepted process; Step 1 executable foundation complete
+- Executable infrastructure: capability runner and deterministic local reports
 - Decision authority: [Evaluation Matrix](evaluation-matrix.md) and
   [Decision Log](decision-log.md)
+- Current hardware shortlist:
+  [Local Model Shortlist - 2026-09-01](local-model-shortlist-2026-09-01.md)
+- Capability screening:
+  [Local Model Capability Results - 2026-09-02](local-model-capability-results-2026-09-02.md)
 
 Experiments determine whether a nondeterministic component is suitable for an
 approved role. They do not replace software tests and they do not grant a model
@@ -22,12 +26,11 @@ authority over financial invariants.
 Correctness gates such as authorization, reconciliation, idempotency, and exact
 budget arithmetic are never delegated only to a model judge.
 
-## Planned executable layout
+## Executable layout
 
-Roadmap Step 1 will add an executable `evals/` area with versioned public-safe
-datasets, runner configuration, deterministic graders, and compact baselines.
-The exact implementation may be under the Python package where reusable
-production contracts are required, but these ownership rules are fixed:
+Roadmap Step 1 added an executable `evals/` area with versioned public-safe
+datasets, runner configuration, deterministic scoring, and compact baselines.
+Reusable runner and metadata contracts live under `money_tracker.evaluations`:
 
 ```text
 evals/
@@ -39,6 +42,17 @@ evals/
 artifacts/evals/          generated raw results, ignored by Git
 docs/experiments/         protocols, templates, reports, and decisions
 ```
+
+Run the local-model capability suite with:
+
+    uv run --env-file .env money-tracker-eval capabilities
+
+The command writes a manifest and deterministic score report even when the real
+endpoint is unavailable. A blocking pass additionally requires the exact model
+alias, GGUF hash and quantization, llama.cpp executable hash/version, chat
+template hash, context size, and projector metadata when vision is required.
+Set `--publish-langfuse` only when aggregate redacted scores should be copied to
+the optional local observability service.
 
 Do not create committed data by copying personal messages, receipts, merchant
 identifiers, Telegram IDs, tokens, or Langfuse exports.

@@ -61,7 +61,9 @@ class Settings:
         """
 
         return cls(
-            llm_base_url=os.getenv("LLM_BASE_URL", "http://localhost:8080/v1").rstrip("/"),
+            llm_base_url=os.getenv("LLM_BASE_URL", "http://localhost:8080/v1").rstrip(
+                "/"
+            ),
             llm_api_key=os.getenv("LLM_API_KEY", "local"),
             llm_model=os.getenv("LLM_MODEL", "local-model"),
             llm_temperature=_float_from_env("LLM_TEMPERATURE", 0.1),

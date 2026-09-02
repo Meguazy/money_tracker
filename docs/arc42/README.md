@@ -21,9 +21,10 @@ budgets, wallet balances, charts, and operational controls.
 
 The approved V1 scope is defined in
 [Vision and Requirements](../product/vision-and-requirements.md). The current
-repository remains an inference and observability scaffold: it has no finance
-database, Telegram adapter, web application, receipt pipeline, or persistent
-workflow state.
+repository contains the completed Step 1 platform foundation:
+dedicated PostgreSQL, migrations/checkpoint bootstrap, optional observability,
+and executable capability evaluation. It has no finance records or repositories,
+Telegram adapter, web application, receipt pipeline, or product workflows.
 
 ### Quality goals
 
@@ -108,10 +109,10 @@ boundary is not end-to-end encrypted and must not be described as local storage.
 | --- | --- | --- | --- |
 | Owner to CLI | Process arguments/stdin/stdout | One prompt and response | Implemented scaffold |
 | Application to inference | OpenAI-compatible HTTP | Messages, schemas, tool calls, model settings | Implemented basic chat |
-| Application to Langfuse | SDK over local HTTP/OTLP | Redacted graph/model observations and scores | Implemented but current deployment unhealthy |
+| Application to Langfuse | SDK over local HTTP/OTLP | Redacted graph/model observations and aggregate scores | Implemented, optional and healthy |
 | Telegram gateway to Bot API | HTTPS long polling and send methods | Updates, callback queries, messages, file metadata and downloads | Planned |
 | Browser to application API | Same-origin HTTP JSON | Finance resources, settings, reviews, analytics and operations | Planned |
-| Application to PostgreSQL | PostgreSQL protocol | Finance ledger, messaging state, audit and checkpoints | Planned |
+| Application to PostgreSQL | PostgreSQL protocol | Checkpoints implemented; finance ledger, messaging state and audit planned | Implemented foundation |
 | Application to receipt archive | Private host filesystem | Original and derived receipt files keyed by content hash | Planned |
 | Backup process to repository | Restic repository protocol | Database dump, receipts and recovery configuration | Planned |
 
@@ -163,10 +164,10 @@ Money Tracker workstation
 │   └── llama.cpp/OpenAI-compatible inference           [scaffolded]
 ├── Private host data
 │   ├── Receipt archive                                 [planned]
-│   ├── Evaluation data and artifacts                   [planned]
+│   ├── Evaluation data and artifacts                   [implemented foundation]
 │   └── Restic staging/configuration                    [planned]
 └── Docker Compose
-    ├── Application PostgreSQL                          [planned core]
+    ├── Application PostgreSQL                          [implemented core foundation]
     └── Langfuse, PostgreSQL, ClickHouse, Redis, MinIO  [implemented optional]
 ```
 
@@ -179,6 +180,9 @@ Money Tracker workstation
 | `graph` | Define the initial one-node assistant | LangGraph and `BaseChatModel` | In-memory messages for one invocation | Stateless host process |
 | `llm` | Construct an OpenAI-compatible chat adapter | LangChain `ChatOpenAI` | No persistent data | Loopback endpoint by default |
 | `observability` | Enable and flush optional Langfuse callbacks | Langfuse SDK and environment keys | Buffered telemetry until flush | Local Langfuse only |
+| `persistence` | Apply versioned migrations and bootstrap persistent LangGraph checkpoints | Alembic, psycopg, PostgreSQL checkpointer | Foundation schemas and workflow checkpoints | Host administration CLI; least-privilege loopback database role |
+| `evaluations` | Probe real model protocols, capture exact runtime metadata, score deterministically, optionally publish aggregates | OpenAI-compatible HTTP, local files, optional Langfuse SDK | Ignored local run artifacts; no domain authority | Host CLI; secrets, image bytes and paths are excluded |
+| `development` | Validate canonical documentation and privacy-ignore invariants | Repository Markdown/YAML/filesystem | No persistent data | Service-independent development command |
 
 ### Planned domain and application blocks
 
@@ -285,20 +289,23 @@ No state survives the process and no financial write occurs.
 
 ```text
 Ubuntu workstation
-├── UV-managed Python CLI
-├── optional llama-server on 127.0.0.1:8080
-└── Docker Compose observability stack
-    ├── Langfuse web on 127.0.0.1:3000  [currently restarting]
-    ├── Langfuse worker
-    ├── PostgreSQL
-    ├── ClickHouse
-    ├── Redis
-    └── MinIO on 127.0.0.1:9090
+├── UV-managed Python CLIs
+├── optional llama-server on 127.0.0.1:8080  [not installed/configured here]
+└── Docker Compose
+    ├── application-postgres on 127.0.0.1:5433  [default, healthy]
+    └── observability profile                    [optional, healthy]
+        ├── Langfuse web on 127.0.0.1:3000
+        ├── Langfuse worker
+        ├── PostgreSQL
+        ├── ClickHouse
+        ├── Redis
+        └── MinIO API on 127.0.0.1:9090
 ```
 
-The Langfuse web container currently fails its ClickHouse migration because the
-non-cluster deployment does not set `CLICKHOUSE_CLUSTER_ENABLED=false`. Step 1
-must repair and pin this stack without deleting existing volumes.
+Application and Langfuse PostgreSQL have separate roles, databases, lifecycles,
+and named volumes. The non-cluster ClickHouse setting and digest-pinned images
+are explicit. The repair retained the pre-existing observability volumes; all
+profile services pass their health checks.
 
 ### Target deployment
 
@@ -313,7 +320,7 @@ Ubuntu workstation
 │   ├── receipt archive
 │   └── private evaluation artifacts
 └── Docker Compose
-    ├── core profile: application PostgreSQL and persistent volume
+    ├── default service: application PostgreSQL and persistent volume
     └── observability profile: Langfuse stack and independent volumes
 
 External backup folder/disk
@@ -423,7 +430,7 @@ replacement with another compatible server.
 ### AD-002: Self-hosted Langfuse
 
 - Status: accepted
-- Implementation: implemented but currently unhealthy
+- Implementation: implemented, repaired and digest-pinned
 
 Operate Langfuse locally with telemetry disabled and keep tracing optional.
 Prompts, traces, scores, and service storage remain on the workstation. Core
@@ -438,18 +445,27 @@ Generate credentials locally and use the same project keys for Langfuse
 initialization and SDK configuration. Never overwrite or commit the sensitive
 environment file.
 
+### Partially implemented accepted decisions
+
+- [AD-005: Dedicated application PostgreSQL](decisions/AD-005-application-postgresql.md):
+  service, migration boundary, and checkpoint foundation implemented; product
+  persistence planned.
+- [AD-006: Bounded typed agent workflows](decisions/AD-006-bounded-agent-workflows.md):
+  persistent checkpoint adapter implemented; typed workflows planned.
+- [AD-012: Evaluation-driven model and prompt promotion](decisions/AD-012-evaluation-driven-promotion.md):
+  capability runner, artifact contract, and passing technical candidates
+  implemented; product-role promotion remains experiment-gated.
+- [AD-013: Host runtime and encrypted backup](decisions/AD-013-local-runtime-and-backup.md):
+  Compose topology implemented; systemd and Restic planned.
+
 ### Planned accepted decisions
 
 - [AD-004: Local-first privacy with Telegram boundary](decisions/AD-004-local-first-telegram-boundary.md)
-- [AD-005: Dedicated application PostgreSQL](decisions/AD-005-application-postgresql.md)
-- [AD-006: Bounded typed agent workflows](decisions/AD-006-bounded-agent-workflows.md)
 - [AD-007: Expense and dual-allocation model](decisions/AD-007-expense-allocation-model.md)
 - [AD-008: Controlled two-level taxonomy](decisions/AD-008-controlled-taxonomy.md)
 - [AD-009: Local FastAPI and React web application](decisions/AD-009-local-web-application.md)
 - [AD-010: Telegram long polling and durable messaging](decisions/AD-010-telegram-durable-messaging.md)
 - [AD-011: Evaluation-gated receipt extraction](decisions/AD-011-receipt-extraction.md)
-- [AD-012: Evaluation-driven model and prompt promotion](decisions/AD-012-evaluation-driven-promotion.md)
-- [AD-013: Host runtime and encrypted backup](decisions/AD-013-local-runtime-and-backup.md)
 
 ## 10. Quality Requirements
 
@@ -475,15 +491,17 @@ Quantitative evaluation gates are maintained in
 
 ### Current scaffold risks
 
-- No target finance, messaging, workflow, Telegram, media, API, or web component
-  is implemented.
-- The graph is stateless and has one unconstrained assistant node.
-- No local GGUF/model configuration has passed the planned capability suite.
-- Langfuse web is in a restart loop because its non-cluster ClickHouse migration
-  configuration is incomplete.
-- Container tags are mobile rather than immutable digests.
-- Existing integration and E2E tests are opt-in smoke checks with weak
-  behavioral assertions.
+- No target finance, messaging, Telegram, media, API, or web product component
+  is implemented; foundation schemas deliberately contain no product tables.
+- The product graph is stateless and has one unconstrained assistant node,
+  although the replaceable PostgreSQL checkpoint adapter is available.
+- No installed llama.cpp/GGUF configuration has passed the executable capability
+  suite, so exact target model metadata and behavioral support remain unknown.
+- Application data is not yet covered by the accepted Restic backup/restore
+  process; persistent personal finance data must not be encouraged before its
+  roadmap gate.
+- Existing inference integration and E2E tests remain opt-in smoke checks with
+  weak behavioral assertions.
 
 ### Target architecture risks
 

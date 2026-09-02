@@ -1,10 +1,11 @@
 # Operations Guide
 
-- Status: preliminary Step 0 baseline
-- Current executable operations: local inference/CLI and the existing Compose
-  scaffold described in `docs/development.md`
-- Planned operations: application PostgreSQL, Telegram, systemd services,
-  finance backup/restore, web API, worker, and receipt storage
+- Status: Step 1 platform foundation complete; product operations planned
+- Current executable operations: local inference/CLI, dedicated application
+  PostgreSQL, migrations/checkpoint bootstrap, optional healthy Langfuse, and
+  capability evaluation
+- Planned operations: Telegram, systemd services, finance backup/restore, web
+  API, workflow worker, and receipt storage
 
 These guides describe accepted operational behavior and the controls future
 steps must implement. A section labelled `planned` is not a runnable procedure.
@@ -15,8 +16,10 @@ the referenced file or entry point exists in the repository.
 
 - [Telegram](telegram.md): BotFather preparation, private-owner pairing target,
   long polling, the 24-hour limitation, testing, and token response.
-- [Local Runtime](local-runtime.md): current scaffold, target process topology,
-  startup/recovery, health, and deployment ownership.
+- [Local Runtime](local-runtime.md): current foundation, target process
+  topology, startup/recovery, health, and deployment ownership.
+- [Container Versions](container-versions.md): immutable image baseline,
+  verification evidence, controlled upgrades, and rollback constraints.
 - [Backup and Restore](backup-and-restore.md): authoritative restore set,
   encryption, retention, verification, and recovery acceptance.
 - [Security and Troubleshooting](security-and-troubleshooting.md): trust
@@ -40,14 +43,18 @@ the referenced file or entry point exists in the repository.
 
 ## Current known operational state
 
-- The CLI, environment generator, llama.cpp launcher, and optional Langfuse
-  callback integration exist.
-- No local model path in the repository is an installed model guarantee.
-- No Telegram bot, adapter, application database, finance backup, API,
-  dashboard, or systemd unit exists yet.
-- The current Langfuse web container has been observed restarting because the
-  non-cluster ClickHouse migration lacks `CLICKHOUSE_CLUSTER_ENABLED=false`.
-  Roadmap Step 1 owns the non-destructive repair and immutable image pinning.
+- The CLI, environment generator/upgrader, llama.cpp launcher, database
+  administration CLI, capability runner, and optional Langfuse callbacks exist.
+- The dedicated application PostgreSQL foundation is healthy, independently
+  persistent, least-privileged, and separate from the Langfuse database. It has
+  no financial or messaging product tables yet.
+- Langfuse 4.26.0 and every dependency are pinned by digest. The non-cluster
+  repair and health checks pass with the pre-existing volumes preserved.
+- Installed model paths remain workstation-owned and outside the repository.
+  Three pinned profiles pass the Step 1 capability screen, but no model is
+  promoted to a product role.
+- No Telegram bot/adapter, finance repositories or backup, API/dashboard,
+  workflow worker, receipt store, or systemd unit exists yet.
 
 ## When to update these guides
 

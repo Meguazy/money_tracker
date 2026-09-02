@@ -3,9 +3,11 @@
 This directory contains the canonical product, architecture, delivery,
 evaluation, development, and operations documentation for Money Tracker.
 
-The repository currently contains an executable local-inference scaffold. Most
-finance, Telegram, receipt, and web components described here are accepted
-target state and remain marked `planned` until their roadmap step is completed.
+The repository currently contains an executable local-inference scaffold plus
+the Step 1 PostgreSQL, migration/checkpoint, observability, development-tooling,
+and evaluation foundations. Finance, Telegram, receipt, and web product
+components remain accepted target state and are marked `planned` until their
+roadmap step is completed.
 
 ## Required reading order
 

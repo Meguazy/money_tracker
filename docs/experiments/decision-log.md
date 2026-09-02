@@ -10,13 +10,18 @@ do not rewrite historical outcomes when a later experiment supersedes them.
 - Routing/category/tool prompts: scaffold prompt only; no V1 production prompts.
 - Auto-post threshold: disabled until categorization precision gates pass.
 - Receipt pipeline: no pipeline selected; receipt extraction remains planned.
-- Langfuse: optional scaffold integration; evaluation runner not implemented.
+- Langfuse: optional local integration; the Step 1 capability runner emits
+  deterministic local reports and can publish only redacted aggregate scores.
+- Capability baseline: Qwen3 14B, Qwen3.5 9B, and Gemma 4 12B pass the Step 1
+  technical screen. They remain experimental candidates; no model has been
+  promoted to a product role.
 
 ## Decisions
 
 | Decision ID | Date | Experiment | Outcome | Selected configuration | Supersedes | Evidence |
 | --- | --- | --- | --- | --- | --- | --- |
 | EVD-000 | 2026-09-01 | Step 0 documentation baseline | Establish gates before model/pipeline selection | Evaluation process and matrix in this directory | None | Product baseline and AD-012 |
+| EVD-001 | 2026-09-02 | Local capability shortlist 1.1.0 | Retain three downstream candidates; reject the current Ministral and GPT-OSS profiles; promote none | Qwen3 14B text; Qwen3.5 9B and Gemma 4 12B vision | None | [Capability results](local-model-capability-results-2026-09-02.md) |
 
 ## Entry requirements
 

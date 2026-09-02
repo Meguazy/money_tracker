@@ -1,56 +1,45 @@
 # Local Runtime
 
-- Status: current scaffold documented; target multi-service runtime planned
+- Status: Step 1 platform foundation complete; product services planned
 - Target platform: Ubuntu workstation, RTX 5070 Ti 16 GB VRAM
 
-## Current executable scaffold
+## Current executable foundation
 
-The commands in [Development and Local Operations](../development.md) are the
-only repository-documented application commands currently verified. They cover:
+[Development and Local Operations](../development.md) contains the verified
+commands for:
 
-- UV environment synchronization;
-- one-time private `.env` generation;
-- the existing Langfuse Compose stack;
-- a separately built/installed llama.cpp server and GGUF file;
-- a one-turn CLI invocation;
-- opt-in real-service smoke tests.
+- locked UV synchronization and mode-restricted environment generation/upgrade;
+- a dedicated default-profile application PostgreSQL on loopback;
+- Alembic foundation migrations and PostgreSQL LangGraph checkpoint bootstrap;
+- the digest-pinned, optional `observability` profile;
+- deterministic local evaluation reports and real model capability probes;
+- one-turn CLI inference and opt-in real-service tests.
 
-The environment generator refuses to overwrite an existing `.env`. Preserve
-that protection. Do not source or print the file during troubleshooting except
-for explicitly safe, non-secret keys.
+The environment generator refuses to overwrite an existing `.env`; the upgrade
+script appends only missing Step 1 values. Do not source or print the file during
+troubleshooting except for explicitly safe, non-secret keys.
 
-## Current known failure
+The Langfuse non-cluster ClickHouse repair is implemented. Existing named
+volumes were preserved, all analytical migrations completed, and web/worker
+health checks pass. The application database remains available when the
+observability profile is stopped. Image provenance and upgrade constraints are
+recorded in [Container Versions](container-versions.md). Never delete volumes or
+force migration versions merely to clear an error.
 
-The current `langfuse-web` container has been observed in a restart loop. Its
-ClickHouse migration attempts clustered tables without ZooKeeper because
-`CLICKHOUSE_CLUSTER_ENABLED=false` is absent. The worker subsequently reports
-missing analytical tables.
+## Current and target process topology
 
-Roadmap Step 1 must:
-
-1. inspect and preserve existing volumes;
-2. align with the official non-cluster Compose configuration;
-3. pin tested image versions/digests;
-4. apply the minimal configuration repair;
-5. verify migrations and health;
-6. document any recovery action before taking it.
-
-Do not run `docker compose down -v`, delete named volumes, force migration
-versions, or recreate databases merely to clear this error.
-
-## Target process topology
-
-The following services are accepted but do not exist yet:
+Implemented foundation services and accepted future services are distinguished
+in this table:
 
 | Service | Host/container | Responsibility | Core? |
 | --- | --- | --- | --- |
-| Application PostgreSQL | Docker Compose | Finance source of truth, messaging, audit, checkpoints | Yes |
+| Application PostgreSQL | Docker Compose | Implemented schema/checkpoint foundation; future finance source of truth, messaging, and audit | Yes |
 | FastAPI/UI service | Host systemd | Same-origin REST API and compiled dashboard | Yes after Step 5 |
 | Telegram gateway | Host systemd | Long poll, durable ingest, file transport, outbox dispatch | Yes after Step 4 |
 | Workflow worker | Host systemd | Sequential routing/workflow processing | Yes after Step 3/4 |
 | llama.cpp server | Host systemd | Local text and selected model capabilities | Yes for agent work |
 | Receipt extractor dependencies | Host process/adapter | Local OCR/VLM selected by evaluation | Yes after Step 6 |
-| Langfuse stack | Optional Compose profile | Local traces, datasets, experiment scores | No |
+| Langfuse stack | Optional Compose profile | Implemented local traces and aggregate experiment scores | No |
 | Restic backup timer | Host systemd | Encrypted authoritative backup and retention | Yes once finance data exists |
 
 Python and llama.cpp stay on the host to keep GPU/model paths and loopback

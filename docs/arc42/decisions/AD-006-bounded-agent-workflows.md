@@ -1,7 +1,7 @@
 # AD-006: Bounded Typed Agent Workflows
 
 - Status: accepted
-- Implementation: planned
+- Implementation: checkpoint foundation implemented; typed workflows planned
 - Date: 2026-09-01
 
 ## Context
@@ -33,6 +33,15 @@ nodes can be replayed.
   variety of Italian input.
 - Independent autonomous agents complicate shared state and ordering without a
   demonstrated need.
+
+## Implementation evidence
+
+Roadmap Step 1 supplies a narrow PostgreSQL checkpointer factory with
+`autocommit`, dictionary rows, the dedicated `workflow` search path, and strict
+message serialization enabled by default. Bootstrap invokes the checkpointer's
+real schema setup, and an integration test writes and reads a checkpoint across
+separate connections. The typed router, specialist nodes, interrupts, and
+product workflow state are not implemented yet.
 
 ## Consequences
 

@@ -15,11 +15,19 @@ After starting a GGUF model with scripts/run_llama_server.sh, run:
 
     uv run --env-file .env money-tracker "Help me review this month's spending"
 
-The observability stack is not required by the target core runtime. Its current
-Langfuse web container has a known ClickHouse migration failure that is assigned
-to Roadmap Step 1. See the development and operations guides before starting
-Compose; do not delete its volumes to work around the failure. The current CLI
-enables tracing whenever both local Langfuse project keys are non-empty.
+Start the dedicated application PostgreSQL and initialize its schemas and
+LangGraph checkpoint tables with:
+
+    docker compose up -d --wait application-postgres
+    uv run --env-file .env money-tracker-db bootstrap
+
+The repaired Langfuse stack is optional and starts only when selected:
+
+    docker compose --profile observability up -d --wait
+
+Existing observability volumes were preserved during the repair. The CLI
+enables tracing whenever both local Langfuse project keys are non-empty; core
+database operation does not depend on Langfuse.
 
 ## Documentation
 

@@ -134,7 +134,7 @@ Before changing state:
 
 | Symptom | Safe first checks | Do not do |
 | --- | --- | --- |
-| Current Langfuse web restart loop | Inspect web/worker/ClickHouse logs and confirm missing non-cluster flag; follow Step 1 repair when implemented. | Delete volumes or force migration state. |
+| Langfuse web becomes unhealthy again | Inspect web/worker/ClickHouse logs and confirm the pinned non-cluster flag remains effective. | Delete volumes or force migration state. |
 | CLI cannot reach model | Verify configured loopback endpoint, llama-server process, model path, build/GPU compatibility, and health response. | Print the full `.env` or replace locked dependencies ad hoc. |
 | Telegram receives nothing (planned) | Verify token via redacted `getMe`, no webhook, gateway/network health, persisted offset, and paired owner. | Regenerate/delete the bot before checking delivery mode and logs. |
 | Same Telegram update appears again (planned) | Check inbox unique key and whether offset advanced only after commit. | Delete duplicate rows or re-run mutation without its original idempotency key. |

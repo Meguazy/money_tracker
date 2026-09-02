@@ -1,0 +1,91 @@
+catalog_schema_version: "1"
+researched_at: "2026-09-01"
+status: experimental
+promotion_effect: none
+target:
+  gpu: NVIDIA GeForce RTX 5070 Ti
+  vram_mib: 16303
+  context_size: 8192
+  concurrency: 1
+  reasoning: "off"
+  runtime: llama.cpp
+  llama_cpp_commit: 3466812d1f06728effe7c0f3c0671117f461672d
+model_root: ~/.local/share/money-tracker/models
+
+artifacts:
+  gpt_oss_20b:
+    repository: ggml-org/gpt-oss-20b-GGUF
+    revision: ef9b12f2ff56c69cf32153a02784e7a3c88bf524
+    file: gpt-oss-20b-MXFP4.gguf
+    local_path: text/gpt-oss-20b/gpt-oss-20b-MXFP4.gguf
+    bytes: 12109566624
+    sha256: 27cd6c432c7672cb812a92f611cf3ba7bbc35928262bb1e1253ff4ee6ae35901
+    quantization: MXFP4
+  qwen3_14b:
+    repository: Qwen/Qwen3-14B-GGUF
+    revision: 530227a7d994db8eca5ab5ced2fb692b614357fd
+    file: Qwen3-14B-Q5_K_M.gguf
+    local_path: text/qwen3-14b/Qwen3-14B-Q5_K_M.gguf
+    bytes: 10514569568
+    sha256: e7c9aba1129ca2936be9eca01419d9f86af40e08caa01230d5574b34d08e3e31
+    quantization: Q5_K_M
+  ministral3_14b:
+    repository: mistralai/Ministral-3-14B-Instruct-2512-GGUF
+    revision: 74fac473c43357d7fb2671713608183cc72496d0
+    file: Ministral-3-14B-Instruct-2512-Q5_K_M.gguf
+    local_path: shared/ministral3-14b/Ministral-3-14B-Instruct-2512-Q5_K_M.gguf
+    bytes: 9621091904
+    sha256: f16fef77021df0d4c22e69140a2038478370492f51867b6237699918ae711000
+    quantization: Q5_K_M
+    projector:
+      file: Ministral-3-14B-Instruct-2512-BF16-mmproj.gguf
+      local_path: shared/ministral3-14b/Ministral-3-14B-Instruct-2512-BF16-mmproj.gguf
+      bytes: 879258784
+      sha256: ab7616148b7081030fd38e410c9213ce8346a8b0588291c8ca279058e78cfae7
+  qwen35_9b:
+    repository: unsloth/Qwen3.5-9B-GGUF
+    source_repository: Qwen/Qwen3.5-9B
+    revision: 3885219b6810b007914f3a7950a8d1b469d598a5
+    file: Qwen3.5-9B-UD-Q5_K_XL.gguf
+    local_path: vision/qwen3.5-9b/Qwen3.5-9B-UD-Q5_K_XL.gguf
+    bytes: 6743680224
+    sha256: 96cf42ddb97f9572410a72b9ed6f2299b1e887ee08da4c2a6c01e897cfa9f673
+    quantization: UD-Q5_K_XL
+    projector:
+      file: mmproj-BF16.gguf
+      local_path: vision/qwen3.5-9b/mmproj-BF16.gguf
+      bytes: 921705024
+      sha256: 853698ce7aa6c7ba732478bad280240969ddf7b0fcbf93900046f63903a83383
+  gemma4_12b:
+    repository: google/gemma-4-12B-it-qat-q4_0-gguf
+    revision: 29d097773436b69ff9feafd636ab4cf873786537
+    file: gemma-4-12b-it-qat-q4_0.gguf
+    local_path: vision/gemma4-12b/gemma-4-12b-it-qat-q4_0.gguf
+    bytes: 6975879296
+    sha256: 93567e57a8fe10b23569b9d9ec38cd005deedf71e29477c421a4b83f418a538b
+    quantization: QAT-Q4_0
+    projector:
+      file: mmproj-gemma-4-12b-it-qat-q4_0.gguf
+      local_path: vision/gemma4-12b/mmproj-gemma-4-12b-it-qat-q4_0.gguf
+      bytes: 175115616
+      sha256: cb018338a7538a9814d994bfe54644c71eb7ed54e31eae2f721e45fd3c260da7
+
+profiles:
+  - id: text-gpt-oss-20b
+    modality: text
+    artifact: gpt_oss_20b
+  - id: text-qwen3-14b
+    modality: text
+    artifact: qwen3_14b
+  - id: text-ministral3-14b
+    modality: text
+    artifact: ministral3_14b
+  - id: vision-qwen35-9b
+    modality: vision
+    artifact: qwen35_9b
+  - id: vision-gemma4-12b
+    modality: vision
+    artifact: gemma4_12b
+  - id: vision-ministral3-14b
+    modality: vision
+    artifact: ministral3_14b

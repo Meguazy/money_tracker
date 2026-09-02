@@ -9,13 +9,24 @@ fi
 llama_server_bin="${LLAMA_SERVER_BIN:-llama-server}"
 model_alias="${LLAMA_MODEL_ALIAS:-local-model}"
 context_size="${LLAMA_CTX_SIZE:-8192}"
+parallel="${LLAMA_PARALLEL:-1}"
+reasoning="${LLAMA_REASONING:-off}"
 
-exec "${llama_server_bin}" \
-  --model "${MODEL_PATH}" \
-  --alias "${model_alias}" \
-  --host 127.0.0.1 \
-  --port 8080 \
-  --n-gpu-layers 99 \
-  --ctx-size "${context_size}" \
-  --flash-attn on \
+server_args=(
+  --model "${MODEL_PATH}"
+  --alias "${model_alias}"
+  --host 127.0.0.1
+  --port 8080
+  --n-gpu-layers 99
+  --ctx-size "${context_size}"
+  --parallel "${parallel}"
+  --reasoning "${reasoning}"
+  --flash-attn on
   --jinja
+  --api-key "${LLM_API_KEY:-local}"
+)
+if [[ -n "${MMPROJ_PATH:-}" ]]; then
+  server_args+=(--mmproj "${MMPROJ_PATH}")
+fi
+
+exec "${llama_server_bin}" "${server_args[@]}"

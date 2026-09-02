@@ -6,51 +6,75 @@
 - UV
 - Docker with Docker Compose
 - NVIDIA CUDA toolkit 12.8 or newer for the RTX 5070 Ti
-- An upstream llama.cpp build and a compatible GGUF model
+- An upstream llama.cpp build and a compatible GGUF model for real inference
+  and capability checks
 
-## Python environment
+## Initial setup
 
 Create the locked environment and generate uncommitted local credentials:
 
-    uv sync
+    uv sync --frozen
     ./scripts/generate_local_env.sh
 
-UV owns the .venv and uv.lock. Do not install project packages with pip. The
-environment generator creates a mode-600, Git-ignored .env containing
-independent random credentials and refuses to overwrite an existing file.
+UV owns `.venv` and `uv.lock`; do not install project packages with pip. The
+generator creates a mode-600, Git-ignored `.env` with independent random
+credentials and refuses to overwrite an existing file. Upgrade an existing
+environment non-destructively after reviewing its permissions:
 
-## Self-hosted Langfuse
+    ./scripts/upgrade_local_env.sh
 
-The Compose project follows Langfuse's official self-hosted architecture:
-Langfuse web and worker containers, PostgreSQL, ClickHouse, Redis, and MinIO.
+The upgrade script appends only missing Step 1 database and llama.cpp profile
+settings and never changes existing values.
 
-> **Known current issue:** `langfuse-web` is restarting because the non-cluster
-> ClickHouse deployment does not set `CLICKHOUSE_CLUSTER_ENABLED=false`; the
-> worker consequently reports missing analytical tables. Roadmap Step 1 owns a
-> non-destructive repair and image pinning. The commands below describe the
-> scaffold but must not currently be interpreted as a healthy-stack guarantee.
-> Do not delete or recreate named volumes to clear this error.
+## Application PostgreSQL and migrations
 
-    docker compose up -d
-    docker compose ps
+Start only the core database, then apply the foundation schemas and initialize
+the persistent LangGraph checkpointer:
 
-The first command downloads images when they are unavailable locally. After the
-Step 1 repair and a verified healthy state, the UI and API are expected at
-http://localhost:3000. Retrieve the generated bootstrap login with:
+    docker compose up -d --wait application-postgres
+    uv run --env-file .env money-tracker-db bootstrap
+    uv run --env-file .env money-tracker-db current
+
+The service binds to `127.0.0.1:5433`, owns an independent persistent volume,
+and exposes the non-superuser `money_tracker` role to the application. The
+foundation migration creates only the `finance`, `messaging`, and `workflow`
+schemas; financial and messaging tables belong to later roadmap steps.
+
+The foundation downgrade is intentionally guarded and refuses non-empty
+application or checkpoint schemas. Use it only for an isolated disposable
+database after confirming that it contains no persistent data:
+
+    uv run --env-file .env money-tracker-db downgrade-foundation \\
+      --confirm-empty-foundation
+
+Never use the guarded downgrade as a production rollback. Restore a verified
+backup or deploy forward when data exists.
+
+## Optional self-hosted Langfuse
+
+The observability stack is separate from the default Compose project. Start it
+only for development, tracing, or evaluation:
+
+    docker compose --profile observability up -d --wait
+    docker compose --profile observability ps
+    curl --fail \\
+      'http://127.0.0.1:3000/api/public/health?failIfDatabaseUnavailable=true'
+
+Langfuse web and worker 4.26.0 run with PostgreSQL, ClickHouse, Redis, and MinIO.
+The non-cluster ClickHouse setting is explicit, all images are pinned by digest,
+and host ports are loopback-only. Versions and the controlled upgrade procedure
+are recorded in [Container Versions](operations/container-versions.md).
+
+Retrieve the generated bootstrap login without printing unrelated secrets:
 
     rg '^LANGFUSE_INIT_USER_(EMAIL|PASSWORD)=' .env
 
-Only ports 3000 and 9090 are bound, both on 127.0.0.1. PostgreSQL, ClickHouse,
-Redis, and the worker have no host ports. Langfuse telemetry and the in-app AI
-agent are disabled, and no external LLM provider is configured.
+Stop the optional stack while keeping its named volumes:
 
-Named Docker volumes persist traces and configuration. Stop services without
-deleting data:
+    docker compose --profile observability stop
 
-    docker compose stop
-
-Do not run docker compose down -v unless the local databases and traces should
-be permanently erased.
+Do not run `docker compose down -v` unless every named volume is intentionally
+being destroyed and its data is recoverable.
 
 ## llama.cpp for the RTX 5070 Ti
 
@@ -63,57 +87,84 @@ Build upstream llama.cpp for Blackwell compute capability 12.0:
       -DGGML_CUDA_FA_ALL_QUANTS=ON
     cmake --build llama.cpp/build --config Release -j
 
-Set LLAMA_SERVER_BIN in .env to llama.cpp/build/bin/llama-server and MODEL_PATH
-to a GGUF model. An 8B-14B Q4 or Q5 model is a practical starting point for the
-16 GB GPU. Start the server:
+Set `LLAMA_SERVER_BIN` in `.env` to the installed `llama-server` and
+`MODEL_PATH` to an installed GGUF. For vision, also set `MMPROJ_PATH` to the
+projector shipped for that exact model revision; leave it empty for text-only
+runs. Start the server:
 
     set -a
     source .env
     set +a
     ./scripts/run_llama_server.sh
 
-The launcher binds to localhost, offloads all model layers, enables Flash
-Attention, uses the embedded Jinja chat template, and begins with an 8K context.
+The launcher binds to loopback, requires the configured local API key, offloads
+model layers, enables Flash Attention, uses one inference slot, uses the
+embedded Jinja chat template, attaches the optional vision projector, and
+defaults to an 8K context with reasoning disabled. Override `LLAMA_PARALLEL` or
+`LLAMA_REASONING` only in a recorded experiment. No model is approved until
+the relevant evaluation gates pass.
 
-Ollama remains an OpenAI-compatible fallback:
+## Capability evaluation
 
-    LLM_BASE_URL=http://localhost:11434/v1 \
-    LLM_MODEL=qwen2.5:14b \
-    uv run money-tracker "Suggest three ways to reduce discretionary spending"
+Run the real OpenAI-compatible protocol probes:
 
-## Langfuse tracing
+    uv run --env-file .env money-tracker-eval capabilities
 
-The generated environment provisions the local project with the same
-LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY used by the Python SDK.
-LANGFUSE_BASE_URL is http://localhost:3000, so traces are sent only to the local
-deployment. Removing either project key disables tracing without disabling
-inference.
+The suite checks strict nested structured output, forced tool calling,
+tool-result continuation, and optional image input. It always writes ignored
+machine-readable results under `artifacts/evals/`; an unavailable endpoint or
+incomplete exact model/build metadata is an explicit blocking failure. Supply a
+local image only for a model expected to support vision:
 
-## Tests
+    uv run --env-file .env money-tracker-eval capabilities \\
+      --image /private/path/to/fixture.png
 
-Run isolated unit tests:
+Add `--publish-langfuse` only to copy redacted aggregate scores to the optional
+local Langfuse instance. Image bytes, local paths, API keys, and private inputs
+are not published.
 
-    uv run python -m unittest discover -s tests/unit -t .
+## Application CLI and tracing
 
-Run integration tests against a real inference service:
+With a real inference server running:
 
-    RUN_INTEGRATION_TESTS=1 \
-    INTEGRATION_LLM_BASE_URL=http://localhost:11434/v1 \
-    INTEGRATION_LLM_MODEL=qwen2.5:14b \
-    uv run python -m unittest discover -s tests/integration -t .
+    uv run --env-file .env money-tracker \\
+      "Help me review this month's spending"
 
-Run the complete CLI workflow against a real inference service:
+The generated environment points the SDK at local Langfuse. Removing either
+project key disables tracing without disabling inference or database operation.
 
-    RUN_E2E_TESTS=1 \
-    E2E_LLM_BASE_URL=http://localhost:11434/v1 \
-    E2E_LLM_MODEL=qwen2.5:14b \
-    uv run python -m unittest discover -s tests/e2e -t .
+## Repeatable checks
 
-Real-service tests are opt-in so the unit suite does not silently substitute
-mocks when infrastructure is unavailable.
+Static checks and the service-independent suite:
 
-Run the remaining static checks:
-
-    uv run python -m compileall -q src tests
+    uv run ruff format --check src tests migrations
+    uv run ruff check src tests migrations
+    uv run mypy src
+    uv run money-tracker-validate-docs
+    uv run pytest -q
+    uv run pytest -q tests/unit --cov=money_tracker --cov-report=term-missing
     docker compose --env-file .env.example config --quiet
+    docker compose --env-file .env.example --profile observability config --quiet
     git diff --check
+
+Real application PostgreSQL integration tests are explicit:
+
+    RUN_POSTGRES_INTEGRATION_TESTS=1 \\
+      uv run --env-file .env pytest -q \\
+      tests/integration/money_tracker/persistence
+
+Real inference checks remain opt-in and never substitute a mock service:
+
+    RUN_CAPABILITY_INTEGRATION_TESTS=1 \\
+      uv run --env-file .env pytest -q \\
+      tests/integration/money_tracker/evaluations
+
+    RUN_INTEGRATION_TESTS=1 \\
+      INTEGRATION_LLM_BASE_URL=http://localhost:8080/v1 \\
+      INTEGRATION_LLM_MODEL=local-model \\
+      uv run pytest -q tests/integration/money_tracker/test_llm.py
+
+    RUN_E2E_TESTS=1 \\
+      E2E_LLM_BASE_URL=http://localhost:8080/v1 \\
+      E2E_LLM_MODEL=local-model \\
+      uv run pytest -q tests/e2e

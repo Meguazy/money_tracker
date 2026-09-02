@@ -1,7 +1,7 @@
 # AD-013: Host Runtime and Encrypted Backup
 
 - Status: accepted
-- Implementation: planned
+- Implementation: Compose topology implemented; systemd and Restic planned
 - Date: 2026-09-01
 
 ## Context
@@ -29,6 +29,14 @@ test restore before declaring the personal release ready.
   model mount, and NVIDIA runtime complexity.
 - Manual startup can miss the Telegram backlog after power-on.
 - Manual exports do not meet the selected durability requirement.
+
+## Implementation evidence
+
+Roadmap Step 1 implements application PostgreSQL as the default Compose service
+and isolates the healthy, digest-pinned Langfuse stack behind the
+`observability` profile. Core database and migration/checkpoint checks pass
+without Langfuse. Host systemd services, authoritative Restic backup, retention,
+and restore verification remain planned.
 
 ## Consequences
 

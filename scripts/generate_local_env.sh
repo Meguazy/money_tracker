@@ -18,6 +18,9 @@ random_hex() {
   openssl rand -hex "$1"
 }
 
+app_postgres_password="$(random_hex 24)"
+app_postgres_admin_password="$(random_hex 24)"
+
 umask 077
 cat >"${env_file}" <<EOF
 # Generated local development configuration. Do not commit this file.
@@ -45,10 +48,20 @@ LANGFUSE_CLICKHOUSE_PASSWORD=$(random_hex 24)
 LANGFUSE_REDIS_PASSWORD=$(random_hex 24)
 LANGFUSE_MINIO_PASSWORD=$(random_hex 24)
 
+MONEY_TRACKER_POSTGRES_ADMIN_PASSWORD=${app_postgres_admin_password}
+MONEY_TRACKER_POSTGRES_PASSWORD=${app_postgres_password}
+MONEY_TRACKER_DATABASE_URL=postgresql://money_tracker:${app_postgres_password}@127.0.0.1:5433/money_tracker
+MONEY_TRACKER_TEST_DATABASE_URL=postgresql://money_tracker:${app_postgres_password}@127.0.0.1:5433/money_tracker_test
+
+LANGGRAPH_STRICT_MSGPACK=true
+
 MODEL_PATH=/absolute/path/to/model.gguf
+MMPROJ_PATH=
 LLAMA_SERVER_BIN=llama-server
 LLAMA_MODEL_ALIAS=local-model
 LLAMA_CTX_SIZE=8192
+LLAMA_PARALLEL=1
+LLAMA_REASONING=off
 EOF
 
 chmod 600 "${env_file}"

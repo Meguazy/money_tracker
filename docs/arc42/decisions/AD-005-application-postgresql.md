@@ -1,7 +1,7 @@
 # AD-005: Dedicated Application PostgreSQL
 
 - Status: accepted
-- Implementation: planned
+- Implementation: foundation implemented; finance and messaging persistence planned
 - Date: 2026-09-01
 
 ## Context
@@ -30,6 +30,16 @@ requirements justify a new ADR.
   to an observability component with different data ownership.
 - A separate message broker adds operational cost without current throughput
   need.
+
+## Implementation evidence
+
+Roadmap Step 1 provides the independent default-profile Compose service,
+persistent volume, loopback port, initialization administrator, and
+least-privilege application role. Alembic owns the empty `finance`, `messaging`,
+and `workflow` schema boundary; a guarded rollback refuses non-empty schemas.
+Real PostgreSQL integration tests cover privileges, forward/rollback/fresh
+bootstrap, and checkpoint persistence. Finance and messaging tables,
+repositories, transactions, and backup remain later-step work.
 
 ## Consequences
 

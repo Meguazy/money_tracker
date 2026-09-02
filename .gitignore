@@ -51,6 +51,11 @@ coverage.xml
 .pytest_cache/
 cover/
 
+# Evaluation outputs and private local datasets
+/artifacts/evals/
+/evals/private/*
+!/evals/private/README.md
+
 # Translations
 *.mo
 *.pot

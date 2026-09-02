@@ -14,8 +14,8 @@ step unless the owner explicitly changes scope.
 | Step | Outcome | Status |
 | --- | --- | --- |
 | 0 | Decision-complete documentation baseline | Complete (2026-09-01) |
-| 1 | Healthy platform and evaluation foundation | Planned |
-| 2 | Deterministic finance domain and persistence | Planned |
+| 1 | Healthy platform and evaluation foundation | Complete (2026-09-02) |
+| 2 | Deterministic finance domain and persistence | Planned (next) |
 | 3 | Evaluated text workflows | Planned |
 | 4 | Durable Telegram MVP | Planned |
 | 5 | Local dashboard, budgets, analytics, and advice | Planned |
@@ -27,9 +27,7 @@ only when all exit criteria pass; merged code alone is insufficient.
 
 ## Step 0: Documentation baseline
 
-Status: **Complete (2026-09-01).** There is no active implementation step after
-Step 0. Step 1 remains planned and becomes active only when the owner explicitly
-authorizes it.
+Status: **Complete (2026-09-01).** Step 1 is complete; Step 2 is next.
 
 ### Intent
 
@@ -76,6 +74,10 @@ runtime configuration, or test behavior changes in Step 0.
 
 ## Step 1: Platform health and evaluation foundation
 
+Status: **Complete (2026-09-02).** Platform, persistence, tooling, and
+evaluation foundations pass their exit criteria. Product-role model promotion
+remains gated by later domain evaluations.
+
 ### Prerequisites
 
 Step 0 complete. Existing volumes and sensitive configuration identified through
@@ -115,7 +117,33 @@ read-only checks before any migration or repair.
 No financial table or product workflow beyond the minimum migration/checkpoint
 foundation. No model is promoted merely because the capability probe responds.
 
+### Implementation evidence
+
+- The dedicated `application-postgres` service starts in the default Compose
+  project with a persistent volume, health check, and non-superuser application
+  role. The separate Langfuse stack is selected with the `observability`
+  profile.
+- Langfuse 4.26.0 web and worker, PostgreSQL, ClickHouse, Redis, and MinIO are
+  pinned by digest. The non-cluster ClickHouse repair was applied and the
+  existing named volumes were preserved; web and worker health checks pass.
+- Alembic forward migration, guarded foundation rollback, fresh bootstrap, role
+  privilege checks, and PostgreSQL checkpoint persistence pass against the real
+  application PostgreSQL service.
+- UV locks the development toolchain. Ruff, mypy, pytest, coverage, Compose
+  validation, documentation validation, and Git whitespace checks have
+  repeatable commands in [Development](development.md).
+- The executable `evals/` layout contains public synthetic cases, a capability
+  suite, ignored private/generated paths, deterministic local reports, exact
+  model/build metadata collection, and optional aggregate Langfuse publication.
+- A capability run with no inference server fails explicitly and still writes a
+  machine-readable local result. Five pinned local candidates were screened on
+  the real CUDA llama.cpp runtime; three passed every applicable technical gate
+  with exact metadata. See the
+  [capability results](experiments/local-model-capability-results-2026-09-02.md).
+
 ## Step 2: Finance domain and persistence
+
+Status: **Planned (next active step).**
 
 ### Deliverables
 

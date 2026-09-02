@@ -4,6 +4,8 @@
 - Current executable operations: local inference/CLI, dedicated application
   PostgreSQL, migrations/checkpoint bootstrap, optional healthy Langfuse, and
   capability evaluation
+- Implemented Step 2 core: authoritative finance schema and transactional
+  expense repository
 - Planned operations: Telegram, systemd services, finance backup/restore, web
   API, workflow worker, and receipt storage
 
@@ -45,16 +47,17 @@ the referenced file or entry point exists in the repository.
 
 - The CLI, environment generator/upgrader, llama.cpp launcher, database
   administration CLI, capability runner, and optional Langfuse callbacks exist.
-- The dedicated application PostgreSQL foundation is healthy, independently
-  persistent, least-privileged, and separate from the Langfuse database. It has
-  no financial or messaging product tables yet.
+- The dedicated application PostgreSQL is healthy, independently persistent,
+  least-privileged, and separate from the Langfuse database. It now owns the
+  Step 2 finance schema, while messaging product tables remain planned.
 - Langfuse 4.26.0 and every dependency are pinned by digest. The non-cluster
   repair and health checks pass with the pre-existing volumes preserved.
 - Installed model paths remain workstation-owned and outside the repository.
   Three pinned profiles pass the Step 1 capability screen, but no model is
   promoted to a product role.
-- No Telegram bot/adapter, finance repositories or backup, API/dashboard,
-  workflow worker, receipt store, or systemd unit exists yet.
+- The expense repository exists; wallet, budget, proposal, and receipt adapters
+  remain open. No Telegram bot/adapter, finance backup, API/dashboard, workflow
+  worker, receipt store, or systemd unit exists yet.
 
 ## When to update these guides
 

@@ -10,10 +10,10 @@ implementation state is still `planned`.
 | [AD-002](../README.md#ad-002-self-hosted-langfuse) | Self-hosted Langfuse | Accepted | Implemented, healthy and digest-pinned |
 | [AD-003](../README.md#ad-003-headless-local-initialization) | Headless local initialization | Accepted | Implemented |
 | [AD-004](AD-004-local-first-telegram-boundary.md) | Local-first privacy with Telegram boundary | Accepted | Planned |
-| [AD-005](AD-005-application-postgresql.md) | Dedicated application PostgreSQL | Accepted | Foundation implemented; product persistence planned |
+| [AD-005](AD-005-application-postgresql.md) | Dedicated application PostgreSQL | Accepted | Foundation and finance schema/expense repository implemented; messaging planned |
 | [AD-006](AD-006-bounded-agent-workflows.md) | Bounded typed agent workflows | Accepted | Checkpointer implemented; workflows planned |
-| [AD-007](AD-007-expense-allocation-model.md) | Expense and dual-allocation model | Accepted | Planned |
-| [AD-008](AD-008-controlled-taxonomy.md) | Controlled two-level taxonomy | Accepted | Planned |
+| [AD-007](AD-007-expense-allocation-model.md) | Expense and dual-allocation model | Accepted | Core domain/schema/repository implemented; remaining adapters planned |
+| [AD-008](AD-008-controlled-taxonomy.md) | Controlled two-level taxonomy | Accepted | Policy/seed/schema/bootstrap implemented; management planned |
 | [AD-009](AD-009-local-web-application.md) | Local FastAPI and React web application | Accepted | Planned |
 | [AD-010](AD-010-telegram-durable-messaging.md) | Telegram long polling and durable messaging | Accepted | Planned |
 | [AD-011](AD-011-receipt-extraction.md) | Evaluation-gated receipt extraction | Accepted | Planned |

@@ -1,7 +1,8 @@
 # Domain and Taxonomy
 
 - Status: accepted V1 domain baseline
-- Implementation: planned
+- Implementation: core domain contracts, stable taxonomy seed, finance schema,
+  and expense persistence implemented; remaining Step 2 adapters planned
 
 This document defines business semantics. Database tables, ORM classes, API
 wire shapes, and graph state may differ internally, but they must preserve these

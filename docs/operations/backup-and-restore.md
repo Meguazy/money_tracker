@@ -2,10 +2,12 @@
 
 - Status: accepted policy; implementation planned for Roadmap Step 2 and final
   restore qualification in Step 7
-- Current finance backup: none, because no finance database/media store exists
+- Current finance backup: none; authoritative finance tables now exist, while
+  receipt media storage and the required encrypted backup command remain open
 
-Backup is part of the first authoritative finance-data step, not an optional
-post-release enhancement.
+Backup is part of the active authoritative finance-data step, not an optional
+post-release enhancement. Do not store irreplaceable personal data while this
+runbook still lacks a verified executable backup and isolated restore drill.
 
 ## Recovery objectives
 

@@ -37,12 +37,16 @@ the persistent LangGraph checkpointer:
 
 The service binds to `127.0.0.1:5433`, owns an independent persistent volume,
 and exposes the non-superuser `money_tracker` role to the application. The
-foundation migration creates only the `finance`, `messaging`, and `workflow`
-schemas; financial and messaging tables belong to later roadmap steps.
+first migration creates the `finance`, `messaging`, and `workflow` schema
+boundaries. The active Step 2 migration adds authoritative finance tables,
+deferred reconciliation constraints, immutable audit/wallet rows, taxonomy
+bootstrap support, and expense idempotency/version state. Messaging tables
+remain planned.
 
-The foundation downgrade is intentionally guarded and refuses non-empty
-application or checkpoint schemas. Use it only for an isolated disposable
-database after confirming that it contains no persistent data:
+The foundation downgrade is intentionally guarded and the finance migration
+refuses destructive downgrade. The command below is now usable only when the
+database is still at the empty Step 1 foundation revision; never use it after
+Step 2 finance tables have been applied:
 
     uv run --env-file .env money-tracker-db downgrade-foundation \\
       --confirm-empty-foundation

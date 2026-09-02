@@ -1,7 +1,8 @@
 # AD-007: Expense and Dual-Allocation Model
 
 - Status: accepted
-- Implementation: planned
+- Implementation: domain, schema, expense repository, and deterministic reports
+  implemented; remaining adapters planned
 - Date: 2026-09-01
 
 ## Context

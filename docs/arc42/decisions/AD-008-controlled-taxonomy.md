@@ -1,7 +1,8 @@
 # AD-008: Controlled Two-Level Taxonomy
 
 - Status: accepted
-- Implementation: planned
+- Implementation: domain policy, stable 10-root/14-child seed, schema, and
+  PostgreSQL bootstrap implemented; owner-management services planned
 - Date: 2026-09-01
 
 ## Context

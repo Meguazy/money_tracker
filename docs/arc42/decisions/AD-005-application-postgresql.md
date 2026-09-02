@@ -1,7 +1,8 @@
 # AD-005: Dedicated Application PostgreSQL
 
 - Status: accepted
-- Implementation: foundation implemented; finance and messaging persistence planned
+- Implementation: foundation and finance schema/expense repository implemented;
+  remaining finance adapters and messaging persistence planned
 - Date: 2026-09-01
 
 ## Context
@@ -35,11 +36,13 @@ requirements justify a new ADR.
 
 Roadmap Step 1 provides the independent default-profile Compose service,
 persistent volume, loopback port, initialization administrator, and
-least-privilege application role. Alembic owns the empty `finance`, `messaging`,
-and `workflow` schema boundary; a guarded rollback refuses non-empty schemas.
-Real PostgreSQL integration tests cover privileges, forward/rollback/fresh
-bootstrap, and checkpoint persistence. Finance and messaging tables,
-repositories, transactions, and backup remain later-step work.
+least-privilege application role. Roadmap Step 2 adds authoritative finance
+tables, deferred database invariants, immutable audit and wallet history,
+taxonomy/profile bootstrap, and a transactional expense repository with
+idempotency and optimistic concurrency. Real PostgreSQL tests cover migration,
+constraints, rollback, restart persistence, identical retry, and concurrent
+writers. Remaining finance aggregate adapters, messaging persistence, and
+backup are still open.
 
 ## Consequences
 

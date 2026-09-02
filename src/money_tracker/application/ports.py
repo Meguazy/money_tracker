@@ -1,0 +1,69 @@
+"""Narrow replaceable ports required by finance application services."""
+
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Protocol
+from uuid import UUID
+
+from money_tracker.domain import (
+    AuditEvent,
+    Expense,
+    FundingSource,
+    Profile,
+    Taxonomy,
+)
+
+
+class Clock(Protocol):
+    """Supply aware mutation timestamps under caller control in tests."""
+
+    def now(self) -> datetime:
+        """Return the current timezone-aware instant."""
+
+
+class IdGenerator(Protocol):
+    """Supply stable identifiers without coupling services to UUID generation."""
+
+    def new(self) -> UUID:
+        """Return a new stable identifier."""
+
+
+class FinanceRepository(Protocol):
+    """Persist complete aggregates and audit data in one transaction boundary."""
+
+    def get_expense(self, profile_id: UUID, expense_id: UUID) -> Expense:
+        """Load one expense inside the trusted profile scope."""
+
+    def get_taxonomy(self, profile_id: UUID) -> Taxonomy:
+        """Load the complete category view for deterministic validation."""
+
+    def get_funding_sources(self, profile_id: UUID) -> tuple[FundingSource, ...]:
+        """Load the profile's funding sources."""
+
+    def create_expense(
+        self,
+        expense: Expense,
+        *,
+        request_hash: str,
+        audit_event: AuditEvent,
+    ) -> Expense:
+        """Create once or return the result of an identical prior command."""
+
+    def replace_expense(
+        self,
+        expense: Expense,
+        *,
+        expected_version: int,
+        audit_event: AuditEvent,
+    ) -> None:
+        """Replace a complete aggregate only at the expected current version."""
+
+    def bootstrap_profile(
+        self,
+        profile: Profile,
+        *,
+        taxonomy: Taxonomy,
+        occurred_at: datetime,
+    ) -> None:
+        """Create the sole profile and accepted taxonomy idempotently."""

@@ -21,10 +21,12 @@ budgets, wallet balances, charts, and operational controls.
 
 The approved V1 scope is defined in
 [Vision and Requirements](../product/vision-and-requirements.md). The current
-repository contains the completed Step 1 platform foundation:
-dedicated PostgreSQL, migrations/checkpoint bootstrap, optional observability,
-and executable capability evaluation. It has no finance records or repositories,
-Telegram adapter, web application, receipt pipeline, or product workflows.
+repository contains the completed Step 1 platform foundation and the first
+Step 2 finance increment: pure domain contracts, the accepted seeded taxonomy,
+authoritative finance tables, and a transactional expense repository with
+audit, idempotency, and optimistic concurrency. It has no Telegram adapter,
+web application, receipt extraction pipeline, media store, backup, or product
+workflow.
 
 ### Quality goals
 
@@ -112,7 +114,7 @@ boundary is not end-to-end encrypted and must not be described as local storage.
 | Application to Langfuse | SDK over local HTTP/OTLP | Redacted graph/model observations and aggregate scores | Implemented, optional and healthy |
 | Telegram gateway to Bot API | HTTPS long polling and send methods | Updates, callback queries, messages, file metadata and downloads | Planned |
 | Browser to application API | Same-origin HTTP JSON | Finance resources, settings, reviews, analytics and operations | Planned |
-| Application to PostgreSQL | PostgreSQL protocol | Checkpoints implemented; finance ledger, messaging state and audit planned | Implemented foundation |
+| Application to PostgreSQL | PostgreSQL protocol | Checkpoints and finance schema/expense aggregates implemented; messaging state planned | Implemented Step 1 foundation and Step 2 finance core |
 | Application to receipt archive | Private host filesystem | Original and derived receipt files keyed by content hash | Planned |
 | Backup process to repository | Restic repository protocol | Database dump, receipts and recovery configuration | Planned |
 
@@ -167,7 +169,7 @@ Money Tracker workstation
 │   ├── Evaluation data and artifacts                   [implemented foundation]
 │   └── Restic staging/configuration                    [planned]
 └── Docker Compose
-    ├── Application PostgreSQL                          [implemented core foundation]
+    ├── Application PostgreSQL                          [implemented finance core]
     └── Langfuse, PostgreSQL, ClickHouse, Redis, MinIO  [implemented optional]
 ```
 
@@ -181,6 +183,9 @@ Money Tracker workstation
 | `llm` | Construct an OpenAI-compatible chat adapter | LangChain `ChatOpenAI` | No persistent data | Loopback endpoint by default |
 | `observability` | Enable and flush optional Langfuse callbacks | Langfuse SDK and environment keys | Buffered telemetry until flush | Local Langfuse only |
 | `persistence` | Apply versioned migrations and bootstrap persistent LangGraph checkpoints | Alembic, psycopg, PostgreSQL checkpointer | Foundation schemas and workflow checkpoints | Host administration CLI; least-privilege loopback database role |
+| `domain` | Enforce exact money, expense/refund, dual-allocation, taxonomy, wallet, budget, receipt-metadata, and audit contracts | Pure Python value objects and policies; no framework or infrastructure import | No infrastructure state | Shared host-process library; deterministic validation of untrusted inputs |
+| `application` | Coordinate idempotent expense creation, posting, correction, and void through narrow ports | Finance repository, clock, and ID contracts | Command and audit semantics, not stored state | Shared by future CLI/API/worker; profile scope comes from trusted caller context |
+| `persistence.finance` | Bootstrap profile/taxonomy and persist complete expense aggregates transactionally | psycopg and application repository contract | Finance tables, allocation rows, audit, and idempotency records | Dedicated application PostgreSQL; credentials remain runtime-only |
 | `evaluations` | Probe real model protocols, capture exact runtime metadata, score deterministically, optionally publish aggregates | OpenAI-compatible HTTP, local files, optional Langfuse SDK | Ignored local run artifacts; no domain authority | Host CLI; secrets, image bytes and paths are excluded |
 | `development` | Validate canonical documentation and privacy-ignore invariants | Repository Markdown/YAML/filesystem | No persistent data | Service-independent development command |
 
@@ -188,9 +193,9 @@ Money Tracker workstation
 
 | Component | Responsibility | Narrow interfaces/dependencies | Data ownership | Deployment/security |
 | --- | --- | --- | --- | --- |
-| Finance domain | Enforce money, expense/refund, allocation, budget, category and wallet invariants | Pure value objects and domain policies | No infrastructure state | Python application; no framework imports |
-| Application services | Execute validated commands and queries transactionally | Repository ports, clock, ID and media ports | Command idempotency and audit semantics | FastAPI/worker host processes; profile scope injected |
-| Finance repositories | Persist authoritative domain records and analytics projections | PostgreSQL protocol through explicit repository contracts | Expenses, allocations, categories, budgets, wallets, audit | Dedicated application database; least-privilege credentials |
+| Finance domain (core implemented) | Enforce money, expense/refund, allocation, budget, category and wallet invariants | Pure value objects and domain policies | No infrastructure state | Python application; no framework imports |
+| Application services (expense lifecycle implemented) | Execute validated commands and queries transactionally | Repository ports, clock, ID and future media ports | Command idempotency and audit semantics | Future FastAPI/worker host processes; profile scope injected |
+| Finance repositories (expense core implemented) | Persist authoritative domain records and analytics projections | PostgreSQL protocol through explicit repository contracts | Finance schema implemented; remaining aggregate adapters open | Dedicated application database; least-privilege credentials |
 | Messaging inbox/outbox | Receive, order, retry, dead-letter, replay and dispatch transport work | PostgreSQL and Telegram adapter | Raw updates, offsets, delivery attempts, result references | Gateway and worker; bot token never stored in rows |
 | Workflow runtime | Route intents and execute specialist graphs | LangGraph, typed model gateway, application services, checkpointer | Small versioned workflow state only | Sequential worker; no images or service objects in checkpoints |
 | Receipt service | Validate media, invoke extractor, reconcile lines, prepare review | Media store, extractor port, finance service | Receipt metadata, extraction versions, review state | Private filesystem; untrusted image boundary |
@@ -448,8 +453,14 @@ environment file.
 ### Partially implemented accepted decisions
 
 - [AD-005: Dedicated application PostgreSQL](decisions/AD-005-application-postgresql.md):
-  service, migration boundary, and checkpoint foundation implemented; product
-  persistence planned.
+  service, migration boundary, checkpoints, finance schema, and expense
+  repository implemented; remaining finance adapters and messaging planned.
+- [AD-007: Expense and dual-allocation model](decisions/AD-007-expense-allocation-model.md):
+  domain, schema, repository, reconciliation, and reports implemented;
+  remaining adapters planned.
+- [AD-008: Controlled two-level taxonomy](decisions/AD-008-controlled-taxonomy.md):
+  policy, accepted stable seed, schema, and bootstrap implemented; owner
+  management planned.
 - [AD-006: Bounded typed agent workflows](decisions/AD-006-bounded-agent-workflows.md):
   persistent checkpoint adapter implemented; typed workflows planned.
 - [AD-012: Evaluation-driven model and prompt promotion](decisions/AD-012-evaluation-driven-promotion.md):
@@ -461,8 +472,6 @@ environment file.
 ### Planned accepted decisions
 
 - [AD-004: Local-first privacy with Telegram boundary](decisions/AD-004-local-first-telegram-boundary.md)
-- [AD-007: Expense and dual-allocation model](decisions/AD-007-expense-allocation-model.md)
-- [AD-008: Controlled two-level taxonomy](decisions/AD-008-controlled-taxonomy.md)
 - [AD-009: Local FastAPI and React web application](decisions/AD-009-local-web-application.md)
 - [AD-010: Telegram long polling and durable messaging](decisions/AD-010-telegram-durable-messaging.md)
 - [AD-011: Evaluation-gated receipt extraction](decisions/AD-011-receipt-extraction.md)
@@ -491,12 +500,14 @@ Quantitative evaluation gates are maintained in
 
 ### Current scaffold risks
 
-- No target finance, messaging, Telegram, media, API, or web product component
-  is implemented; foundation schemas deliberately contain no product tables.
+- The finance domain, schema, taxonomy seed, and expense repository are only a
+  partial Step 2 implementation. Wallet/budget/proposal/receipt adapters, API,
+  administrative bootstrap CLI, media store, backup, and restore remain open.
 - The product graph is stateless and has one unconstrained assistant node,
   although the replaceable PostgreSQL checkpoint adapter is available.
-- No installed llama.cpp/GGUF configuration has passed the executable capability
-  suite, so exact target model metadata and behavioral support remain unknown.
+- Three pinned llama.cpp/GGUF profiles have passed every applicable Step 1
+  technical capability gate with exact runtime metadata. None is yet promoted
+  to a product role because the Step 3 behavioral evaluation gates remain open.
 - Application data is not yet covered by the accepted Restic backup/restore
   process; persistent personal finance data must not be encouraged before its
   roadmap gate.

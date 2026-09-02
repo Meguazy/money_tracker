@@ -16,9 +16,10 @@ implementation state is still `planned`.
 | [AD-008](AD-008-controlled-taxonomy.md) | Controlled two-level taxonomy | Accepted | Policy/seed/schema/bootstrap and pending-proposal submission implemented; owner decisions planned |
 | [AD-009](AD-009-local-web-application.md) | Local FastAPI and React web application | Accepted | Planned |
 | [AD-010](AD-010-telegram-durable-messaging.md) | Telegram long polling and durable messaging | Accepted | Planned |
-| [AD-011](AD-011-receipt-extraction.md) | Evaluation-gated receipt extraction | Accepted | Planned |
+| [AD-011](AD-011-receipt-extraction.md) | Evaluation-gated receipt extraction | Accepted | Private original archive implemented; extraction/review planned |
 | [AD-012](AD-012-evaluation-driven-promotion.md) | Evaluation-driven model and prompt promotion | Accepted | Evaluation foundation implemented; promotion pending |
 | [AD-013](AD-013-local-runtime-and-backup.md) | Host runtime and encrypted backup | Accepted | Compose topology implemented; systemd/backup planned |
+| [AD-014](AD-014-private-receipt-archive.md) | Private content-addressed receipt archive | Accepted | Local adapter and filesystem/PostgreSQL integration implemented; wiring/deletion/backup planned |
 
 ## Maintenance rules
 

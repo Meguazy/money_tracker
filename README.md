@@ -2,9 +2,10 @@
 
 Money Tracker is a local-first personal-finance assistant built with Python,
 LangChain, LangGraph, llama.cpp, PostgreSQL, and self-hosted observability. The
-current repository implements the platform foundation plus the first Step 2
-finance domain/schema/repository increment. Telegram, the local web dashboard,
-receipt extraction/media storage, and verified finance backup remain planned.
+current repository implements the platform foundation plus the active Step 2
+finance domain, persistence, and private receipt-archive core. Telegram, the
+local web dashboard, receipt extraction, media-store runtime wiring, and
+verified finance backup remain planned.
 
 ## Current scaffold quick start
 

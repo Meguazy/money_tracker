@@ -92,10 +92,12 @@ Loopback binding alone does not remove browser threats. The planned API must:
 
 ## Media controls
 
-- Store originals outside the web root under application-controlled names based
-  on content hash, not Telegram filenames.
-- Detect actual content and enforce byte, pixel, dimension, decompression, and
-  supported-format limits.
+- Implemented: the local adapter stores originals outside presentation roots
+  under sharded SHA-256 names, never Telegram filenames.
+- Implemented: Pillow fully decodes only single-frame JPEG/PNG/WebP and enforces
+  20 MiB, 40-megapixel, and 10,000-pixel-side limits.
+- Implemented: directories/files use `0700`/`0600`, writes are atomic and
+  no-overwrite, and reads refuse symlinks and verify the digest.
 - Generate derivatives without trusting metadata paths; decide explicitly
   whether EXIF is retained in the private original and strip it from derivatives.
 - Workflow/checkpoint state stores media IDs/references only.

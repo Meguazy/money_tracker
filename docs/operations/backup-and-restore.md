@@ -3,7 +3,8 @@
 - Status: accepted policy; implementation planned for Roadmap Step 2 and final
   restore qualification in Step 7
 - Current finance backup: none; authoritative finance tables now exist, while
-  receipt media storage and the required encrypted backup command remain open
+  the receipt archive adapter exists but runtime wiring and the required
+  encrypted backup command remain open
 
 Backup is part of the active authoritative finance-data step, not an optional
 post-release enhancement. Do not store irreplaceable personal data while this

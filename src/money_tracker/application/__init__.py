@@ -5,6 +5,7 @@ from money_tracker.application.errors import (
     AggregateNotFoundError,
     IdempotencyConflictError,
     OptimisticConcurrencyError,
+    ReceiptMediaError,
 )
 from money_tracker.application.finance import FinanceService
 from money_tracker.application.ports import (
@@ -16,6 +17,10 @@ from money_tracker.application.ports import (
     ReceiptMetadataRepository,
 )
 from money_tracker.application.proposals import CategoryProposalService
+from money_tracker.application.receipt_media import (
+    ReceiptMediaStore,
+    StoredReceiptMedia,
+)
 from money_tracker.application.receipts import ReceiptMetadataService
 
 __all__ = [
@@ -32,4 +37,7 @@ __all__ = [
     "OptimisticConcurrencyError",
     "ReceiptMetadataRepository",
     "ReceiptMetadataService",
+    "ReceiptMediaError",
+    "ReceiptMediaStore",
+    "StoredReceiptMedia",
 ]

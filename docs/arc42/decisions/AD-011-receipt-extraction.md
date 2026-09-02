@@ -1,7 +1,8 @@
 # AD-011: Evaluation-Gated Receipt Extraction
 
 - Status: accepted
-- Implementation: planned
+- Implementation: private content-addressed original archive implemented;
+  extraction evaluation and review workflow planned
 - Date: 2026-09-01
 
 ## Context
@@ -35,3 +36,11 @@ extractor has high confidence.
 - Reconciliation failures remain drafts and are never silently posted.
 - Media validation, retention, backup, and secure deletion become application
   responsibilities.
+
+## Implementation evidence
+
+[AD-014](AD-014-private-receipt-archive.md) implements the extraction-independent
+original-media boundary with decoded format/size limits, private hash paths,
+atomic idempotent writes, verified reads, and real filesystem/PostgreSQL tests.
+It does not select or promote an extractor and does not weaken mandatory owner
+preview.

@@ -26,8 +26,9 @@ Step 2 finance increment: pure domain contracts, the accepted seeded taxonomy,
 authoritative finance tables, transactional expense, wallet, and budget
 repository operations, and audited pending category-proposal submission. It
 also registers content-addressed receipt metadata idempotently, but has no
-Telegram adapter, web application, receipt extraction pipeline, media store,
-backup, or product workflow.
+Telegram adapter, web application, receipt extraction pipeline, media-store
+runtime wiring, backup, or product workflow. A safe local receipt-media adapter
+exists as a tested library component.
 
 ### Quality goals
 
@@ -116,7 +117,7 @@ boundary is not end-to-end encrypted and must not be described as local storage.
 | Telegram gateway to Bot API | HTTPS long polling and send methods | Updates, callback queries, messages, file metadata and downloads | Planned |
 | Browser to application API | Same-origin HTTP JSON | Finance resources, settings, reviews, analytics and operations | Planned |
 | Application to PostgreSQL | PostgreSQL protocol | Checkpoints and finance schema plus expense, wallet, budget, pending-proposal, and receipt-metadata persistence implemented; messaging state planned | Implemented Step 1 foundation and partial Step 2 finance repositories |
-| Application to receipt archive | Private host filesystem | Original and derived receipt files keyed by content hash | Planned |
+| Application to receipt archive | Private host filesystem | Fully decoded original JPEG/PNG/WebP keyed and verified by content hash; no derivatives | Local adapter implemented; runtime wiring/deletion/backup planned |
 | Backup process to repository | Restic repository protocol | Database dump, receipts and recovery configuration | Planned |
 
 ### Out of scope for V1
@@ -166,7 +167,7 @@ Money Tracker workstation
 │   ├── Sequential workflow worker                      [planned]
 │   └── llama.cpp/OpenAI-compatible inference           [scaffolded]
 ├── Private host data
-│   ├── Receipt archive                                 [planned]
+│   ├── Receipt archive adapter                         [implemented, unwired]
 │   ├── Evaluation data and artifacts                   [implemented foundation]
 │   └── Restic staging/configuration                    [planned]
 └── Docker Compose
@@ -187,6 +188,7 @@ Money Tracker workstation
 | `domain` | Enforce exact money, expense/refund, dual-allocation, taxonomy, wallet, budget, receipt-metadata, and audit contracts | Pure Python value objects and policies; no framework or infrastructure import | No infrastructure state | Shared host-process library; deterministic validation of untrusted inputs |
 | `application` | Coordinate idempotent expense lifecycle and receipt registration, audited wallet/budget mutations, and pending proposal submission through narrow ports | Finance, administration, proposal, and receipt-metadata repository ports plus clock and ID contracts | Command, concurrency, review-boundary, and audit semantics, not stored state | Shared by future CLI/API/worker; profile scope comes from trusted caller context; proposal/receipt transitions are not exposed yet |
 | `persistence.finance` | Bootstrap profile/taxonomy, persist complete expense and budget aggregates, append balance-safe wallet movements, validate/store pending proposals, and register receipt metadata transactionally | psycopg and narrow application repository contracts | Finance tables, allocations, budgets/overrides, wallet ledger, proposals, receipt metadata, audit, and idempotency records | Dedicated application PostgreSQL; no receipt bytes or paths; source-row locks serialize ledger debits |
+| `media.local` | Decode, validate, atomically retain, and integrity-check private receipt originals | Receipt-media port, Pillow, private filesystem | Original bytes under sharded SHA-256 keys; no database state | Host library component outside web roots; `0700` directories, `0600` files, no-follow verified reads; runtime root not wired yet |
 | `evaluations` | Probe real model protocols, capture exact runtime metadata, score deterministically, optionally publish aggregates | OpenAI-compatible HTTP, local files, optional Langfuse SDK | Ignored local run artifacts; no domain authority | Host CLI; secrets, image bytes and paths are excluded |
 | `development` | Validate canonical documentation and privacy-ignore invariants | Repository Markdown/YAML/filesystem | No persistent data | Service-independent development command |
 
@@ -199,7 +201,7 @@ Money Tracker workstation
 | Finance repositories (expense/wallet/budget/proposal/receipt metadata implemented) | Persist authoritative domain records and analytics projections | PostgreSQL protocol through explicit repository contracts | Finance schema implemented; proposal and receipt lifecycle transitions open | Dedicated application database; least-privilege credentials; wallet debits serialized per source; no media payloads |
 | Messaging inbox/outbox | Receive, order, retry, dead-letter, replay and dispatch transport work | PostgreSQL and Telegram adapter | Raw updates, offsets, delivery attempts, result references | Gateway and worker; bot token never stored in rows |
 | Workflow runtime | Route intents and execute specialist graphs | LangGraph, typed model gateway, application services, checkpointer | Small versioned workflow state only | Sequential worker; no images or service objects in checkpoints |
-| Receipt service | Validate media, invoke extractor, reconcile lines, prepare review | Media store, extractor port, finance service | Receipt metadata, extraction versions, review state | Private filesystem; untrusted image boundary |
+| Receipt service | Validate media, invoke extractor, reconcile lines, prepare review | Implemented media-store port, planned extractor, finance service | Receipt metadata, extraction versions, review state | Private filesystem; untrusted image boundary; orchestration planned |
 | Analytics service | Compute time, category, budget and funding summaries | Read repositories and deterministic calendar policies | No separate authoritative data | FastAPI and read-only agent tools |
 | Backup service | Create consistent encrypted backups and verify restores | `pg_dump`, Restic, receipt/configuration paths | Backup snapshots in owner repository | Scheduled locally; recovery secret stored off-device |
 
@@ -260,8 +262,8 @@ tests exercise them directly through the real PostgreSQL protocol.
 
 ### Current receipt metadata registration
 
-1. A caller supplies domain-validated metadata only after a separate future
-   media store has accepted and identified decoded content.
+1. A caller supplies domain-validated metadata only after the local media-store
+   port has accepted and identified decoded content.
 2. The service accepts only the initial `stored` state and never receives bytes
    or filesystem paths.
 3. PostgreSQL creates the first row for `(profile_id, content_sha256)` with its
@@ -269,7 +271,20 @@ tests exercise them directly through the real PostgreSQL protocol.
 4. A retry claiming a different byte size or media type fails; a failed audit
    rolls back the new metadata row.
 
-Media validation/storage and receipt review transitions remain planned.
+The media adapter is implemented but not wired to an API/worker entry point.
+Receipt review transitions remain planned.
+
+### Current local receipt-media storage
+
+1. Untrusted bytes are rejected above 20 MiB before decode.
+2. Pillow fully verifies and decodes only single-frame JPEG, PNG, or WebP under
+   40 megapixels and 10,000 pixels per side.
+3. The adapter derives SHA-256 and atomically links a synced mode-`0600`
+   temporary file into a mode-`0700` digest shard without overwriting.
+4. Concurrent identical writes converge on the same file. Reads accept only a
+   digest, refuse symlinks, reapply the byte limit, and verify content hash.
+5. The receipt-metadata service then registers safe facts in PostgreSQL; media
+   bytes and paths never enter rows, checkpoints, or traces.
 
 ### Planned text expense turn
 
@@ -414,6 +429,8 @@ network, and inference readiness through health checks and retry policies.
   system instructions.
 - Validate content type, decoded image limits, dimensions, and storage paths.
 - Do not trace image bytes or download URLs.
+- The implemented local archive accepts at most 20 MiB, 40 megapixels, and
+  10,000 pixels per side; it rejects animation and unsupported decoded formats.
 
 ### Persistence and consistency
 
@@ -516,13 +533,18 @@ environment file.
   implemented; product-role promotion remains experiment-gated.
 - [AD-013: Host runtime and encrypted backup](decisions/AD-013-local-runtime-and-backup.md):
   Compose topology implemented; systemd and Restic planned.
+- [AD-011: Evaluation-gated receipt extraction](decisions/AD-011-receipt-extraction.md):
+  private original-media boundary implemented; extractor evaluation and review
+  workflow planned.
+- [AD-014: Private content-addressed receipt archive](decisions/AD-014-private-receipt-archive.md):
+  safe local adapter and real filesystem/PostgreSQL integration implemented;
+  runtime wiring, deletion, and backup planned.
 
 ### Planned accepted decisions
 
 - [AD-004: Local-first privacy with Telegram boundary](decisions/AD-004-local-first-telegram-boundary.md)
 - [AD-009: Local FastAPI and React web application](decisions/AD-009-local-web-application.md)
 - [AD-010: Telegram long polling and durable messaging](decisions/AD-010-telegram-durable-messaging.md)
-- [AD-011: Evaluation-gated receipt extraction](decisions/AD-011-receipt-extraction.md)
 
 ## 10. Quality Requirements
 
@@ -550,9 +572,10 @@ Quantitative evaluation gates are maintained in
 
 - The finance domain, schema, taxonomy seed, expense/wallet/budget repository
   operations, pending proposal submission, and receipt metadata registration
-  are only a partial Step 2 implementation. Proposal/category and receipt
-  lifecycle transitions, API, administrative bootstrap CLI, media store,
-  backup, and restore remain open.
+  plus the private receipt archive adapter are only a partial Step 2
+  implementation. Proposal/category and receipt lifecycle transitions, API,
+  administrative bootstrap CLI, media-store runtime wiring, backup, and restore
+  remain open.
 - The product graph is stateless and has one unconstrained assistant node,
   although the replaceable PostgreSQL checkpoint adapter is available.
 - Three pinned llama.cpp/GGUF profiles have passed every applicable Step 1

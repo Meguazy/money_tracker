@@ -146,8 +146,9 @@ foundation. No model is promoted merely because the capability probe responds.
 Status: **In progress.** The framework-independent domain, initial taxonomy,
 finance schema, expense/wallet/budget repositories, pending category-proposal
 submission, audit, idempotency, and concurrency foundation are implemented.
-API, proposal resolution, receipt lifecycle transitions, media storage, backup,
-and restore evidence remain open.
+The private content-addressed receipt-media adapter is also implemented. API,
+runtime media wiring, proposal/receipt lifecycle transitions, backup, and
+restore evidence remain open.
 
 ### Deliverables
 
@@ -203,16 +204,22 @@ and restore evidence remain open.
 - Receipt metadata registration accepts only initial `stored` records, uses the
   profile/content SHA-256 pair as natural idempotency, rejects conflicting
   size/type claims, and audits only the first insert. It stores no media bytes or
-  filesystem paths; the media port and lifecycle transitions remain open.
-- Forty-three domain tests and fifteen wallet/budget/proposal/receipt
-  application-service tests pass. Twenty-nine real PostgreSQL integration
-  tests cover migration, concurrent receipt deduplication and rollback,
+  filesystem paths; lifecycle transitions remain open.
+- The local receipt-media port fully decodes single-frame JPEG/PNG/WebP under
+  20 MiB, 40-megapixel, and 10,000-pixel-side limits. It stores originals under
+  private sharded SHA-256 paths with atomic no-overwrite writes, verified reads,
+  symlink refusal, and tamper detection. Runtime entry-point wiring, deletion,
+  and encrypted backup remain open.
+- Forty-three domain tests, fifteen wallet/budget/proposal/receipt application
+  tests, and fifteen real-filesystem media tests pass. Thirty-one real
+  PostgreSQL/media integration tests cover migration, full storage/metadata
+  restart, concurrent receipt deduplication and rollback,
   proposal scoping and atomic rollback, constraints, restart persistence,
   immutable history, exact taxonomy seeding,
   retry idempotency, concurrent expense writers, concurrent wallet debits, and
   concurrent/stale budget versions. The complete service-independent suite
-  passes with 83 tests and 32 explicit real-service skips; focused
-  domain/application branch coverage is 91%.
+  passes with 98 tests and 34 explicit real-service skips; focused
+  domain/application/media branch coverage is 91%.
 
 ## Step 3: Evaluated text workflows
 

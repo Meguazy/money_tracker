@@ -15,3 +15,7 @@ class IdempotencyConflictError(ApplicationError):
 
 class OptimisticConcurrencyError(ApplicationError):
     """Raised when a mutation targets an aggregate version that is no longer current."""
+
+
+class ReceiptMediaError(ApplicationError):
+    """Raised when receipt content or its private archive violates safety rules."""

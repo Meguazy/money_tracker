@@ -6,9 +6,9 @@
   capability evaluation
 - Implemented Step 2 core: authoritative finance schema and transactional
   expense, wallet, budget, pending category-proposal, and receipt-metadata
-  repository operations
+  repository operations plus a safe local receipt-media adapter
 - Planned operations: Telegram, systemd services, finance backup/restore, web
-  API, workflow worker, and receipt storage
+  API, workflow worker, receipt-store runtime wiring, and media deletion
 
 These guides describe accepted operational behavior and the controls future
 steps must implement. A section labelled `planned` is not a runnable procedure.
@@ -58,9 +58,10 @@ the referenced file or entry point exists in the repository.
   promoted to a product role.
 - Expense, wallet, budget, pending-proposal, and content-idempotent receipt
   metadata repository operations exist; proposal/receipt lifecycle transitions
-  and receipt media storage remain open. No Telegram bot/adapter, finance
-  backup, API/dashboard, workflow worker, receipt store, or systemd unit exists
-  yet.
+  remain open. The private content-addressed receipt adapter is implemented and
+  integration-tested but has no configured runtime entry point. No Telegram
+  bot/adapter, finance backup, API/dashboard, workflow worker, media deletion,
+  or systemd unit exists yet.
 
 ## When to update these guides
 

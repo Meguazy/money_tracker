@@ -33,12 +33,13 @@ in this table:
 
 | Service | Host/container | Responsibility | Core? |
 | --- | --- | --- | --- |
-| Application PostgreSQL | Docker Compose | Implemented schema/checkpoint foundation; future finance source of truth, messaging, and audit | Yes |
+| Application PostgreSQL | Docker Compose | Implemented finance source of truth, audit, and checkpoint foundation; messaging planned | Yes |
 | FastAPI/UI service | Host systemd | Same-origin REST API and compiled dashboard | Yes after Step 5 |
 | Telegram gateway | Host systemd | Long poll, durable ingest, file transport, outbox dispatch | Yes after Step 4 |
 | Workflow worker | Host systemd | Sequential routing/workflow processing | Yes after Step 3/4 |
 | llama.cpp server | Host systemd | Local text and selected model capabilities | Yes for agent work |
 | Receipt extractor dependencies | Host process/adapter | Local OCR/VLM selected by evaluation | Yes after Step 6 |
+| Receipt archive adapter | Host library/private filesystem | Implemented decoded-image validation and content-addressed original retention; process wiring planned | Yes once receipt ingestion is exposed |
 | Langfuse stack | Optional Compose profile | Implemented local traces and aggregate experiment scores | No |
 | Restic backup timer | Host systemd | Encrypted authoritative backup and retention | Yes once finance data exists |
 
@@ -86,12 +87,13 @@ to process liveness.
 
 ## Configuration ownership
 
-Planned configuration groups:
+Current and planned configuration groups:
 
 - local model endpoint/model/capabilities;
 - application PostgreSQL credentials and migration state;
 - production and test Telegram tokens plus allowed/pairing state;
-- private receipt and evaluation data paths;
+- private receipt and evaluation data paths; the archive adapter exists, while
+  a runtime receipt-root setting remains planned;
 - FastAPI bind/allowed Host/Origin/CSRF settings;
 - optional Langfuse keys/profile;
 - Restic repository, password source, retention, and staging path.

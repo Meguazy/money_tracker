@@ -17,6 +17,7 @@ from money_tracker.application import (
     AggregateNotFoundError,
     IdempotencyConflictError,
     OptimisticConcurrencyError,
+    ReceiptMetadataService,
 )
 from money_tracker.application.runtime import SystemClock, UUID4Generator
 from money_tracker.domain import (
@@ -33,6 +34,7 @@ from money_tracker.domain import (
     PaymentAllocation,
     Profile,
     ReceiptMetadata,
+    ReceiptStatus,
     WalletEntry,
     WalletEntryType,
     WalletError,
@@ -1478,6 +1480,218 @@ def test_receipt_metadata_rolls_back_when_audit_fails(postgres_url: str) -> None
                 action="create",
                 prior_version=None,
                 current_version=1,
+            ),
+        )
+
+    with pytest.raises(AggregateNotFoundError, match="does not exist"):
+        repository.get_receipt_metadata(profile.id, metadata.id)
+
+
+@pytest.mark.postgres
+def test_receipt_version_migration_preserves_existing_metadata(
+    postgres_url: str,
+) -> None:
+    """Upgrade a pre-version receipt row in place with initial version one."""
+
+    upgrade_database(postgres_url, "20260902_0002")
+    profile_id = uuid4()
+    receipt_id = uuid4()
+    stored_at = datetime(2026, 9, 2, 21, tzinfo=UTC)
+    with connect(postgres_url) as connection:
+        _insert_profile(connection, profile_id)
+        connection.execute(
+            "INSERT INTO finance.receipts "
+            "(id, profile_id, content_sha256, media_type, byte_size, stored_at, "
+            "source_reference, status, original_filename) "
+            "VALUES (%s, %s, %s, 'image/png', 4096, %s, %s, 'stored', %s)",
+            (
+                receipt_id,
+                profile_id,
+                "c" * 64,
+                stored_at,
+                "integration:pre-version-receipt",
+                "ricevuta.png",
+            ),
+        )
+
+    upgrade_database(postgres_url)
+
+    with connect(postgres_url) as connection:
+        row = connection.execute(
+            "SELECT status, version FROM finance.receipts WHERE id = %s",
+            (receipt_id,),
+        ).fetchone()
+    assert row == ("stored", 1)
+
+
+@pytest.mark.postgres
+def test_receipt_review_lifecycle_persists_and_audits_every_transition(
+    postgres_url: str,
+) -> None:
+    """Exercise registration, mandatory review, and owner approval end to end."""
+
+    upgrade_database(postgres_url)
+    repository, profile, _, _ = _repository_fixture(postgres_url)
+    service = ReceiptMetadataService(
+        repository,
+        clock=SystemClock(),
+        ids=UUID4Generator(),
+    )
+    stored = service.register(
+        _receipt_metadata(profile, digest="d" * 64),
+        actor="receipt-store",
+        reason="validated content stored",
+    )
+    review = service.mark_needs_review(
+        profile_id=profile.id,
+        receipt_id=stored.id,
+        expected_version=1,
+        actor="receipt-workflow",
+        reason="draft ready for review",
+    )
+    approved = service.approve(
+        profile_id=profile.id,
+        receipt_id=stored.id,
+        expected_version=2,
+        actor="owner",
+        reason="owner approved preview",
+    )
+
+    assert review.status is ReceiptStatus.NEEDS_REVIEW
+    assert approved.status is ReceiptStatus.APPROVED
+    assert repository.get_receipt_metadata(profile.id, stored.id) == approved
+    with connect(postgres_url) as connection:
+        audits = connection.execute(
+            "SELECT action, prior_version, current_version "
+            "FROM finance.audit_events WHERE aggregate_id = %s "
+            "ORDER BY current_version",
+            (stored.id,),
+        ).fetchall()
+    assert audits == [
+        ("create", None, 1),
+        ("mark_needs_review", 1, 2),
+        ("approve", 2, 3),
+    ]
+
+
+@pytest.mark.postgres
+def test_concurrent_receipt_review_writers_have_exactly_one_winner(
+    postgres_url: str,
+) -> None:
+    """Use the real PostgreSQL compare-and-swap boundary under contention."""
+
+    upgrade_database(postgres_url)
+    repository, profile, _, _ = _repository_fixture(postgres_url)
+    stored = _receipt_metadata(profile, digest="e" * 64)
+    repository.create_receipt_metadata(
+        stored,
+        audit_event=_generic_audit(
+            profile_id=profile.id,
+            aggregate_type="receipt",
+            aggregate_id=stored.id,
+            action="create",
+            prior_version=None,
+            current_version=1,
+        ),
+    )
+    candidate = stored.mark_needs_review()
+    barrier = Barrier(2)
+
+    def attempt(_: int) -> bool:
+        """Race a review transition and report whether this writer committed."""
+
+        barrier.wait()
+        try:
+            repository.replace_receipt_metadata(
+                candidate,
+                expected_version=1,
+                audit_event=_generic_audit(
+                    profile_id=profile.id,
+                    aggregate_type="receipt",
+                    aggregate_id=stored.id,
+                    action="mark_needs_review",
+                    prior_version=1,
+                    current_version=2,
+                ),
+            )
+        except OptimisticConcurrencyError:
+            return False
+        return True
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        outcomes = tuple(executor.map(attempt, range(2)))
+
+    assert sorted(outcomes) == [False, True]
+    assert repository.get_receipt_metadata(profile.id, stored.id) == candidate
+    with connect(postgres_url) as connection:
+        assert connection.execute(
+            "SELECT count(*) FROM finance.audit_events WHERE aggregate_id = %s",
+            (stored.id,),
+        ).fetchone() == (2,)
+
+
+@pytest.mark.postgres
+def test_receipt_review_rolls_back_when_audit_fails(postgres_url: str) -> None:
+    """Keep stored state unchanged when its transition audit cannot commit."""
+
+    upgrade_database(postgres_url)
+    repository, profile, _, _ = _repository_fixture(postgres_url)
+    stored = _receipt_metadata(profile, digest="f" * 64)
+    repository.create_receipt_metadata(
+        stored,
+        audit_event=_generic_audit(
+            profile_id=profile.id,
+            aggregate_type="receipt",
+            aggregate_id=stored.id,
+            action="create",
+            prior_version=None,
+            current_version=1,
+        ),
+    )
+    review = stored.mark_needs_review()
+
+    with pytest.raises(errors.ForeignKeyViolation):
+        repository.replace_receipt_metadata(
+            review,
+            expected_version=1,
+            audit_event=_generic_audit(
+                profile_id=uuid4(),
+                aggregate_type="receipt",
+                aggregate_id=stored.id,
+                action="mark_needs_review",
+                prior_version=1,
+                current_version=2,
+            ),
+        )
+
+    assert repository.get_receipt_metadata(profile.id, stored.id) == stored
+    with connect(postgres_url) as connection:
+        assert connection.execute(
+            "SELECT count(*) FROM finance.audit_events WHERE aggregate_id = %s",
+            (stored.id,),
+        ).fetchone() == (1,)
+
+
+@pytest.mark.postgres
+def test_receipt_repository_rejects_noninitial_version(
+    postgres_url: str,
+) -> None:
+    """Reject a caller that tries to create stored metadata after version one."""
+
+    upgrade_database(postgres_url)
+    repository, profile, _, _ = _repository_fixture(postgres_url)
+    metadata = replace(_receipt_metadata(profile), version=2)
+
+    with pytest.raises(ValueError, match="version one"):
+        repository.create_receipt_metadata(
+            metadata,
+            audit_event=_generic_audit(
+                profile_id=profile.id,
+                aggregate_type="receipt",
+                aggregate_id=metadata.id,
+                action="create",
+                prior_version=None,
+                current_version=2,
             ),
         )
 

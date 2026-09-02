@@ -2,7 +2,8 @@
 
 - Status: accepted
 - Implementation: local adapter, administration CLI, and filesystem/PostgreSQL
-  integration implemented; API/worker wiring, deletion, and backup planned
+  integration plus versioned receipt-review transitions implemented;
+  API/worker wiring, deletion, and backup planned
 - Date: 2026-09-02
 
 ## Context
@@ -37,8 +38,10 @@ verify the digest before returning content.
 
 The media store does not create database rows. After storage succeeds, the
 receipt-metadata application service registers the returned facts idempotently
-by profile and digest. No product deletion API exists until audit, references,
-and backup-retention semantics are implemented together.
+by profile and digest. Metadata then advances only from `stored` to
+`needs_review` to `approved`, with mandatory review, optimistic concurrency,
+and an atomic audit for every transition. No product deletion API exists until
+audit, references, and backup-retention semantics are implemented together.
 
 The local administration CLI wires these boundaries for a profile-scoped
 manual import. It requires an explicitly configured absolute archive root,
@@ -67,4 +70,5 @@ and prints no private paths.
   require a separate contract.
 - Tests cover supported formats, full decode failure, byte/dimension limits,
   permissions, concurrent idempotency, restart, symlink refusal, and tamper
-  detection using real filesystem and PostgreSQL protocols.
+  detection plus migration, concurrent review transitions, and audit rollback
+  using real filesystem and PostgreSQL protocols.

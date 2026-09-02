@@ -25,10 +25,10 @@ repository contains the completed Step 1 platform foundation and the current
 Step 2 finance increment: pure domain contracts, the accepted seeded taxonomy,
 authoritative finance tables, transactional expense, wallet, and budget
 repository operations, and audited pending category-proposal submission. It
-also registers content-addressed receipt metadata idempotently, but has no
-Telegram adapter, web application, receipt extraction pipeline, media-store
-API/worker wiring, backup, or product workflow. A safe local receipt-media
-adapter is wired through a minimal administration CLI.
+also registers and versions content-addressed receipt review metadata, but has
+no Telegram adapter, web application, receipt extraction pipeline, media-store
+API/worker wiring, backup, or product review entry point. A safe local
+receipt-media adapter is wired through a minimal administration CLI.
 
 ### Quality goals
 
@@ -187,10 +187,10 @@ Money Tracker workstation
 | `observability` | Enable and flush optional Langfuse callbacks | Langfuse SDK and environment keys | Buffered telemetry until flush | Local Langfuse only |
 | `persistence` | Apply versioned migrations and bootstrap persistent LangGraph checkpoints | Alembic, psycopg, PostgreSQL checkpointer | Foundation schemas and workflow checkpoints | Host administration CLI; least-privilege loopback database role |
 | `domain` | Enforce exact money, expense/refund, dual-allocation, taxonomy, wallet, budget, receipt-metadata, and audit contracts | Pure Python value objects and policies; no framework or infrastructure import | No infrastructure state | Shared host-process library; deterministic validation of untrusted inputs |
-| `application` | Coordinate idempotent expense lifecycle and receipt registration, audited wallet/budget mutations, and pending proposal submission through narrow ports | Finance, administration, proposal, and receipt-metadata repository ports plus clock and ID contracts | Command, concurrency, review-boundary, and audit semantics, not stored state | Shared by future CLI/API/worker; profile scope comes from trusted caller context; proposal/receipt transitions are not exposed yet |
+| `application` | Coordinate idempotent expense lifecycle and receipt registration/review, audited wallet/budget mutations, and pending proposal submission through narrow ports | Finance, administration, proposal, and receipt-metadata repository ports plus clock and ID contracts | Command, concurrency, review-boundary, and audit semantics, not stored state | Shared by future CLI/API/worker; profile scope comes from trusted caller context; proposal decisions and receipt deletion are not exposed |
 | `administration` | Expose bounded local receipt storage/registration for development and bootstrap | Database URL, absolute archive setting, media and metadata services | No independent state; emits safe identifiers/facts only | Host CLI; active-profile preflight, no-follow bounded input, no private paths in JSON |
-| `persistence.finance` | Bootstrap profile/taxonomy, persist complete expense and budget aggregates, append balance-safe wallet movements, validate/store pending proposals, and register receipt metadata transactionally | psycopg and narrow application repository contracts | Finance tables, allocations, budgets/overrides, wallet ledger, proposals, receipt metadata, audit, and idempotency records | Dedicated application PostgreSQL; no receipt bytes or paths; source-row locks serialize ledger debits |
-| `media.local` | Decode, validate, atomically retain, and integrity-check private receipt originals | Receipt-media port, Pillow, private filesystem | Original bytes under sharded SHA-256 keys; no database state | Host library component outside web roots; `0700` directories, `0600` files, no-follow verified reads; runtime root not wired yet |
+| `persistence.finance` | Bootstrap profile/taxonomy, persist complete expense and budget aggregates, append balance-safe wallet movements, validate/store pending proposals, and register/transition receipt metadata transactionally | psycopg and narrow application repository contracts | Finance tables, allocations, budgets/overrides, wallet ledger, proposals, versioned receipt metadata, audit, and idempotency records | Dedicated application PostgreSQL; no receipt bytes or paths; optimistic versions protect mutable aggregates |
+| `media.local` | Decode, validate, atomically retain, and integrity-check private receipt originals | Receipt-media port, Pillow, private filesystem | Original bytes under sharded SHA-256 keys; no database state | Host library outside web roots; `0700` directories, `0600` files, no-follow verified reads; root wired explicitly by admin CLI, API/worker planned |
 | `evaluations` | Probe real model protocols, capture exact runtime metadata, score deterministically, optionally publish aggregates | OpenAI-compatible HTTP, local files, optional Langfuse SDK | Ignored local run artifacts; no domain authority | Host CLI; secrets, image bytes and paths are excluded |
 | `development` | Validate canonical documentation and privacy-ignore invariants | Repository Markdown/YAML/filesystem | No persistent data | Service-independent development command |
 
@@ -199,8 +199,8 @@ Money Tracker workstation
 | Component | Responsibility | Narrow interfaces/dependencies | Data ownership | Deployment/security |
 | --- | --- | --- | --- | --- |
 | Finance domain (core implemented) | Enforce money, expense/refund, allocation, budget, category and wallet invariants | Pure value objects and domain policies | No infrastructure state | Python application; no framework imports |
-| Application services (expense/wallet/budget, proposal submission, and receipt registration implemented) | Execute validated commands and queries transactionally | Narrow repository ports, clock, ID and future media ports | Command/content idempotency, versioning, review boundary, and audit semantics | Future FastAPI/worker host processes; profile scope injected; proposal and receipt decisions remain workflow-owned |
-| Finance repositories (expense/wallet/budget/proposal/receipt metadata implemented) | Persist authoritative domain records and analytics projections | PostgreSQL protocol through explicit repository contracts | Finance schema implemented; proposal and receipt lifecycle transitions open | Dedicated application database; least-privilege credentials; wallet debits serialized per source; no media payloads |
+| Application services (expense/wallet/budget, proposal submission, and receipt registration/review implemented) | Execute validated commands and queries transactionally | Narrow repository ports, clock, ID and future media ports | Command/content idempotency, versioning, review boundary, and audit semantics | Future FastAPI/worker host processes; profile scope injected; proposal decisions and product receipt review remain workflow-owned |
+| Finance repositories (expense/wallet/budget/proposal/versioned receipt metadata implemented) | Persist authoritative domain records and analytics projections | PostgreSQL protocol through explicit repository contracts | Finance schema implemented; proposal decisions and receipt deletion open | Dedicated application database; least-privilege credentials; optimistic versions and source locks protect concurrent mutations; no media payloads |
 | Messaging inbox/outbox | Receive, order, retry, dead-letter, replay and dispatch transport work | PostgreSQL and Telegram adapter | Raw updates, offsets, delivery attempts, result references | Gateway and worker; bot token never stored in rows |
 | Workflow runtime | Route intents and execute specialist graphs | LangGraph, typed model gateway, application services, checkpointer | Small versioned workflow state only | Sequential worker; no images or service objects in checkpoints |
 | Receipt service | Validate media, invoke extractor, reconcile lines, prepare review | Implemented media-store port, planned extractor, finance service | Receipt metadata, extraction versions, review state | Private filesystem; untrusted image boundary; orchestration planned |
@@ -262,7 +262,7 @@ tests exercise them directly through the real PostgreSQL protocol.
 4. No category is created and no proposal decision is accepted by this service.
    Those transitions remain part of the planned bounded owner-review workflow.
 
-### Current receipt metadata registration
+### Current receipt metadata registration and review state
 
 1. A caller supplies domain-validated metadata only after the local media-store
    port has accepted and identified decoded content.
@@ -272,9 +272,13 @@ tests exercise them directly through the real PostgreSQL protocol.
    audit. An identical retry returns that row and writes no second audit.
 4. A retry claiming a different byte size or media type fails; a failed audit
    rolls back the new metadata row.
+5. The application permits only `stored` to `needs_review` to `approved`;
+   direct approval and all transitions from terminal states fail.
+6. Each review transition increments an optimistic version and commits its
+   immutable audit atomically; concurrent writers have exactly one winner.
 
 The media adapter is wired to the local administration CLI but not to an
-API/worker entry point. Receipt review transitions remain planned.
+API/worker entry point. Extraction and the product review workflow remain planned.
 
 ### Current local receipt-media storage
 
@@ -529,7 +533,7 @@ environment file.
 
 - [AD-005: Dedicated application PostgreSQL](decisions/AD-005-application-postgresql.md):
   service, migration boundary, checkpoints, finance schema, and expense,
-  wallet, budget, pending-proposal, and receipt-metadata repository operations
+  wallet, budget, pending-proposal, and versioned receipt-review operations
   implemented; remaining finance adapters and messaging planned.
 - [AD-007: Expense and dual-allocation model](decisions/AD-007-expense-allocation-model.md):
   domain, schema, expense/wallet/budget persistence, reconciliation, and
@@ -549,9 +553,9 @@ environment file.
   private original-media boundary implemented; extractor evaluation and review
   workflow planned.
 - [AD-014: Private content-addressed receipt archive](decisions/AD-014-private-receipt-archive.md):
-  safe local adapter and real filesystem/PostgreSQL integration implemented;
-  administration CLI wiring implemented; API/worker wiring, deletion, and
-  backup planned.
+  safe local adapter, versioned review state, and real filesystem/PostgreSQL
+  integration implemented; administration CLI wiring implemented; API/worker
+  wiring, deletion, and backup planned.
 
 ### Planned accepted decisions
 
@@ -584,11 +588,11 @@ Quantitative evaluation gates are maintained in
 ### Current scaffold risks
 
 - The finance domain, schema, taxonomy seed, expense/wallet/budget repository
-  operations, pending proposal submission, and receipt metadata registration
-  plus the private receipt archive adapter are only a partial Step 2
-  implementation. Proposal/category and receipt lifecycle transitions, API,
-  worker media wiring, broader administrative bootstrap, backup, and restore
-  remain open.
+  operations, pending proposal submission, versioned receipt review, and the
+  private receipt archive adapter are only a partial Step 2 implementation.
+  Proposal/category decisions, receipt extraction/deletion,
+  API/worker media wiring, broader administrative bootstrap, backup, and
+  restore remain open.
 - The product graph is stateless and has one unconstrained assistant node,
   although the replaceable PostgreSQL checkpoint adapter is available.
 - Three pinned llama.cpp/GGUF profiles have passed every applicable Step 1

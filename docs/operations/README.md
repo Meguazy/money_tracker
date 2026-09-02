@@ -5,7 +5,7 @@
   PostgreSQL, migrations/checkpoint bootstrap, optional healthy Langfuse, and
   capability evaluation, plus profile-scoped administrative receipt storage
 - Implemented Step 2 core: authoritative finance schema and transactional
-  expense, wallet, budget, pending category-proposal, and receipt-metadata
+  expense, wallet, budget, pending category-proposal, and versioned receipt-review
   repository operations plus a safe local receipt-media adapter
 - Planned operations: Telegram, systemd services, finance backup/restore, web
   API, workflow worker receipt wiring, and media deletion
@@ -57,8 +57,9 @@ the referenced file or entry point exists in the repository.
   Three pinned profiles pass the Step 1 capability screen, but no model is
   promoted to a product role.
 - Expense, wallet, budget, pending-proposal, and content-idempotent receipt
-  metadata repository operations exist; proposal/receipt lifecycle transitions
-  remain open. The private content-addressed receipt adapter is implemented and
+  metadata operations exist. Receipt review/approval transitions are versioned,
+  audited, and concurrency-safe; proposal decisions and receipt extraction or
+  deletion remain open. The private content-addressed receipt adapter is
   integration-tested through the local administration CLI. No Telegram
   bot/adapter, finance backup, API/dashboard, workflow worker, media deletion,
   or systemd unit exists yet.

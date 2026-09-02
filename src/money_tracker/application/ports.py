@@ -110,7 +110,14 @@ class CategoryProposalRepository(Protocol):
 
 
 class ReceiptMetadataRepository(Protocol):
-    """Register immutable content-addressed receipt metadata."""
+    """Persist content-addressed receipt metadata and review transitions."""
+
+    def get_receipt_metadata(
+        self,
+        profile_id: UUID,
+        receipt_id: UUID,
+    ) -> ReceiptMetadata:
+        """Load one receipt inside the trusted profile scope."""
 
     def create_receipt_metadata(
         self,
@@ -119,3 +126,12 @@ class ReceiptMetadataRepository(Protocol):
         audit_event: AuditEvent,
     ) -> ReceiptMetadata:
         """Create metadata or return the existing record for the same content."""
+
+    def replace_receipt_metadata(
+        self,
+        metadata: ReceiptMetadata,
+        *,
+        expected_version: int,
+        audit_event: AuditEvent,
+    ) -> None:
+        """Replace review state only at the expected current version."""

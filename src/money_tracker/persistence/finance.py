@@ -354,7 +354,7 @@ class PostgresFinanceRepository:
         with connect(self._database_url) as connection:
             row = connection.execute(
                 "SELECT id, profile_id, content_sha256, media_type, byte_size, "
-                "stored_at, source_reference, status, original_filename "
+                "stored_at, source_reference, status, original_filename, version "
                 "FROM finance.receipts WHERE id = %s AND profile_id = %s",
                 (receipt_id, profile_id),
             ).fetchone()
@@ -385,14 +385,14 @@ class PostgresFinanceRepository:
             ValueError: If status is not initial or digest metadata conflicts.
         """
 
-        if metadata.status is not ReceiptStatus.STORED:
-            raise ValueError("new receipt metadata must be stored")
+        if metadata.status is not ReceiptStatus.STORED or metadata.version != 1:
+            raise ValueError("new receipt metadata must be stored at version one")
         with connect(self._database_url) as connection:
             inserted = connection.execute(
                 "INSERT INTO finance.receipts "
                 "(id, profile_id, content_sha256, media_type, byte_size, stored_at, "
-                "source_reference, status, original_filename) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) "
+                "source_reference, status, original_filename, version) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
                 "ON CONFLICT (profile_id, content_sha256) DO NOTHING RETURNING id",
                 (
                     metadata.id,
@@ -404,6 +404,7 @@ class PostgresFinanceRepository:
                     metadata.source_reference,
                     metadata.status.value,
                     metadata.original_filename,
+                    metadata.version,
                 ),
             ).fetchone()
             if inserted is not None:
@@ -411,7 +412,7 @@ class PostgresFinanceRepository:
                 return metadata
             row = connection.execute(
                 "SELECT id, profile_id, content_sha256, media_type, byte_size, "
-                "stored_at, source_reference, status, original_filename "
+                "stored_at, source_reference, status, original_filename, version "
                 "FROM finance.receipts WHERE profile_id = %s AND content_sha256 = %s",
                 (metadata.profile_id, metadata.content_sha256),
             ).fetchone()
@@ -424,6 +425,45 @@ class PostgresFinanceRepository:
             ):
                 raise ValueError("receipt digest conflicts with stored media metadata")
             return existing
+
+    def replace_receipt_metadata(
+        self,
+        metadata: ReceiptMetadata,
+        *,
+        expected_version: int,
+        audit_event: AuditEvent,
+    ) -> None:
+        """Atomically replace receipt review state at the observed version.
+
+        Only lifecycle state and version are mutable. Content identity, storage
+        facts, source provenance, and display filename remain immutable.
+
+        Args:
+            metadata: Complete validated metadata after a domain transition.
+            expected_version: Version observed by the caller.
+            audit_event: Matching immutable transition audit.
+
+        Raises:
+            OptimisticConcurrencyError: If another transition already won.
+        """
+
+        with connect(self._database_url) as connection:
+            cursor = connection.execute(
+                "UPDATE finance.receipts SET status = %s, version = %s "
+                "WHERE id = %s AND profile_id = %s AND version = %s",
+                (
+                    metadata.status.value,
+                    metadata.version,
+                    metadata.id,
+                    metadata.profile_id,
+                    expected_version,
+                ),
+            )
+            if cursor.rowcount != 1:
+                raise OptimisticConcurrencyError(
+                    "receipt changed since the requested version"
+                )
+            self._insert_audit(connection, audit_event)
 
     def get_funding_sources(self, profile_id: UUID) -> tuple[FundingSource, ...]:
         """Load all funding sources for one profile.
@@ -1040,4 +1080,5 @@ class PostgresFinanceRepository:
             source_reference=row[6],
             status=ReceiptStatus(row[7]),
             original_filename=row[8],
+            version=row[9],
         )

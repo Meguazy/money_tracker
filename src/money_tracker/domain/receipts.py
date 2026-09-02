@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from enum import StrEnum
 from uuid import UUID
 
-from money_tracker.domain.errors import DomainError
+from money_tracker.domain.errors import DomainError, InvalidTransitionError
 
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 
@@ -39,6 +39,7 @@ class ReceiptMetadata:
         source_reference: Stable API, CLI, or future Telegram source reference.
         status: Retention and review state.
         original_filename: Sanitized display metadata, never a storage path.
+        version: Optimistic concurrency version, starting at one.
     """
 
     id: UUID
@@ -50,6 +51,7 @@ class ReceiptMetadata:
     source_reference: str
     status: ReceiptStatus = ReceiptStatus.STORED
     original_filename: str | None = None
+    version: int = 1
 
     def __post_init__(self) -> None:
         """Validate safe metadata without inspecting image content."""
@@ -69,3 +71,41 @@ class ReceiptMetadata:
                 raise DomainError("receipt filename cannot be empty")
             if "/" in self.original_filename or "\\" in self.original_filename:
                 raise DomainError("receipt filename cannot contain path separators")
+        if self.version < 1:
+            raise DomainError("receipt version must be positive")
+
+    def mark_needs_review(self) -> ReceiptMetadata:
+        """Expose a stored receipt to the mandatory owner-review workflow.
+
+        Returns:
+            A new needs-review metadata value with an incremented version.
+
+        Raises:
+            InvalidTransitionError: If storage is no longer the current state.
+        """
+
+        if self.status is not ReceiptStatus.STORED:
+            raise InvalidTransitionError("only a stored receipt can enter review")
+        return replace(
+            self,
+            status=ReceiptStatus.NEEDS_REVIEW,
+            version=self.version + 1,
+        )
+
+    def approve(self) -> ReceiptMetadata:
+        """Record explicit owner approval after the receipt entered review.
+
+        Returns:
+            A new approved metadata value with an incremented version.
+
+        Raises:
+            InvalidTransitionError: If mandatory review has not been entered.
+        """
+
+        if self.status is not ReceiptStatus.NEEDS_REVIEW:
+            raise InvalidTransitionError("only a receipt in review can be approved")
+        return replace(
+            self,
+            status=ReceiptStatus.APPROVED,
+            version=self.version + 1,
+        )

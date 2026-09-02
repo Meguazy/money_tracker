@@ -146,10 +146,11 @@ foundation. No model is promoted merely because the capability probe responds.
 Status: **In progress.** The framework-independent domain, initial taxonomy,
 finance schema, expense/wallet/budget repositories, pending category-proposal
 submission, audit, idempotency, and concurrency foundation are implemented.
-The private content-addressed receipt-media adapter is also implemented. API,
-worker media wiring, proposal/receipt lifecycle transitions, backup, and restore
-evidence remain open; a minimal local administration command now exercises the
-archive and metadata boundary.
+The private content-addressed receipt-media adapter and versioned receipt
+review-state transitions are also implemented. API, worker media wiring,
+proposal lifecycle, receipt extraction/deletion, backup, and restore evidence
+remain open; a minimal local administration command exercises the archive and
+metadata boundary.
 
 ### Deliverables
 
@@ -205,7 +206,10 @@ archive and metadata boundary.
 - Receipt metadata registration accepts only initial `stored` records, uses the
   profile/content SHA-256 pair as natural idempotency, rejects conflicting
   size/type claims, and audits only the first insert. It stores no media bytes or
-  filesystem paths; lifecycle transitions remain open.
+  filesystem paths. The versioned lifecycle permits only `stored` to
+  `needs_review` to `approved`, requires the mandatory review step, and
+  commits each transition with audit under optimistic concurrency. Deletion
+  remains unavailable pending reference and backup-retention semantics.
 - The local receipt-media port fully decodes single-frame JPEG/PNG/WebP under
   20 MiB, 40-megapixel, and 10,000-pixel-side limits. It stores originals under
   private sharded SHA-256 paths with atomic no-overwrite writes, verified reads,
@@ -215,16 +219,15 @@ archive and metadata boundary.
   configured archive root, refuses symlink/non-file/oversized inputs, then
   stores and registers metadata idempotently. Its JSON output omits private
   paths.
-- Forty-three domain tests, fifteen wallet/budget/proposal/receipt application
+- Forty-three domain tests, twenty-two wallet/budget/proposal/receipt application
   tests, and twenty-two media/configuration/administration tests pass.
-  Thirty-two real PostgreSQL/media integration tests cover migration, full
-  storage/metadata
-  restart, concurrent receipt deduplication and rollback,
-  proposal scoping and atomic rollback, constraints, restart persistence,
-  immutable history, exact taxonomy seeding,
-  retry idempotency, concurrent expense writers, concurrent wallet debits, and
-  concurrent/stale budget versions. The complete service-independent suite
-  passes with 105 tests and 35 explicit real-service skips; focused
+  Thirty-seven real PostgreSQL/media integration tests cover migration, full
+  storage/metadata restart, receipt review lifecycle, concurrent registration
+  and version conflicts, receipt audit rollback, proposal scoping and atomic
+  rollback, constraints, restart persistence, immutable history, exact taxonomy
+  seeding, retry idempotency, concurrent expense writers, concurrent wallet
+  debits, and concurrent/stale budget versions. The complete service-independent
+  suite passes with 112 tests and 40 explicit real-service skips; focused
   domain/application/media branch coverage is 91%.
 
 ## Step 3: Evaluated text workflows

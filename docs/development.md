@@ -57,6 +57,33 @@ Step 2 finance tables have been applied:
 Never use the guarded downgrade as a production rollback. Restore a verified
 backup or deploy forward when data exists.
 
+## Bootstrapping the owner profile
+
+Nothing works without a profile: every finance operation is scoped to one, and
+V1 has a single owner. Create it once after the database is migrated, then
+configure at least one funding source and mark it the default so an omitted
+payment method resolves:
+
+    uv run --env-file .env money-tracker-admin profile-init
+    uv run --env-file .env money-tracker-admin funding-source-add \
+      --profile-id PROFILE_UUID --name 'Carta' \
+      --funding-class personal_funds --default
+    uv run --env-file .env money-tracker-admin funding-source-add \
+      --profile-id PROFILE_UUID --name 'Buoni pasto' \
+      --funding-class benefit --balance-mode ledger
+
+`profile-init` seeds the accepted taxonomy and prints the identifier the other
+commands require. It refuses to create a second profile. Use `ledger` as the
+balance mode only for a resource whose balance this application should track,
+such as a meal-voucher wallet.
+
+Recover the identifier at any time, along with the sources each profile has:
+
+    uv run --env-file .env money-tracker-admin profile-list
+
+`funding-source-add` refuses an unknown profile, a blank name, a name that
+repeats an existing source, and a second default.
+
 ## Administrative receipt storage
 
 Set `MONEY_TRACKER_RECEIPT_ARCHIVE_ROOT` to an absolute private host path. The
@@ -124,7 +151,7 @@ selects one, storing a draft through the real application services:
       --profile-id PROFILE_UUID
 
 The profile must already be bootstrapped with at least one active default
-funding source. A stored movement is always a draft: no auto-post policy is
+funding source; see [Bootstrapping the owner profile](#bootstrapping-the-owner-profile). A stored movement is always a draft: no auto-post policy is
 promoted. The output adds the outcome, the stored movement identifier, any
 pending candidate, and the clarification reason when nothing was stored.
 

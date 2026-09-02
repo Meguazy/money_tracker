@@ -167,6 +167,23 @@ class PostgresFinanceRepository:
                 ),
             )
 
+    def list_profiles(self) -> tuple[UUID, ...]:
+        """List active profile identifiers in creation order.
+
+        V1 has a single owner, so this normally returns at most one identifier.
+        It exists so a local command can report the identifier its other
+        operations require instead of an operator querying the database.
+
+        Returns:
+            Active profile identifiers, oldest first.
+        """
+
+        with connect(self._database_url) as connection:
+            rows = connection.execute(
+                "SELECT id FROM finance.profiles WHERE active ORDER BY created_at"
+            ).fetchall()
+        return tuple(row[0] for row in rows)
+
     def get_taxonomy(self, profile_id: UUID) -> Taxonomy:
         """Load categories and aliases for one profile.
 

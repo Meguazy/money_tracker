@@ -344,9 +344,10 @@ own tests and documentation, and none may ship a later step's behavior.
   named existing, re-propose, cancel, and unrelated input.
 - Auto-post eligibility policy calibrated on the evaluation set; all other
   inputs remain drafts.
-- A minimal local administration command for exercising implemented workflow
-  components by hand before a channel exists; no channel adapter, durable
-  worker, or owner-facing response.
+- A minimal local administration command for bootstrapping the owner profile
+  and its funding sources, and for exercising implemented workflow components
+  by hand before a channel exists; no channel adapter, durable worker, or
+  owner-facing response.
 - Production prompt/model configuration promoted through the experiment
   decision log.
 
@@ -499,6 +500,13 @@ own tests and documentation, and none may ship a later step's behavior.
   and further ad-hoc tuning is prohibited by AD-012: this is a prompt and model
   quality gap for the `ingestion/expense-it` dataset and its 0.98 ambiguity
   gate to measure, not a mechanism gap.
+- `money-tracker-admin profile-init`, `profile-list`, and
+  `funding-source-add` make the finance components reachable without
+  hand-written Python. Until they existed, every command taking a profile
+  identifier, including the Step 2 receipt import, required an operator to
+  create a profile through an ad-hoc script and to query the database for its
+  identifier. They refuse a second owner, an unknown profile, a blank name, a
+  name repeating an existing source, and a second default.
 - `money-tracker-admin route` sends one message through the real compiled
   router and prints only the decision it reached. It takes the trusted routing
   context from flags rather than the database, so it needs no active profile

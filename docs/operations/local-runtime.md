@@ -39,7 +39,7 @@ in this table:
 | Workflow worker | Host systemd | Sequential routing/workflow processing | Yes after Step 3/4 |
 | llama.cpp server | Host systemd | Local text and selected model capabilities | Yes for agent work |
 | Receipt extractor dependencies | Host process/adapter | Local OCR/VLM selected by evaluation | Yes after Step 6 |
-| Receipt archive adapter | Host library/private filesystem | Implemented decoded-image validation and content-addressed original retention; process wiring planned | Yes once receipt ingestion is exposed |
+| Receipt archive adapter | Host library/private filesystem | Implemented decoded-image validation and content-addressed original retention; admin CLI wired, API/worker planned | Yes once receipt ingestion is exposed |
 | Langfuse stack | Optional Compose profile | Implemented local traces and aggregate experiment scores | No |
 | Restic backup timer | Host systemd | Encrypted authoritative backup and retention | Yes once finance data exists |
 
@@ -92,8 +92,8 @@ Current and planned configuration groups:
 - local model endpoint/model/capabilities;
 - application PostgreSQL credentials and migration state;
 - production and test Telegram tokens plus allowed/pairing state;
-- private receipt and evaluation data paths; the archive adapter exists, while
-  a runtime receipt-root setting remains planned;
+- private receipt and evaluation data paths; the archive root is configured by
+  `MONEY_TRACKER_RECEIPT_ARCHIVE_ROOT` for the administration CLI;
 - FastAPI bind/allowed Host/Origin/CSRF settings;
 - optional Langfuse keys/profile;
 - Restic repository, password source, retention, and staging path.

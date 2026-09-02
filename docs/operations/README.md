@@ -3,12 +3,12 @@
 - Status: Step 1 platform foundation complete; product operations planned
 - Current executable operations: local inference/CLI, dedicated application
   PostgreSQL, migrations/checkpoint bootstrap, optional healthy Langfuse, and
-  capability evaluation
+  capability evaluation, plus profile-scoped administrative receipt storage
 - Implemented Step 2 core: authoritative finance schema and transactional
   expense, wallet, budget, pending category-proposal, and receipt-metadata
   repository operations plus a safe local receipt-media adapter
 - Planned operations: Telegram, systemd services, finance backup/restore, web
-  API, workflow worker, receipt-store runtime wiring, and media deletion
+  API, workflow worker receipt wiring, and media deletion
 
 These guides describe accepted operational behavior and the controls future
 steps must implement. A section labelled `planned` is not a runnable procedure.
@@ -59,7 +59,7 @@ the referenced file or entry point exists in the repository.
 - Expense, wallet, budget, pending-proposal, and content-idempotent receipt
   metadata repository operations exist; proposal/receipt lifecycle transitions
   remain open. The private content-addressed receipt adapter is implemented and
-  integration-tested but has no configured runtime entry point. No Telegram
+  integration-tested through the local administration CLI. No Telegram
   bot/adapter, finance backup, API/dashboard, workflow worker, media deletion,
   or systemd unit exists yet.
 

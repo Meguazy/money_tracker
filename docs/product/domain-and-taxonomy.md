@@ -4,7 +4,7 @@
 - Implementation: core domain contracts, stable taxonomy seed, finance schema,
   expense/wallet/budget persistence, and pending proposal submission
   plus receipt metadata registration implemented; proposal/receipt decisions,
-  media runtime wiring, and remaining Step 2 adapters planned. The private
+  API/worker media wiring, and remaining Step 2 adapters planned. The private
   content-addressed original-media adapter is implemented.
 
 This document defines business semantics. Database tables, ORM classes, API

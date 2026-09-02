@@ -20,6 +20,7 @@ dependencies = [
 
 [project.scripts]
 money-tracker = "money_tracker.cli:main"
+money-tracker-admin = "money_tracker.administration:main"
 money-tracker-db = "money_tracker.persistence.cli:main"
 money-tracker-eval = "money_tracker.evaluations.cli:main"
 money-tracker-validate-docs = "money_tracker.development.docs_validation:main"

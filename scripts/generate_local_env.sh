@@ -20,6 +20,7 @@ random_hex() {
 
 app_postgres_password="$(random_hex 24)"
 app_postgres_admin_password="$(random_hex 24)"
+receipt_archive_root="${XDG_DATA_HOME:-${HOME}/.local/share}/money-tracker/receipts"
 
 umask 077
 cat >"${env_file}" <<EOF
@@ -52,6 +53,7 @@ MONEY_TRACKER_POSTGRES_ADMIN_PASSWORD=${app_postgres_admin_password}
 MONEY_TRACKER_POSTGRES_PASSWORD=${app_postgres_password}
 MONEY_TRACKER_DATABASE_URL=postgresql://money_tracker:${app_postgres_password}@127.0.0.1:5433/money_tracker
 MONEY_TRACKER_TEST_DATABASE_URL=postgresql://money_tracker:${app_postgres_password}@127.0.0.1:5433/money_tracker_test
+MONEY_TRACKER_RECEIPT_ARCHIVE_ROOT=${receipt_archive_root}
 
 LANGGRAPH_STRICT_MSGPACK=true
 

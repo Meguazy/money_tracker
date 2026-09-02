@@ -115,6 +115,25 @@ class PostgresFinanceRepository:
                     connection, profile.id, category, occurred_at
                 )
 
+    def profile_exists(self, profile_id: UUID) -> bool:
+        """Return whether an active profile exists for administrative preflight.
+
+        Args:
+            profile_id: Trusted profile identifier.
+
+        Returns:
+            ``True`` only for an active persisted profile.
+        """
+
+        with connect(self._database_url) as connection:
+            return (
+                connection.execute(
+                    "SELECT 1 FROM finance.profiles WHERE id = %s AND active",
+                    (profile_id,),
+                ).fetchone()
+                is not None
+            )
+
     def create_funding_source(
         self,
         source: FundingSource,

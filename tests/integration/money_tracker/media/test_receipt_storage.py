@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from io import BytesIO
 from pathlib import Path
@@ -11,6 +12,7 @@ import pytest
 from PIL import Image
 from psycopg import connect
 
+from money_tracker.administration import main as administration_main
 from money_tracker.application import ReceiptMediaError, ReceiptMetadataService
 from money_tracker.application.runtime import SystemClock, UUID4Generator
 from money_tracker.domain import Profile, ReceiptMetadata, initial_taxonomy
@@ -121,3 +123,56 @@ def test_invalid_media_never_creates_metadata(
         assert connection.execute(
             "SELECT count(*) FROM finance.receipts"
         ).fetchone() == (0,)
+
+
+@pytest.mark.postgres
+def test_administration_cli_stores_registers_and_redacts_paths(
+    postgres_url: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Exercise the real CLI entry point without exposing private local paths."""
+
+    upgrade_database(postgres_url)
+    repository = PostgresFinanceRepository(postgres_url)
+    profile = Profile(uuid4())
+    repository.bootstrap_profile(
+        profile,
+        taxonomy=initial_taxonomy(),
+        occurred_at=SystemClock().now(),
+    )
+    receipt_path = tmp_path / "private-input-name.png"
+    receipt_path.write_bytes(_png_receipt())
+    archive_root = tmp_path / "archive"
+    monkeypatch.setenv("MONEY_TRACKER_DATABASE_URL", postgres_url)
+    monkeypatch.setenv("MONEY_TRACKER_RECEIPT_ARCHIVE_ROOT", str(archive_root))
+    arguments = [
+        "receipt-store",
+        "--profile-id",
+        str(profile.id),
+        "--file",
+        str(receipt_path),
+        "--source-reference",
+        "integration:admin-cli",
+    ]
+
+    administration_main(arguments)
+    first_output = capsys.readouterr().out
+    administration_main(arguments)
+    second_output = capsys.readouterr().out
+
+    first = json.loads(first_output)
+    second = json.loads(second_output)
+    assert first == second
+    assert first["status"] == "stored"
+    assert first["media_type"] == "image/png"
+    assert str(receipt_path) not in first_output
+    assert str(archive_root) not in first_output
+    assert LocalReceiptMediaStore(archive_root).read(first["content_sha256"]) == (
+        receipt_path.read_bytes()
+    )
+    with connect(postgres_url) as connection:
+        assert connection.execute(
+            "SELECT count(*) FROM finance.receipts"
+        ).fetchone() == (1,)

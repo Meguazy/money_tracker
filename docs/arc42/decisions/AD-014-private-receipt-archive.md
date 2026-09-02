@@ -1,8 +1,8 @@
 # AD-014: Private Content-Addressed Receipt Archive
 
 - Status: accepted
-- Implementation: local adapter and filesystem/PostgreSQL integration implemented;
-  runtime wiring, deletion, and backup planned
+- Implementation: local adapter, administration CLI, and filesystem/PostgreSQL
+  integration implemented; API/worker wiring, deletion, and backup planned
 - Date: 2026-09-02
 
 ## Context
@@ -39,6 +39,11 @@ The media store does not create database rows. After storage succeeds, the
 receipt-metadata application service registers the returned facts idempotently
 by profile and digest. No product deletion API exists until audit, references,
 and backup-retention semantics are implemented together.
+
+The local administration CLI wires these boundaries for a profile-scoped
+manual import. It requires an explicitly configured absolute archive root,
+preflights the active profile, refuses final input symlinks and oversized files,
+and prints no private paths.
 
 ## Alternatives considered
 

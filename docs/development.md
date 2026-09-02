@@ -54,6 +54,24 @@ Step 2 finance tables have been applied:
 Never use the guarded downgrade as a production rollback. Restore a verified
 backup or deploy forward when data exists.
 
+## Administrative receipt storage
+
+Set `MONEY_TRACKER_RECEIPT_ARCHIVE_ROOT` to an absolute private host path. The
+environment generator uses the XDG data directory (or `~/.local/share`) and the
+upgrade script appends the setting without changing existing values.
+
+After an active profile has been bootstrapped, validate and register one local
+original with:
+
+    uv run --env-file .env money-tracker-admin receipt-store \
+      --profile-id PROFILE_UUID \
+      --file /absolute/path/to/receipt.png \
+      --source-reference local:manual-import
+
+The command refuses final input symlinks, directories, unsupported/oversized
+images, and unknown profiles. It prints only safe JSON metadata, not file paths
+or bytes. Retrying the same content returns the first database record.
+
 ## Optional self-hosted Langfuse
 
 The observability stack is separate from the default Compose project. Start it

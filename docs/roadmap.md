@@ -147,8 +147,9 @@ Status: **In progress.** The framework-independent domain, initial taxonomy,
 finance schema, expense/wallet/budget repositories, pending category-proposal
 submission, audit, idempotency, and concurrency foundation are implemented.
 The private content-addressed receipt-media adapter is also implemented. API,
-runtime media wiring, proposal/receipt lifecycle transitions, backup, and
-restore evidence remain open.
+worker media wiring, proposal/receipt lifecycle transitions, backup, and restore
+evidence remain open; a minimal local administration command now exercises the
+archive and metadata boundary.
 
 ### Deliverables
 
@@ -209,16 +210,21 @@ restore evidence remain open.
   20 MiB, 40-megapixel, and 10,000-pixel-side limits. It stores originals under
   private sharded SHA-256 paths with atomic no-overwrite writes, verified reads,
   symlink refusal, and tamper detection. Runtime entry-point wiring, deletion,
-  and encrypted backup remain open.
+  and encrypted backup remain open outside the local administration CLI.
+- `money-tracker-admin receipt-store` requires an active profile and absolute
+  configured archive root, refuses symlink/non-file/oversized inputs, then
+  stores and registers metadata idempotently. Its JSON output omits private
+  paths.
 - Forty-three domain tests, fifteen wallet/budget/proposal/receipt application
-  tests, and fifteen real-filesystem media tests pass. Thirty-one real
-  PostgreSQL/media integration tests cover migration, full storage/metadata
+  tests, and twenty-two media/configuration/administration tests pass.
+  Thirty-two real PostgreSQL/media integration tests cover migration, full
+  storage/metadata
   restart, concurrent receipt deduplication and rollback,
   proposal scoping and atomic rollback, constraints, restart persistence,
   immutable history, exact taxonomy seeding,
   retry idempotency, concurrent expense writers, concurrent wallet debits, and
   concurrent/stale budget versions. The complete service-independent suite
-  passes with 98 tests and 34 explicit real-service skips; focused
+  passes with 105 tests and 35 explicit real-service skips; focused
   domain/application/media branch coverage is 91%.
 
 ## Step 3: Evaluated text workflows

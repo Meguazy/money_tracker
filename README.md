@@ -4,8 +4,8 @@ Money Tracker is a local-first personal-finance assistant built with Python,
 LangChain, LangGraph, llama.cpp, PostgreSQL, and self-hosted observability. The
 current repository implements the platform foundation plus the active Step 2
 finance domain, persistence, and private receipt-archive core. Telegram, the
-local web dashboard, receipt extraction, media-store runtime wiring, and
-verified finance backup remain planned.
+local web dashboard, receipt extraction, API/worker media wiring, and verified
+finance backup remain planned.
 
 ## Current scaffold quick start
 
@@ -21,6 +21,14 @@ LangGraph checkpoint tables with:
 
     docker compose up -d --wait application-postgres
     uv run --env-file .env money-tracker-db bootstrap
+
+After bootstrapping an active profile, validate and register a local receipt
+through the implemented private archive boundary:
+
+    uv run --env-file .env money-tracker-admin receipt-store \
+      --profile-id PROFILE_UUID \
+      --file /absolute/path/to/receipt.png \
+      --source-reference local:manual-import
 
 The repaired Langfuse stack is optional and starts only when selected:
 

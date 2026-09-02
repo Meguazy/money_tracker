@@ -2,8 +2,9 @@
 
 - Status: accepted
 - Implementation: checkpoint foundation, deterministic root routing, the typed
-  router and extraction model boundaries, and deterministic occurrence-time and
-  sign resolution implemented; specialist subgraphs planned
+  router and extraction model boundaries, and deterministic occurrence-time,
+  sign, and payment-allocation resolution implemented; specialist subgraphs
+  planned
 - Date: 2026-09-01
 
 ## Context
@@ -75,9 +76,16 @@ verbatim and a positive magnitude, so timezone, daylight-saving, and sign
 arithmetic stay exactly reproducible across a retry, a resume, and an
 evaluation run.
 
-Funding-source resolution, category fit, specialist subgraphs, production
-prompts, the model call and its single corrective retry, persistent interrupts,
-and workflow state are not implemented yet.
+Payment allocation follows the same split. The model names funding sources in
+the owner's own words and never supplies an identifier or selects the default;
+deterministic resolution matches those words against the profile's configured
+active sources and reconciles the portions against the total. Every failure
+reports a stable reason code so the workflow can ask the one question matching
+the failing step rather than a generic retry.
+
+Category fit, specialist subgraphs, production prompts, the model call and its
+single corrective retry, persistent interrupts, and workflow state are not
+implemented yet.
 
 ## Consequences
 

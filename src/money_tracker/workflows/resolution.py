@@ -30,17 +30,13 @@ from money_tracker.workflows.contracts import (
     ExpensePolarity,
     ExtractionField,
 )
+from money_tracker.workflows.errors import (
+    ResolutionReason,
+    UnresolvedExtractionError,
+)
 
 PRODUCT_TIMEZONE = ZoneInfo("Europe/Rome")
 """Calendar the product baseline uses for occurrence dates and budgets."""
-
-
-class UnresolvedExtractionError(ValueError):
-    """Raised when an extraction cannot become a trusted domain value.
-
-    The workflow answers this with one targeted question. It never substitutes
-    a default for words the owner actually wrote but the system cannot read.
-    """
 
 
 _SAME_DAY_WORDS = frozenset(
@@ -139,22 +135,22 @@ _NUMERIC_DATE = re.compile(
 )
 
 
-def _normalize(expression: str) -> str:
-    """Fold an Italian temporal expression for accent-insensitive matching.
+def normalize_owner_text(value: str) -> str:
+    """Fold owner-supplied text for accent- and case-insensitive matching.
 
     Owner text arrives with inconsistent accents and spacing, and the
-    evaluation datasets include typos, so matching happens on a folded form.
-    Apostrophes become spaces so that `l'altro ieri` and `l altro ieri` match
-    the same pattern.
+    evaluation datasets include typos, so every match against a known Italian
+    form or a configured name happens on a folded form. Apostrophes become
+    spaces so that `l'altro ieri` and `l altro ieri` match the same pattern.
 
     Args:
-        expression: Verbatim temporal words from the owner message.
+        value: Verbatim words from the owner message.
 
     Returns:
         Lowercase, accent-free text with collapsed separators.
     """
 
-    decomposed = unicodedata.normalize("NFKD", expression)
+    decomposed = unicodedata.normalize("NFKD", value)
     without_marks = "".join(
         char for char in decomposed if not unicodedata.combining(char)
     )
@@ -318,9 +314,9 @@ def resolve_occurrence_time(
     local = received_at.astimezone(PRODUCT_TIMEZONE)
     if expression is None:
         return local
-    text = _normalize(expression)
+    text = normalize_owner_text(expression)
     if not text:
-        raise UnresolvedExtractionError("occurrence words are empty")
+        raise UnresolvedExtractionError(ResolutionReason.OCCURRENCE_UNREADABLE)
 
     today = local.date()
     offset = _resolve_offset(text)
@@ -332,9 +328,9 @@ def resolve_occurrence_time(
             text, today
         )
     if target is None:
-        raise UnresolvedExtractionError("occurrence words are not resolvable")
+        raise UnresolvedExtractionError(ResolutionReason.OCCURRENCE_UNREADABLE)
     if target > today:
-        raise UnresolvedExtractionError("occurrence day is after the message")
+        raise UnresolvedExtractionError(ResolutionReason.OCCURRENCE_IN_FUTURE)
     return _rome_instant(target, local.time())
 
 
@@ -355,7 +351,7 @@ def resolve_amount(extraction: ExpenseExtraction) -> Money:
     """
 
     if extraction.amount_minor_units is None:
-        raise UnresolvedExtractionError("amount was declared unknown")
+        raise UnresolvedExtractionError(ResolutionReason.AMOUNT_UNKNOWN)
     magnitude = extraction.amount_minor_units
     if extraction.polarity is ExpensePolarity.REFUND:
         return Money(-magnitude)
@@ -382,5 +378,5 @@ def resolve_occurrence_for(
     """
 
     if ExtractionField.OCCURRED_AT in extraction.unknowns:
-        raise UnresolvedExtractionError("occurrence time was declared unknown")
+        raise UnresolvedExtractionError(ResolutionReason.OCCURRENCE_UNKNOWN)
     return resolve_occurrence_time(extraction.occurred_at_text, received_at=received_at)

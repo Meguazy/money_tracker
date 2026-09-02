@@ -190,7 +190,7 @@ Money Tracker workstation
 | `persistence` | Apply versioned migrations and bootstrap persistent LangGraph checkpoints | Alembic, psycopg, PostgreSQL checkpointer | Foundation schemas and workflow checkpoints | Host administration CLI; least-privilege loopback database role |
 | `domain` | Enforce exact money, expense/refund, dual-allocation, taxonomy, wallet, budget, receipt-metadata, and audit contracts | Pure Python value objects and policies; no framework or infrastructure import | No infrastructure state | Shared host-process library; deterministic validation of untrusted inputs |
 | `application` | Coordinate idempotent expense lifecycle and receipt registration/review, audited wallet/budget mutations, and pending proposal submission through narrow ports | Finance, administration, proposal, and receipt-metadata repository ports plus clock and ID contracts | Command, concurrency, review-boundary, and audit semantics, not stored state | Shared by future CLI/API/worker; profile scope comes from trusted caller context; proposal decisions and receipt deletion are not exposed |
-| `workflows` | Own the bounded intent taxonomy, the normalized channel work unit, deterministic pre-routing, the strict versioned router and extraction model boundaries with their policy vetoes, and deterministic resolution of occurrence time and amount sign | Pydantic, `zoneinfo`, and pure domain values; no LangGraph, model client, repository, or transport import | Routing destinations, authority classes, stable justification codes, and the product calendar; no persistent state | Shared by the planned worker; a model can select no deterministic route and supply no profile/timezone/authorization field, no resolved instant, and no amount sign; justification codes carry no owner text |
+| `workflows` | Own the bounded intent taxonomy, the normalized channel work unit, deterministic pre-routing, the strict versioned router and extraction model boundaries with their policy vetoes, and deterministic resolution of occurrence time, amount sign, and reconciled payment allocations | Pydantic, `zoneinfo`, and pure domain values; no LangGraph, model client, repository, or transport import | Routing destinations, authority classes, stable routing and resolution reason codes, and the product calendar; no persistent state | Shared by the planned worker; a model can select no deterministic route and supply no profile/timezone/authorization field, no resolved instant, no amount sign, and no funding-source identifier; reason codes carry no owner text |
 | `api.contracts` | Define strict, versioned finance request/response, mutation-header, and problem wire shapes | Pydantic and domain response values; no web framework | No state; stable JSON field semantics only | Shared by future FastAPI adapter; no endpoint, network listener, credentials, or private media fields |
 | `backup` | Create verified encrypted authoritative snapshots, report their freshness, and restore only into explicitly empty isolated targets | Restic and PostgreSQL client executables, psycopg identity/receipt queries, private archive and configuration paths | Snapshot contents and the versioned integrity manifest in the owner repository; no finance state of its own | Host CLI under an exclusive lock; absolute-path and owner-only input checks, recovery secret passed only by file path, failures name no argument or environment |
 | `administration` | Expose bounded local receipt storage/registration for development and bootstrap | Database URL, absolute archive setting, media and metadata services | No independent state; emits safe identifiers/facts only | Host CLI; active-profile preflight, no-follow bounded input, no private paths in JSON |
@@ -366,9 +366,21 @@ imports no model client, repository, or transport module.
    intended Rome day. A wall time inside the spring-forward gap normalizes to
    the equivalent instant after the transition.
 
-Funding-source resolution, category fit, and payment reconciliation against the
-profile's configured sources are not implemented yet, so no extraction becomes
-an expense aggregate.
+6. Payment allocation resolves each named portion against the profile's
+   configured active sources, or fills an omitted method from the configured
+   default. Three shapes are supported: no stated funding, one named source
+   carrying the whole total, and a split that must sum exactly to the total.
+   Every allocation carries the total's sign, so a refund returns value to its
+   sources instead of inverting one dimension against the other.
+7. Each failure reports a stable resolution reason code, so the workflow can
+   ask the one question that matches the failing step: an unknown amount, an
+   unreadable date, a missing default source, unresolved funding words, two
+   portions naming one source, or a split that does not reconcile.
+
+Category fit is not implemented yet, so no extraction becomes an expense
+aggregate. The resolved payment dimension is nevertheless verified against the
+real domain aggregate, which independently enforces non-zero rows, unique
+sources, matching polarity, and exact reconciliation.
 
 ### Current version-one finance wire contracts
 
@@ -535,6 +547,11 @@ network, and inference readiness through health checks and retry policies.
   sign the domain expects is applied deterministically, so a stray minus sign
   cannot turn a purchase into a reimbursement.
 - Both category and payment allocations reconcile exactly with the parent total.
+- Payment reconciliation is checked during deterministic resolution, not at the
+  model boundary. An unquantified split is a schema violation because it could
+  never reconcile, but portions that simply do not add up are a statement by
+  the owner: they become one targeted question instead of counting against
+  output-schema validity.
 - The occurrence time, not processing time, controls reports and budgets.
 - Relative Italian dates resolve against the source message timestamp in
   `Europe/Rome`. The implemented resolver is deterministic and pure: a model
@@ -558,6 +575,11 @@ network, and inference readiness through health checks and retry policies.
 - A correlation target is never inferred. A review follow-up, correction, or
   undo uses a pending-action or movement reference the runtime resolved, and an
   uncorrelated or ambiguous case is clarified.
+- A funding source is named by the owner and resolved deterministically against
+  the profile's configured active sources. The model supplies words, never an
+  identifier, and it cannot select the default. Matching is exact on the folded
+  configured name with no synonym guess, because silently spending a benefit
+  balance instead of personal funds is worse than asking one question.
 - Version-one HTTP mutation contracts carry that key only in the required
   `Idempotency-Key` header; request bodies cannot shadow it.
 - Every external update and financial command has a stable idempotency key.

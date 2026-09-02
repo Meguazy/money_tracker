@@ -1,5 +1,9 @@
 """Typed root routing and bounded workflow contracts for owner requests."""
 
+from money_tracker.workflows.allocation import (
+    resolve_funding_source,
+    resolve_payment_allocations,
+)
 from money_tracker.workflows.contracts import (
     EXTRACTION_CONTRACT_VERSION,
     ROUTER_CONTRACT_VERSION,
@@ -8,6 +12,10 @@ from money_tracker.workflows.contracts import (
     ExtractedPaymentPart,
     ExtractionField,
     RouteClassification,
+)
+from money_tracker.workflows.errors import (
+    ResolutionReason,
+    UnresolvedExtractionError,
 )
 from money_tracker.workflows.intents import (
     DETERMINISTIC_ONLY_INTENTS,
@@ -25,7 +33,7 @@ from money_tracker.workflows.messages import (
 )
 from money_tracker.workflows.resolution import (
     PRODUCT_TIMEZONE,
-    UnresolvedExtractionError,
+    normalize_owner_text,
     resolve_amount,
     resolve_occurrence_for,
     resolve_occurrence_time,
@@ -56,6 +64,7 @@ __all__ = [
     "ExpensePolarity",
     "ExtractedPaymentPart",
     "ExtractionField",
+    "ResolutionReason",
     "RouteClassification",
     "RoutingContext",
     "RoutingDecision",
@@ -65,9 +74,12 @@ __all__ = [
     "UnresolvedExtractionError",
     "WorkflowIntent",
     "accept_classification",
+    "normalize_owner_text",
     "parse_command",
     "pre_route",
     "resolve_amount",
+    "resolve_funding_source",
     "resolve_occurrence_for",
     "resolve_occurrence_time",
+    "resolve_payment_allocations",
 ]

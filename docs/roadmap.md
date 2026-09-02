@@ -281,14 +281,14 @@ backup runbook records how to install them.
 
 ## Step 3: Evaluated text workflows
 
-Status: **In progress.** The framework-independent routing and extraction
-foundation is implemented: the bounded intent taxonomy with partitioned
-mutation authority, the normalized channel work unit, deterministic
+Status: **In progress.** The framework-independent routing, extraction, and
+resolution foundation is implemented: the bounded intent taxonomy with
+partitioned mutation authority, the normalized channel work unit, deterministic
 pre-routing, the strict versioned router and expense/refund extraction model
 boundaries with their deterministic policy vetoes, and pure resolution of
-occurrence time and amount sign. No LangGraph node, prompt, model call,
-specialist subgraph, persistent interrupt, or evaluation dataset exists yet,
-and no confidence bar or model is promoted.
+occurrence time, amount sign, and reconciled payment allocations. No LangGraph
+node, prompt, model call, specialist subgraph, persistent interrupt, or
+evaluation dataset exists yet, and no confidence bar or model is promoted.
 
 ### Prerequisites
 
@@ -301,10 +301,12 @@ step's gates and the experiment decision log.
 This order is a handoff aid, not new scope. Each increment must land with its
 own tests and documentation, and none may ship a later step's behavior.
 
-1. Funding-source resolution from trusted profile context and the category-fit
-   contract with its deterministic candidate search over active names, aliases,
-   and inclusion descriptions, then payment and category allocation building
-   with reconciliation against the extracted total.
+1. The category-fit model boundary and its deterministic resolution: an
+   existing-category outcome resolved through the taxonomy's active names and
+   aliases, or a proposal outcome carrying parent, rationale, alternatives, and
+   exclusions for the existing pending-proposal port. Then category allocation
+   building with reconciliation against the extracted total, mirroring the
+   implemented payment dimension.
 2. The LangGraph root router node: the real model call against the strict
    schema, the single corrective retry required by AD-006, the versioned
    workflow state holding only small serializable values and stable references,
@@ -391,13 +393,25 @@ own tests and documentation, and none may ship a later step's behavior.
   named day stays inside its intended Rome day, and it normalizes a wall time
   inside the spring-forward gap onto the equivalent instant after the
   transition. A refund's negative sign comes from the stated polarity alone.
-- One hundred fifty-nine unit tests cover the taxonomy authority invariants,
-  the message contract, command parsing, every pre-routing precedence branch,
-  every category-review callback branch, every acceptance veto, every
-  extraction cross-field invariant, and the resolver including both daylight-
-  saving edges, at 100% branch coverage of the component. Routing decisions are
-  asserted to contain no owner text and only small serializable values and
-  stable references.
+- Payment allocation resolves owner funding words against the profile's
+  configured active sources, fills an omitted method from the configured
+  default, and refuses an archived source, unmatched words, two portions naming
+  one source, a missing default, and a split that does not sum to the total.
+  Matching is exact on the folded configured name with no synonym guess. Refund
+  allocations carry the negative total sign, and the resolved dimension is
+  verified by building a real domain aggregate, which independently enforces
+  non-zero rows, unique sources, matching polarity, and exact reconciliation.
+- Every resolution failure reports a stable machine-readable reason code, so a
+  workflow can ask the one question matching the failing step instead of
+  retrying blindly or parsing prose. Like routing justification codes, these
+  carry no owner text.
+- One hundred eighty unit tests cover the taxonomy authority invariants, the
+  message contract, command parsing, every pre-routing precedence branch, every
+  category-review callback branch, every acceptance veto, every extraction
+  cross-field invariant, the occurrence resolver including both daylight-saving
+  edges, and every payment-allocation shape and refusal, at 100% branch
+  coverage of the component. Routing decisions are asserted to contain no owner
+  text and only small serializable values and stable references.
 - No exit criterion is met yet. Every gate in the
   [Evaluation Matrix](experiments/evaluation-matrix.md) requires the model
   half, the specialist workflows, and pinned datasets that remain open.

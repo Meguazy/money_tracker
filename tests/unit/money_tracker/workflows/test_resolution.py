@@ -12,6 +12,7 @@ from money_tracker.domain import Money
 from money_tracker.workflows import (
     PRODUCT_TIMEZONE,
     ExpenseExtraction,
+    ResolutionReason,
     UnresolvedExtractionError,
     resolve_amount,
     resolve_occurrence_for,
@@ -157,8 +158,10 @@ def test_named_past_weekday_resolves_to_the_most_recent_occurrence(
 def test_bare_weekday_is_not_resolved(expression: str) -> None:
     """Refuse a weekday that could mean the past or the coming occurrence."""
 
-    with pytest.raises(UnresolvedExtractionError, match="not resolvable"):
+    with pytest.raises(UnresolvedExtractionError) as error:
         resolve_occurrence_time(expression, received_at=RECEIVED_AT)
+
+    assert error.value.reason is ResolutionReason.OCCURRENCE_UNREADABLE
 
 
 @pytest.mark.parametrize(
@@ -195,8 +198,10 @@ def test_a_future_day_is_refused_rather_than_recorded(expression: str) -> None:
     most recent non-future occurrence instead.
     """
 
-    with pytest.raises(UnresolvedExtractionError, match="after the message"):
+    with pytest.raises(UnresolvedExtractionError) as error:
         resolve_occurrence_time(expression, received_at=RECEIVED_AT)
+
+    assert error.value.reason is ResolutionReason.OCCURRENCE_IN_FUTURE
 
 
 @pytest.mark.parametrize(
@@ -206,8 +211,10 @@ def test_a_future_day_is_refused_rather_than_recorded(expression: str) -> None:
 def test_unreadable_words_are_an_error_not_a_default(expression: str) -> None:
     """Never substitute the message timestamp for words the owner wrote."""
 
-    with pytest.raises(UnresolvedExtractionError):
+    with pytest.raises(UnresolvedExtractionError) as error:
         resolve_occurrence_time(expression, received_at=RECEIVED_AT)
+
+    assert error.value.reason is ResolutionReason.OCCURRENCE_UNREADABLE
 
 
 def test_resolution_preserves_the_message_time_of_day() -> None:
@@ -270,8 +277,10 @@ def test_unknown_amount_cannot_be_resolved() -> None:
         amount_minor_units=None, currency=None, unknowns=["amount"]
     )
 
-    with pytest.raises(UnresolvedExtractionError, match="declared unknown"):
+    with pytest.raises(UnresolvedExtractionError) as error:
         resolve_amount(extraction)
+
+    assert error.value.reason is ResolutionReason.AMOUNT_UNKNOWN
 
 
 def test_extraction_occurrence_resolves_through_its_declared_words() -> None:
@@ -297,8 +306,10 @@ def test_declared_unknown_occurrence_is_not_defaulted() -> None:
 
     extraction = _extraction(unknowns=["occurred_at"])
 
-    with pytest.raises(UnresolvedExtractionError, match="declared unknown"):
+    with pytest.raises(UnresolvedExtractionError) as error:
         resolve_occurrence_for(extraction, received_at=RECEIVED_AT)
+
+    assert error.value.reason is ResolutionReason.OCCURRENCE_UNKNOWN
 
 
 @pytest.mark.parametrize(
@@ -318,5 +329,7 @@ def test_wellformed_but_meaningless_dates_are_unresolved(expression: str) -> Non
     with an impossible day, are unresolved rather than nudged to a nearby date.
     """
 
-    with pytest.raises(UnresolvedExtractionError, match="not resolvable"):
+    with pytest.raises(UnresolvedExtractionError) as error:
         resolve_occurrence_time(expression, received_at=RECEIVED_AT)
+
+    assert error.value.reason is ResolutionReason.OCCURRENCE_UNREADABLE

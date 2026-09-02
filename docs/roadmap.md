@@ -144,8 +144,8 @@ foundation. No model is promoted merely because the capability probe responds.
 ## Step 2: Finance domain and persistence
 
 Status: **In progress.** The framework-independent domain, initial taxonomy,
-finance schema, expense repository, audit, idempotency, and optimistic
-concurrency foundation are implemented. API, complete aggregate repositories,
+finance schema, expense/wallet/budget repositories, audit, idempotency, and
+concurrency foundation are implemented. API, proposal and receipt repositories,
 media storage, backup, and restore evidence remain open.
 
 ### Deliverables
@@ -190,14 +190,18 @@ media storage, backup, and restore evidence remain open.
 - Alembic creates authoritative finance tables, deferred reconciliation and
   profile/reference checks, append-only audit/wallet history, idempotency
   records, and guarded non-destructive rollback behavior.
-- The PostgreSQL repository bootstraps the profile/taxonomy, reconstructs
-  aggregates, creates expenses idempotently, and replaces complete aggregates
-  with optimistic version checks and audit in the same transaction.
-- Forty-three domain tests pass. Twelve real PostgreSQL integration tests cover
-  migration, constraints, rollback, restart persistence, immutable history,
-  exact taxonomy seeding, retry idempotency, and a concurrent two-writer race.
-  The complete service-independent suite passes with 68 tests and 15 explicit
-  real-service skips; focused domain/application branch coverage is 90%.
+- The PostgreSQL repository bootstraps the profile/taxonomy, reconstructs and
+  mutates complete expense and budget aggregates, and appends balance-safe
+  wallet entries. Expense and budget mutations use optimistic version checks;
+  ledger debits serialize on the funding source so concurrent writers cannot
+  overdraw it. Every mutation stores audit in the same transaction.
+- Forty-three domain tests and six wallet/budget application-service tests pass.
+  Nineteen real PostgreSQL integration tests cover migration, constraints,
+  rollback, restart persistence, immutable history, exact taxonomy seeding,
+  retry idempotency, concurrent expense writers, concurrent wallet debits, and
+  concurrent/stale budget versions. The complete service-independent suite
+  passes with 74 tests and 22 explicit real-service skips; focused
+  domain/application branch coverage is 91%.
 
 ## Step 3: Evaluated text workflows
 

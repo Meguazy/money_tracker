@@ -21,12 +21,12 @@ budgets, wallet balances, charts, and operational controls.
 
 The approved V1 scope is defined in
 [Vision and Requirements](../product/vision-and-requirements.md). The current
-repository contains the completed Step 1 platform foundation and the first
+repository contains the completed Step 1 platform foundation and the current
 Step 2 finance increment: pure domain contracts, the accepted seeded taxonomy,
-authoritative finance tables, and a transactional expense repository with
-audit, idempotency, and optimistic concurrency. It has no Telegram adapter,
-web application, receipt extraction pipeline, media store, backup, or product
-workflow.
+authoritative finance tables, and transactional expense, wallet, and budget
+repository operations with audit and concurrency controls. It has no Telegram
+adapter, web application, receipt extraction pipeline, media store, backup, or
+product workflow.
 
 ### Quality goals
 
@@ -114,7 +114,7 @@ boundary is not end-to-end encrypted and must not be described as local storage.
 | Application to Langfuse | SDK over local HTTP/OTLP | Redacted graph/model observations and aggregate scores | Implemented, optional and healthy |
 | Telegram gateway to Bot API | HTTPS long polling and send methods | Updates, callback queries, messages, file metadata and downloads | Planned |
 | Browser to application API | Same-origin HTTP JSON | Finance resources, settings, reviews, analytics and operations | Planned |
-| Application to PostgreSQL | PostgreSQL protocol | Checkpoints and finance schema/expense aggregates implemented; messaging state planned | Implemented Step 1 foundation and Step 2 finance core |
+| Application to PostgreSQL | PostgreSQL protocol | Checkpoints and finance schema plus expense, wallet, and budget persistence implemented; messaging state planned | Implemented Step 1 foundation and partial Step 2 finance repositories |
 | Application to receipt archive | Private host filesystem | Original and derived receipt files keyed by content hash | Planned |
 | Backup process to repository | Restic repository protocol | Database dump, receipts and recovery configuration | Planned |
 
@@ -184,8 +184,8 @@ Money Tracker workstation
 | `observability` | Enable and flush optional Langfuse callbacks | Langfuse SDK and environment keys | Buffered telemetry until flush | Local Langfuse only |
 | `persistence` | Apply versioned migrations and bootstrap persistent LangGraph checkpoints | Alembic, psycopg, PostgreSQL checkpointer | Foundation schemas and workflow checkpoints | Host administration CLI; least-privilege loopback database role |
 | `domain` | Enforce exact money, expense/refund, dual-allocation, taxonomy, wallet, budget, receipt-metadata, and audit contracts | Pure Python value objects and policies; no framework or infrastructure import | No infrastructure state | Shared host-process library; deterministic validation of untrusted inputs |
-| `application` | Coordinate idempotent expense creation, posting, correction, and void through narrow ports | Finance repository, clock, and ID contracts | Command and audit semantics, not stored state | Shared by future CLI/API/worker; profile scope comes from trusted caller context |
-| `persistence.finance` | Bootstrap profile/taxonomy and persist complete expense aggregates transactionally | psycopg and application repository contract | Finance tables, allocation rows, audit, and idempotency records | Dedicated application PostgreSQL; credentials remain runtime-only |
+| `application` | Coordinate idempotent expense lifecycle plus audited wallet and budget mutations through narrow ports | Finance repository, clock, and ID contracts | Command, concurrency, and audit semantics, not stored state | Shared by future CLI/API/worker; profile scope comes from trusted caller context |
+| `persistence.finance` | Bootstrap profile/taxonomy, persist complete expense and budget aggregates, and append balance-safe wallet movements transactionally | psycopg and application repository contract | Finance tables, allocations, budgets/overrides, wallet ledger, audit, and idempotency records | Dedicated application PostgreSQL; credentials remain runtime-only; source-row locks serialize ledger debits |
 | `evaluations` | Probe real model protocols, capture exact runtime metadata, score deterministically, optionally publish aggregates | OpenAI-compatible HTTP, local files, optional Langfuse SDK | Ignored local run artifacts; no domain authority | Host CLI; secrets, image bytes and paths are excluded |
 | `development` | Validate canonical documentation and privacy-ignore invariants | Repository Markdown/YAML/filesystem | No persistent data | Service-independent development command |
 
@@ -194,8 +194,8 @@ Money Tracker workstation
 | Component | Responsibility | Narrow interfaces/dependencies | Data ownership | Deployment/security |
 | --- | --- | --- | --- | --- |
 | Finance domain (core implemented) | Enforce money, expense/refund, allocation, budget, category and wallet invariants | Pure value objects and domain policies | No infrastructure state | Python application; no framework imports |
-| Application services (expense lifecycle implemented) | Execute validated commands and queries transactionally | Repository ports, clock, ID and future media ports | Command idempotency and audit semantics | Future FastAPI/worker host processes; profile scope injected |
-| Finance repositories (expense core implemented) | Persist authoritative domain records and analytics projections | PostgreSQL protocol through explicit repository contracts | Finance schema implemented; remaining aggregate adapters open | Dedicated application database; least-privilege credentials |
+| Application services (expense/wallet/budget mutations implemented) | Execute validated commands and queries transactionally | Repository ports, clock, ID and future media ports | Command idempotency, versioning, and audit semantics | Future FastAPI/worker host processes; profile scope injected |
+| Finance repositories (expense/wallet/budget implemented) | Persist authoritative domain records and analytics projections | PostgreSQL protocol through explicit repository contracts | Finance schema implemented; proposal and receipt adapters open | Dedicated application database; least-privilege credentials; wallet debits serialized per source |
 | Messaging inbox/outbox | Receive, order, retry, dead-letter, replay and dispatch transport work | PostgreSQL and Telegram adapter | Raw updates, offsets, delivery attempts, result references | Gateway and worker; bot token never stored in rows |
 | Workflow runtime | Route intents and execute specialist graphs | LangGraph, typed model gateway, application services, checkpointer | Small versioned workflow state only | Sequential worker; no images or service objects in checkpoints |
 | Receipt service | Validate media, invoke extractor, reconcile lines, prepare review | Media store, extractor port, finance service | Receipt metadata, extraction versions, review state | Private filesystem; untrusted image boundary |
@@ -227,6 +227,23 @@ Detailed finance concepts and the initial taxonomy live in
 4. The graph returns one assistant message; the CLI prints it and flushes traces.
 
 No state survives the process and no financial write occurs.
+
+### Current finance repository mutations
+
+1. A trusted caller supplies profile-scoped domain objects and non-sensitive
+   actor/reason audit metadata to an application service.
+2. Expense commands validate the complete aggregate, then create idempotently
+   or replace only the caller-observed version.
+3. A wallet command locks its ledger funding source, reconstructs the booked
+   balance, and rejects a debit that would overdraw before appending anything.
+4. A budget command creates version one or replaces the complete recurring
+   target and override set only at the expected version.
+5. The repository commits the domain mutation and immutable audit event in one
+   PostgreSQL transaction; any validation or concurrency failure rolls both
+   back.
+
+These services currently have no public API or CLI entry point. Integration
+tests exercise them directly through the real PostgreSQL protocol.
 
 ### Planned text expense turn
 
@@ -376,7 +393,10 @@ network, and inference readiness through health checks and retry policies.
 
 - PostgreSQL owns authoritative state. Workflow checkpoints and Langfuse traces
   are supporting records, not finance ledgers.
-- Posting, audit, and outbox creation share a transaction where possible.
+- Implemented expense, wallet, and budget mutations share a transaction with
+  their audit event. Future channel mutations also include their outbox record.
+- Ledger wallet debits lock the funding source and validate the committed
+  balance before append; budget and expense replacements compare versions.
 - Categories and financial history use stable IDs. Archive and void replace
   destructive deletion for referenced records.
 
@@ -453,11 +473,12 @@ environment file.
 ### Partially implemented accepted decisions
 
 - [AD-005: Dedicated application PostgreSQL](decisions/AD-005-application-postgresql.md):
-  service, migration boundary, checkpoints, finance schema, and expense
-  repository implemented; remaining finance adapters and messaging planned.
+  service, migration boundary, checkpoints, finance schema, and expense,
+  wallet, and budget repository operations implemented; remaining finance
+  adapters and messaging planned.
 - [AD-007: Expense and dual-allocation model](decisions/AD-007-expense-allocation-model.md):
-  domain, schema, repository, reconciliation, and reports implemented;
-  remaining adapters planned.
+  domain, schema, expense/wallet/budget persistence, reconciliation, and
+  reports implemented; remaining adapters planned.
 - [AD-008: Controlled two-level taxonomy](decisions/AD-008-controlled-taxonomy.md):
   policy, accepted stable seed, schema, and bootstrap implemented; owner
   management planned.
@@ -500,9 +521,10 @@ Quantitative evaluation gates are maintained in
 
 ### Current scaffold risks
 
-- The finance domain, schema, taxonomy seed, and expense repository are only a
-  partial Step 2 implementation. Wallet/budget/proposal/receipt adapters, API,
-  administrative bootstrap CLI, media store, backup, and restore remain open.
+- The finance domain, schema, taxonomy seed, and expense/wallet/budget
+  repository operations are only a partial Step 2 implementation.
+  Proposal/receipt adapters, API, administrative bootstrap CLI, media store,
+  backup, and restore remain open.
 - The product graph is stateless and has one unconstrained assistant node,
   although the replaceable PostgreSQL checkpoint adapter is available.
 - Three pinned llama.cpp/GGUF profiles have passed every applicable Step 1

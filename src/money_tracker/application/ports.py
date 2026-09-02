@@ -10,8 +10,10 @@ from money_tracker.domain import (
     AuditEvent,
     Expense,
     FundingSource,
+    MonthlyBudget,
     Profile,
     Taxonomy,
+    WalletEntry,
 )
 
 
@@ -67,3 +69,27 @@ class FinanceRepository(Protocol):
         occurred_at: datetime,
     ) -> None:
         """Create the sole profile and accepted taxonomy idempotently."""
+
+
+class FinanceAdministrationRepository(Protocol):
+    """Persist wallet and budget mutations behind one atomic audit boundary."""
+
+    def append_wallet_entry(
+        self,
+        entry: WalletEntry,
+        *,
+        audit_event: AuditEvent,
+    ) -> None:
+        """Append one validated wallet entry and audit atomically."""
+
+    def get_budget(self, profile_id: UUID, category_id: UUID) -> MonthlyBudget | None:
+        """Load the budget attached to one category when configured."""
+
+    def save_budget(
+        self,
+        budget: MonthlyBudget,
+        *,
+        expected_version: int | None,
+        audit_event: AuditEvent,
+    ) -> None:
+        """Create or replace a complete budget under optimistic concurrency."""

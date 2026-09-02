@@ -1,8 +1,9 @@
 # AD-005: Dedicated Application PostgreSQL
 
 - Status: accepted
-- Implementation: foundation and finance schema/expense repository implemented;
-  remaining finance adapters and messaging persistence planned
+- Implementation: foundation, finance schema, and expense/wallet/budget
+  repository operations implemented; remaining finance adapters and messaging
+  persistence planned
 - Date: 2026-09-01
 
 ## Context
@@ -38,11 +39,13 @@ Roadmap Step 1 provides the independent default-profile Compose service,
 persistent volume, loopback port, initialization administrator, and
 least-privilege application role. Roadmap Step 2 adds authoritative finance
 tables, deferred database invariants, immutable audit and wallet history,
-taxonomy/profile bootstrap, and a transactional expense repository with
-idempotency and optimistic concurrency. Real PostgreSQL tests cover migration,
-constraints, rollback, restart persistence, identical retry, and concurrent
-writers. Remaining finance aggregate adapters, messaging persistence, and
-backup are still open.
+taxonomy/profile bootstrap, and transactional expense, wallet, and budget
+repository operations. Expense idempotency, expense/budget optimistic
+concurrency, and source-row locking for balance-safe wallet debits are enforced.
+Real PostgreSQL tests cover migration, constraints, rollback, restart
+persistence, identical retry, stale versions, and concurrent expense and wallet
+writers. Proposal/receipt adapters, messaging persistence, and backup are still
+open.
 
 ## Consequences
 

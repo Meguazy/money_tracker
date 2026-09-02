@@ -27,10 +27,15 @@ from money_tracker.domain import (
     FundingSource,
     FundingSourceStatus,
     Money,
+    MonthlyBudget,
     PaymentAllocation,
     Profile,
     Taxonomy,
+    WalletEntry,
+    WalletEntryType,
+    YearMonth,
     normalize_category_name,
+    require_available_balance,
 )
 
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
@@ -333,6 +338,214 @@ class PostgresFinanceRepository:
             self._insert_allocations(connection, expense)
             self._insert_audit(connection, audit_event)
 
+    def get_wallet_entries(
+        self,
+        profile_id: UUID,
+        funding_source_id: UUID,
+    ) -> tuple[WalletEntry, ...]:
+        """Load immutable entries for one tracked funding source.
+
+        Args:
+            profile_id: Trusted owner scope.
+            funding_source_id: Owning ledger source.
+
+        Returns:
+            Entries in deterministic occurrence and identifier order.
+        """
+
+        with connect(self._database_url) as connection:
+            return self._load_wallet_entries(connection, profile_id, funding_source_id)
+
+    def append_wallet_entry(
+        self,
+        entry: WalletEntry,
+        *,
+        audit_event: AuditEvent,
+    ) -> None:
+        """Lock a tracked source and append one balance-safe entry atomically.
+
+        Args:
+            entry: Validated immutable ledger movement.
+            audit_event: Matching immutable audit event.
+
+        Raises:
+            AggregateNotFoundError: If the source is outside the profile.
+            ValueError: If the source is inactive or untracked.
+            WalletError: If a debit exceeds the booked balance.
+        """
+
+        with connect(self._database_url) as connection:
+            row = connection.execute(
+                "SELECT id, profile_id, name, funding_class, balance_mode, "
+                "status, is_default FROM finance.funding_sources "
+                "WHERE id = %s AND profile_id = %s FOR UPDATE",
+                (entry.funding_source_id, entry.profile_id),
+            ).fetchone()
+            if row is None:
+                raise AggregateNotFoundError("funding source does not exist in profile")
+            source = FundingSource(
+                id=row[0],
+                profile_id=row[1],
+                name=row[2],
+                funding_class=FundingClass(row[3]),
+                balance_mode=BalanceMode(row[4]),
+                status=FundingSourceStatus(row[5]),
+                is_default=row[6],
+            )
+            if source.status is not FundingSourceStatus.ACTIVE:
+                raise ValueError("wallet source must be active")
+            if source.balance_mode is not BalanceMode.LEDGER:
+                raise ValueError("wallet entry requires a ledger source")
+            existing = self._load_wallet_entries(
+                connection, entry.profile_id, entry.funding_source_id
+            )
+            if entry.entry_type is WalletEntryType.DEBIT:
+                require_available_balance(source, existing, -entry.amount)
+            connection.execute(
+                "INSERT INTO finance.wallet_entries "
+                "(id, profile_id, funding_source_id, entry_type, amount_minor, "
+                "currency, occurred_at, expires_on, expense_id, note, created_at) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                (
+                    entry.id,
+                    entry.profile_id,
+                    entry.funding_source_id,
+                    entry.entry_type.value,
+                    entry.amount.minor_units,
+                    entry.amount.currency,
+                    entry.occurred_at,
+                    entry.expires_on,
+                    entry.expense_id,
+                    entry.note,
+                    audit_event.occurred_at,
+                ),
+            )
+            self._insert_audit(connection, audit_event)
+
+    def get_budget(self, profile_id: UUID, category_id: UUID) -> MonthlyBudget | None:
+        """Load one category budget and all explicit monthly overrides.
+
+        Args:
+            profile_id: Trusted owner scope.
+            category_id: Stable budgeted category.
+
+        Returns:
+            Configured budget or ``None``.
+        """
+
+        with connect(self._database_url) as connection:
+            row = connection.execute(
+                "SELECT id, profile_id, category_id, target_minor, currency, version "
+                "FROM finance.monthly_budgets "
+                "WHERE profile_id = %s AND category_id = %s",
+                (profile_id, category_id),
+            ).fetchone()
+            if row is None:
+                return None
+            override_rows = connection.execute(
+                "SELECT year, month, target_minor, currency "
+                "FROM finance.monthly_budget_overrides WHERE budget_id = %s "
+                "ORDER BY year, month",
+                (row[0],),
+            ).fetchall()
+        return MonthlyBudget(
+            id=row[0],
+            profile_id=row[1],
+            category_id=row[2],
+            recurring_target=Money(row[3], row[4]),
+            overrides=tuple(
+                (YearMonth(item[0], item[1]), Money(item[2], item[3]))
+                for item in override_rows
+            ),
+            version=row[5],
+        )
+
+    def save_budget(
+        self,
+        budget: MonthlyBudget,
+        *,
+        expected_version: int | None,
+        audit_event: AuditEvent,
+    ) -> None:
+        """Create or replace a complete budget and audit atomically.
+
+        Args:
+            budget: Complete target and override state.
+            expected_version: ``None`` for create, otherwise observed version.
+            audit_event: Matching immutable audit event.
+
+        Raises:
+            AggregateNotFoundError: If the category is inactive or outside scope.
+            OptimisticConcurrencyError: If create conflicts or version is stale.
+        """
+
+        with connect(self._database_url) as connection:
+            category = connection.execute(
+                "SELECT 1 FROM finance.categories "
+                "WHERE id = %s AND profile_id = %s AND status = 'active'",
+                (budget.category_id, budget.profile_id),
+            ).fetchone()
+            if category is None:
+                raise AggregateNotFoundError("active budget category does not exist")
+            if expected_version is None:
+                inserted = connection.execute(
+                    "INSERT INTO finance.monthly_budgets "
+                    "(id, profile_id, category_id, target_minor, currency, version, "
+                    "created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s) "
+                    "ON CONFLICT (profile_id, category_id) DO NOTHING RETURNING id",
+                    (
+                        budget.id,
+                        budget.profile_id,
+                        budget.category_id,
+                        budget.recurring_target.minor_units,
+                        budget.recurring_target.currency,
+                        budget.version,
+                        audit_event.occurred_at,
+                        audit_event.occurred_at,
+                    ),
+                ).fetchone()
+                if inserted is None:
+                    raise OptimisticConcurrencyError("budget already exists")
+            else:
+                cursor = connection.execute(
+                    "UPDATE finance.monthly_budgets SET target_minor = %s, "
+                    "currency = %s, version = %s, updated_at = %s "
+                    "WHERE id = %s AND profile_id = %s AND category_id = %s "
+                    "AND version = %s",
+                    (
+                        budget.recurring_target.minor_units,
+                        budget.recurring_target.currency,
+                        budget.version,
+                        audit_event.occurred_at,
+                        budget.id,
+                        budget.profile_id,
+                        budget.category_id,
+                        expected_version,
+                    ),
+                )
+                if cursor.rowcount != 1:
+                    raise OptimisticConcurrencyError(
+                        "budget changed since the requested version"
+                    )
+                connection.execute(
+                    "DELETE FROM finance.monthly_budget_overrides WHERE budget_id = %s",
+                    (budget.id,),
+                )
+            for period, target in budget.overrides:
+                connection.execute(
+                    "INSERT INTO finance.monthly_budget_overrides "
+                    "(budget_id, year, month, target_minor, currency) "
+                    "VALUES (%s, %s, %s, %s, %s)",
+                    (
+                        budget.id,
+                        period.year,
+                        period.month,
+                        target.minor_units,
+                        target.currency,
+                    ),
+                )
+            self._insert_audit(connection, audit_event)
+
     def _insert_seed_category(
         self,
         connection: Connection[Any],
@@ -539,4 +752,34 @@ class PostgresFinanceRepository:
                 )
                 for item in payment_rows
             ),
+        )
+
+    def _load_wallet_entries(
+        self,
+        connection: Connection[Any],
+        profile_id: UUID,
+        funding_source_id: UUID,
+    ) -> tuple[WalletEntry, ...]:
+        """Reconstruct immutable wallet entries inside an active transaction."""
+
+        rows = connection.execute(
+            "SELECT id, profile_id, funding_source_id, entry_type, amount_minor, "
+            "currency, occurred_at, expires_on, expense_id, note "
+            "FROM finance.wallet_entries WHERE profile_id = %s "
+            "AND funding_source_id = %s ORDER BY occurred_at, id",
+            (profile_id, funding_source_id),
+        ).fetchall()
+        return tuple(
+            WalletEntry(
+                id=row[0],
+                profile_id=row[1],
+                funding_source_id=row[2],
+                entry_type=WalletEntryType(row[3]),
+                amount=Money(row[4], row[5]),
+                occurred_at=row[6],
+                expires_on=row[7],
+                expense_id=row[8],
+                note=row[9],
+            )
+            for row in rows
         )

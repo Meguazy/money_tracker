@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from threading import Barrier
 from typing import TypedDict
 from urllib.parse import urlparse
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from langgraph.graph import END, START, StateGraph
@@ -30,8 +30,13 @@ from money_tracker.domain import (
     FundingClass,
     FundingSource,
     Money,
+    MonthlyBudget,
     PaymentAllocation,
     Profile,
+    WalletEntry,
+    WalletEntryType,
+    WalletError,
+    YearMonth,
     initial_taxonomy,
 )
 from money_tracker.persistence.database import (
@@ -253,6 +258,32 @@ def _audit(expense: Expense, action: str, prior_version: int | None) -> AuditEve
         occurred_at=SystemClock().now(),
         prior_version=prior_version,
         current_version=expense.version,
+        reason="repository integration",
+    )
+
+
+def _generic_audit(
+    *,
+    profile_id: UUID,
+    aggregate_type: str,
+    aggregate_id: UUID,
+    action: str,
+    prior_version: int | None,
+    current_version: int,
+) -> AuditEvent:
+    """Build audit metadata for non-expense integration aggregates."""
+
+    return AuditEvent(
+        id=uuid4(),
+        profile_id=profile_id,
+        aggregate_type=aggregate_type,
+        aggregate_id=aggregate_id,
+        action=action,
+        actor="integration",
+        source_reference=f"integration:{aggregate_type}",
+        occurred_at=SystemClock().now(),
+        prior_version=prior_version,
+        current_version=current_version,
         reason="repository integration",
     )
 
@@ -700,3 +731,425 @@ def test_concurrent_replacements_allow_exactly_one_winner(postgres_url: str) -> 
             "WHERE aggregate_id = %s AND action = 'correct'",
             (draft.id,),
         ).fetchone() == (1,)
+
+
+@pytest.mark.postgres
+def test_wallet_debit_is_balance_safe_and_audited(postgres_url: str) -> None:
+    """Lock the wallet, reject overdraft, and leave rejected mutations absent."""
+
+    upgrade_database(postgres_url)
+    repository, profile, _, _ = _repository_fixture(postgres_url)
+    source = FundingSource(
+        id=uuid4(),
+        profile_id=profile.id,
+        name="Buoni pasto integrazione",
+        funding_class=FundingClass.BENEFIT,
+        balance_mode=BalanceMode.LEDGER,
+    )
+    repository.create_funding_source(source, occurred_at=SystemClock().now())
+    opening = WalletEntry(
+        id=uuid4(),
+        profile_id=profile.id,
+        funding_source_id=source.id,
+        entry_type=WalletEntryType.OPENING,
+        amount=Money(5000),
+        occurred_at=datetime(2026, 9, 2, 9, tzinfo=UTC),
+    )
+    debit = WalletEntry(
+        id=uuid4(),
+        profile_id=profile.id,
+        funding_source_id=source.id,
+        entry_type=WalletEntryType.DEBIT,
+        amount=Money(-3000),
+        occurred_at=datetime(2026, 9, 2, 10, tzinfo=UTC),
+    )
+    repository.append_wallet_entry(
+        opening,
+        audit_event=_generic_audit(
+            profile_id=profile.id,
+            aggregate_type="wallet_entry",
+            aggregate_id=opening.id,
+            action="create",
+            prior_version=None,
+            current_version=1,
+        ),
+    )
+    repository.append_wallet_entry(
+        debit,
+        audit_event=_generic_audit(
+            profile_id=profile.id,
+            aggregate_type="wallet_entry",
+            aggregate_id=debit.id,
+            action="create",
+            prior_version=None,
+            current_version=1,
+        ),
+    )
+    overdraft = replace(debit, id=uuid4(), amount=Money(-2001))
+
+    with pytest.raises(WalletError, match="insufficient"):
+        repository.append_wallet_entry(
+            overdraft,
+            audit_event=_generic_audit(
+                profile_id=profile.id,
+                aggregate_type="wallet_entry",
+                aggregate_id=overdraft.id,
+                action="create",
+                prior_version=None,
+                current_version=1,
+            ),
+        )
+
+    entries = repository.get_wallet_entries(profile.id, source.id)
+    assert [entry.amount for entry in entries] == [Money(5000), Money(-3000)]
+    with connect(postgres_url) as connection:
+        assert connection.execute(
+            "SELECT count(*) FROM finance.audit_events "
+            "WHERE aggregate_type = 'wallet_entry'",
+        ).fetchone() == (2,)
+
+
+@pytest.mark.postgres
+def test_concurrent_wallet_debits_cannot_overdraw(postgres_url: str) -> None:
+    """Serialize two debit attempts so only one can consume a shared balance."""
+
+    upgrade_database(postgres_url)
+    repository, profile, _, _ = _repository_fixture(postgres_url)
+    source = FundingSource(
+        id=uuid4(),
+        profile_id=profile.id,
+        name="Welfare integrazione",
+        funding_class=FundingClass.BENEFIT,
+        balance_mode=BalanceMode.LEDGER,
+    )
+    repository.create_funding_source(source, occurred_at=SystemClock().now())
+    opening = WalletEntry(
+        id=uuid4(),
+        profile_id=profile.id,
+        funding_source_id=source.id,
+        entry_type=WalletEntryType.OPENING,
+        amount=Money(1000),
+        occurred_at=datetime(2026, 9, 2, 9, tzinfo=UTC),
+    )
+    repository.append_wallet_entry(
+        opening,
+        audit_event=_generic_audit(
+            profile_id=profile.id,
+            aggregate_type="wallet_entry",
+            aggregate_id=opening.id,
+            action="create",
+            prior_version=None,
+            current_version=1,
+        ),
+    )
+    debits = tuple(
+        WalletEntry(
+            id=uuid4(),
+            profile_id=profile.id,
+            funding_source_id=source.id,
+            entry_type=WalletEntryType.DEBIT,
+            amount=Money(-800),
+            occurred_at=datetime(2026, 9, 2, 10 + index, tzinfo=UTC),
+        )
+        for index in range(2)
+    )
+    barrier = Barrier(2)
+
+    def attempt(entry: WalletEntry) -> str:
+        """Race one debit after both workers are ready."""
+
+        barrier.wait()
+        try:
+            repository.append_wallet_entry(
+                entry,
+                audit_event=_generic_audit(
+                    profile_id=profile.id,
+                    aggregate_type="wallet_entry",
+                    aggregate_id=entry.id,
+                    action="create",
+                    prior_version=None,
+                    current_version=1,
+                ),
+            )
+        except WalletError:
+            return "insufficient"
+        return "committed"
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = tuple(executor.map(attempt, debits))
+
+    assert sorted(results) == ["committed", "insufficient"]
+    assert (
+        sum(
+            entry.amount.minor_units
+            for entry in repository.get_wallet_entries(profile.id, source.id)
+        )
+        == 200
+    )
+
+
+@pytest.mark.postgres
+def test_budget_round_trip_and_stale_version_conflict(postgres_url: str) -> None:
+    """Replace all overrides atomically and reject a stale budget writer."""
+
+    upgrade_database(postgres_url)
+    repository, profile, _, category_id = _repository_fixture(postgres_url)
+    budget = MonthlyBudget(
+        id=uuid4(),
+        profile_id=profile.id,
+        category_id=category_id,
+        recurring_target=Money(20_000),
+        overrides=((YearMonth(2026, 10), Money(25_000)),),
+    )
+    repository.save_budget(
+        budget,
+        expected_version=None,
+        audit_event=_generic_audit(
+            profile_id=profile.id,
+            aggregate_type="monthly_budget",
+            aggregate_id=budget.id,
+            action="create",
+            prior_version=None,
+            current_version=1,
+        ),
+    )
+    updated = replace(
+        budget,
+        recurring_target=Money(22_000),
+        overrides=((YearMonth(2026, 11), Money(30_000)),),
+        version=2,
+    )
+    repository.save_budget(
+        updated,
+        expected_version=1,
+        audit_event=_generic_audit(
+            profile_id=profile.id,
+            aggregate_type="monthly_budget",
+            aggregate_id=budget.id,
+            action="replace",
+            prior_version=1,
+            current_version=2,
+        ),
+    )
+
+    assert repository.get_budget(profile.id, category_id) == updated
+    stale = replace(updated, recurring_target=Money(23_000), version=3)
+    with pytest.raises(OptimisticConcurrencyError, match="changed"):
+        repository.save_budget(
+            stale,
+            expected_version=1,
+            audit_event=_generic_audit(
+                profile_id=profile.id,
+                aggregate_type="monthly_budget",
+                aggregate_id=budget.id,
+                action="replace",
+                prior_version=2,
+                current_version=3,
+            ),
+        )
+    assert repository.get_budget(profile.id, category_id) == updated
+
+
+@pytest.mark.postgres
+def test_wallet_rejects_untracked_source_without_partial_audit(
+    postgres_url: str,
+) -> None:
+    """Reject ledger entries for label-only sources before any database append."""
+
+    upgrade_database(postgres_url)
+    repository, profile, _, _ = _repository_fixture(postgres_url)
+    source = FundingSource(
+        id=uuid4(),
+        profile_id=profile.id,
+        name="Carta non tracciata",
+        funding_class=FundingClass.PERSONAL_FUNDS,
+        balance_mode=BalanceMode.UNTRACKED,
+    )
+    repository.create_funding_source(source, occurred_at=SystemClock().now())
+    entry = WalletEntry(
+        id=uuid4(),
+        profile_id=profile.id,
+        funding_source_id=source.id,
+        entry_type=WalletEntryType.CREDIT,
+        amount=Money(1000),
+        occurred_at=datetime(2026, 9, 2, 12, tzinfo=UTC),
+    )
+
+    with pytest.raises(ValueError, match="ledger source"):
+        repository.append_wallet_entry(
+            entry,
+            audit_event=_generic_audit(
+                profile_id=profile.id,
+                aggregate_type="wallet_entry",
+                aggregate_id=entry.id,
+                action="create",
+                prior_version=None,
+                current_version=1,
+            ),
+        )
+
+    assert repository.get_wallet_entries(profile.id, source.id) == ()
+    with connect(postgres_url) as connection:
+        assert connection.execute(
+            "SELECT count(*) FROM finance.audit_events WHERE aggregate_id = %s",
+            (entry.id,),
+        ).fetchone() == (0,)
+
+
+@pytest.mark.postgres
+def test_wallet_entry_rolls_back_when_matching_audit_cannot_persist(
+    postgres_url: str,
+) -> None:
+    """Roll back the wallet append if the same transaction rejects its audit."""
+
+    upgrade_database(postgres_url)
+    repository, profile, _, _ = _repository_fixture(postgres_url)
+    source = FundingSource(
+        id=uuid4(),
+        profile_id=profile.id,
+        name="Wallet rollback",
+        funding_class=FundingClass.BENEFIT,
+        balance_mode=BalanceMode.LEDGER,
+    )
+    repository.create_funding_source(source, occurred_at=SystemClock().now())
+    entry = WalletEntry(
+        id=uuid4(),
+        profile_id=profile.id,
+        funding_source_id=source.id,
+        entry_type=WalletEntryType.OPENING,
+        amount=Money(4000),
+        occurred_at=datetime(2026, 9, 2, 12, tzinfo=UTC),
+    )
+
+    with pytest.raises(errors.ForeignKeyViolation):
+        repository.append_wallet_entry(
+            entry,
+            audit_event=_generic_audit(
+                profile_id=uuid4(),
+                aggregate_type="wallet_entry",
+                aggregate_id=entry.id,
+                action="create",
+                prior_version=None,
+                current_version=1,
+            ),
+        )
+
+    assert repository.get_wallet_entries(profile.id, source.id) == ()
+
+
+@pytest.mark.postgres
+def test_duplicate_budget_create_preserves_original_and_single_audit(
+    postgres_url: str,
+) -> None:
+    """Reject a second category budget without replacing the first snapshot."""
+
+    upgrade_database(postgres_url)
+    repository, profile, _, category_id = _repository_fixture(postgres_url)
+    original = MonthlyBudget(
+        id=uuid4(),
+        profile_id=profile.id,
+        category_id=category_id,
+        recurring_target=Money(15_000),
+    )
+    repository.save_budget(
+        original,
+        expected_version=None,
+        audit_event=_generic_audit(
+            profile_id=profile.id,
+            aggregate_type="monthly_budget",
+            aggregate_id=original.id,
+            action="create",
+            prior_version=None,
+            current_version=1,
+        ),
+    )
+    duplicate = replace(original, id=uuid4(), recurring_target=Money(99_000))
+
+    with pytest.raises(OptimisticConcurrencyError, match="already exists"):
+        repository.save_budget(
+            duplicate,
+            expected_version=None,
+            audit_event=_generic_audit(
+                profile_id=profile.id,
+                aggregate_type="monthly_budget",
+                aggregate_id=duplicate.id,
+                action="create",
+                prior_version=None,
+                current_version=1,
+            ),
+        )
+
+    assert repository.get_budget(profile.id, category_id) == original
+    with connect(postgres_url) as connection:
+        assert connection.execute(
+            "SELECT count(*) FROM finance.audit_events "
+            "WHERE aggregate_type = 'monthly_budget'",
+        ).fetchone() == (1,)
+
+
+@pytest.mark.postgres
+def test_concurrent_budget_replacements_allow_exactly_one_winner(
+    postgres_url: str,
+) -> None:
+    """Use the version predicate to resolve a real two-writer budget race."""
+
+    upgrade_database(postgres_url)
+    repository, profile, _, category_id = _repository_fixture(postgres_url)
+    original = MonthlyBudget(
+        id=uuid4(),
+        profile_id=profile.id,
+        category_id=category_id,
+        recurring_target=Money(10_000),
+    )
+    repository.save_budget(
+        original,
+        expected_version=None,
+        audit_event=_generic_audit(
+            profile_id=profile.id,
+            aggregate_type="monthly_budget",
+            aggregate_id=original.id,
+            action="create",
+            prior_version=None,
+            current_version=1,
+        ),
+    )
+    candidates = (
+        replace(original, recurring_target=Money(11_000), version=2),
+        replace(original, recurring_target=Money(12_000), version=2),
+    )
+    barrier = Barrier(2)
+
+    def attempt(candidate: MonthlyBudget) -> str:
+        """Race one replacement from the same observed version."""
+
+        barrier.wait()
+        try:
+            repository.save_budget(
+                candidate,
+                expected_version=1,
+                audit_event=_generic_audit(
+                    profile_id=profile.id,
+                    aggregate_type="monthly_budget",
+                    aggregate_id=original.id,
+                    action="replace",
+                    prior_version=1,
+                    current_version=2,
+                ),
+            )
+        except OptimisticConcurrencyError:
+            return "stale"
+        return "committed"
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = tuple(executor.map(attempt, candidates))
+
+    assert sorted(results) == ["committed", "stale"]
+    persisted = repository.get_budget(profile.id, category_id)
+    assert persisted is not None
+    assert persisted.version == 2
+    assert persisted.recurring_target in {Money(11_000), Money(12_000)}
+    with connect(postgres_url) as connection:
+        assert connection.execute(
+            "SELECT count(*) FROM finance.audit_events "
+            "WHERE aggregate_type = 'monthly_budget'",
+        ).fetchone() == (2,)

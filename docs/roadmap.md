@@ -281,12 +281,14 @@ backup runbook records how to install them.
 
 ## Step 3: Evaluated text workflows
 
-Status: **In progress.** The framework-independent routing foundation is
-implemented: the bounded intent taxonomy with partitioned mutation authority,
-the normalized channel work unit, deterministic pre-routing, and the strict
-versioned router model boundary with its deterministic policy vetoes. No
-LangGraph node, prompt, model call, specialist subgraph, persistent interrupt,
-or evaluation dataset exists yet, and no confidence bar or model is promoted.
+Status: **In progress.** The framework-independent routing and extraction
+foundation is implemented: the bounded intent taxonomy with partitioned
+mutation authority, the normalized channel work unit, deterministic
+pre-routing, the strict versioned router and expense/refund extraction model
+boundaries with their deterministic policy vetoes, and pure resolution of
+occurrence time and amount sign. No LangGraph node, prompt, model call,
+specialist subgraph, persistent interrupt, or evaluation dataset exists yet,
+and no confidence bar or model is promoted.
 
 ### Prerequisites
 
@@ -299,11 +301,10 @@ step's gates and the experiment decision log.
 This order is a handoff aid, not new scope. Each increment must land with its
 own tests and documentation, and none may ship a later step's behavior.
 
-1. Versioned expense/refund extraction and category-fit contracts with evidence
-   and explicit unknowns, plus the deterministic resolvers those contracts
-   deliberately keep away from the model: relative Italian occurrence time in
-   `Europe/Rome` against the message timestamp, and funding-source resolution
-   from trusted profile context.
+1. Funding-source resolution from trusted profile context and the category-fit
+   contract with its deterministic candidate search over active names, aliases,
+   and inclusion descriptions, then payment and category allocation building
+   with reconciliation against the extracted total.
 2. The LangGraph root router node: the real model call against the strict
    schema, the single corrective retry required by AD-006, the versioned
    workflow state holding only small serializable values and stable references,
@@ -351,9 +352,9 @@ own tests and documentation, and none may ship a later step's behavior.
 
 ### Current implementation evidence
 
-- The `workflows` component is framework-independent: it imports Pydantic and
-  the domain error type, and no LangGraph, model client, repository, or
-  transport module. It owns no persistent state.
+- The `workflows` component is framework-independent: it imports Pydantic,
+  `zoneinfo`, and pure domain values, and no LangGraph, model client,
+  repository, or transport module. It owns no persistent state.
 - Every intent belongs to exactly one authority class, and the classes are
   disjoint and exhaustive over the taxonomy. Query, advice, non-finance,
   unsupported, clarification, and receipt routes are outside the mutating set,
@@ -374,11 +375,29 @@ own tests and documentation, and none may ship a later step's behavior.
   or undo without a runtime-resolved movement, and any decision below the
   explicitly supplied confidence bar. Correlation targets come from trusted
   context, never from the classification.
-- Seventy unit tests cover the taxonomy authority invariants, the message
-  contract, command parsing, every pre-routing precedence branch, every
-  category-review callback branch, and every acceptance veto, at 100% branch
-  coverage of the component. Routing decisions are asserted to contain no owner
-  text and only small serializable values and stable references.
+- The `ExpenseExtraction` boundary is strict, versioned independently of the
+  router boundary, and parsed from the real JSON transport shape. Cross-field
+  validation keeps every declared unknown mutually exclusive with its own
+  value, requires an absent amount to be declared unknown, keeps currency and
+  amount inseparable, requires a split payment to quantify every portion and
+  name distinct sources, and rejects a non-operational currency. Absence of
+  temporal words, merchant, or funding portion is the documented default rather
+  than a question.
+- Occurrence time and amount sign are resolved by pure deterministic code, not
+  by the model. The resolver anchors same-day, previous-day, counted day and
+  week offsets, named past weekdays, and explicit Italian dates to the message
+  timestamp in `Europe/Rome`; it refuses a bare weekday, an unreadable phrase,
+  and a day after the message. It preserves the message wall-clock time so a
+  named day stays inside its intended Rome day, and it normalizes a wall time
+  inside the spring-forward gap onto the equivalent instant after the
+  transition. A refund's negative sign comes from the stated polarity alone.
+- One hundred fifty-nine unit tests cover the taxonomy authority invariants,
+  the message contract, command parsing, every pre-routing precedence branch,
+  every category-review callback branch, every acceptance veto, every
+  extraction cross-field invariant, and the resolver including both daylight-
+  saving edges, at 100% branch coverage of the component. Routing decisions are
+  asserted to contain no owner text and only small serializable values and
+  stable references.
 - No exit criterion is met yet. Every gate in the
   [Evaluation Matrix](experiments/evaluation-matrix.md) requires the model
   half, the specialist workflows, and pinned datasets that remain open.

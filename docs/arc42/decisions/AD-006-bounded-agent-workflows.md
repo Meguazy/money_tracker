@@ -1,8 +1,9 @@
 # AD-006: Bounded Typed Agent Workflows
 
 - Status: accepted
-- Implementation: checkpoint foundation and deterministic root routing with
-  its typed model boundary implemented; specialist subgraphs planned
+- Implementation: checkpoint foundation, deterministic root routing, the typed
+  router and extraction model boundaries, and deterministic occurrence-time and
+  sign resolution implemented; specialist subgraphs planned
 - Date: 2026-09-01
 
 ## Context
@@ -64,9 +65,19 @@ The confidence bar is a required argument with no default. This decision record
 does not authorize a value: calibration on the pinned routing dataset and an
 entry in the experiment decision log precede any runtime use.
 
-Specialist subgraphs, production prompts, the model call and its single
-corrective retry, persistent interrupts, and workflow state are not implemented
-yet.
+The versioned `ExpenseExtraction` boundary applies the same rule to expense and
+refund candidates. It is versioned independently of the router boundary, keeps
+every declared unknown mutually exclusive with its own value, requires a split
+payment to quantify every distinct portion, and exposes no resolved instant and
+no signed amount. Occurrence time and amount sign are resolved by pure
+deterministic code instead: the model reports the owner's temporal words
+verbatim and a positive magnitude, so timezone, daylight-saving, and sign
+arithmetic stay exactly reproducible across a retry, a resume, and an
+evaluation run.
+
+Funding-source resolution, category fit, specialist subgraphs, production
+prompts, the model call and its single corrective retry, persistent interrupts,
+and workflow state are not implemented yet.
 
 ## Consequences
 

@@ -190,7 +190,7 @@ Money Tracker workstation
 | `persistence` | Apply versioned migrations and bootstrap persistent LangGraph checkpoints | Alembic, psycopg, PostgreSQL checkpointer | Foundation schemas and workflow checkpoints | Host administration CLI; least-privilege loopback database role |
 | `domain` | Enforce exact money, expense/refund, dual-allocation, taxonomy, wallet, budget, receipt-metadata, and audit contracts | Pure Python value objects and policies; no framework or infrastructure import | No infrastructure state | Shared host-process library; deterministic validation of untrusted inputs |
 | `application` | Coordinate idempotent expense lifecycle and receipt registration/review, audited wallet/budget mutations, and pending proposal submission through narrow ports | Finance, administration, proposal, and receipt-metadata repository ports plus clock and ID contracts | Command, concurrency, review-boundary, and audit semantics, not stored state | Shared by future CLI/API/worker; profile scope comes from trusted caller context; proposal decisions and receipt deletion are not exposed |
-| `workflows` | Own the bounded intent taxonomy, the normalized channel work unit, deterministic pre-routing, and the strict versioned router model boundary with its policy vetoes | Pydantic and the domain error type; no LangGraph, model client, repository, or transport import | Routing destinations, authority classes, and stable justification codes; no persistent state | Shared by the planned worker; a model can select no deterministic route and no profile/timezone/authorization field; justification codes carry no owner text |
+| `workflows` | Own the bounded intent taxonomy, the normalized channel work unit, deterministic pre-routing, the strict versioned router and extraction model boundaries with their policy vetoes, and deterministic resolution of occurrence time and amount sign | Pydantic, `zoneinfo`, and pure domain values; no LangGraph, model client, repository, or transport import | Routing destinations, authority classes, stable justification codes, and the product calendar; no persistent state | Shared by the planned worker; a model can select no deterministic route and supply no profile/timezone/authorization field, no resolved instant, and no amount sign; justification codes carry no owner text |
 | `api.contracts` | Define strict, versioned finance request/response, mutation-header, and problem wire shapes | Pydantic and domain response values; no web framework | No state; stable JSON field semantics only | Shared by future FastAPI adapter; no endpoint, network listener, credentials, or private media fields |
 | `backup` | Create verified encrypted authoritative snapshots, report their freshness, and restore only into explicitly empty isolated targets | Restic and PostgreSQL client executables, psycopg identity/receipt queries, private archive and configuration paths | Snapshot contents and the versioned integrity manifest in the owner repository; no finance state of its own | Host CLI under an exclusive lock; absolute-path and owner-only input checks, recovery secret passed only by file path, failures name no argument or environment |
 | `administration` | Expose bounded local receipt storage/registration for development and bootstrap | Database URL, absolute archive setting, media and metadata services | No independent state; emits safe identifiers/facts only | Host CLI; active-profile preflight, no-follow bounded input, no private paths in JSON |
@@ -343,6 +343,32 @@ is a nondeterministic suggestion that deterministic policy then re-checks.
 No LangGraph node, prompt, model call, specialist workflow, or persistent
 interrupt is implemented yet, and no confidence bar is promoted. The router
 imports no model client, repository, or transport module.
+
+### Current extraction boundary and deterministic resolution
+
+1. The extraction schema carries a direction word, a positive amount magnitude
+   with its currency, the owner's verbatim temporal words, a description,
+   optional merchant metadata, funding portions as the owner named them, an
+   evidence span, and explicitly declared unknowns.
+2. Cross-field validation keeps every declared unknown mutually exclusive with
+   its own value, so an extraction cannot both abstain and guess. An absent
+   amount must be declared unknown; an absent time, merchant, or funding
+   portion is instead the documented default.
+3. A split payment must quantify every portion and name distinct sources,
+   because an unquantified split could never reconcile against the total.
+4. Deterministic resolution converts the untrusted extraction into domain
+   values: the amount sign from the stated polarity, and the occurrence instant
+   from the temporal words against the message timestamp in the product
+   calendar. Same-day, previous-day, counted day and week offsets, named past
+   weekdays, and explicit Italian dates are supported; a bare weekday, an
+   unreadable phrase, and a day after the message are refused.
+5. The message wall-clock time is preserved so a named day stays inside its
+   intended Rome day. A wall time inside the spring-forward gap normalizes to
+   the equivalent instant after the transition.
+
+Funding-source resolution, category fit, and payment reconciliation against the
+profile's configured sources are not implemented yet, so no extraction becomes
+an expense aggregate.
 
 ### Current version-one finance wire contracts
 
@@ -505,10 +531,20 @@ network, and inference readiness through health checks and retry policies.
 
 - Monetary values use integer minor units plus ISO currency; binary floats are
   prohibited at storage and public interfaces.
+- A model states an amount as a positive magnitude and a direction word. The
+  sign the domain expects is applied deterministically, so a stray minus sign
+  cannot turn a purchase into a reimbursement.
 - Both category and payment allocations reconcile exactly with the parent total.
 - The occurrence time, not processing time, controls reports and budgets.
 - Relative Italian dates resolve against the source message timestamp in
-  `Europe/Rome`.
+  `Europe/Rome`. The implemented resolver is deterministic and pure: a model
+  reports the owner's temporal words verbatim and never an instant, because
+  timezone and daylight-saving arithmetic must be exactly reproducible across a
+  retry, a resume, and an evaluation run.
+- Silence and abstention are distinct. A message with no temporal words
+  describes a movement that just happened; words that are present but
+  unreadable are an error that asks the owner, never a substituted default.
+- A resolved occurrence day is never after the message that reported it.
 
 ### Identity, authorization, and idempotency
 

@@ -315,7 +315,11 @@ API/worker entry point. Extraction and the product review workflow remain planne
    confidence, and any correlated command or reference. The owner message is
    not echoed, because a routing decision carries no message content.
 
-The command keeps no thread, writes nothing, and reports routing only.
+The command keeps no thread. Routing alone writes nothing, but supplying
+`--profile-id` continues a movement route into the expense workflow, which
+stores a draft through the application services or reports the reason it
+clarified. Stdout then also carries the outcome, the stored draft identifier,
+any pending candidate, and the clarification reason.
 
 ### Current administrative receipt import
 

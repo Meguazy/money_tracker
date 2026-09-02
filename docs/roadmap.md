@@ -522,6 +522,23 @@ own tests and documentation, and none may ship a later step's behavior.
     `category_parent_invalid` instead of drafting. The purpose boundary is now
     the binding constraint on end-to-end behaviour. Gap for
     `categorization/purpose-it`.
+  - The worst instance of that gap is the split-funding journey J4, which is a
+    V1 acceptance example. On `Ho speso 50 euro al supermercato, 30 con i buoni
+    pasto e 20 con la carta` the candidate proposes `Spesa con buoni e carte`,
+    a category defined by payment method, and its own rationale states that it
+    is classifying by payment method rather than purpose. That contradicts the
+    instruction text and collapses the two allocation dimensions AD-007 keeps
+    independent. It reproduced identically on three consecutive runs at the
+    screened profile's sampling settings, so it is systematic rather than a
+    sampling artifact.
+  - Deterministic acceptance rejected that proposal, but only incidentally: the
+    veto that fired was the non-root parent, not the dimension confusion. Had
+    the candidate named an active root as its parent, a payment-method category
+    would have reached the owner for approval. The taxonomy authority rules
+    therefore do not currently express `AD-007`'s separation of purpose from
+    funding, and `categorization/purpose-it` must measure it directly. No rule
+    is added here, because inventing one by hand is exactly the ad-hoc policy
+    change AD-012 reserves for a gated experiment.
 - `money-tracker-admin profile-init`, `profile-list`, and
   `funding-source-add` make the finance components reachable without
   hand-written Python. Until they existed, every command taking a profile
@@ -535,9 +552,10 @@ own tests and documentation, and none may ship a later step's behavior.
   and the policy vetoes are reachable by hand. It requires an explicit
   confidence bar, completes a deterministic route with no model involved, names
   the missing service when the local endpoint is unreachable rather than
-  surfacing a transport traceback, and echoes no message content. It reports
-  routing only: extraction, category fit, and posting exist as contracts and
-  resolvers but are not yet wired to a workflow.
+  surfacing a transport traceback, and echoes no message content. Given
+  `--profile-id` it continues a movement route into the expense workflow and
+  reports that outcome too, which is how the candidate-prompt gaps below are
+  reachable by hand.
 - Workflow state is a versioned contract of JSON primitives and stable string
   references. Round-trip tests reconstruct the message, the trusted context,
   and every deterministic and model decision, and a real checkpoint written to

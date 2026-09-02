@@ -32,6 +32,11 @@ class ResolutionReason(StrEnum):
         FUNDING_SOURCE_UNRESOLVED: Stated funding words match no active source.
         FUNDING_SOURCE_REPEATED: Two stated portions resolve to one source.
         SPLIT_DOES_NOT_RECONCILE: Stated portions do not sum to the total.
+        CATEGORY_UNRESOLVED: A named category matches no active node.
+        CATEGORY_ALREADY_EXISTS: A proposed name duplicates an active name or
+            alias, so an adequate node already exists.
+        CATEGORY_PARENT_INVALID: A proposed parent is not an active root.
+        CATEGORY_EXCLUDED: A proposed name was already rejected in this review.
     """
 
     AMOUNT_UNKNOWN = "amount_unknown"
@@ -43,6 +48,10 @@ class ResolutionReason(StrEnum):
     FUNDING_SOURCE_UNRESOLVED = "funding_source_unresolved"
     FUNDING_SOURCE_REPEATED = "funding_source_repeated"
     SPLIT_DOES_NOT_RECONCILE = "split_does_not_reconcile"
+    CATEGORY_UNRESOLVED = "category_unresolved"
+    CATEGORY_ALREADY_EXISTS = "category_already_exists"
+    CATEGORY_PARENT_INVALID = "category_parent_invalid"
+    CATEGORY_EXCLUDED = "category_excluded"
 
 
 class UnresolvedExtractionError(ValueError):

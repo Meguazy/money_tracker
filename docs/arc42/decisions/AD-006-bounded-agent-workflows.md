@@ -3,7 +3,7 @@
 - Status: accepted
 - Implementation: checkpoint foundation, deterministic root routing, the typed
   router and extraction model boundaries, and deterministic occurrence-time,
-  sign, and payment-allocation resolution implemented; specialist subgraphs
+  sign, and both allocation dimensions implemented; specialist subgraphs
   planned
 - Date: 2026-09-01
 
@@ -83,9 +83,13 @@ active sources and reconciles the portions against the total. Every failure
 reports a stable reason code so the workflow can ask the one question matching
 the failing step rather than a generic retry.
 
-Category fit, specialist subgraphs, production prompts, the model call and its
-single corrective retry, persistent interrupts, and workflow state are not
-implemented yet.
+Category fit follows the same rule and is recorded in
+[AD-008](AD-008-controlled-taxonomy.md): the model names categories, never
+identifies them, and no deterministic path creates a taxonomy node.
+
+Specialist subgraphs, production prompts, the model call and its single
+corrective retry, persistent interrupts, and workflow state are not implemented
+yet.
 
 ## Consequences
 

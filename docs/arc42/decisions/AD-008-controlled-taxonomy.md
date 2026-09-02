@@ -2,8 +2,9 @@
 
 - Status: accepted
 - Implementation: domain policy, stable 10-root/14-child seed, schema,
-  PostgreSQL bootstrap, and pending-proposal submission implemented; owner
-  decisions and category mutation planned
+  PostgreSQL bootstrap, pending-proposal submission, and the deterministic
+  category-fit boundary implemented; owner decisions and category mutation
+  planned
 - Date: 2026-09-01
 
 ## Context
@@ -48,3 +49,14 @@ rejects normalized category/alias duplicates, and commits the proposal with its
 audit atomically. The service deliberately cannot approve, reject, cancel, or
 create a category; those decisions require the bounded owner-review workflow
 and its evaluation gates.
+
+Roadmap Step 3 adds the versioned category-fit boundary in front of that port.
+A model names categories and never identifies them, so resolution against the
+profile's active taxonomy decides. Assembling a proposal checks the candidate
+name, optional parent, and every examined alternative against the taxonomy; it
+refuses a name that duplicates an active node or alias, a name already rejected
+in the same review, and a parent that is not an active root. A duplicate is
+refused rather than quietly converted into reuse, because the adequate node
+exists and hiding the wrong judgment would both misreport the reason to the
+owner and suppress a measurable failure. Category allocations record the
+boundary version that classified them and whether the owner forced reuse.

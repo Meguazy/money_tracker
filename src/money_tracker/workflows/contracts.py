@@ -295,3 +295,121 @@ class ExpenseExtraction(_WorkflowContract):
         """Return whether no declared unknown blocks deterministic resolution."""
 
         return not self.unknowns
+
+
+CATEGORY_FIT_CONTRACT_VERSION = "v1"
+"""Version of the category-fit model boundary.
+
+Versioned independently of the router and extraction boundaries, and recorded
+in the provenance of every category allocation it produces so a later change
+stays traceable in stored history.
+"""
+
+
+class CategoryFitOutcome(StrEnum):
+    """Whether the active taxonomy already covers a movement's purpose.
+
+    Attributes:
+        EXISTING: An active category adequately describes the purpose.
+        PROPOSAL: No active category is adequate, so a candidate is offered for
+            owner approval.
+    """
+
+    EXISTING = "existing"
+    PROPOSAL = "proposal"
+
+
+class CategoryFit(_WorkflowContract):
+    """One model-produced purpose judgment awaiting deterministic resolution.
+
+    This is a single flat schema with conditional validation rather than a
+    discriminated union. A local model emits one fixed schema far more reliably
+    than a `oneOf`, and no model is capability-screened for union output, so the
+    branch is carried by an enum field the schema validates.
+
+    Categories are named, never identified. Resolution to a stable identifier
+    happens deterministically against the profile's active taxonomy, so a model
+    cannot reference a node that does not exist or anchor history to a display
+    name.
+
+    Attributes:
+        outcome: Whether an existing category fits or one is proposed.
+        category_name: Active category name or alias, required for an existing
+            outcome and forbidden otherwise.
+        proposed_name: Candidate display name, required for a proposal.
+        parent_name: Existing root category the candidate belongs under.
+        description: Inclusion guidance for the candidate, required for a
+            proposal.
+        rationale: Why no active category is adequate, required for a proposal.
+        considered_category_names: Active categories the judgment examined,
+            recorded as evidence that a search happened before proposing.
+        evidence: Short verbatim span of the owner message supporting the
+            judgment.
+    """
+
+    outcome: CategoryFitOutcome
+    category_name: NonEmptyText | None = None
+    proposed_name: NonEmptyText | None = None
+    parent_name: NonEmptyText | None = None
+    description: NonEmptyText | None = None
+    rationale: NonEmptyText | None = None
+    considered_category_names: tuple[NonEmptyText, ...] = ()
+    evidence: EvidenceText
+
+    @field_validator("considered_category_names")
+    @classmethod
+    def _reject_repeated_candidates(cls, names: tuple[str, ...]) -> tuple[str, ...]:
+        """Keep the examined-candidate list a set.
+
+        Args:
+            names: Active categories the judgment examined.
+
+        Returns:
+            The validated names.
+
+        Raises:
+            ValueError: If a candidate is listed more than once.
+        """
+
+        folded = [" ".join(name.split()).casefold() for name in names]
+        if len(set(folded)) != len(folded):
+            raise ValueError("considered categories must be distinct")
+        return names
+
+    @model_validator(mode="after")
+    def _validate_outcome_shape(self) -> Self:
+        """Require exactly the fields the selected outcome defines.
+
+        Returns:
+            The validated judgment.
+
+        Raises:
+            ValueError: If the judgment carries fields belonging to the other
+                outcome, or omits one its own outcome requires.
+        """
+
+        if self.outcome is CategoryFitOutcome.EXISTING:
+            if self.category_name is None:
+                raise ValueError("an existing outcome must name a category")
+            if any(
+                value is not None
+                for value in (
+                    self.proposed_name,
+                    self.parent_name,
+                    self.description,
+                    self.rationale,
+                )
+            ):
+                raise ValueError("an existing outcome cannot carry proposal fields")
+            return self
+        if self.category_name is not None:
+            raise ValueError("a proposal cannot also resolve to an existing category")
+        if (
+            self.proposed_name is None
+            or self.description is None
+            or self.rationale is None
+        ):
+            raise ValueError(
+                "a proposal requires a name, a description, and a rationale"
+            )
+        return self

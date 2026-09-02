@@ -285,10 +285,11 @@ Status: **In progress.** The framework-independent routing, extraction, and
 resolution foundation is implemented: the bounded intent taxonomy with
 partitioned mutation authority, the normalized channel work unit, deterministic
 pre-routing, the strict versioned router and expense/refund extraction model
-boundaries with their deterministic policy vetoes, and pure resolution of
-occurrence time, amount sign, and reconciled payment allocations. No LangGraph
-node, prompt, model call, specialist subgraph, persistent interrupt, or
-evaluation dataset exists yet, and no confidence bar or model is promoted.
+boundaries with their deterministic policy vetoes, the versioned category-fit
+boundary, and pure resolution of occurrence time, amount sign, and both
+reconciled allocation dimensions. No LangGraph node, prompt, model call,
+specialist subgraph, persistent interrupt, or evaluation dataset exists yet,
+and no confidence bar or model is promoted.
 
 ### Prerequisites
 
@@ -301,28 +302,22 @@ step's gates and the experiment decision log.
 This order is a handoff aid, not new scope. Each increment must land with its
 own tests and documentation, and none may ship a later step's behavior.
 
-1. The category-fit model boundary and its deterministic resolution: an
-   existing-category outcome resolved through the taxonomy's active names and
-   aliases, or a proposal outcome carrying parent, rationale, alternatives, and
-   exclusions for the existing pending-proposal port. Then category allocation
-   building with reconciliation against the extracted total, mirroring the
-   implemented payment dimension.
-2. The LangGraph root router node: the real model call against the strict
+1. The LangGraph root router node: the real model call against the strict
    schema, the single corrective retry required by AD-006, the versioned
    workflow state holding only small serializable values and stable references,
    and the persistent PostgreSQL checkpointer already available from Step 1.
-3. Deterministic expense/refund mutation paths that call the existing
+2. Deterministic expense/refund mutation paths that call the existing
    application services with a stable command idempotency key, plus the
    read-only query and advice routes with scoped tool registries.
-4. Persistent human-in-the-loop category review over the existing pending
+3. Persistent human-in-the-loop category review over the existing pending
    proposal port, covering approve, best existing, named existing, re-propose,
    cancel, unrelated input, and the three-rejection transition, with side
    effects placed after the interrupt and made idempotent for replay.
-5. The pinned `routing/intent-it`, `ingestion/expense-it`,
+4. The pinned `routing/intent-it`, `ingestion/expense-it`,
    `categorization/purpose-it`, and `workflow/category-review-it` datasets and
    suites, then calibration of the routing confidence bar and the auto-post
    eligibility policy on held-out labels.
-6. Promotion of the model, prompts, schemas, and thresholds through
+5. Promotion of the model, prompts, schemas, and thresholds through
    [Decision Log](experiments/decision-log.md), which currently records that no
    routing confidence bar and no auto-post threshold are promoted.
 
@@ -405,12 +400,28 @@ own tests and documentation, and none may ship a later step's behavior.
   workflow can ask the one question matching the failing step instead of
   retrying blindly or parsing prose. Like routing justification codes, these
   carry no owner text.
-- One hundred eighty unit tests cover the taxonomy authority invariants, the
+- Category fit is one versioned judgment with two outcomes, validated as a flat
+  schema with conditional fields rather than a discriminated union, because no
+  local candidate is capability-screened for union output. Categories are named
+  and never identified: an existing outcome resolves through the active
+  taxonomy's names and aliases, and assembling a proposal checks the candidate
+  name, optional parent, and every examined alternative against the taxonomy.
+  It refuses a name duplicating an active node or alias, a name already
+  rejected in this review, a parent that is not an active root, and a
+  fabricated alternative. A duplicate is refused rather than quietly converted
+  into reuse, so a wrong judgment stays visible and measurable. No
+  deterministic path creates a taxonomy node.
+- The purpose dimension is one allocation carrying the whole signed total,
+  recording the boundary version that classified it and whether the owner
+  forced the category. An archived category cannot receive an allocation.
+- Two hundred four unit tests cover the taxonomy authority invariants, the
   message contract, command parsing, every pre-routing precedence branch, every
-  category-review callback branch, every acceptance veto, every extraction
-  cross-field invariant, the occurrence resolver including both daylight-saving
-  edges, and every payment-allocation shape and refusal, at 100% branch
-  coverage of the component. Routing decisions are asserted to contain no owner
+  category-review callback branch, every acceptance veto, every extraction and
+  category-fit cross-field invariant, the occurrence resolver including both
+  daylight-saving edges, and every allocation shape and refusal in both
+  dimensions, at 100% branch coverage of the component. Both resolved
+  dimensions are verified by building a real domain aggregate rather than
+  restating its rules, and routing decisions are asserted to contain no owner
   text and only small serializable values and stable references.
 - No exit criterion is met yet. Every gate in the
   [Evaluation Matrix](experiments/evaluation-matrix.md) requires the model

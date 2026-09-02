@@ -190,7 +190,7 @@ Money Tracker workstation
 | `persistence` | Apply versioned migrations and bootstrap persistent LangGraph checkpoints | Alembic, psycopg, PostgreSQL checkpointer | Foundation schemas and workflow checkpoints | Host administration CLI; least-privilege loopback database role |
 | `domain` | Enforce exact money, expense/refund, dual-allocation, taxonomy, wallet, budget, receipt-metadata, and audit contracts | Pure Python value objects and policies; no framework or infrastructure import | No infrastructure state | Shared host-process library; deterministic validation of untrusted inputs |
 | `application` | Coordinate idempotent expense lifecycle and receipt registration/review, audited wallet/budget mutations, and pending proposal submission through narrow ports | Finance, administration, proposal, and receipt-metadata repository ports plus clock and ID contracts | Command, concurrency, review-boundary, and audit semantics, not stored state | Shared by future CLI/API/worker; profile scope comes from trusted caller context; proposal decisions and receipt deletion are not exposed |
-| `workflows` | Own the bounded intent taxonomy, the normalized channel work unit, deterministic pre-routing, the strict versioned router and extraction model boundaries with their policy vetoes, and deterministic resolution of occurrence time, amount sign, and reconciled payment allocations | Pydantic, `zoneinfo`, and pure domain values; no LangGraph, model client, repository, or transport import | Routing destinations, authority classes, stable routing and resolution reason codes, and the product calendar; no persistent state | Shared by the planned worker; a model can select no deterministic route and supply no profile/timezone/authorization field, no resolved instant, no amount sign, and no funding-source identifier; reason codes carry no owner text |
+| `workflows` | Own the bounded intent taxonomy, the normalized channel work unit, deterministic pre-routing, the strict versioned router and extraction model boundaries with their policy vetoes, and deterministic resolution of occurrence time, amount sign, and both reconciled allocation dimensions | Pydantic, `zoneinfo`, and pure domain values; no LangGraph, model client, repository, or transport import | Routing destinations, authority classes, stable routing and resolution reason codes, and the product calendar; no persistent state | Shared by the planned worker; a model can select no deterministic route and supply no profile/timezone/authorization field, no resolved instant, no amount sign, and no funding-source identifier; reason codes carry no owner text |
 | `api.contracts` | Define strict, versioned finance request/response, mutation-header, and problem wire shapes | Pydantic and domain response values; no web framework | No state; stable JSON field semantics only | Shared by future FastAPI adapter; no endpoint, network listener, credentials, or private media fields |
 | `backup` | Create verified encrypted authoritative snapshots, report their freshness, and restore only into explicitly empty isolated targets | Restic and PostgreSQL client executables, psycopg identity/receipt queries, private archive and configuration paths | Snapshot contents and the versioned integrity manifest in the owner repository; no finance state of its own | Host CLI under an exclusive lock; absolute-path and owner-only input checks, recovery secret passed only by file path, failures name no argument or environment |
 | `administration` | Expose bounded local receipt storage/registration for development and bootstrap | Database URL, absolute archive setting, media and metadata services | No independent state; emits safe identifiers/facts only | Host CLI; active-profile preflight, no-follow bounded input, no private paths in JSON |
@@ -377,10 +377,23 @@ imports no model client, repository, or transport module.
    unreadable date, a missing default source, unresolved funding words, two
    portions naming one source, or a split that does not reconcile.
 
-Category fit is not implemented yet, so no extraction becomes an expense
-aggregate. The resolved payment dimension is nevertheless verified against the
-real domain aggregate, which independently enforces non-zero rows, unique
-sources, matching polarity, and exact reconciliation.
+8. Category fit is one judgment with two outcomes. An existing outcome names an
+   active category, resolved through the taxonomy's names and aliases. A
+   proposal outcome carries a candidate name, description, rationale, optional
+   parent, and the active categories it examined; deterministic assembly checks
+   every one of those words against the taxonomy, refuses a name that
+   duplicates an active node or was already rejected in this review, and holds
+   the two-level limit before a node could exist. Nothing here creates a
+   taxonomy node: a proposal exists only for the owner-approval interrupt.
+9. The purpose dimension is one allocation carrying the whole signed total,
+   because a text movement has a single purpose; multi-purpose splitting is a
+   receipt-line concern. The allocation records its classification origin and
+   whether the owner forced the category over the workflow's judgment.
+
+Both resolved dimensions are verified against the real domain aggregate, which
+independently enforces non-zero rows, unique identifiers, matching polarity,
+and exact reconciliation. The graph node, prompts, and owner-approval interrupt
+that would turn a resolved draft into a stored expense remain open.
 
 ### Current version-one finance wire contracts
 
@@ -580,6 +593,11 @@ network, and inference readiness through health checks and retry policies.
   identifier, and it cannot select the default. Matching is exact on the folded
   configured name with no synonym guess, because silently spending a benefit
   balance instead of personal funds is worse than asking one question.
+- A category is likewise named and never identified. Resolution happens against
+  the profile's active taxonomy, so a judgment cannot reference a node that
+  does not exist, and stored history is anchored to stable identifiers rather
+  than display names. Every category allocation records the boundary version
+  that classified it.
 - Version-one HTTP mutation contracts carry that key only in the required
   `Idempotency-Key` header; request bodies cannot shadow it.
 - Every external update and financial command has a stable idempotency key.
@@ -708,14 +726,15 @@ environment file.
   domain, schema, expense/wallet/budget persistence, reconciliation, and
   reports implemented; remaining adapters planned.
 - [AD-008: Controlled two-level taxonomy](decisions/AD-008-controlled-taxonomy.md):
-  policy, accepted stable seed, schema, bootstrap, and taxonomy-scoped pending
-  proposal submission implemented; owner decisions and category mutation
-  planned.
+  policy, accepted stable seed, schema, bootstrap, taxonomy-scoped pending
+  proposal submission, and the deterministic category-fit boundary implemented;
+  owner decisions and category mutation planned.
 - [AD-006: Bounded typed agent workflows](decisions/AD-006-bounded-agent-workflows.md):
   persistent checkpoint adapter, bounded intent taxonomy with partitioned
   authority, deterministic pre-routing, and the strict versioned router model
-  boundary implemented; specialist subgraphs, prompts, interrupts, and
-  threshold calibration planned.
+  boundary, the extraction and category-fit boundaries, and deterministic
+  dual-allocation resolution implemented; specialist subgraphs, prompts,
+  interrupts, and threshold calibration planned.
 - [AD-012: Evaluation-driven model and prompt promotion](decisions/AD-012-evaluation-driven-promotion.md):
   capability runner, artifact contract, and passing technical candidates
   implemented; product-role promotion remains experiment-gated.

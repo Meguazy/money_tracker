@@ -1,12 +1,19 @@
 """Typed root routing and bounded workflow contracts for owner requests."""
 
 from money_tracker.workflows.allocation import (
+    CATEGORY_PROVENANCE,
+    build_category_proposal,
+    resolve_category_allocations,
+    resolve_existing_category,
     resolve_funding_source,
     resolve_payment_allocations,
 )
 from money_tracker.workflows.contracts import (
+    CATEGORY_FIT_CONTRACT_VERSION,
     EXTRACTION_CONTRACT_VERSION,
     ROUTER_CONTRACT_VERSION,
+    CategoryFit,
+    CategoryFitOutcome,
     ExpenseExtraction,
     ExpensePolarity,
     ExtractedPaymentPart,
@@ -49,6 +56,8 @@ from money_tracker.workflows.routing import (
 )
 
 __all__ = [
+    "CATEGORY_FIT_CONTRACT_VERSION",
+    "CATEGORY_PROVENANCE",
     "CATEGORY_REVIEW_ACTIONS",
     "DETERMINISTIC_ONLY_INTENTS",
     "EXTRACTION_CONTRACT_VERSION",
@@ -59,6 +68,8 @@ __all__ = [
     "READ_ONLY_INTENTS",
     "ROUTER_CONTRACT_VERSION",
     "CallbackAction",
+    "CategoryFit",
+    "CategoryFitOutcome",
     "ChannelMessage",
     "ExpenseExtraction",
     "ExpensePolarity",
@@ -74,10 +85,13 @@ __all__ = [
     "UnresolvedExtractionError",
     "WorkflowIntent",
     "accept_classification",
+    "build_category_proposal",
     "normalize_owner_text",
     "parse_command",
     "pre_route",
     "resolve_amount",
+    "resolve_category_allocations",
+    "resolve_existing_category",
     "resolve_funding_source",
     "resolve_occurrence_for",
     "resolve_occurrence_time",

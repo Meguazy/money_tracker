@@ -14,7 +14,7 @@ implementation state is still `planned`.
 | [AD-006](AD-006-bounded-agent-workflows.md) | Bounded typed agent workflows | Accepted | Checkpointer implemented; workflows planned |
 | [AD-007](AD-007-expense-allocation-model.md) | Expense and dual-allocation model | Accepted | Core domain/schema/repository implemented; remaining adapters planned |
 | [AD-008](AD-008-controlled-taxonomy.md) | Controlled two-level taxonomy | Accepted | Policy/seed/schema/bootstrap and pending-proposal submission implemented; owner decisions planned |
-| [AD-009](AD-009-local-web-application.md) | Local FastAPI and React web application | Accepted | Planned |
+| [AD-009](AD-009-local-web-application.md) | Local FastAPI and React web application | Accepted | V1 finance wire contracts implemented; FastAPI/React and HTTP security planned |
 | [AD-010](AD-010-telegram-durable-messaging.md) | Telegram long polling and durable messaging | Accepted | Planned |
 | [AD-011](AD-011-receipt-extraction.md) | Evaluation-gated receipt extraction | Accepted | Private original archive implemented; extraction/review planned |
 | [AD-012](AD-012-evaluation-driven-promotion.md) | Evaluation-driven model and prompt promotion | Accepted | Evaluation foundation implemented; promotion pending |

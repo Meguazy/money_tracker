@@ -27,7 +27,8 @@ authoritative finance tables, transactional expense, wallet, and budget
 repository operations, and audited pending category-proposal submission. It
 also registers and versions content-addressed receipt review metadata, but has
 no Telegram adapter, web application, receipt extraction pipeline, media-store
-API/worker wiring, backup, or product review entry point. A safe local
+API/worker wiring, backup, or product review entry point. Strict version-one
+finance wire schemas exist without a running HTTP endpoint. A safe local
 receipt-media adapter is wired through a minimal administration CLI.
 
 ### Quality goals
@@ -168,7 +169,7 @@ Money Tracker workstation
 │   ├── Sequential workflow worker                      [planned]
 │   └── llama.cpp/OpenAI-compatible inference           [scaffolded]
 ├── Private host data
-│   ├── Receipt archive adapter                         [implemented, unwired]
+│   ├── Receipt archive adapter                         [implemented, admin CLI wired]
 │   ├── Evaluation data and artifacts                   [implemented foundation]
 │   └── Restic staging/configuration                    [planned]
 └── Docker Compose
@@ -188,6 +189,7 @@ Money Tracker workstation
 | `persistence` | Apply versioned migrations and bootstrap persistent LangGraph checkpoints | Alembic, psycopg, PostgreSQL checkpointer | Foundation schemas and workflow checkpoints | Host administration CLI; least-privilege loopback database role |
 | `domain` | Enforce exact money, expense/refund, dual-allocation, taxonomy, wallet, budget, receipt-metadata, and audit contracts | Pure Python value objects and policies; no framework or infrastructure import | No infrastructure state | Shared host-process library; deterministic validation of untrusted inputs |
 | `application` | Coordinate idempotent expense lifecycle and receipt registration/review, audited wallet/budget mutations, and pending proposal submission through narrow ports | Finance, administration, proposal, and receipt-metadata repository ports plus clock and ID contracts | Command, concurrency, review-boundary, and audit semantics, not stored state | Shared by future CLI/API/worker; profile scope comes from trusted caller context; proposal decisions and receipt deletion are not exposed |
+| `api.contracts` | Define strict, versioned finance request/response, mutation-header, and problem wire shapes | Pydantic and domain response values; no web framework | No state; stable JSON field semantics only | Shared by future FastAPI adapter; no endpoint, network listener, credentials, or private media fields |
 | `administration` | Expose bounded local receipt storage/registration for development and bootstrap | Database URL, absolute archive setting, media and metadata services | No independent state; emits safe identifiers/facts only | Host CLI; active-profile preflight, no-follow bounded input, no private paths in JSON |
 | `persistence.finance` | Bootstrap profile/taxonomy, persist complete expense and budget aggregates, append balance-safe wallet movements, validate/store pending proposals, and register/transition receipt metadata transactionally | psycopg and narrow application repository contracts | Finance tables, allocations, budgets/overrides, wallet ledger, proposals, versioned receipt metadata, audit, and idempotency records | Dedicated application PostgreSQL; no receipt bytes or paths; optimistic versions protect mutable aggregates |
 | `media.local` | Decode, validate, atomically retain, and integrity-check private receipt originals | Receipt-media port, Pillow, private filesystem | Original bytes under sharded SHA-256 keys; no database state | Host library outside web roots; `0700` directories, `0600` files, no-follow verified reads; root wired explicitly by admin CLI, API/worker planned |
@@ -301,6 +303,23 @@ API/worker entry point. Extraction and the product review workflow remain planne
 3. The existing media and metadata services store/register idempotently.
 4. Stdout contains sorted JSON with receipt ID, hash, MIME, size, and status;
    input/archive paths and bytes are omitted.
+
+
+### Current version-one finance wire contracts
+
+1. A future transport adapter validates the canonical `Idempotency-Key` header
+   separately from a strict expense request body; unknown fields and a
+   caller-supplied profile scope are rejected.
+2. Exact signed cents, EUR, aware occurrence time, stable UUID references, and
+   non-zero movement semantics are validated before application dispatch.
+3. A real domain expense maps to a response with stable IDs, ISO timestamp,
+   lifecycle status, allocations, and optimistic version, but no command key,
+   repository detail, media path, or secret.
+4. Failures use a bounded problem-details schema and the
+   `application/problem+json` media type.
+
+No FastAPI application, socket, route handler, Host/Origin policy, or CSRF
+mechanism is implemented by this contract-only component.
 
 ### Planned text expense turn
 
@@ -425,6 +444,8 @@ network, and inference readiness through health checks and retry policies.
 
 - One paired profile owns all V1 data. Profile identifiers come from trusted
   runtime context, never model-generated tool arguments.
+- Version-one HTTP mutation contracts carry that key only in the required
+  `Idempotency-Key` header; request bodies cannot shadow it.
 - Every external update and financial command has a stable idempotency key.
 - Callback and free-text follow-up map to explicit pending actions and workflow
   IDs instead of assuming one global chat thread.
@@ -552,6 +573,9 @@ environment file.
 - [AD-011: Evaluation-gated receipt extraction](decisions/AD-011-receipt-extraction.md):
   private original-media boundary implemented; extractor evaluation and review
   workflow planned.
+- [AD-009: Local FastAPI and React web application](decisions/AD-009-local-web-application.md):
+  strict version-one finance wire contracts implemented; FastAPI adapter, HTTP
+  security, React application, and deployment planned.
 - [AD-014: Private content-addressed receipt archive](decisions/AD-014-private-receipt-archive.md):
   safe local adapter, versioned review state, and real filesystem/PostgreSQL
   integration implemented; administration CLI wiring implemented; API/worker
@@ -560,7 +584,6 @@ environment file.
 ### Planned accepted decisions
 
 - [AD-004: Local-first privacy with Telegram boundary](decisions/AD-004-local-first-telegram-boundary.md)
-- [AD-009: Local FastAPI and React web application](decisions/AD-009-local-web-application.md)
 - [AD-010: Telegram long polling and durable messaging](decisions/AD-010-telegram-durable-messaging.md)
 
 ## 10. Quality Requirements

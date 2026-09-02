@@ -3,10 +3,10 @@
 - Status: accepted V1 domain baseline
 - Implementation: core domain contracts, stable taxonomy seed, finance schema,
   expense/wallet/budget persistence, and pending proposal submission
-  plus versioned receipt registration/review transitions implemented; proposal
-  decisions, receipt extraction and deletion, API/worker media wiring, and
-  remaining Step 2 adapters planned. The private content-addressed
-  original-media adapter is implemented.
+  plus versioned receipt registration/review transitions and strict V1 finance
+  wire contracts implemented; proposal decisions, receipt extraction/deletion,
+  FastAPI/worker wiring, and remaining Step 2 adapters planned. The private
+  content-addressed original-media adapter is implemented.
 
 This document defines business semantics. Database tables, ORM classes, API
 wire shapes, and graph state may differ internally, but they must preserve these

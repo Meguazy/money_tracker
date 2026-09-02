@@ -146,11 +146,11 @@ foundation. No model is promoted merely because the capability probe responds.
 Status: **In progress.** The framework-independent domain, initial taxonomy,
 finance schema, expense/wallet/budget repositories, pending category-proposal
 submission, audit, idempotency, and concurrency foundation are implemented.
-The private content-addressed receipt-media adapter and versioned receipt
-review-state transitions are also implemented. API, worker media wiring,
-proposal lifecycle, receipt extraction/deletion, backup, and restore evidence
-remain open; a minimal local administration command exercises the archive and
-metadata boundary.
+The private content-addressed receipt-media adapter, versioned receipt
+review-state transitions, and strict V1 finance wire contracts are implemented.
+The FastAPI adapter, worker media wiring, proposal lifecycle, receipt
+extraction/deletion, backup, and restore evidence remain open; a minimal local
+administration command exercises the archive and metadata boundary.
 
 ### Deliverables
 
@@ -188,6 +188,10 @@ metadata boundary.
   expense/refund polarity, dual allocations, lifecycle, correction/void,
   category proposals, funding sources and wallet entries, Rome-calendar
   budgets, receipt metadata, audit, roll-ups, and funding-class totals.
+- The framework-independent `api.contracts` component fixes the `/api/v1`
+  expense request/response, exact EUR money, stable UUID, aware ISO timestamp,
+  problem-detail, and canonical `Idempotency-Key` shapes. It exposes no HTTP
+  listener and accepts no caller-controlled profile scope.
 - The accepted taxonomy is code-owned and versioned with deterministic IDs,
   ten roots, fourteen children, inclusion descriptions, two-level validation,
   normalized aliases, and soft complexity warnings.
@@ -221,13 +225,15 @@ metadata boundary.
   paths.
 - Forty-three domain tests, twenty-two wallet/budget/proposal/receipt application
   tests, and twenty-two media/configuration/administration tests pass.
+  Sixteen strict API contract tests cover the version-one wire boundary at
+  100% branch coverage.
   Thirty-seven real PostgreSQL/media integration tests cover migration, full
   storage/metadata restart, receipt review lifecycle, concurrent registration
   and version conflicts, receipt audit rollback, proposal scoping and atomic
   rollback, constraints, restart persistence, immutable history, exact taxonomy
   seeding, retry idempotency, concurrent expense writers, concurrent wallet
   debits, and concurrent/stale budget versions. The complete service-independent
-  suite passes with 112 tests and 40 explicit real-service skips; focused
+  suite passes with 128 tests and 40 explicit real-service skips; focused
   domain/application/media branch coverage is 91%.
 
 ## Step 3: Evaluated text workflows

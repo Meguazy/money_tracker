@@ -333,6 +333,9 @@ own tests and documentation, and none may ship a later step's behavior.
   named existing, re-propose, cancel, and unrelated input.
 - Auto-post eligibility policy calibrated on the evaluation set; all other
   inputs remain drafts.
+- A minimal local administration command for exercising implemented workflow
+  components by hand before a channel exists; no channel adapter, durable
+  worker, or owner-facing response.
 - Production prompt/model configuration promoted through the experiment
   decision log.
 
@@ -434,6 +437,15 @@ own tests and documentation, and none may ship a later step's behavior.
   decision carrying the `invalid_model_output` reason instead of failing the
   invocation. Instruction text and confidence bar are required arguments with
   no defaults, so the assembly cannot imply a production configuration.
+- `money-tracker-admin route` sends one message through the real compiled
+  router and prints only the decision it reached. It takes the trusted routing
+  context from flags rather than the database, so it needs no active profile
+  and the policy vetoes are reachable by hand. It requires an explicit
+  confidence bar, completes a deterministic route with no model involved, names
+  the missing service when the local endpoint is unreachable rather than
+  surfacing a transport traceback, and echoes no message content. It reports
+  routing only: extraction, category fit, and posting exist as contracts and
+  resolvers but are not yet wired to a workflow.
 - Workflow state is a versioned contract of JSON primitives and stable string
   references. Round-trip tests reconstruct the message, the trusted context,
   and every deterministic and model decision, and a real checkpoint written to

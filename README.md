@@ -33,6 +33,17 @@ through the implemented private archive boundary:
       --file /absolute/path/to/receipt.png \
       --source-reference local:manual-import
 
+Send one Italian message through the real root router and see the routing
+decision it reaches. A deterministic route needs no model; free text needs the
+local server running:
+
+    uv run --env-file .env money-tracker-admin route \
+      --text 'Ho speso 12 euro per i croccantini dei gatti' \
+      --minimum-confidence 0.8
+
+This reports routing only, and there is no bot yet: the Telegram channel and
+owner-facing replies arrive in Step 4.
+
 With Restic and matching PostgreSQL client tools installed and an external
 repository configured, create a verified encrypted backup of the authoritative
 data:

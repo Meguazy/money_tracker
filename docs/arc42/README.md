@@ -194,7 +194,7 @@ Money Tracker workstation
 | `runtime` | Assemble the compiled root-router graph and adapt the local endpoint to the structured-output port | LangGraph, LangChain, the persistent checkpointer, and the `workflows` contracts | No state of its own; checkpoint contents are owned by the state contract | Host worker process; holds no routing policy, so the framework cannot change how a decision is made |
 | `api.contracts` | Define strict, versioned finance request/response, mutation-header, and problem wire shapes | Pydantic and domain response values; no web framework | No state; stable JSON field semantics only | Shared by future FastAPI adapter; no endpoint, network listener, credentials, or private media fields |
 | `backup` | Create verified encrypted authoritative snapshots, report their freshness, and restore only into explicitly empty isolated targets | Restic and PostgreSQL client executables, psycopg identity/receipt queries, private archive and configuration paths | Snapshot contents and the versioned integrity manifest in the owner repository; no finance state of its own | Host CLI under an exclusive lock; absolute-path and owner-only input checks, recovery secret passed only by file path, failures name no argument or environment |
-| `administration` | Expose bounded local receipt storage/registration for development and bootstrap | Database URL, absolute archive setting, media and metadata services | No independent state; emits safe identifiers/facts only | Host CLI; active-profile preflight, no-follow bounded input, no private paths in JSON |
+| `administration` | Expose bounded local receipt storage/registration and one-shot routing for development and bootstrap | Database URL, absolute archive setting, media and metadata services, the compiled router and its local adapter | No independent state; emits safe identifiers/facts only | Host CLI; active-profile preflight for storage, no-follow bounded input, explicit routing context, no private paths or message content in JSON |
 | `persistence.finance` | Bootstrap profile/taxonomy, persist complete expense and budget aggregates, append balance-safe wallet movements, validate/store pending proposals, and register/transition receipt metadata transactionally | psycopg and narrow application repository contracts | Finance tables, allocations, budgets/overrides, wallet ledger, proposals, versioned receipt metadata, audit, and idempotency records | Dedicated application PostgreSQL; no receipt bytes or paths; optimistic versions protect mutable aggregates |
 | `media.local` | Decode, validate, atomically retain, and integrity-check private receipt originals | Receipt-media port, Pillow, private filesystem | Original bytes under sharded SHA-256 keys; no database state | Host library outside web roots; `0700` directories, `0600` files, no-follow verified reads; root wired explicitly by admin CLI, API/worker planned |
 | `evaluations` | Probe real model protocols, capture exact runtime metadata, score deterministically, optionally publish aggregates | OpenAI-compatible HTTP, local files, optional Langfuse SDK | Ignored local run artifacts; no domain authority | Host CLI; secrets, image bytes and paths are excluded |
@@ -297,6 +297,25 @@ API/worker entry point. Extraction and the product review workflow remain planne
    digest, refuse symlinks, reapply the byte limit, and verify content hash.
 5. The receipt-metadata service then registers safe facts in PostgreSQL; media
    bytes and paths never enter rows, checkpoints, or traces.
+
+### Current local routing command
+
+1. `money-tracker-admin route` builds one channel message from flags and the
+   current instant, and takes the trusted routing context from flags rather
+   than the database, so the command needs no active profile and reaches no
+   repository.
+2. It requires an explicit confidence bar, because no calibrated production
+   value is promoted, and rejects a bar outside the unit interval before
+   spending an inference call.
+3. A deterministic route completes with no model involved. Only free text
+   reaches the local endpoint, and an unreachable endpoint names the service to
+   start instead of surfacing a transport traceback. It is never converted into
+   a routing decision.
+4. Stdout contains sorted JSON with intent, deciding half, justification code,
+   confidence, and any correlated command or reference. The owner message is
+   not echoed, because a routing decision carries no message content.
+
+The command keeps no thread, writes nothing, and reports routing only.
 
 ### Current administrative receipt import
 

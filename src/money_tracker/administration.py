@@ -1,4 +1,10 @@
-"""Minimal local administration entry points for active Step 2 components."""
+"""Minimal local administration entry points for active development steps.
+
+These commands exist so an owner can exercise implemented components by hand
+before a channel or dashboard exists. They are development and bootstrap
+entry points, not the product surface, and each one is deliberately narrower
+than the workflow that will eventually drive the same component.
+"""
 
 from __future__ import annotations
 
@@ -8,7 +14,10 @@ import os
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import cast
 from uuid import UUID, uuid4
+
+from langchain_core.exceptions import ModelConnectionError
 
 from money_tracker.application import (
     ReceiptMediaError,
@@ -16,10 +25,20 @@ from money_tracker.application import (
 )
 from money_tracker.application.runtime import SystemClock, UUID4Generator
 from money_tracker.domain import ReceiptMetadata
+from money_tracker.domain.errors import DomainError
 from money_tracker.media import LocalReceiptMediaStore, ReceiptArchiveSettings
 from money_tracker.media.local import MAX_RECEIPT_BYTES
 from money_tracker.persistence.database import database_url_from_env
 from money_tracker.persistence.finance import PostgresFinanceRepository
+from money_tracker.runtime import LocalStructuredOutputModel, build_router_graph
+from money_tracker.workflows import (
+    CANDIDATE_ROUTER_INSTRUCTIONS,
+    ChannelMessage,
+    RouterState,
+    RoutingContext,
+    initial_router_state,
+    routing_decision_from_state,
+)
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -35,6 +54,42 @@ def _parser() -> argparse.ArgumentParser:
     receipt.add_argument("--file", required=True, type=Path)
     receipt.add_argument("--source-reference", required=True)
     receipt.add_argument("--original-filename")
+    route = subparsers.add_parser(
+        "route",
+        help=(
+            "send one message through the real root router and print only its "
+            "routing decision; extraction and posting are not implemented yet"
+        ),
+    )
+    route.add_argument("--text")
+    route.add_argument(
+        "--minimum-confidence",
+        required=True,
+        type=float,
+        help=(
+            "confidence bar to apply; required because no calibrated production "
+            "value is promoted"
+        ),
+    )
+    route.add_argument(
+        "--with-image",
+        action="store_true",
+        help="treat the message as carrying image media",
+    )
+    route.add_argument(
+        "--pending-review-id",
+        action="append",
+        type=UUID,
+        default=[],
+        metavar="UUID",
+        help="a category review awaiting the owner; repeat for several",
+    )
+    route.add_argument(
+        "--latest-movement-id",
+        type=UUID,
+        metavar="UUID",
+        help="the movement a correction or undo would target",
+    )
     return parser
 
 
@@ -112,6 +167,86 @@ def _receipt_store(args: argparse.Namespace) -> dict[str, object]:
     }
 
 
+def _route(args: argparse.Namespace) -> dict[str, object]:
+    """Route one message through the real router and return its decision.
+
+    The trusted routing context is supplied by flags rather than read from the
+    database, so the command exercises the router without requiring an active
+    profile. That also makes the policy vetoes reachable by hand: without a
+    pending review or a resolvable movement, a follow-up, correction, or undo
+    is clarified rather than accepted.
+
+    A deterministic route needs no inference call at all. Only free text
+    reaches the model, so a running local endpoint is required for that case
+    and for nothing else.
+
+    Args:
+        args: Parsed `route` arguments.
+
+    Returns:
+        Non-sensitive decision facts. The owner message is not echoed, because
+        a routing decision deliberately carries no message content.
+
+    Raises:
+        SystemExit: If the message carries nothing routable, the confidence bar
+            lies outside the unit interval, or the local endpoint is
+            unreachable. An unreachable endpoint is a normal operational state
+            for a development command, so it names the missing service rather
+            than surfacing a transport traceback. It is never turned into a
+            routing decision.
+    """
+
+    try:
+        message = ChannelMessage(
+            source_reference="local-admin:route",
+            received_at=datetime.now(UTC),
+            text=args.text,
+            has_image=args.with_image,
+        )
+    except DomainError as error:
+        raise SystemExit(f"nothing to route: {error}") from error
+    if not 0.0 <= args.minimum_confidence <= 1.0:
+        raise SystemExit("--minimum-confidence must lie between 0 and 1")
+
+    graph = build_router_graph(
+        model=LocalStructuredOutputModel(),
+        instructions=CANDIDATE_ROUTER_INSTRUCTIONS,
+        minimum_confidence=args.minimum_confidence,
+    )
+    initial = initial_router_state(
+        message,
+        context=RoutingContext(
+            pending_category_review_ids=tuple(args.pending_review_id),
+            latest_correctable_movement_id=args.latest_movement_id,
+        ),
+    )
+    try:
+        # The compiled graph returns its state as a plain mapping; the router's
+        # own state contract names the keys it may contain.
+        final = cast(RouterState, graph.invoke(initial))
+    except ModelConnectionError as error:
+        raise SystemExit(
+            "free text needs the local inference server; start it with "
+            "scripts/run_llama_server.sh (a deterministic route needs no model)"
+        ) from error
+    decision = routing_decision_from_state(final)
+    if decision is None:
+        raise SystemExit("router reached no decision")
+    return {
+        "command": decision.command.value if decision.command else None,
+        "confidence": decision.confidence,
+        "intent": decision.intent.value,
+        "pending_action_id": (
+            str(decision.pending_action_id) if decision.pending_action_id else None
+        ),
+        "reason": decision.reason.value,
+        "source": decision.source.value,
+        "target_movement_id": (
+            str(decision.target_movement_id) if decision.target_movement_id else None
+        ),
+    }
+
+
 def main(argv: Sequence[str] | None = None) -> None:
     """Run a local administration command and emit non-sensitive JSON.
 
@@ -122,6 +257,9 @@ def main(argv: Sequence[str] | None = None) -> None:
     args = _parser().parse_args(argv)
     if args.command == "receipt-store":
         print(json.dumps(_receipt_store(args), sort_keys=True))
+        return
+    if args.command == "route":
+        print(json.dumps(_route(args), sort_keys=True))
         return
     raise SystemExit(f"unsupported command: {args.command}")
 

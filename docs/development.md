@@ -75,6 +75,50 @@ The command refuses final input symlinks, directories, unsupported/oversized
 images, and unknown profiles. It prints only safe JSON metadata, not file paths
 or bytes. Retrying the same content returns the first database record.
 
+## Exercising the root router by hand
+
+There is no bot yet: the Telegram channel, the durable worker, and owner-facing
+replies are Step 4. Until then this command sends one message through the real
+compiled router and prints only the routing decision it reached.
+
+A deterministic route needs no model at all:
+
+    uv run --env-file .env money-tracker-admin route \
+      --with-image --minimum-confidence 0.8
+    uv run --env-file .env money-tracker-admin route \
+      --text '/status' --minimum-confidence 0.8
+
+Free text is classified by the local model, so start it first with
+`scripts/run_llama_server.sh`:
+
+    uv run --env-file .env money-tracker-admin route \
+      --text 'Ho speso 12 euro per i croccantini dei gatti' \
+      --minimum-confidence 0.8
+
+`--minimum-confidence` is required and has no default, because no calibrated
+routing bar is promoted; see [Decision Log](experiments/decision-log.md). Supply
+the trusted routing context explicitly to make a correlated route reachable
+without an active profile:
+
+    uv run --env-file .env money-tracker-admin route \
+      --text 'usa la categoria Animali' \
+      --minimum-confidence 0.8 \
+      --pending-review-id PENDING_ACTION_UUID
+
+    uv run --env-file .env money-tracker-admin route \
+      --text "annulla l'ultima spesa" \
+      --minimum-confidence 0.8 \
+      --latest-movement-id EXPENSE_UUID
+
+Without that context the same messages are clarified rather than accepted,
+which is the policy veto rather than a failure. The command reads no database,
+writes nothing, keeps no thread, and prints no message content: a routing
+decision carries none by contract.
+
+It reports routing only. Extraction, category fit, and posting a movement are
+implemented as contracts and resolvers but are not yet wired to a workflow, so
+this command cannot yet show a draft expense.
+
 ## Authoritative backup
 
 Point `MONEY_TRACKER_RESTIC_REPOSITORY` at the owner-selected external

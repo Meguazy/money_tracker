@@ -9,10 +9,12 @@ from pathlib import Path
 
 from money_tracker.evaluations.capabilities import run_capability_suite
 from money_tracker.evaluations.categorization import run_categorization_suite
+from money_tracker.evaluations.category_review import run_category_review_suite
 from money_tracker.evaluations.ingestion import run_ingestion_suite
 from money_tracker.evaluations.metadata import CapabilitySettings
 from money_tracker.evaluations.routing import run_routing_suite
 from money_tracker.evaluations.suites import SuiteReport
+from money_tracker.persistence.database import database_url_from_env
 
 
 def _repository_root() -> Path:
@@ -117,6 +119,22 @@ def _parser() -> argparse.ArgumentParser:
         type=Path,
         default=repository_root / "artifacts" / "evals",
     )
+    review = subparsers.add_parser(
+        "category-review",
+        help="score every owner category-review branch against real PostgreSQL",
+    )
+    review.add_argument(
+        "--dataset",
+        type=Path,
+        default=(
+            repository_root / "evals" / "datasets" / "category-review-it-v1.jsonl"
+        ),
+    )
+    review.add_argument(
+        "--output-root",
+        type=Path,
+        default=repository_root / "artifacts" / "evals",
+    )
     return parser
 
 
@@ -166,6 +184,17 @@ def main(argv: Sequence[str] | None = None) -> None:
                 dataset_path=args.dataset,
                 output_root=args.output_root,
                 repository_root=_repository_root(),
+            )
+        )
+        return
+    if args.suite == "category-review":
+        _print_and_exit(
+            run_category_review_suite(
+                CapabilitySettings.from_env(),
+                dataset_path=args.dataset,
+                output_root=args.output_root,
+                repository_root=_repository_root(),
+                database_url=database_url_from_env(test_database=True),
             )
         )
         return

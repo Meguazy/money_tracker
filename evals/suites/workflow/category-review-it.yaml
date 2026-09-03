@@ -1,0 +1,81 @@
+suite_schema_version: "1"
+suite: workflow/category-review-it
+version: "1.0.0"
+dataset: ../../datasets/category-review-it-v1.jsonl
+runner: money-tracker-eval category-review
+private_data: false
+unit_under_test: >-
+  The compiled owner category review over the real PostgreSQL repository,
+  checkpointer, and application service, driven through every decision branch
+  the product baseline requires. Postconditions are read back from storage, not
+  from the returned state.
+blocking_gates:
+  - name: approve_new_category_postcondition
+    comparison: at_least
+    threshold: 1.0
+  - name: use_best_existing_postcondition
+    comparison: at_least
+    threshold: 1.0
+  - name: named_existing_resolution
+    comparison: at_least
+    threshold: 1.0
+  - name: repropose_excludes_rejected
+    comparison: at_least
+    threshold: 1.0
+  - name: exhausted_transition_to_manual
+    comparison: at_least
+    threshold: 1.0
+  - name: cancel_mutates_nothing
+    comparison: at_least
+    threshold: 1.0
+  - name: unrelated_input_preserves_pending
+    comparison: at_least
+    threshold: 1.0
+  - name: duplicate_writes_under_replay
+    comparison: at_most
+    threshold: 0
+diagnostic_metrics:
+  - pause_payload_survives_restart
+  - scenario_agreement
+dataset_minimum: 30
+fixture:
+  database: money_tracker_test on 127.0.0.1:5433, reset once per run
+  model_port: scripted
+  taxonomy: seed taxonomy plus one aliased active node and one archived node
+publication:
+  local_artifacts: required
+  langfuse: optional
+  content: aggregate scores and case labels only
+promotion_effect: none
+notes: >-
+  Every gate here is an invariant rather than a quality trend, which is why the
+  matrix states them all at 100% or zero tolerance, and why the model port is
+  scripted. Substituting the real endpoint would let a model failure mask or
+  mimic a wiring failure, and the branches under test are the deterministic
+  ones. The purpose boundary is reached only where re-proposal already
+  delegates to it by design.
+
+  V1 permits exactly one active profile, enforced by a unique index, so every
+  scenario shares one owner. Node counts are therefore read as per-case deltas,
+  and each scenario is observed through the proposal identifier its own review
+  holds rather than through the profile's pending queue. Candidate names are
+  distinct across the dataset so that one scenario's approval cannot make a
+  later scenario's proposal a duplicate.
+
+  Unrelated work is a second complete review, opened and cancelled on its own
+  thread against the same owner while the first waits. Cancelling rather than
+  approving is deliberate: it creates no taxonomy node, so the interference
+  cannot disturb the node-count delta the calling scenario is measured on.
+
+  Two fixture nodes exist because the accepted seed taxonomy carries neither an
+  alias nor an archived node, and both branches are gated. The aliases are
+  written directly, because `bootstrap_profile` inserts seed categories without
+  their aliases; that has never mattered for the seed taxonomy, which declares
+  none, and the run configuration records that the suite wrote them itself.
+
+  Replaying a decision on a review that already ended is a no-op: the thread has
+  reached its end, so the graph has nothing to resume, returns the stored
+  terminal state, and writes nothing. The settling node's `already_settled`
+  guard is defence in depth for a thread still mid-flight and is owned by unit
+  tests. Five expectations were corrected to this after the first run; the gate
+  the matrix states, zero duplicate writes, passed unchanged before and after.

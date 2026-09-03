@@ -42,6 +42,21 @@ do not rewrite historical outcomes when a later experiment supersedes them.
   added below, because no experiment concluded and nothing was promoted; the
   change is recorded in the evidence of
   [Step 3](../roadmap/step-3-evaluated-text-workflows.md).
+- Owner category review: measured by `category-review-it-v1` (37 multi-turn
+  scenarios) against real PostgreSQL. Seven of eight blocking gates pass at
+  100%, including zero duplicate writes across every replayed branch, so the
+  human-in-the-loop workflow itself is sound. Two defects are open and neither
+  is a model problem:
+  - `run_settle` maps every `TaxonomyError` to `unknown_category`, but a
+    re-proposal refused by taxonomy governance is `invalid_candidate` under the
+    documented reason vocabulary. The owner would be asked which category they
+    meant when the candidate is simply unusable.
+  - The strict msgpack allowlist refuses to reconstruct `ReviewQuestion`,
+    `ReviewDecision`, and `CallbackAction`, so a review paused in one process
+    reads its question back as a plain mapping. No field is lost and nothing
+    consumes it across a restart yet, but the channel adapter will.
+  Neither is promoted or fixed here: both are recorded for the change that
+  addresses them, with the run that found them.
 - Auto-post threshold: disabled until categorization precision gates pass.
 - Routing confidence bar: none promoted. The implemented router requires the
   value as an explicit argument and has no default, so no runtime can adopt

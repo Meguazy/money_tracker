@@ -16,10 +16,9 @@ specialist workflow runs end to end, storing a draft through the existing
 application services or reporting the question it owes, and the extraction
 boundary no longer blocks that path. The owner category review pauses on a
 persistent interrupt and settles every J3 branch, and the read-only routes
-answer from scoped registries of domain read tools. Three of the four pinned
-suites are executable and measured against the screened local profile, and all
-three fail blocking gates. No channel wiring exists yet, and no confidence bar,
-prompt, or model is promoted.
+answer from scoped registries of domain read tools. All four pinned suites are
+executable and measured, and each fails at least one blocking gate. No channel
+wiring exists yet, and no confidence bar, prompt, or model is promoted.
 
 ## Prerequisites
 
@@ -42,12 +41,11 @@ own tests and documentation, and none may ship a later step's behavior.
 3. The pinned `routing/intent-it`, `ingestion/expense-it`,
    `categorization/purpose-it`, and `workflow/category-review-it` datasets and
    suites, then calibration of the routing confidence bar and the auto-post
-   eligibility policy on held-out labels. Three of the four suites are
-   executable, reach their promotion minimums, and have been measured; each
-   fails blocking gates, so none supports a promotion or a calibration
-   conclusion. `workflow/category-review-it` is open. This increment now blocks
-   usable end-to-end behaviour, not just promotion: see the measured findings
-   in the evidence below. An ad-hoc check against the screened
+   eligibility policy on held-out labels. All four suites are executable, reach
+   their promotion minimums, and have been measured; each fails at least one
+   blocking gate, so none supports a promotion or a calibration conclusion. This
+   increment now blocks usable end-to-end behaviour, not just promotion: see the
+   measured findings in the evidence below. An ad-hoc check against the screened
    Qwen3 14B profile routed the expense, refund, split-funding, query, budget,
    advice, and non-finance journeys as the product baseline expects, but routed
    `Vorrei caricare 100 euro di buoni pasto` to the expense route instead of
@@ -470,9 +468,62 @@ own tests and documentation, and none may ship a later step's behavior.
   output a capability worth screening rather than only a prompt worth revising.
   The harness was verified against the real endpoint before this was recorded:
   the instruction text does carry all 24 category names.
+- `workflow/category-review-it` v1.0.0 holds 37 authored multi-turn scenarios
+  against real PostgreSQL, above its 30-scenario minimum, covering all seven
+  branches the matrix gates plus five replayed decisions. It is the first suite
+  whose gates are invariants rather than quality trends, so its model port is
+  scripted: substituting the real endpoint could only let a model failure mask
+  or mimic the wiring failure the suite exists to find. Postconditions are read
+  back from storage rather than from returned state, because a graph reporting
+  an approval while writing nothing would satisfy a state-only check.
+- Seven of the eight blocking gates pass at 100%. Approve, best-existing,
+  named-existing including alias and accent resolution, the three-proposal cap
+  and its transition to manual resolution, cancel, and independent handling of
+  concurrent work all hold their postconditions exactly, and
+  `duplicate_writes_under_replay` counted zero across every replayed branch.
+- `repropose_excludes_rejected` fails at 0.714 on a real defect. `run_settle`
+  catches `TaxonomyError` once and maps every instance to
+  `unknown_category`, but that error has two distinct causes. From the reuse
+  branch it does mean the owner named a category that does not exist. From the
+  re-proposal branch it means the replacement candidate was refused by taxonomy
+  governance, either as a duplicate of an active node or as a name already
+  rejected in this review, which the reason vocabulary defines as
+  `invalid_candidate`. The channel would ask the owner which category they meant
+  when the correct response is that the candidate is unusable. The re-proposal
+  branch already returns `invalid_candidate` for its other refusals, so the
+  intent is clear and the outer handler simply catches too broadly.
+- A diagnostic records a second, latent defect. `pause_payload_survives_restart`
+  is 0.0 across four scenarios: the strict msgpack allowlist that forbids pickle
+  fallback also refuses to reconstruct `ReviewQuestion`, `ReviewDecision`, and
+  `CallbackAction`, so a review paused in one process reads its question back as
+  a plain mapping. No field is lost, and nothing consumes the question across a
+  restart yet, so this costs nothing today. It will cost the channel adapter
+  immediately, because a persistent checkpointer exists precisely so a review
+  can outlive the process that opened it. `_decision_from` already accepts either
+  shape on the resume side; the question side has no equivalent.
+- The fixture extends the seed taxonomy with one aliased node and one archived
+  node, because the accepted taxonomy declares neither and both branches are
+  gated. Writing the aliases surfaced a third observation: `bootstrap_profile`
+  inserts seed categories without their aliases. That is invisible today, since
+  the seed taxonomy has none, but a future taxonomy carrying an alias would lose
+  it silently at bootstrap.
+- Five replay expectations were corrected after the first run, and the reason
+  matters for how the correction should be read. Replaying a decision on a
+  review that already ended is a no-op: the thread has reached its end, so the
+  graph has nothing to resume, returns the stored terminal state, and writes
+  nothing. The original labels expected an `already_settled` clarification,
+  which is defence in depth for a thread still mid-flight rather than the
+  behaviour of a completed one. This was a misreading of a deterministic
+  contract that could have been established by reading it, not a threshold moved
+  to fit an outcome, and the gate the matrix states, zero duplicate writes,
+  passed unchanged before and after.
 - The purpose boundary is confirmed as Step 3's binding constraint. Routing
   fails three gates with most errors landing safely; categorization fails four
-  with a majority of cases producing an unusable judgment.
+  with a majority of cases producing an unusable judgment. The two suites that
+  measure model judgment fail broadly, while the two that measure deterministic
+  behaviour, extraction of what a message states and the review workflow's
+  postconditions, are close to exact. The remaining work in this step is a model
+  and boundary-shape problem, not a workflow problem.
 - Four routing dataset labels warrant owner review before the next run, and
   none was changed after seeing the outcome. `Mio fratello ha speso 50 euro` and `Quanto
   costa un iPhone?` were labelled clarification and routed to non-finance and

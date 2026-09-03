@@ -294,9 +294,10 @@ and a local command for exercising it by hand. The expense and refund
 specialist workflow runs end to end, storing a draft through the existing
 application services or reporting the question it owes, and the extraction
 boundary no longer blocks that path. The owner category review pauses on a
-persistent interrupt and settles every J3 branch. No read-only tool registry,
-channel wiring, or evaluation dataset exists yet, and no confidence bar,
-prompt, or model is promoted.
+persistent interrupt and settles every J3 branch, and the read-only routes
+answer from scoped registries of domain read tools. No channel wiring or
+evaluation dataset exists yet, and no confidence bar, prompt, or model is
+promoted.
 
 ### Prerequisites
 
@@ -309,15 +310,13 @@ step's gates and the experiment decision log.
 This order is a handoff aid, not new scope. Each increment must land with its
 own tests and documentation, and none may ship a later step's behavior.
 
-1. The read-only query and advice routes with scoped tool registries. The
-   movement workflow is implemented.
+1. The read-only query and advice routes with scoped tool registries.
+   Implemented; see the evidence below.
 2. Persistent human-in-the-loop category review over the existing pending
    proposal port, covering approve, best existing, named existing, re-propose,
    cancel, unrelated input, and the three-rejection transition, with side
-   effects placed after the interrupt and made idempotent for replay. The
-   decision half is implemented: every branch exists as an application service
-   settling one review atomically. What remains is the workflow that pauses for
-   the owner, correlates the reply, and resumes the thread.
+   effects placed after the interrupt and made idempotent for replay.
+   Implemented; see the evidence below.
 3. The pinned `routing/intent-it`, `ingestion/expense-it`,
    `categorization/purpose-it`, and `workflow/category-review-it` datasets and
    suites, then calibration of the routing confidence bar and the auto-post
@@ -343,7 +342,7 @@ own tests and documentation, and none may ship a later step's behavior.
   correction/undo, and clarification.
 - Versioned structured extraction and category-fit contracts with evidence.
 - Deterministic expense/refund mutation paths that call application services;
-  query/advice agents remain read-only.
+  query/advice agents remain read-only. Implemented.
 - Persistent human-in-the-loop category review covering approve, best existing,
   named existing, re-propose, cancel, and unrelated input.
 - Auto-post eligibility policy calibrated on the evaluation set; all other
@@ -566,6 +565,56 @@ own tests and documentation, and none may ship a later step's behavior.
   without extending the taxonomy, discard a cancelled draft, open a successor
   that carries the refused candidate, refuse a replayed decision, and list the
   open reviews routing correlates against.
+- The paused owner category review is a LangGraph two-node loop over the same
+  checkpointer. The asking node renders the question from the authoritative
+  stored proposal and pauses; the settling node applies the branch and decides
+  whether the review is over. Only reads precede the pause and every write
+  follows it, because LangGraph replays an interrupted node from its start: one
+  node holding both would replay its settlement the second time around the
+  loop, when the cached first interrupt returns immediately. Replay safety does
+  not rest on the topology alone, since settlement independently refuses a
+  review that is no longer pending.
+- A review decision that cannot be applied keeps the review open and pauses
+  again with a stable reason and no write: an unresolvable name, an empty reuse
+  shortlist, a capped loop, or a replacement the taxonomy refused. A
+  re-proposal re-invokes the purpose boundary with every refused candidate
+  excluded, and classifies the stored movement's own description rather than
+  the original message, so a checkpoint that may wait indefinitely holds no raw
+  owner text it does not need. Resume payloads are validated rather than
+  trusted. Unrelated input needed no branch: deterministic acceptance already
+  requires a category follow-up to correlate with exactly one pending review,
+  so the paused thread keeps waiting while the message is routed on its own.
+- Real PostgreSQL tests pause a review, reopen it on a separate connection with
+  its state still JSON round-trippable and its next node still the asking one,
+  resume it from that checkpoint into a created node and a posted reconciled
+  movement, discard a cancelled draft, and persist a re-proposal's successor
+  carrying the refused candidate.
+- The read-only query and advice routes are one bounded loop with a single
+  model decision. Each route owns a scoped registry of named tools, and the two
+  registries genuinely differ: the advice survey is unreachable from a question
+  and the single-budget lookup is unreachable from advice. No mutating,
+  deterministic, or inert route owns a registry at all. The offered vocabulary
+  is rendered from the registry rather than retyped, so a model is never
+  offered a tool acceptance would refuse, and the vocabulary contains no
+  generic query member.
+- Acceptance admits a request against the registry of the routed intent, taken
+  from trusted context rather than from the model, so a model cannot widen its
+  own scope by claiming a different route. Every figure then comes from the
+  domain read models over stored records: the model supplies a tool name, an
+  owner-named category, and at most a calendar month, and never an amount. The
+  reporting service depends on a port exposing only reads, so a mutation is
+  absent from the object graph those nodes reach rather than merely
+  disallowed. The tool-grounding and forbidden-tool gates are therefore
+  properties of the topology, though the pinned suites still own the selection
+  accuracy claim.
+- Absence is reported rather than smoothed: an unconfigured budget is stated as
+  missing, posted spend with no budget to compare against is named, and an
+  unresolvable category becomes a question instead of a zero. The advice survey
+  is ordered worst-position-first deterministically rather than by a model's
+  sense of severity.
+- Real PostgreSQL tests read a month bounded by the real occurrence column,
+  exclude an unposted draft, separate benefits from personal funds, read a
+  stored budget, order the survey, and name posted spend that has no budget.
 - `money-tracker-admin profile-init`, `profile-list`, and
   `funding-source-add` make the finance components reachable without
   hand-written Python. Until they existed, every command taking a profile

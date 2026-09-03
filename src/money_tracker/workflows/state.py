@@ -519,3 +519,128 @@ def initial_review_state(
         settled_category_id=None,
         clarification_reason=None,
     )
+
+
+class ReadOutcome(StrEnum):
+    """How one read-only question or advice run ended.
+
+    Attributes:
+        ANSWERED: A registered tool executed and produced figures.
+        CLARIFICATION: Nothing was read and one targeted question is owed.
+    """
+
+    ANSWERED = "answered"
+    CLARIFICATION = "clarification"
+
+
+class ReadReason(StrEnum):
+    """Why a read-only run could not produce an answer.
+
+    Attributes:
+        MODEL_OUTPUT_INVALID: The selection boundary never returned a valid
+            request within its retry budget.
+        TOOL_NOT_REGISTERED: The requested tool is outside the calling route's
+            registry.
+        UNKNOWN_CATEGORY: The named category matches no active name or alias.
+    """
+
+    MODEL_OUTPUT_INVALID = "invalid_model_output"
+    TOOL_NOT_REGISTERED = "tool_not_registered"
+    UNKNOWN_CATEGORY = "unknown_category"
+
+
+class ReadWorkflowState(TypedDict, total=False):
+    """Read-only question or advice state as it is checkpointed.
+
+    The same rule as the other workflow states applies: JSON primitives and
+    stable string references only. The figures are stored as their own compact
+    JSON so a resumed thread reports what it read rather than reading again,
+    and so a reviewer can see that every number came from a tool result.
+
+    Attributes:
+        state_version: Shape version this thread was created under.
+        profile_id: Trusted owner scope injected by the runtime.
+        source_reference: Stable reference to the durable inbound record.
+        received_at: ISO timestamp anchoring the month in progress.
+        text: Owner text the selection boundary interprets.
+        routed_intent: Whether the router selected the query or advice route.
+        tool_request_json: The selection boundary's answer, carried forward as
+            its own wire form.
+        executed_tool: The tool deterministic acceptance admitted and ran.
+        answer_json: Figures the tool produced, as JSON primitives.
+        outcome: How the run ended, once it has ended.
+        clarification_reason: Stable reason selecting the question to ask.
+    """
+
+    state_version: str
+    profile_id: str
+    source_reference: str
+    received_at: str
+    text: str
+    routed_intent: str
+    tool_request_json: str | None
+    executed_tool: str | None
+    answer_json: str | None
+    outcome: str | None
+    clarification_reason: str | None
+
+
+def initial_read_state(
+    message: ChannelMessage,
+    *,
+    profile_id: UUID,
+    routed_intent: WorkflowIntent,
+) -> ReadWorkflowState:
+    """Build the state one routed question or advice message starts from.
+
+    Args:
+        message: Normalized inbound work unit carrying owner text.
+        profile_id: Trusted owner scope.
+        routed_intent: The route the router selected.
+
+    Returns:
+        A complete initial state with no outcome yet.
+
+    Raises:
+        ValueError: If the route is not read-only, or the message carries no
+            text for the selection boundary to interpret.
+    """
+
+    if routed_intent not in {WorkflowIntent.QUERY, WorkflowIntent.ADVICE}:
+        raise ValueError("read workflow accepts only a query or advice route")
+    text = message.normalized_text
+    if not text:
+        raise ValueError("read workflow requires owner text")
+    return ReadWorkflowState(
+        state_version=WORKFLOW_STATE_VERSION,
+        profile_id=str(profile_id),
+        source_reference=message.source_reference,
+        received_at=message.received_at.isoformat(),
+        text=text,
+        routed_intent=routed_intent.value,
+        tool_request_json=None,
+        executed_tool=None,
+        answer_json=None,
+        outcome=None,
+        clarification_reason=None,
+    )
+
+
+def read_message_from_state(state: ReadWorkflowState) -> ChannelMessage:
+    """Reconstruct the inbound record a resumed read thread started from.
+
+    Args:
+        state: Checkpointed read workflow state.
+
+    Returns:
+        The normalized inbound message.
+
+    Raises:
+        KeyError: If the state omits a field the message requires.
+    """
+
+    return ChannelMessage(
+        source_reference=state["source_reference"],
+        received_at=datetime.fromisoformat(state["received_at"]),
+        text=state["text"],
+    )

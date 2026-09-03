@@ -886,6 +886,78 @@ class PostgresFinanceRepository:
             version=row[5],
         )
 
+    def get_posted_expenses(
+        self,
+        profile_id: UUID,
+        *,
+        period: YearMonth,
+    ) -> tuple[Expense, ...]:
+        """Load every posted movement whose occurrence falls in one month.
+
+        Only posted records are returned, because every read model the tools
+        expose reports posted spend. Filtering here rather than in the domain
+        keeps a month's answer from loading an owner's whole history.
+
+        Args:
+            profile_id: Trusted owner scope.
+            period: Rome calendar month to report.
+
+        Returns:
+            Reconstructed aggregates in a stable occurrence order.
+        """
+
+        start, end = period.bounds()
+        with connect(self._database_url) as connection:
+            rows = connection.execute(
+                "SELECT id FROM finance.expenses WHERE profile_id = %s "
+                "AND status = 'posted' AND occurred_at >= %s AND occurred_at < %s "
+                "ORDER BY occurred_at, id",
+                (profile_id, start, end),
+            ).fetchall()
+            return tuple(
+                self._load_expense(connection, profile_id, row[0]) for row in rows
+            )
+
+    def get_budgets(self, profile_id: UUID) -> tuple[MonthlyBudget, ...]:
+        """Load every configured category budget with its overrides.
+
+        Args:
+            profile_id: Trusted owner scope.
+
+        Returns:
+            Configured budgets in a stable category order.
+        """
+
+        with connect(self._database_url) as connection:
+            rows = connection.execute(
+                "SELECT id, profile_id, category_id, target_minor, currency, version "
+                "FROM finance.monthly_budgets WHERE profile_id = %s "
+                "ORDER BY category_id",
+                (profile_id,),
+            ).fetchall()
+            budgets: list[MonthlyBudget] = []
+            for row in rows:
+                override_rows = connection.execute(
+                    "SELECT year, month, target_minor, currency "
+                    "FROM finance.monthly_budget_overrides WHERE budget_id = %s "
+                    "ORDER BY year, month",
+                    (row[0],),
+                ).fetchall()
+                budgets.append(
+                    MonthlyBudget(
+                        id=row[0],
+                        profile_id=row[1],
+                        category_id=row[2],
+                        recurring_target=Money(row[3], row[4]),
+                        overrides=tuple(
+                            (YearMonth(item[0], item[1]), Money(item[2], item[3]))
+                            for item in override_rows
+                        ),
+                        version=row[5],
+                    )
+                )
+        return tuple(budgets)
+
     def save_budget(
         self,
         budget: MonthlyBudget,

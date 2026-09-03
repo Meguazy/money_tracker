@@ -2,10 +2,11 @@
 
 - Status: accepted
 - Implementation: checkpoint foundation, deterministic root routing, the typed
-  router and extraction model boundaries, deterministic occurrence-time, sign,
-  and both allocation dimensions, the expense and refund specialist graph, and
-  the persistent owner-approval interrupt implemented; the read-only query and
-  advice routes planned
+  router, extraction, category-fit, and tool-selection model boundaries,
+  deterministic occurrence-time, sign, and both allocation dimensions, the
+  expense and refund specialist graph, the persistent owner-approval interrupt,
+  and the scoped read-only query and advice routes implemented; promoted
+  prompts and threshold calibration planned
 - Date: 2026-09-01
 
 ## Context
@@ -133,8 +134,18 @@ replay its settlement the second time around the loop. Idempotency is not left
 to the topology either, because settlement independently refuses a review that
 is no longer pending.
 
-The read-only query and advice routes are not implemented, and the router is
-not wired to a channel or worker process.
+The read-only query and advice routes are implemented as one bounded loop with
+a single model decision. Each route owns a scoped registry of named tools whose
+offered vocabulary is rendered from the registry itself, so an offered tool is
+always an executable one. The vocabulary contains no generic query member, and
+deterministic acceptance admits a request against the registry of the routed
+intent taken from trusted context, so a model cannot widen its scope by naming
+a different route. Execution runs the domain read models over stored records:
+the model supplies a tool name, an owner-named category, and at most a calendar
+month, and never a figure. The reporting service depends on a port exposing
+only reads, so a mutation is absent from the object graph those nodes reach.
+
+The router is not wired to a channel or worker process.
 
 ## Consequences
 

@@ -23,6 +23,7 @@ from money_tracker.workflows.intents import (
     MODEL_ROUTABLE_INTENTS,
     WorkflowIntent,
 )
+from money_tracker.workflows.tools import ReadTool, registry_for
 
 CANDIDATE_ROUTER_INSTRUCTIONS_VERSION = "candidate-router-it-v1"
 """Identifier recorded by an evaluation run; not a promoted configuration."""
@@ -205,3 +206,67 @@ def render_active_categories(names: tuple[str, ...]) -> str:
         raise ValueError("category fit requires at least one active category")
     listed = "\n".join(f"- {name}" for name in names)
     return f"\nActive categories:\n{listed}\n"
+
+
+CANDIDATE_TOOL_SELECTION_INSTRUCTIONS_VERSION = "candidate-tool-selection-it-v1"
+"""Identifier recorded by an evaluation run; not a promoted configuration."""
+
+_TOOL_GUIDANCE: dict[ReadTool, str] = {
+    ReadTool.CATEGORY_SPENDING: "how much the owner spent on one category they "
+    "named, in one month",
+    ReadTool.BUDGET_STATUS: "the target, the spend, and what is left of one "
+    "named category's budget in one month",
+    ReadTool.FUNDING_CLASS_SPLIT: "a whole month's spending separated into own "
+    "money and benefits such as meal vouchers",
+    ReadTool.BUDGETS_AT_RISK: "every budget in one month, worst position "
+    "first, for questions about where spending is excessive",
+}
+
+
+def render_tool_vocabulary(intent: WorkflowIntent) -> str:
+    """Render the tools one route may call, for its instruction text.
+
+    Derived from the registry rather than retyped, so a model is never offered
+    a tool deterministic acceptance would refuse.
+
+    Args:
+        intent: Route whose registry is being offered.
+
+    Returns:
+        A newline-separated list to append to the instructions.
+
+    Raises:
+        DomainError: If the route owns no registry.
+    """
+
+    listed = "\n".join(
+        f"- {tool.value}: {_TOOL_GUIDANCE[tool]}"
+        for tool in sorted(registry_for(intent))
+    )
+    return f"\nAvailable tools:\n{listed}\n"
+
+
+CANDIDATE_TOOL_SELECTION_INSTRUCTIONS = """\
+You choose which read-only tool answers one question from the owner of a \
+personal finance assistant. The owner writes in Italian.
+
+Choose exactly one tool from the list supplied below. Never name a tool that \
+is not in that list, and never invent one.
+
+Rules:
+- Report no figure yourself. You choose the tool; the assistant computes every \
+amount from the owner's own stored records.
+- Copy the owner's own words for a category, for example `abbonamenti`, \
+`spesa alimentare`. Never translate a category into an identifier and never \
+invent one that was not mentioned.
+- Give a month only when the owner states one, as `YYYY-MM`. `Questo mese` \
+states no month: omit it and the assistant uses the month in progress.
+- The tools that report one category need that category named. The tools that \
+report a whole month must not name one.
+- Quote a short verbatim span of the owner message as evidence. Do not \
+paraphrase it and do not invent text that is not present.
+
+Never state an amount, a date, an account, or a budget target. You are only \
+choosing which question to compute.
+"""
+"""Unpromoted candidate instructions for the read-tool selection boundary."""

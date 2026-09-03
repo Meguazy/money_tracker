@@ -189,7 +189,7 @@ Money Tracker workstation
 | `observability` | Enable and flush optional Langfuse callbacks | Langfuse SDK and environment keys | Buffered telemetry until flush | Local Langfuse only |
 | `persistence` | Apply versioned migrations and bootstrap persistent LangGraph checkpoints | Alembic, psycopg, PostgreSQL checkpointer | Foundation schemas and workflow checkpoints | Host administration CLI; least-privilege loopback database role |
 | `domain` | Enforce exact money, expense/refund, dual-allocation, taxonomy, wallet, budget, receipt-metadata, and audit contracts | Pure Python value objects and policies; no framework or infrastructure import | No infrastructure state | Shared host-process library; deterministic validation of untrusted inputs |
-| `application` | Coordinate idempotent expense lifecycle and receipt registration/review, audited wallet/budget mutations, pending proposal submission, and owner category decisions through narrow ports | Finance, administration, proposal, review, and receipt-metadata repository ports plus clock and ID contracts | Command, concurrency, review-boundary, and audit semantics, not stored state | Shared by future CLI/API/worker; profile scope comes from trusted caller context; node creation is reachable only through an owner decision, and receipt deletion is not exposed |
+| `application` | Coordinate idempotent expense lifecycle and receipt registration/review, audited wallet/budget mutations, pending proposal submission, owner category decisions, and read-only reporting through narrow ports | Finance, administration, proposal, review, reporting, and receipt-metadata repository ports plus clock and ID contracts | Command, concurrency, review-boundary, and audit semantics, not stored state | Shared by future CLI/API/worker; profile scope comes from trusted caller context; node creation is reachable only through an owner decision, and receipt deletion is not exposed |
 | `workflows` | Own the bounded intent taxonomy, the normalized channel work unit, deterministic pre-routing, the strict versioned router and extraction model boundaries with their policy vetoes, and deterministic resolution of occurrence time, amount sign, and both reconciled allocation dimensions, draft assembly with its stable command key, and the strict-schema retry boundary behind a narrow model port | Pydantic, `zoneinfo`, and pure domain values; no LangGraph, model client, repository, or transport import | Routing destinations, authority classes, stable routing and resolution reason codes, and the product calendar; no persistent state | Shared by the planned worker; a model can select no deterministic route and supply no profile/timezone/authorization field, no resolved instant, no amount sign, and no funding-source identifier; reason codes carry no owner text |
 | `runtime` | Assemble the compiled root-router and movement graphs and adapt the local endpoint to the structured-output port | LangGraph, LangChain, the persistent checkpointer, and the `workflows` contracts | No state of its own; checkpoint contents are owned by the state contract | Host worker process; holds no routing policy, so the framework cannot change how a decision is made |
 | `api.contracts` | Define strict, versioned finance request/response, mutation-header, and problem wire shapes | Pydantic and domain response values; no web framework | No state; stable JSON field semantics only | Shared by future FastAPI adapter; no endpoint, network listener, credentials, or private media fields |
@@ -333,6 +333,39 @@ two-node loop over the persistent checkpointer.
 An unrelated message never reaches this graph: deterministic acceptance already
 requires a category follow-up to correlate with exactly one pending review, so
 the paused thread simply keeps waiting while the message is routed on its own.
+
+### Current read-only question and advice routes
+
+The bounded agent loop AD-006 permits, and its bound is the point: the model
+makes exactly one decision, and everything after it is deterministic.
+
+1. Each read-only route owns a scoped registry of named tools. The two
+   registries differ, so the advice survey is unreachable from a question and
+   the single-budget lookup is unreachable from advice. No mutating,
+   deterministic, or inert route owns a registry at all, so those routes have
+   no tool to draw.
+2. The offered vocabulary is rendered from the registry rather than retyped, so
+   a model is never offered a tool deterministic acceptance would refuse.
+3. The selection boundary is strict, versioned independently, and exposes no
+   profile, identifier, amount, funding source, or free-form query. There is
+   deliberately no generic SQL tool in the vocabulary at all.
+4. Deterministic acceptance admits the requested tool against the registry of
+   the *routed* intent, taken from trusted context rather than from the model,
+   so a model cannot widen its own scope by claiming a different route.
+5. The tool then executes against the domain read models over stored records.
+   A model supplies a tool name, a category the owner named, and at most a
+   calendar month; it supplies no figure, sees no figure, and can reach no node
+   that would let it claim one.
+6. Absence is reported rather than smoothed. An unconfigured budget is stated
+   as missing, posted spend with no budget to compare against is named, and an
+   unresolvable category becomes a question instead of a zero.
+7. The reporting service depends on a port that exposes only reads, so a
+   mutation is absent from the object graph these nodes can reach rather than
+   merely disallowed by convention.
+
+Ordering the advice survey worst-position-first is deterministic here rather
+than left to a model's sense of severity, which is what J8 requires when it
+says exceeded and at-risk budgets come first.
 
 ### Current receipt metadata registration and review state
 
@@ -940,8 +973,9 @@ environment file.
   authority, deterministic pre-routing, and the strict versioned router model
   boundary, the extraction and category-fit boundaries, deterministic
   dual-allocation resolution, the expense and refund specialist graph, and the
-  persistent owner category review interrupt implemented; the read-only query
-  and advice routes, promoted prompts, and threshold calibration planned.
+  persistent owner category review interrupt, and the scoped read-only query
+  and advice routes implemented; promoted prompts and threshold calibration
+  planned.
 - [AD-012: Evaluation-driven model and prompt promotion](decisions/AD-012-evaluation-driven-promotion.md):
   capability runner, artifact contract, and passing technical candidates
   implemented; product-role promotion remains experiment-gated.

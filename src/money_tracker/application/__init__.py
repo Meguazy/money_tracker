@@ -16,6 +16,7 @@ from money_tracker.application.ports import (
     FinanceRepository,
     IdGenerator,
     ReceiptMetadataRepository,
+    ReportingRepository,
 )
 from money_tracker.application.proposals import CategoryProposalService
 from money_tracker.application.receipt_media import (
@@ -23,6 +24,13 @@ from money_tracker.application.receipt_media import (
     StoredReceiptMedia,
 )
 from money_tracker.application.receipts import ReceiptMetadataService
+from money_tracker.application.reporting import (
+    BudgetsAtRisk,
+    CategoryBudget,
+    CategorySpending,
+    PeriodSplit,
+    ReportingService,
+)
 from money_tracker.application.review import (
     OWNER_REVIEW_PROVENANCE,
     CategoryReviewService,
@@ -45,6 +53,12 @@ __all__ = [
     "OptimisticConcurrencyError",
     "ReceiptMetadataRepository",
     "ReceiptMetadataService",
+    "ReportingRepository",
+    "ReportingService",
+    "BudgetsAtRisk",
+    "CategoryBudget",
+    "CategorySpending",
+    "PeriodSplit",
     "ReceiptMediaError",
     "ReceiptMediaStore",
     "StoredReceiptMedia",

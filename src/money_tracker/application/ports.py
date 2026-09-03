@@ -17,6 +17,7 @@ from money_tracker.domain import (
     ReceiptMetadata,
     Taxonomy,
     WalletEntry,
+    YearMonth,
 )
 
 
@@ -154,6 +155,36 @@ class CategoryReviewRepository(Protocol):
         successor_audit: AuditEvent,
     ) -> None:
         """Refuse one candidate and open its replacement atomically."""
+
+
+class ReportingRepository(Protocol):
+    """Read-only reads behind the query and advice routes.
+
+    Deliberately narrow and free of every mutation the finance ports expose, so
+    a reporting caller has no method by which to write. AD-006 gives the
+    bounded agent routes read-only domain tools, and this port is where that is
+    enforced by shape rather than by discipline.
+    """
+
+    def get_taxonomy(self, profile_id: UUID) -> Taxonomy:
+        """Return the profile's complete validated taxonomy."""
+
+    def get_funding_sources(self, profile_id: UUID) -> tuple[FundingSource, ...]:
+        """Return the profile's configured funding sources."""
+
+    def get_posted_expenses(
+        self,
+        profile_id: UUID,
+        *,
+        period: YearMonth,
+    ) -> tuple[Expense, ...]:
+        """Return every posted movement occurring in one calendar month."""
+
+    def get_budget(self, profile_id: UUID, category_id: UUID) -> MonthlyBudget | None:
+        """Return one category budget, or None when none is configured."""
+
+    def get_budgets(self, profile_id: UUID) -> tuple[MonthlyBudget, ...]:
+        """Return every configured category budget."""
 
 
 class ReceiptMetadataRepository(Protocol):

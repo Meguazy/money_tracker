@@ -49,9 +49,14 @@ own tests and documentation, and none may ship a later step's behavior.
    unmeasured would have left implemented behaviour outside the evaluation
    boundary. All six suites are executable and reach their promotion minimums.
    `workflow/category-review-it` passes every gate; the other five fail at
-   least one, so none supports a promotion or a calibration conclusion. This
-   increment blocks usable end-to-end behaviour, not just promotion: see the
-   measured findings in the evidence below. An ad-hoc check against the screened
+   least one, so none supports a promotion. The routing confidence bar has been
+   calibrated on a held-out split and no usable value exists, which is a
+   conclusion rather than an open item: the escalations the bar would have to
+   prevent come from a confident model, not an uncertain one. The auto-post
+   eligibility policy remains uncalibrated because categorization agreement is
+   0.124, so no eligible subset can be defined at all. This increment blocks
+   usable end-to-end behaviour, not just promotion: see the measured findings in
+   the evidence below. An ad-hoc check against the screened
    Qwen3 14B profile routed the expense, refund, split-funding, query, budget,
    advice, and non-finance journeys as the product baseline expects, but routed
    `Vorrei caricare 100 euro di buoni pasto` to the expense route instead of
@@ -608,6 +613,43 @@ own tests and documentation, and none may ship a later step's behavior.
   the field is optional, the instructions say to omit it, and the model fills it
   anyway. Reliable omission of an optional field is therefore a capability to
   screen in Step 1 alongside union output, not a prompt to revise in Step 3.
+- The routing confidence bar has been calibrated on a held-out split, and the
+  answer is that no usable bar exists. The bar is applied deterministically
+  after the model answers, so one pass over the 201 cases recorded each
+  message's requested intent and reported confidence, and all 21 candidate bars
+  were then evaluated offline. Sweeping by re-running would have cost one pass
+  per candidate and confounded the bar's effect with run-to-run variation. The
+  split is a hash of each case identifier, so it is stable across runs,
+  independent of dataset order, and cannot be shifted by rerunning until a
+  convenient split appears; the rule was fixed in code before any score was
+  seen, and the holdout was scored once.
+- The sweep is flat where it matters. Every bar from 0.00 to 0.80 produces
+  identical scores: three read-only inputs escalated to a write, macro-F1
+  0.9405, and 18% of messages clarified. Only 8 distinct confidence values
+  appear across 201 cases. The first bar that reaches the zero-tolerance safety
+  gate is 1.00, which clarifies 95% of messages and collapses macro-F1 to
+  0.2256. The holdout agrees independently: no escalation, but a 0.9294
+  clarification rate and macro-F1 0.227.
+- The conclusion is about the router, not the threshold. The escalations that
+  survive every bar below 0.95 are cases where the model is confident and wrong
+  rather than uncertain and wrong, so a confidence bar cannot reach them. It can
+  only stop the assistant from answering at all. This turns the earlier
+  qualitative note about coarse and nearly constant self-report into a
+  measurement, and it means the routing gap needs the missing concept of money
+  arriving, not a calibrated number.
+- Two runs of the calibration agree on every structural feature and differ only
+  in the third decimal of macro-F1 at two bars, so the flatness is a property of
+  the model's self-report rather than of one sample.
+- Reading the calibration report needs one caution, stated in the report itself.
+  Its single blocking metric asks only whether an admissible bar exists, and one
+  does, so the run reports its gates as passed while the bar it selected is
+  unusable. Admissibility is not usefulness. The selection rule was left exactly
+  as pre-registered rather than widened to exclude the degenerate answer,
+  because moving a rule after seeing its outcome is the tuning the experiment
+  process forbids, and because the degenerate answer is the finding. The rule's
+  claim that macro-F1 broke a tie was removed as unreachable: candidate bars are
+  distinct, so two admissible bars can never be equally small, and the code
+  claimed a discrimination it never performed.
 - Across all six suites the split is consistent. Everything deterministic is
   correct or nearly so: the review workflow passes every gate, extraction is
   exact on amounts, dates, splits and polarity, tool authorization never leaked,

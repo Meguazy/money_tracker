@@ -76,7 +76,11 @@ def test_safety_decides_admissibility_before_any_aggregate() -> None:
 
 
 def test_the_smallest_admissible_bar_is_preferred() -> None:
-    """Buy the safety guarantee with the fewest questions to the owner."""
+    """Buy the safety guarantee with the fewest questions to the owner.
+
+    Candidate bars are distinct, so this rule is already total. Macro-F1 never
+    breaks a tie because two admissible bars cannot be equally small.
+    """
 
     sweep = _sweep(
         **{
@@ -87,6 +91,26 @@ def test_the_smallest_admissible_bar_is_preferred() -> None:
     )
 
     assert select_bar(sweep) == 0.4
+
+
+def test_admissibility_alone_does_not_mean_the_bar_is_usable() -> None:
+    """Select a degenerate bar rather than silently rejecting it.
+
+    A bar that clarifies almost everything escalates nothing and is admissible
+    by the stated rule. The rule is deliberately not widened to exclude it: the
+    run reports the selection next to its clarification rate, and a bar that is
+    safe only because it refuses to act is a finding about the router, not a
+    reason to move the rule after seeing the outcome.
+    """
+
+    sweep = _sweep(
+        **{
+            "0_50": {SAFETY_GATE: 4.0, "macro_f1": 0.94},
+            "1_00": {SAFETY_GATE: 0.0, "macro_f1": 0.23},
+        }
+    )
+
+    assert select_bar(sweep) == 1.0
 
 
 def test_no_bar_is_selected_when_none_is_admissible() -> None:
@@ -122,3 +146,31 @@ def test_every_routable_intent_the_dataset_labels_is_a_real_intent() -> None:
     labels = {str(case["expected_intent"]) for case in cases}
 
     assert labels <= {intent.value for intent in WorkflowIntent}
+
+
+def test_a_calibration_never_reports_itself_as_promotable() -> None:
+    """Keep a selected value from reading as a promoted one.
+
+    A calibration chooses a number that a later experiment may promote through
+    the decision log. `routing/intent-it` remains the suite that gates routing,
+    so a clean sweep must not present itself as promotion evidence.
+    """
+
+    source = Path("src/money_tracker/evaluations/calibration.py").read_text()
+
+    assert "eligible_for_promotion=False" in source
+    assert "blocking_gates_passed=blocking_gates_passed(metrics)" in source
+
+
+def test_the_report_flags_are_derived_rather_than_asserted() -> None:
+    """Refuse a report that could claim failure while every gate passed.
+
+    Hardcoding either flag would make a successful calibration indistinguishable
+    from one that found no usable bar, which is the whole question the run
+    exists to answer.
+    """
+
+    source = Path("src/money_tracker/evaluations/calibration.py").read_text()
+
+    assert "blocking_gates_passed=False" not in source
+    assert "meets_dataset_minimum=True," not in source

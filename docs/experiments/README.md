@@ -77,6 +77,21 @@ deterministic and a real endpoint could only let a model failure mask a wiring
 failure. The tool and advice suites do reach the real endpoint, because what
 they measure is a model judgment.
 
+Calibrate the routing confidence bar on a held-out split with:
+
+    uv run --env-file .env money-tracker-eval calibrate-routing
+
+The bar is applied deterministically after the model has answered, so this makes
+one pass over the dataset, records each message's requested intent and reported
+confidence, and then evaluates every candidate bar offline. Sweeping by
+re-running the model would cost one full pass per candidate and would confound
+the bar's effect with run-to-run variation. The split is derived from a hash of
+each case identifier, so it is stable across runs, independent of dataset order,
+and cannot be shifted by rerunning; the selection rule is fixed in code before
+any score is seen, and the holdout is scored once at the chosen bar. A
+calibration promotes nothing on its own: `routing/intent-it` remains the suite
+that gates routing.
+
 The confidence bar is required and has no default, because none is promoted and
 a routing score is meaningless without the bar that produced it. The bar, the
 dataset content hash, and the instruction-text hash are all recorded in the run
@@ -135,6 +150,11 @@ identifiers, Telegram IDs, tokens, or Langfuse exports.
   retry, dead letter, replay, pending-action correlation, and exactly-once
   finance postconditions.
 - `workflows/e2e-it`: representative complete Telegram and dashboard journeys.
+- `routing/confidence-bar-calibration`: a sweep rather than a gate. It selects a
+  confidence bar on a held-out split and promotes nothing; `routing/intent-it`
+  remains the suite that gates routing. Executed; no usable bar exists, because
+  every bar below 0.95 scores identically and the first one meeting the safety
+  gate clarifies 95% of messages.
 
 ## Dataset policy
 

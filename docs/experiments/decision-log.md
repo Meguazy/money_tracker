@@ -88,15 +88,25 @@ do not rewrite historical outcomes when a later experiment supersedes them.
   omission of an optional field joins union output as a capability to screen
   before a candidate is considered for a product role.
 - Auto-post threshold: disabled until categorization precision gates pass.
-- Routing confidence bar: none promoted. The implemented router requires the
-  value as an explicit argument and has no default, so no runtime can adopt
-  one before calibration on the pinned `routing/intent-it` dataset is
-  recorded here. `routing-intent-it-v1.1` (201 cases) reaches the minimum and
-  has been measured at a 0.5 bar, but fails three blocking gates, so it
-  supports no promotion and no calibration conclusion. Its decisive failure is
-  a safety one: 10 of 70 read-only inputs reached a financial write, all of
-  them incoming money the router has no concept of. No question, advice
-  request, or greeting was ever escalated to a write.
+- Routing confidence bar: none promoted, and calibration has now established
+  that none should be. The implemented router requires the value as an explicit
+  argument and has no default. `routing-intent-it-v1.1` (201 cases) reaches the
+  minimum and fails three blocking gates at a 0.5 bar; its decisive failure is a
+  safety one, with 10 of 70 read-only inputs reaching a financial write, all of
+  them incoming money the router has no concept of. No question, advice request,
+  or greeting was ever escalated.
+  A held-out calibration over all 21 candidate bars now explains why no
+  threshold fixes that. Bars from 0.00 to 0.80 score identically, only 8
+  distinct confidence values occur across the dataset, and the first bar meeting
+  the zero-tolerance safety gate is 1.00, which clarifies 95% of messages and
+  drops macro-F1 to 0.226. The holdout agrees: no escalation, a 0.9294
+  clarification rate, macro-F1 0.227. The escalations are produced by a
+  confident model rather than an uncertain one, so the bar cannot reach them and
+  the routing gap needs the missing concept, not a calibrated number.
+  The calibration report's one blocking metric asks only whether an admissible
+  bar exists, so it reports its gates as passed while the selected bar is
+  unusable. Admissibility is not usefulness, and the rule was left as
+  pre-registered rather than widened after the outcome was known.
 - Receipt pipeline: no pipeline selected; receipt extraction remains planned.
 - Langfuse: optional local integration; the Step 1 capability runner emits
   deterministic local reports and can publish only redacted aggregate scores.

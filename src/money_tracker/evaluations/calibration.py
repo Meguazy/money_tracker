@@ -47,6 +47,7 @@ from money_tracker.evaluations.metadata import (
     collect_source_metadata,
 )
 from money_tracker.evaluations.routing import (
+    DATASET_MINIMUM,
     READ_ONLY_INTENTS,
     _context,
     _macro_f1,
@@ -57,6 +58,7 @@ from money_tracker.evaluations.suites import (
     CaseStatus,
     MetricScore,
     SuiteReport,
+    blocking_gates_passed,
     dataset_metadata,
     load_cases,
     model_metadata,
@@ -205,7 +207,14 @@ def select_bar(sweep: Mapping[float, Mapping[str, float]]) -> float | None:
     Safety first: a bar is admissible only when it escalates no read-only or
     non-finance message to a financial write. Among admissible bars the smallest
     is preferred, because a higher bar buys the same guarantee by asking the
-    owner more questions. Macro-F1 breaks a tie.
+    owner more questions, and candidate bars are distinct so that rule is
+    already total. An earlier version claimed macro-F1 broke a tie, which was
+    unreachable: two admissible bars can never be equally small.
+
+    Admissibility is not usefulness, and this rule deliberately does not judge
+    the latter. A bar that clarifies nearly every message escalates nothing and
+    is therefore admissible while being useless, so the selected bar must always
+    be read next to the clarification rate reported beside it.
 
     Args:
         sweep: Scores for every candidate bar.
@@ -217,9 +226,7 @@ def select_bar(sweep: Mapping[float, Mapping[str, float]]) -> float | None:
     admissible = [bar for bar, scores in sweep.items() if scores[SAFETY_GATE] == 0.0]
     if not admissible:
         return None
-    best = min(admissible)
-    tied = [bar for bar in admissible if bar == best]
-    return max(tied, key=lambda bar: sweep[bar]["macro_f1"])
+    return min(admissible)
 
 
 def run_calibration(
@@ -287,6 +294,7 @@ def run_calibration(
         )
     )
 
+    metrics = _metrics(sweep, holdout, selected, observations)
     report = SuiteReport(
         run_id=new_run_id("CAL"),
         suite=SUITE,
@@ -303,8 +311,9 @@ def run_calibration(
             "holdout_cases": len(by_split["holdout"]),
             "candidate_bars": list(CANDIDATE_BARS),
             "selection_rule": (
-                "smallest bar escalating no read-only input to a write, "
-                "macro_f1 breaking a tie"
+                "smallest bar escalating no read-only input to a write; "
+                "admissibility is not usefulness, so read the selected bar "
+                "next to its clarification rate"
             ),
             "selected_bar": selected,
             "sweep": {
@@ -322,10 +331,14 @@ def run_calibration(
                 ),
             ),
         },
-        metrics=_metrics(sweep, holdout, selected, observations),
+        metrics=metrics,
         cases=results,
-        blocking_gates_passed=False,
-        meets_dataset_minimum=True,
+        blocking_gates_passed=blocking_gates_passed(metrics),
+        meets_dataset_minimum=dataset.item_count >= DATASET_MINIMUM,
+        # A calibration never promotes anything by itself. It selects a value
+        # that a later experiment may promote through the decision log, and
+        # `routing/intent-it` remains the suite that gates routing, so this
+        # stays false even when every gate here passes.
         eligible_for_promotion=False,
         local_artifact_path="",
     )

@@ -18,14 +18,16 @@ do not rewrite historical outcomes when a later experiment supersedes them.
     safe, because deterministic resolution refuses words matching no configured
     source, but it costs a question the documented default should have
     answered. Gap for `ingestion/expense-it`.
-  - `candidate-category-fit-it-v1` prefers a new proposal over an adequate
-    existing category, sometimes proposing a name the taxonomy already has, and
-    names a non-root parent. Deterministic acceptance refuses both. On the V1
-    split-funding acceptance example it reproducibly proposes a category named
-    for the payment method, contradicting its own instruction text and the
-    purpose/funding separation in AD-007; only the non-root parent veto stopped
-    it. Gap for `categorization/purpose-it`, which must measure the dimension
-    confusion directly.
+  - `candidate-category-fit-it-v1` is now measured by
+    `categorization-purpose-it-v1` (153 cases) and fails four blocking gates.
+    It proposes a new category on 131 of 141 cases where an adequate node
+    exists, duplicates an existing name on 10% of proposals, and twice proposes
+    a category named for a payment method against a zero-tolerance gate. A
+    diagnostic shows that in half of all proposals the model also named the
+    correct existing category, so the dominant failure is discriminator
+    selection on the flat schema rather than missing knowledge. Union output is
+    consequently a capability worth screening, not only a prompt worth
+    revising.
   The earlier over-declaration gap in `candidate-extraction-it-v1` is closed.
   It was a boundary-design defect rather than a prompt-tuning problem: the
   schema let the model judge its own uncertainty, which the deterministic side

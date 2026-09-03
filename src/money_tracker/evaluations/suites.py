@@ -35,6 +35,10 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
+from money_tracker.evaluations.metadata import (
+    CapabilitySettings,
+    collect_model_metadata,
+)
 from money_tracker.evaluations.models import (
     DatasetMetadata,
     EnvironmentMetadata,
@@ -165,6 +169,40 @@ class SuiteReport(BaseModel):
     meets_dataset_minimum: bool
     eligible_for_promotion: bool = False
     local_artifact_path: str
+
+
+def model_metadata(settings: CapabilitySettings) -> ModelMetadata:
+    """Collect exact model identity, tolerating an unreachable endpoint.
+
+    A suite always emits a report, including when the local server is down, so
+    a missing endpoint becomes incomplete metadata rather than a lost run. The
+    `metadata_complete` flag is what a promotion decision reads.
+
+    Args:
+        settings: Local endpoint configuration.
+
+    Returns:
+        Model identity, marked incomplete when the endpoint could not be read.
+    """
+
+    try:
+        return collect_model_metadata(settings, None, vision_required=False)
+    except Exception:  # noqa: BLE001 - metadata gaps are reported, not raised
+        return ModelMetadata(
+            endpoint_kind="unknown",
+            model_alias=settings.model_alias,
+            gguf_filename=None,
+            gguf_sha256=None,
+            quantization=None,
+            vision_projector_sha256=None,
+            chat_template_sha256=None,
+            chat_template_capabilities=[],
+            modalities=[],
+            context_size=None,
+            server_version=None,
+            server_binary_sha256=None,
+            metadata_complete=False,
+        )
 
 
 def load_cases(path: Path) -> tuple[list[dict[str, JsonValue]], str]:
@@ -343,6 +381,7 @@ __all__ = [
     "blocking_gates_passed",
     "dataset_metadata",
     "load_cases",
+    "model_metadata",
     "new_run_id",
     "rate",
     "utc_now",

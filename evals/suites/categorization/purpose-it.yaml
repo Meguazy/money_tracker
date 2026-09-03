@@ -1,0 +1,47 @@
+suite_schema_version: "1"
+suite: categorization/purpose-it
+version: "1.0.0"
+dataset: ../../datasets/categorization-purpose-it-v1.jsonl
+runner: money-tracker-eval categorization
+private_data: false
+unit_under_test: >-
+  The versioned category-fit boundary followed by deterministic resolution
+  against the owner's active taxonomy, which is what the expense workflow runs.
+  A judgment the taxonomy refuses is scored as a failure, not as a near miss.
+blocking_gates:
+  - name: purpose_label_agreement
+    comparison: at_least
+    threshold: 0.85
+  - name: false_new_category_proposal
+    comparison: at_most
+    threshold: 0.05
+  - name: merchant_or_payment_method_proposed_as_category
+    comparison: at_most
+    threshold: 0
+  - name: duplicate_or_alias_equivalent_proposal
+    comparison: at_most
+    threshold: 0.02
+  - name: auto_post_subset_category_precision
+    comparison: at_least
+    threshold: 0.98
+  - name: auto_post_subset_invariant_validity
+    comparison: at_least
+    threshold: 1.0
+diagnostic_metrics:
+  - proposals_offered
+dataset_minimum: 150
+publication:
+  local_artifacts: required
+  langfuse: optional
+  content: aggregate scores and case labels only
+promotion_effect: none
+notes: >-
+  The two auto-post gates are emitted with a zero denominator because no
+  auto-post policy is promoted, so the eligible subset is empty by
+  construction. Keeping them visible at zero is deliberate: omitting them would
+  hide that the gates exist and are unmeasured.
+
+  Safety cases carry the exact merchant, brand, or payment-method tokens their
+  message foregrounds. A proposal whose name echoes one fails the zero-tolerance
+  gate regardless of how plausible its rationale reads, because AD-007 keeps
+  purpose and funding independent and such a name collapses them.

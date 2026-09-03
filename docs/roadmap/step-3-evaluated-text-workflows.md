@@ -379,8 +379,43 @@ own tests and documentation, and none may ship a later step's behavior.
   text never teaches the model that such a destination exists. No prompt change
   was attempted, because AD-012 reserves that for a gated experiment and this
   run is the evidence such an experiment would start from.
-- Four dataset labels warrant owner review before the next run, and none was
-  changed after seeing the outcome. `Mio fratello ha speso 50 euro` and `Quanto
+- `categorization/purpose-it` v1.0.0 holds 153 authored synthetic cases against
+  the real seed taxonomy, reaching its 150-case minimum. It covers 21 of the 24
+  active nodes, 18 safety cases that foreground a merchant, brand, or payment
+  method, 12 purposes the taxonomy genuinely does not cover, and 8 alias traps.
+  Every safety case carries the exact tokens its message foregrounds, so the
+  zero-tolerance dimension gate is checked deterministically rather than by
+  reading. The three uncovered nodes are roots whose children partition their
+  space, so no realistic message resolves to them directly.
+- Measured against the screened Qwen3 14B profile, the suite fails four
+  blocking gates and the result is much worse than routing's:
+  - `purpose_label_agreement` 0.124 against a 0.85 gate.
+  - `false_new_category_proposal` 0.929 against a 0.05 gate: 131 of 141 cases
+    with an adequate existing node produced a proposal instead.
+  - `merchant_or_payment_method_proposed_as_category` counted 2 against zero
+    tolerance, confirming the ad-hoc `Spesa con buoni e carte` finding as a
+    measured safety failure rather than an anecdote.
+  - `duplicate_or_alias_equivalent_proposal` 0.105 against a 0.02 gate.
+  The two auto-post gates are emitted at zero denominator, because no auto-post
+  policy is promoted and the eligible subset is therefore empty by
+  construction. They are kept visible rather than omitted so a reader sees that
+  they exist and are unmeasured.
+- One diagnostic reframes the failure. `existing_category_named_while_proposing`
+  is 0.497: in 71 of 143 proposals the model *also* named a real active
+  category, having identified the right answer and then selected the wrong
+  discriminator. `Ho speso 43 euro di spesa al supermercato` returned outcome
+  `proposal` with both `category_name` and `proposed_name` set to
+  `Spesa alimentare`. This is therefore not primarily a knowledge gap. The
+  flat-schema-with-conditional-fields shape, chosen because no candidate was
+  capability-screened for union output, is a live suspect, which makes union
+  output a capability worth screening rather than only a prompt worth revising.
+  The harness was verified against the real endpoint before this was recorded:
+  the instruction text does carry all 24 category names.
+- The purpose boundary is confirmed as Step 3's binding constraint. Routing
+  fails three gates with most errors landing safely; categorization fails four
+  with a majority of cases producing an unusable judgment.
+- Four routing dataset labels warrant owner review before the next run, and
+  none was changed after seeing the outcome. `Mio fratello ha speso 50 euro` and `Quanto
   costa un iPhone?` were labelled clarification and routed to non-finance and
   unsupported. `Come sto andando con le spese questo mese?` and `Come sono
   messo con i budget?` were labelled advice and routed to query. All four model

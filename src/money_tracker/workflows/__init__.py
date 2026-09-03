@@ -182,6 +182,7 @@ __all__ = [
     "expense_command_key",
     "expense_message_from_state",
     "accept_tool_request",
+    "build_category_proposal",
     "initial_expense_state",
     "initial_read_state",
     "initial_review_state",

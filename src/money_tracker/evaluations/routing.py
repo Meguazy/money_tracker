@@ -31,10 +31,8 @@ from pydantic import JsonValue
 from money_tracker.evaluations.metadata import (
     CapabilitySettings,
     collect_environment_metadata,
-    collect_model_metadata,
     collect_source_metadata,
 )
-from money_tracker.evaluations.models import ModelMetadata
 from money_tracker.evaluations.suites import (
     CaseResult,
     CaseStatus,
@@ -43,6 +41,7 @@ from money_tracker.evaluations.suites import (
     blocking_gates_passed,
     dataset_metadata,
     load_cases,
+    model_metadata,
     new_run_id,
     rate,
     utc_now,
@@ -348,7 +347,7 @@ def run_routing_suite(
         completed_at=utc_now(),
         source=collect_source_metadata(repository_root),
         dataset=dataset,
-        model=_model_metadata(settings),
+        model=model_metadata(settings),
         environment=collect_environment_metadata(),
         configuration={
             "minimum_confidence": minimum_confidence,
@@ -401,29 +400,6 @@ def _execute(graph: object, case: Mapping[str, JsonValue], index: int) -> CaseRe
         latency_ms=round((time.monotonic() - started) * 1000),
         detail=decision.reason.value,
     )
-
-
-def _model_metadata(settings: CapabilitySettings) -> ModelMetadata:
-    """Collect exact model identity, tolerating an unreachable endpoint."""
-
-    try:
-        return collect_model_metadata(settings, None, vision_required=False)
-    except Exception:  # noqa: BLE001 - metadata gaps are reported, not raised
-        return ModelMetadata(
-            endpoint_kind="unknown",
-            model_alias=settings.model_alias,
-            gguf_filename=None,
-            gguf_sha256=None,
-            quantization=None,
-            vision_projector_sha256=None,
-            chat_template_sha256=None,
-            chat_template_capabilities=[],
-            modalities=[],
-            context_size=None,
-            server_version=None,
-            server_binary_sha256=None,
-            metadata_complete=False,
-        )
 
 
 def _sha256_text(value: str) -> str:

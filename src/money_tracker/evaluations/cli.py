@@ -8,8 +8,10 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from money_tracker.evaluations.capabilities import run_capability_suite
+from money_tracker.evaluations.categorization import run_categorization_suite
 from money_tracker.evaluations.metadata import CapabilitySettings
 from money_tracker.evaluations.routing import run_routing_suite
+from money_tracker.evaluations.suites import SuiteReport
 
 
 def _repository_root() -> Path:
@@ -79,7 +81,54 @@ def _parser() -> argparse.ArgumentParser:
         required=True,
         help="confidence bar under test; no value is promoted, so it has no default",
     )
+    categorization = subparsers.add_parser(
+        "categorization",
+        help="score Italian purpose categorization through the real boundary",
+    )
+    categorization.add_argument(
+        "--dataset",
+        type=Path,
+        default=(
+            repository_root
+            / "evals"
+            / "datasets"
+            / "categorization-purpose-it-v1.jsonl"
+        ),
+    )
+    categorization.add_argument(
+        "--output-root",
+        type=Path,
+        default=repository_root / "artifacts" / "evals",
+    )
     return parser
+
+
+def _print_and_exit(report: SuiteReport) -> None:
+    """Print one suite summary and fail the process on a blocking gate.
+
+    Args:
+        report: Completed suite report.
+
+    Raises:
+        SystemExit: With status one when a blocking gate failed.
+    """
+
+    print(
+        json.dumps(
+            {
+                "run_id": report.run_id,
+                "suite": report.suite,
+                "blocking_gates_passed": report.blocking_gates_passed,
+                "meets_dataset_minimum": report.meets_dataset_minimum,
+                "eligible_for_promotion": report.eligible_for_promotion,
+                "metrics": {m.name: m.value for m in report.metrics},
+                "artifact_directory": report.local_artifact_path,
+            },
+            sort_keys=True,
+        )
+    )
+    if not report.blocking_gates_passed:
+        raise SystemExit(1)
 
 
 def main(argv: Sequence[str] | None = None) -> None:
@@ -93,6 +142,16 @@ def main(argv: Sequence[str] | None = None) -> None:
     """
 
     args = _parser().parse_args(argv)
+    if args.suite == "categorization":
+        _print_and_exit(
+            run_categorization_suite(
+                CapabilitySettings.from_env(),
+                dataset_path=args.dataset,
+                output_root=args.output_root,
+                repository_root=_repository_root(),
+            )
+        )
+        return
     if args.suite == "routing":
         report = run_routing_suite(
             CapabilitySettings.from_env(),

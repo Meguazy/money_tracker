@@ -52,6 +52,10 @@ Run the Italian intent-routing suite against the real compiled router with:
 
     uv run --env-file .env money-tracker-eval routing --minimum-confidence 0.5
 
+Run the Italian purpose-categorization suite against the real boundary with:
+
+    uv run --env-file .env money-tracker-eval categorization
+
 The confidence bar is required and has no default, because none is promoted and
 a routing score is meaningless without the bar that produced it. The bar, the
 dataset content hash, and the instruction-text hash are all recorded in the run
@@ -81,8 +85,10 @@ identifiers, Telegram IDs, tokens, or Langfuse exports.
   description, funding source, split payments, refund, and missing-field
   extraction.
 - `categorization/purpose-it`: existing fit, alias resolution, abstention,
-  purpose-versus-merchant rules, new-category proposal precision, and calibrated
-  auto-post subset.
+  purpose-versus-merchant rules, new-category proposal precision, and
+  calibrated auto-post subset. Executable; dataset
+  `categorization-purpose-it-v1` reaches its minimum and currently fails four
+  blocking gates.
 - `workflow/category-review-it`: every approval/reuse/named/re-proposal/cancel,
   unrelated-message, multi-pending, retry, and resume branch.
 - `tools/selection-and-use`: permitted tool name, arguments, order, result

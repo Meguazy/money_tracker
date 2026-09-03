@@ -298,8 +298,41 @@ actually seen and always reaches one terminal state.
    category-fit boundary's versioned one, so stored history says whether a
    human or a prompt chose the purpose.
 
-No workflow yet pauses for these decisions; the persistent interrupt that
-presents them is the next increment.
+### Current paused owner category review
+
+The first workflow that deliberately stops and waits for a human. It is a
+two-node loop over the persistent checkpointer.
+
+1. The asking node renders the question from the authoritative stored proposal,
+   then pauses. The question names the candidate, its parent, the rationale,
+   and the reuse shortlist; it names categories and never identifies them, so a
+   channel sends back a branch rather than an identifier. It also states
+   whether the candidate loop may still offer another name.
+2. The settling node applies the branch through the owner decision service and
+   decides whether the review is over. Approval, reuse, and cancellation end
+   it; a re-proposal opens a successor and the loop pauses again.
+3. Only reads happen before the pause, and every write lives in the settling
+   node. LangGraph replays an interrupted node from its start, so a single node
+   holding both would replay its settlement the second time around the loop,
+   when the cached first interrupt returns immediately.
+4. Replay safety does not rest on the topology alone. Settlement refuses a
+   review that is no longer pending, so a mis-driven resume ends the thread
+   with a stable reason instead of deciding twice.
+5. A decision that cannot be applied keeps the review open and pauses again
+   carrying a stable reason: an unresolvable name, an empty reuse shortlist, a
+   capped loop, or a replacement the taxonomy refused. Nothing is written on
+   those paths.
+6. A re-proposal re-invokes the purpose boundary with every refused candidate
+   excluded. It classifies the stored movement's own description rather than
+   the original owner message, because a review may wait indefinitely and the
+   paused checkpoint should hold no raw owner text it does not need.
+7. Resume payloads arrive from outside the graph and are validated, not
+   trusted. A branch outside the review taxonomy, a named reuse without a name,
+   and a name riding on a branch that ignores it are all refused.
+
+An unrelated message never reaches this graph: deterministic acceptance already
+requires a category follow-up to correlate with exactly one pending review, so
+the paused thread simply keeps waiting while the message is routed on its own.
 
 ### Current receipt metadata registration and review state
 
@@ -905,9 +938,10 @@ environment file.
 - [AD-006: Bounded typed agent workflows](decisions/AD-006-bounded-agent-workflows.md):
   persistent checkpoint adapter, bounded intent taxonomy with partitioned
   authority, deterministic pre-routing, and the strict versioned router model
-  boundary, the extraction and category-fit boundaries, and deterministic
-  dual-allocation resolution implemented; specialist subgraphs, prompts,
-  interrupts, and threshold calibration planned.
+  boundary, the extraction and category-fit boundaries, deterministic
+  dual-allocation resolution, the expense and refund specialist graph, and the
+  persistent owner category review interrupt implemented; the read-only query
+  and advice routes, promoted prompts, and threshold calibration planned.
 - [AD-012: Evaluation-driven model and prompt promotion](decisions/AD-012-evaluation-driven-promotion.md):
   capability runner, artifact contract, and passing technical candidates
   implemented; product-role promotion remains experiment-gated.

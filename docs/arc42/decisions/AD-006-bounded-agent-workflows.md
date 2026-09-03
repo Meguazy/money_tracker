@@ -2,9 +2,10 @@
 
 - Status: accepted
 - Implementation: checkpoint foundation, deterministic root routing, the typed
-  router and extraction model boundaries, and deterministic occurrence-time,
-  sign, and both allocation dimensions implemented; specialist subgraphs
-  planned
+  router and extraction model boundaries, deterministic occurrence-time, sign,
+  and both allocation dimensions, the expense and refund specialist graph, and
+  the persistent owner-approval interrupt implemented; the read-only query and
+  advice routes planned
 - Date: 2026-09-01
 
 ## Context
@@ -123,8 +124,17 @@ Workflow state is a versioned contract holding only JSON primitives and stable
 string references, verified by round trip and by a real checkpoint written to
 and read from PostgreSQL across separate connections.
 
-Specialist subgraphs and the persistent owner-approval interrupt are not
-implemented yet, and the router is not wired to a channel or worker process.
+The expense and refund specialist graph and the persistent owner-approval
+interrupt are implemented. The review is a two-node loop whose asking node only
+reads before pausing and whose settling node holds every write, which is this
+decision's "place side effects after interrupts" rule made executable: LangGraph
+replays an interrupted node from its start, so a single node holding both would
+replay its settlement the second time around the loop. Idempotency is not left
+to the topology either, because settlement independently refuses a review that
+is no longer pending.
+
+The read-only query and advice routes are not implemented, and the router is
+not wired to a channel or worker process.
 
 ## Consequences
 

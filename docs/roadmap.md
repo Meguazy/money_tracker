@@ -293,9 +293,10 @@ the persistent PostgreSQL checkpointer, with a local structured-output adapter
 and a local command for exercising it by hand. The expense and refund
 specialist workflow runs end to end, storing a draft through the existing
 application services or reporting the question it owes, and the extraction
-boundary no longer blocks that path. No persistent owner interrupt, read-only
-tool registry, channel wiring, or evaluation dataset exists yet, and no
-confidence bar, prompt, or model is promoted.
+boundary no longer blocks that path. The owner category review pauses on a
+persistent interrupt and settles every J3 branch. No read-only tool registry,
+channel wiring, or evaluation dataset exists yet, and no confidence bar,
+prompt, or model is promoted.
 
 ### Prerequisites
 

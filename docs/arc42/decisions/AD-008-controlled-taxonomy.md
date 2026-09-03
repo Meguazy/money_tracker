@@ -3,8 +3,8 @@
 - Status: accepted
 - Implementation: domain policy, stable 10-root/14-child seed, schema,
   PostgreSQL bootstrap, pending-proposal submission, the deterministic
-  category-fit boundary, and the owner decision service that creates a node
-  implemented; the review workflow that pauses for the owner is planned
+  category-fit boundary, the owner decision service that creates a node, and
+  the persistent review that pauses for the owner implemented
 - Date: 2026-09-01
 
 ## Context

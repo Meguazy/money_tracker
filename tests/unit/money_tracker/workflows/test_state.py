@@ -19,6 +19,7 @@ from money_tracker.workflows import (
     SupportedCommand,
     WorkflowIntent,
     channel_message_from_state,
+    initial_review_state,
     initial_router_state,
     pre_route,
     routing_context_from_state,
@@ -267,3 +268,15 @@ def test_decided_state_missing_its_own_fields_is_rejected() -> None:
 
     with pytest.raises(KeyError, match="routing_source"):
         routing_decision_from_state(state)
+
+
+def test_a_review_requires_a_durable_source_reference() -> None:
+    """Keep a paused review correlatable to the record that opened it."""
+
+    with pytest.raises(ValueError, match="source reference"):
+        initial_review_state(
+            profile_id=uuid4(),
+            proposal_id=uuid4(),
+            expense_id=uuid4(),
+            source_reference="   ",
+        )

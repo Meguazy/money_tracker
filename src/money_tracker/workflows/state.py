@@ -398,3 +398,124 @@ def expense_message_from_state(state: ExpenseWorkflowState) -> ChannelMessage:
         received_at=datetime.fromisoformat(state["received_at"]),
         text=state["text"],
     )
+
+
+class ReviewOutcome(StrEnum):
+    """How one owner category review ended, once it has ended.
+
+    A re-proposal is deliberately absent: it does not end the review, it opens
+    the next candidate and pauses again.
+
+    Attributes:
+        APPROVED: The candidate became a taxonomy node and the movement posted.
+        REUSED: An existing category received the purpose and the movement
+            posted.
+        CANCELLED: The review ended with no node and the draft was discarded.
+        CLARIFICATION: The decision could not be applied and the review is
+            still pending.
+    """
+
+    APPROVED = "approved"
+    REUSED = "reused"
+    CANCELLED = "cancelled"
+    CLARIFICATION = "clarification"
+
+
+class ReviewReason(StrEnum):
+    """Why an owner decision could not be applied to a review.
+
+    Like the resolution reasons, these are stable machine-readable codes
+    carrying no owner text, so a channel can select one question without
+    parsing prose.
+
+    Attributes:
+        UNKNOWN_CATEGORY: The named category matches no active name or alias.
+        NO_BEST_EXISTING: The review examined no alternative to reuse.
+        PROPOSALS_EXHAUSTED: The candidate loop reached its cap, so existing
+            categories and manual entry are offered instead.
+        INVALID_CANDIDATE: A replacement candidate was refused by taxonomy
+            governance.
+        ALREADY_SETTLED: The review had already received a decision.
+    """
+
+    UNKNOWN_CATEGORY = "unknown_category"
+    NO_BEST_EXISTING = "no_best_existing"
+    PROPOSALS_EXHAUSTED = "proposals_exhausted"
+    INVALID_CANDIDATE = "invalid_candidate"
+    ALREADY_SETTLED = "already_settled"
+
+
+class ReviewWorkflowState(TypedDict, total=False):
+    """Owner category review state as it is checkpointed.
+
+    The same rule as the other workflow states applies: JSON primitives and
+    stable string references only. The proposal, the movement, and the taxonomy
+    stay in repositories and are referenced here by identifier.
+
+    A paused review may wait indefinitely, so this state is the only thing that
+    survives between the question and the owner's answer. It deliberately does
+    not carry the candidate's name or rationale: those live in the stored
+    proposal, which is authoritative and may have been replaced by a successor.
+
+    Attributes:
+        state_version: Shape version this thread was created under.
+        profile_id: Trusted owner scope injected by the runtime.
+        source_reference: Stable reference to the durable inbound record.
+        proposal_id: Pending candidate currently awaiting the owner.
+        expense_id: Draft movement the review is holding.
+        decision_action: The branch the owner selected, once they have.
+        decision_category_name: Name the owner typed, on the named branch only.
+        outcome: How the review ended, once it has ended.
+        settled_category_id: Category the purpose was assigned to, when one
+            was.
+        clarification_reason: Stable reason selecting the question to ask.
+    """
+
+    state_version: str
+    profile_id: str
+    source_reference: str
+    proposal_id: str
+    expense_id: str
+    decision_action: str | None
+    decision_category_name: str | None
+    outcome: str | None
+    settled_category_id: str | None
+    clarification_reason: str | None
+
+
+def initial_review_state(
+    *,
+    profile_id: UUID,
+    proposal_id: UUID,
+    expense_id: UUID,
+    source_reference: str,
+) -> ReviewWorkflowState:
+    """Build the state one paused owner category review starts from.
+
+    Args:
+        profile_id: Trusted owner scope.
+        proposal_id: Pending candidate the owner will decide on.
+        expense_id: Draft movement the review is holding.
+        source_reference: Stable reference to the durable inbound record.
+
+    Returns:
+        A complete initial state with no outcome yet.
+
+    Raises:
+        ValueError: If the source reference is blank.
+    """
+
+    if not source_reference.strip():
+        raise ValueError("category review requires a source reference")
+    return ReviewWorkflowState(
+        state_version=WORKFLOW_STATE_VERSION,
+        profile_id=str(profile_id),
+        source_reference=source_reference,
+        proposal_id=str(proposal_id),
+        expense_id=str(expense_id),
+        decision_action=None,
+        decision_category_name=None,
+        outcome=None,
+        settled_category_id=None,
+        clarification_reason=None,
+    )

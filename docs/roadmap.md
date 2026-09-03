@@ -313,7 +313,10 @@ own tests and documentation, and none may ship a later step's behavior.
 2. Persistent human-in-the-loop category review over the existing pending
    proposal port, covering approve, best existing, named existing, re-propose,
    cancel, unrelated input, and the three-rejection transition, with side
-   effects placed after the interrupt and made idempotent for replay.
+   effects placed after the interrupt and made idempotent for replay. The
+   decision half is implemented: every branch exists as an application service
+   settling one review atomically. What remains is the workflow that pauses for
+   the owner, correlates the reply, and resumes the thread.
 3. The pinned `routing/intent-it`, `ingestion/expense-it`,
    `categorization/purpose-it`, and `workflow/category-review-it` datasets and
    suites, then calibration of the routing confidence bar and the auto-post
@@ -539,6 +542,29 @@ own tests and documentation, and none may ship a later step's behavior.
     funding, and `categorization/purpose-it` must measure it directly. No rule
     is added here, because inventing one by hand is exactly the ad-hoc policy
     change AD-012 reserves for a gated experiment.
+- Owner category decisions are implemented as `CategoryReviewService`, the only
+  component that can extend the taxonomy. Approval creates the node, attaches
+  the whole signed total, and posts the movement in one transaction, so no
+  state exists in which a category was created for a movement that never
+  received it. The node is validated by extending the real taxonomy aggregate
+  rather than by restating its rules. Both reuse branches resolve through
+  active names and aliases and record the owner override; a re-proposal
+  inherits every refused candidate and the loop is capped; cancelling discards
+  the draft. Settling updates the proposal row only while it is still pending,
+  so a replayed decision is refused rather than applied twice, which is what
+  makes the branch safe for a resumed thread.
+- Cancelling a review exposed a missing domain state. `voided` requires
+  reconciliation, because voiding reverses a movement that already counted,
+  while a cancelled draft never counted and has no purpose dimension. Migration
+  `20260903_0004` adds a `discarded` terminal state instead of weakening that
+  invariant; the existing reconciliation trigger already applied only to
+  `posted` and `voided`, so it needed no change.
+- Real PostgreSQL tests approve a candidate into a stored node and a posted
+  reconciled movement, prove the settlement atomic by making a second review
+  claiming the same name fail whole after the first won, post through reuse
+  without extending the taxonomy, discard a cancelled draft, open a successor
+  that carries the refused candidate, refuse a replayed decision, and list the
+  open reviews routing correlates against.
 - `money-tracker-admin profile-init`, `profile-list`, and
   `funding-source-add` make the finance components reachable without
   hand-written Python. Until they existed, every command taking a profile

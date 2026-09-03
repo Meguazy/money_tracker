@@ -8,6 +8,7 @@ from money_tracker.domain.budgets import (
     budget_status,
 )
 from money_tracker.domain.categories import (
+    MAX_REVIEW_PROPOSALS,
     Category,
     CategoryProposal,
     CategoryProposalStatus,
@@ -64,6 +65,7 @@ __all__ = [
     "FundingSource",
     "FundingSourceStatus",
     "InvalidTransitionError",
+    "MAX_REVIEW_PROPOSALS",
     "Money",
     "MonthlyBudget",
     "PaymentAllocation",

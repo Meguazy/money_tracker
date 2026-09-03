@@ -2,9 +2,9 @@
 
 - Status: accepted
 - Implementation: domain policy, stable 10-root/14-child seed, schema,
-  PostgreSQL bootstrap, pending-proposal submission, and the deterministic
-  category-fit boundary implemented; owner decisions and category mutation
-  planned
+  PostgreSQL bootstrap, pending-proposal submission, the deterministic
+  category-fit boundary, and the owner decision service that creates a node
+  implemented; the review workflow that pauses for the owner is planned
 - Date: 2026-09-01
 
 ## Context
@@ -46,9 +46,28 @@ in review.
 The application now accepts only domain-valid `pending` proposals through a
 narrow port. PostgreSQL validates the active same-profile root and alternatives,
 rejects normalized category/alias duplicates, and commits the proposal with its
-audit atomically. The service deliberately cannot approve, reject, cancel, or
-create a category; those decisions require the bounded owner-review workflow
-and its evaluation gates.
+audit atomically. Submission still cannot approve, reject, cancel, or create a
+category: that authority lives in a separate `CategoryReviewService` behind its
+own port, because submitting a candidate changes nothing the owner has seen
+while settling one can extend the taxonomy and complete a movement.
+
+Roadmap Step 3 implements the owner decisions. Approval creates the node and
+completes the movement in one transaction, so no state exists in which a
+category was created for a movement that never received it. The node is
+validated by extending the real taxonomy aggregate rather than by restating its
+rules, which re-checks identifier uniqueness, the two-level depth limit, an
+active parent, and unambiguous active names and aliases. Both reuse branches
+resolve through active names and aliases and record that the owner forced the
+classification. A re-proposal inherits every candidate already refused in the
+same review and is capped at `MAX_REVIEW_PROPOSALS`, after which the review
+offers existing categories and manual entry instead of another candidate.
+
+Settlement updates the proposal row only while it is still pending, so a
+replayed owner decision is refused rather than applied twice. Cancelling ends a
+review with no node and discards the draft: `voided` could not express that,
+because voiding reverses a movement that already counted and stays reconciled,
+while a cancelled draft never counted and has no purpose dimension. Migration
+`20260903_0004` adds the `discarded` terminal state for it.
 
 Roadmap Step 3 adds the versioned category-fit boundary in front of that port.
 A model names categories and never identifies them, so resolution against the

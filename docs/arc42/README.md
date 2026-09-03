@@ -189,7 +189,7 @@ Money Tracker workstation
 | `observability` | Enable and flush optional Langfuse callbacks | Langfuse SDK and environment keys | Buffered telemetry until flush | Local Langfuse only |
 | `persistence` | Apply versioned migrations and bootstrap persistent LangGraph checkpoints | Alembic, psycopg, PostgreSQL checkpointer | Foundation schemas and workflow checkpoints | Host administration CLI; least-privilege loopback database role |
 | `domain` | Enforce exact money, expense/refund, dual-allocation, taxonomy, wallet, budget, receipt-metadata, and audit contracts | Pure Python value objects and policies; no framework or infrastructure import | No infrastructure state | Shared host-process library; deterministic validation of untrusted inputs |
-| `application` | Coordinate idempotent expense lifecycle and receipt registration/review, audited wallet/budget mutations, and pending proposal submission through narrow ports | Finance, administration, proposal, and receipt-metadata repository ports plus clock and ID contracts | Command, concurrency, review-boundary, and audit semantics, not stored state | Shared by future CLI/API/worker; profile scope comes from trusted caller context; proposal decisions and receipt deletion are not exposed |
+| `application` | Coordinate idempotent expense lifecycle and receipt registration/review, audited wallet/budget mutations, pending proposal submission, and owner category decisions through narrow ports | Finance, administration, proposal, review, and receipt-metadata repository ports plus clock and ID contracts | Command, concurrency, review-boundary, and audit semantics, not stored state | Shared by future CLI/API/worker; profile scope comes from trusted caller context; node creation is reachable only through an owner decision, and receipt deletion is not exposed |
 | `workflows` | Own the bounded intent taxonomy, the normalized channel work unit, deterministic pre-routing, the strict versioned router and extraction model boundaries with their policy vetoes, and deterministic resolution of occurrence time, amount sign, and both reconciled allocation dimensions, draft assembly with its stable command key, and the strict-schema retry boundary behind a narrow model port | Pydantic, `zoneinfo`, and pure domain values; no LangGraph, model client, repository, or transport import | Routing destinations, authority classes, stable routing and resolution reason codes, and the product calendar; no persistent state | Shared by the planned worker; a model can select no deterministic route and supply no profile/timezone/authorization field, no resolved instant, no amount sign, and no funding-source identifier; reason codes carry no owner text |
 | `runtime` | Assemble the compiled root-router and movement graphs and adapt the local endpoint to the structured-output port | LangGraph, LangChain, the persistent checkpointer, and the `workflows` contracts | No state of its own; checkpoint contents are owned by the state contract | Host worker process; holds no routing policy, so the framework cannot change how a decision is made |
 | `api.contracts` | Define strict, versioned finance request/response, mutation-header, and problem wire shapes | Pydantic and domain response values; no web framework | No state; stable JSON field semantics only | Shared by future FastAPI adapter; no endpoint, network listener, credentials, or private media fields |
@@ -205,7 +205,7 @@ Money Tracker workstation
 | Component | Responsibility | Narrow interfaces/dependencies | Data ownership | Deployment/security |
 | --- | --- | --- | --- | --- |
 | Finance domain (core implemented) | Enforce money, expense/refund, allocation, budget, category and wallet invariants | Pure value objects and domain policies | No infrastructure state | Python application; no framework imports |
-| Application services (expense/wallet/budget, proposal submission, and receipt registration/review implemented) | Execute validated commands and queries transactionally | Narrow repository ports, clock, ID and future media ports | Command/content idempotency, versioning, review boundary, and audit semantics | Future FastAPI/worker host processes; profile scope injected; proposal decisions and product receipt review remain workflow-owned |
+| Application services (expense/wallet/budget, proposal submission and settlement, and receipt registration/review implemented) | Execute validated commands and queries transactionally | Narrow repository ports, clock, ID and future media ports | Command/content idempotency, versioning, review boundary, and audit semantics | Future FastAPI/worker host processes; profile scope injected; product receipt review remains workflow-owned |
 | Finance repositories (expense/wallet/budget/proposal/versioned receipt metadata implemented) | Persist authoritative domain records and analytics projections | PostgreSQL protocol through explicit repository contracts | Finance schema implemented; proposal decisions and receipt deletion open | Dedicated application database; least-privilege credentials; optimistic versions and source locks protect concurrent mutations; no media payloads |
 | Messaging inbox/outbox | Receive, order, retry, dead-letter, replay and dispatch transport work | PostgreSQL and Telegram adapter | Raw updates, offsets, delivery attempts, result references | Gateway and worker; bot token never stored in rows |
 | Workflow runtime (root router implemented) | Route intents and execute specialist graphs | LangGraph, typed model gateway, application services, checkpointer | Small versioned workflow state only | Sequential worker; no images or service objects in checkpoints |
@@ -266,7 +266,40 @@ tests exercise them directly through the real PostgreSQL protocol.
 3. Proposal and immutable creation audit commit in one transaction; any failed
    scope or duplicate check writes neither.
 4. No category is created and no proposal decision is accepted by this service.
-   Those transitions remain part of the planned bounded owner-review workflow.
+   Settling a review is a distinct authority behind its own port.
+
+### Current owner category decision
+
+The only path that can extend the taxonomy. It settles a review the owner has
+actually seen and always reaches one terminal state.
+
+1. `Approva` builds the proposed node, validates it by extending the real
+   taxonomy aggregate, attaches the whole signed total to it, and posts the
+   movement. Node creation, review settlement, movement replacement, and both
+   audits commit in one transaction, so no state exists in which a category was
+   created for a movement that never received it.
+2. `Usa una delle categorie esistenti` and `Usa la categoria X` share one
+   operation. Both resolve through the active taxonomy's names and aliases,
+   never an identifier a caller chose, create no node, and record
+   `owner_override` on the stored allocation.
+3. `Proponine un'altra` refuses the candidate and opens a successor carrying
+   every name already refused in this review. The movement is untouched. The
+   loop is capped, after which the review offers existing categories and manual
+   entry instead of another candidate.
+4. `Annulla` settles the review with no node and discards the draft. Discarding
+   is distinct from voiding: voiding reverses a movement that already counted
+   and stays reconciled, while a cancelled draft never counted and has no
+   purpose dimension.
+5. Every settlement updates the proposal row only while it is still pending, so
+   a replayed owner decision is refused instead of applied twice. Posting here
+   is not the gated auto-post policy, which decides whether to post *without*
+   asking; this path posts only what the owner explicitly authorized.
+6. Allocations created here carry an owner provenance distinct from the
+   category-fit boundary's versioned one, so stored history says whether a
+   human or a prompt chose the purpose.
+
+No workflow yet pauses for these decisions; the persistent interrupt that
+presents them is the next increment.
 
 ### Current receipt metadata registration and review state
 
@@ -866,8 +899,9 @@ environment file.
   reports implemented; remaining adapters planned.
 - [AD-008: Controlled two-level taxonomy](decisions/AD-008-controlled-taxonomy.md):
   policy, accepted stable seed, schema, bootstrap, taxonomy-scoped pending
-  proposal submission, and the deterministic category-fit boundary implemented;
-  owner decisions and category mutation planned.
+  proposal submission, the deterministic category-fit boundary, and the owner
+  decision service that creates a node implemented; the review workflow that
+  pauses for the owner is planned.
 - [AD-006: Bounded typed agent workflows](decisions/AD-006-bounded-agent-workflows.md):
   persistent checkpoint adapter, bounded intent taxonomy with partitioned
   authority, deterministic pre-routing, and the strict versioned router model

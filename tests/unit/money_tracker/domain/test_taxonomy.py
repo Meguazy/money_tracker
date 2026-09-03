@@ -7,7 +7,9 @@ import pytest
 from money_tracker.domain import (
     Category,
     CategoryProposal,
+    CategoryProposalStatus,
     CategoryStatus,
+    InvalidTransitionError,
     Taxonomy,
     TaxonomyError,
     initial_taxonomy,
@@ -126,3 +128,107 @@ def test_unknown_or_archived_name_does_not_resolve_as_active() -> None:
         taxonomy.resolve_active("Vecchia")
     with pytest.raises(TaxonomyError, match="does not exist"):
         taxonomy.category(uuid4())
+
+
+def _proposal(**overrides: object) -> CategoryProposal:
+    """Build one pending proposal with explicit overrides."""
+
+    fields: dict[str, object] = {
+        "id": uuid4(),
+        "profile_id": uuid4(),
+        "proposed_name": "Giardinaggio",
+        "description": "Materiali e attrezzi per il giardino.",
+        "parent_id": None,
+        "rationale": "Nessuna categoria esistente descrive lo scopo.",
+        "alternative_category_ids": (),
+        "excluded_names": (),
+        "source_reference": "draft:example",
+    }
+    fields.update(overrides)
+    return CategoryProposal(**fields)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("decide", "expected"),
+    [
+        ("approve", CategoryProposalStatus.APPROVED),
+        ("reject", CategoryProposalStatus.REJECTED),
+        ("cancel", CategoryProposalStatus.CANCELLED),
+    ],
+)
+def test_pending_proposal_reaches_each_terminal_state(
+    decide: str, expected: CategoryProposalStatus
+) -> None:
+    """Record the owner's decision without creating anything."""
+
+    proposal = _proposal()
+
+    decided = getattr(proposal, decide)()
+
+    assert decided.status is expected
+    assert proposal.status is CategoryProposalStatus.PENDING
+    assert decided.proposed_name == proposal.proposed_name
+
+
+@pytest.mark.parametrize("decide", ["approve", "reject", "cancel"])
+@pytest.mark.parametrize(
+    "status",
+    [
+        CategoryProposalStatus.APPROVED,
+        CategoryProposalStatus.REJECTED,
+        CategoryProposalStatus.CANCELLED,
+    ],
+)
+def test_a_decided_proposal_is_never_decided_again(
+    decide: str, status: CategoryProposalStatus
+) -> None:
+    """Let a replayed owner decision be recognized rather than reapplied."""
+
+    proposal = _proposal(status=status)
+
+    with pytest.raises(InvalidTransitionError, match="pending"):
+        getattr(proposal, decide)()
+
+
+def test_re_proposal_exclusions_accumulate_across_a_review() -> None:
+    """Refuse every candidate the owner already rejected in this review."""
+
+    first = _proposal(proposed_name="Giardinaggio")
+
+    exclusions = first.exclusions_for_next()
+
+    assert exclusions == ("Giardinaggio",)
+    second = _proposal(proposed_name="Piante", excluded_names=exclusions)
+    assert second.exclusions_for_next() == ("Giardinaggio", "Piante")
+    with pytest.raises(TaxonomyError, match="excluded"):
+        _proposal(proposed_name="giardinaggio", excluded_names=exclusions)
+
+
+def test_approved_candidate_becomes_a_node_under_an_active_root() -> None:
+    """Extend the taxonomy only through the aggregate that governs it."""
+
+    taxonomy = initial_taxonomy()
+    root = taxonomy.resolve_active("Casa e utenze")
+    node = Category(uuid4(), "Giardinaggio", "Attrezzi.", parent_id=root.id)
+
+    extended = taxonomy.with_category(node)
+
+    assert extended.resolve_active("Giardinaggio").parent_id == root.id
+    assert len(extended.categories) == len(taxonomy.categories) + 1
+    # The source taxonomy is unchanged, so a refused extension leaves no trace.
+    with pytest.raises(TaxonomyError):
+        taxonomy.resolve_active("Giardinaggio")
+
+
+def test_extension_refuses_a_duplicate_name_and_a_third_level() -> None:
+    """Re-check every governance rule instead of trusting the caller."""
+
+    taxonomy = initial_taxonomy()
+    child = taxonomy.resolve_active("Abbonamenti")
+
+    with pytest.raises(TaxonomyError, match="two levels"):
+        taxonomy.with_category(
+            Category(uuid4(), "Streaming", "Video.", parent_id=child.id)
+        )
+    with pytest.raises(TaxonomyError, match="unique"):
+        taxonomy.with_category(Category(uuid4(), "Abbonamenti", "Doppione."))

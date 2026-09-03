@@ -28,6 +28,7 @@ class ExpenseStatus(StrEnum):
     NEEDS_REVIEW = "needs_review"
     POSTED = "posted"
     VOIDED = "voided"
+    DISCARDED = "discarded"
 
 
 @dataclass(frozen=True, slots=True)
@@ -241,6 +242,26 @@ class Expense:
         if self.status is not ExpenseStatus.POSTED:
             raise InvalidTransitionError("only a posted expense can be voided")
         return replace(self, status=ExpenseStatus.VOIDED, version=self.version + 1)
+
+    def discard(self) -> Expense:
+        """Abandon a draft that will never be posted.
+
+        Distinct from `void`, which reverses a movement that already counted
+        and therefore stays reconciled. A discarded draft never counted and may
+        have no purpose dimension at all, so it reaches its own terminal state
+        rather than weakening what `voided` guarantees. History keeps the
+        abandoned attempt visible instead of deleting it.
+
+        Returns:
+            A new discarded aggregate.
+
+        Raises:
+            InvalidTransitionError: If the expense is not a draft.
+        """
+
+        if self.status is not ExpenseStatus.DRAFT:
+            raise InvalidTransitionError("only a draft expense can be discarded")
+        return replace(self, status=ExpenseStatus.DISCARDED, version=self.version + 1)
 
     def corrected(
         self,

@@ -8,6 +8,7 @@ from uuid import UUID
 
 from money_tracker.domain import (
     AuditEvent,
+    Category,
     CategoryProposal,
     Expense,
     FundingSource,
@@ -107,6 +108,52 @@ class CategoryProposalRepository(Protocol):
         audit_event: AuditEvent,
     ) -> None:
         """Persist one pending proposal and matching audit atomically."""
+
+
+class CategoryReviewRepository(Protocol):
+    """Settle owner category decisions, the only path that creates a node.
+
+    Kept separate from `CategoryProposalRepository` because the authority
+    differs: submitting a candidate is a workflow act that changes nothing the
+    owner has not seen, while settling one can extend the taxonomy and complete
+    a movement. AD-008 reserves that authority for an explicit owner decision,
+    so it lives behind its own narrow port.
+    """
+
+    def get_category_proposal(
+        self,
+        profile_id: UUID,
+        proposal_id: UUID,
+    ) -> CategoryProposal:
+        """Load one proposal inside its trusted profile scope."""
+
+    def get_pending_category_proposals(
+        self,
+        profile_id: UUID,
+    ) -> tuple[CategoryProposal, ...]:
+        """Load every open review in one profile scope, oldest first."""
+
+    def settle_category_review(
+        self,
+        proposal: CategoryProposal,
+        *,
+        expense: Expense,
+        expected_version: int,
+        category: Category | None,
+        proposal_audit: AuditEvent,
+        expense_audit: AuditEvent,
+    ) -> None:
+        """Settle one decision, its optional new node, and the movement."""
+
+    def repropose_category(
+        self,
+        rejected: CategoryProposal,
+        successor: CategoryProposal,
+        *,
+        rejected_audit: AuditEvent,
+        successor_audit: AuditEvent,
+    ) -> None:
+        """Refuse one candidate and open its replacement atomically."""
 
 
 class ReceiptMetadataRepository(Protocol):

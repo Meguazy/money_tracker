@@ -10,6 +10,7 @@ from money_tracker.application.errors import (
 from money_tracker.application.finance import FinanceService
 from money_tracker.application.ports import (
     CategoryProposalRepository,
+    CategoryReviewRepository,
     Clock,
     FinanceAdministrationRepository,
     FinanceRepository,
@@ -22,12 +23,19 @@ from money_tracker.application.receipt_media import (
     StoredReceiptMedia,
 )
 from money_tracker.application.receipts import ReceiptMetadataService
+from money_tracker.application.review import (
+    OWNER_REVIEW_PROVENANCE,
+    CategoryReviewService,
+)
 
 __all__ = [
+    "OWNER_REVIEW_PROVENANCE",
     "AggregateNotFoundError",
     "Clock",
     "CategoryProposalRepository",
     "CategoryProposalService",
+    "CategoryReviewRepository",
+    "CategoryReviewService",
     "FinanceAdministrationRepository",
     "FinanceAdministrationService",
     "FinanceRepository",

@@ -251,18 +251,135 @@ class PostgresFinanceRepository:
             ).fetchone()
         if row is None:
             raise AggregateNotFoundError("category proposal does not exist in profile")
-        return CategoryProposal(
-            id=row[0],
-            profile_id=row[1],
-            proposed_name=row[2],
-            description=row[3],
-            parent_id=row[4],
-            rationale=row[5],
-            alternative_category_ids=tuple(row[6]),
-            excluded_names=tuple(row[7]),
-            source_reference=row[8],
-            status=CategoryProposalStatus(row[9]),
-        )
+        return self._category_proposal_from_row(row)
+
+    def get_pending_category_proposals(
+        self,
+        profile_id: UUID,
+    ) -> tuple[CategoryProposal, ...]:
+        """Load every open review in one profile scope, oldest first.
+
+        Routing correlates an owner reply against these, and refuses to guess
+        when several are open, so the order is stable rather than arbitrary.
+
+        Args:
+            profile_id: Trusted owner scope.
+
+        Returns:
+            Pending proposals in creation order.
+        """
+
+        with connect(self._database_url) as connection:
+            rows = connection.execute(
+                "SELECT id, profile_id, proposed_name, description, parent_id, "
+                "rationale, alternative_category_ids, excluded_names, "
+                "source_reference, status FROM finance.category_proposals "
+                "WHERE profile_id = %s AND status = 'pending' "
+                "ORDER BY created_at, id",
+                (profile_id,),
+            ).fetchall()
+        return tuple(self._category_proposal_from_row(row) for row in rows)
+
+    def settle_category_review(
+        self,
+        proposal: CategoryProposal,
+        *,
+        expense: Expense,
+        expected_version: int,
+        category: Category | None,
+        proposal_audit: AuditEvent,
+        expense_audit: AuditEvent,
+    ) -> None:
+        """Settle one owner decision, its optional new node, and the movement.
+
+        This is the single transaction J3 requires: approving a candidate
+        creates the node and completes the movement together, so no state
+        exists in which a category was created for a movement that never
+        received it, or a movement claims a category that was never created.
+
+        The proposal row is updated only while it is still pending, which makes
+        a replayed owner decision a no-op detectable by the caller rather than
+        a second settlement.
+
+        Args:
+            proposal: Decided proposal carrying its terminal status.
+            expense: Full replacement state for the reviewed movement.
+            expected_version: Movement version observed by the caller.
+            category: Node to create when the owner approved the candidate,
+                otherwise None.
+            proposal_audit: Immutable record of the owner decision.
+            expense_audit: Immutable record of the movement mutation.
+
+        Raises:
+            ValueError: If the decision is not terminal, the node does not
+                belong to the profile, or the review was already settled.
+            OptimisticConcurrencyError: If another mutation already won.
+        """
+
+        if proposal.status is CategoryProposalStatus.PENDING:
+            raise ValueError("settling a review requires a decided proposal")
+        if category is not None and proposal.status is not (
+            CategoryProposalStatus.APPROVED
+        ):
+            raise ValueError("only an approved candidate may create a category")
+        with connect(self._database_url) as connection:
+            if category is not None:
+                self._insert_reviewed_category(
+                    connection,
+                    proposal.profile_id,
+                    category,
+                    proposal_audit.occurred_at,
+                )
+            self._settle_proposal_row(connection, proposal, proposal_audit)
+            self._replace_expense_within(
+                connection,
+                expense,
+                expected_version=expected_version,
+                audit_event=expense_audit,
+            )
+            self._insert_audit(connection, proposal_audit)
+
+    def repropose_category(
+        self,
+        rejected: CategoryProposal,
+        successor: CategoryProposal,
+        *,
+        rejected_audit: AuditEvent,
+        successor_audit: AuditEvent,
+    ) -> None:
+        """Refuse one candidate and open its replacement atomically.
+
+        The movement is untouched: the owner asked for a different name, not
+        for a different movement, and its draft keeps waiting.
+
+        Args:
+            rejected: Refused proposal carrying its rejected status.
+            successor: New pending proposal excluding every refused candidate.
+            rejected_audit: Immutable record of the refusal.
+            successor_audit: Immutable record of the replacement.
+
+        Raises:
+            ValueError: If the statuses are not rejected and pending, the
+                successor reuses a refused candidate, or the review was already
+                settled.
+        """
+
+        if rejected.status is not CategoryProposalStatus.REJECTED:
+            raise ValueError("re-proposal requires a rejected predecessor")
+        if successor.status is not CategoryProposalStatus.PENDING:
+            raise ValueError("a replacement candidate must be pending")
+        refused = {
+            normalize_category_name(name) for name in rejected.exclusions_for_next()
+        }
+        if not refused.issubset(
+            {normalize_category_name(name) for name in successor.excluded_names}
+        ):
+            raise ValueError("a replacement must exclude every refused candidate")
+        with connect(self._database_url) as connection:
+            self._settle_proposal_row(connection, rejected, rejected_audit)
+            self._insert_audit(connection, rejected_audit)
+            self._insert_category_proposal_row(connection, successor, successor_audit)
+            self._insert_audit(connection, successor_audit)
 
     def create_category_proposal(
         self,
@@ -326,28 +443,7 @@ class PostgresFinanceRepository:
             ).fetchone()
             if duplicate is not None:
                 raise ValueError("proposal name duplicates an active category or alias")
-            connection.execute(
-                "INSERT INTO finance.category_proposals "
-                "(id, profile_id, proposed_name, normalized_name, description, "
-                "parent_id, rationale, alternative_category_ids, excluded_names, "
-                "source_reference, status, created_at, updated_at) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
-                (
-                    proposal.id,
-                    proposal.profile_id,
-                    proposal.proposed_name,
-                    normalized_name,
-                    proposal.description,
-                    proposal.parent_id,
-                    proposal.rationale,
-                    list(proposal.alternative_category_ids),
-                    list(proposal.excluded_names),
-                    proposal.source_reference,
-                    proposal.status.value,
-                    audit_event.occurred_at,
-                    audit_event.occurred_at,
-                ),
-            )
+            self._insert_category_proposal_row(connection, proposal, audit_event)
             self._insert_audit(connection, audit_event)
 
     def get_receipt_metadata(
@@ -601,41 +697,72 @@ class PostgresFinanceRepository:
         """
 
         with connect(self._database_url) as connection:
-            cursor = connection.execute(
-                "UPDATE finance.expenses SET amount_minor = %s, currency = %s, "
-                "occurred_at = %s, description = %s, merchant = %s, status = %s, "
-                "original_expense_id = %s, receipt_id = %s, version = %s, "
-                "updated_at = %s WHERE id = %s AND profile_id = %s AND version = %s",
-                (
-                    expense.amount.minor_units,
-                    expense.amount.currency,
-                    expense.occurred_at,
-                    expense.description,
-                    expense.merchant,
-                    expense.status.value,
-                    expense.original_expense_id,
-                    expense.receipt_id,
-                    expense.version,
-                    audit_event.occurred_at,
-                    expense.id,
-                    expense.profile_id,
-                    expected_version,
-                ),
+            self._replace_expense_within(
+                connection,
+                expense,
+                expected_version=expected_version,
+                audit_event=audit_event,
             )
-            if cursor.rowcount != 1:
-                raise OptimisticConcurrencyError(
-                    "expense changed since the requested version"
-                )
-            connection.execute(
-                "DELETE FROM finance.category_allocations WHERE expense_id = %s",
-                (expense.id,),
+
+    def _replace_expense_within(
+        self,
+        connection: Connection[Any],
+        expense: Expense,
+        *,
+        expected_version: int,
+        audit_event: AuditEvent,
+    ) -> None:
+        """Replace one aggregate inside a caller-owned transaction.
+
+        Extracted so a review settlement can replace the movement in the same
+        transaction that creates its category, which is what makes the owner's
+        approval atomic rather than two writes that can half-apply.
+
+        Args:
+            connection: Active transaction.
+            expense: Full replacement state.
+            expected_version: Version observed by the caller.
+            audit_event: Immutable matching mutation record.
+
+        Raises:
+            OptimisticConcurrencyError: If another mutation already won.
+        """
+
+        cursor = connection.execute(
+            "UPDATE finance.expenses SET amount_minor = %s, currency = %s, "
+            "occurred_at = %s, description = %s, merchant = %s, status = %s, "
+            "original_expense_id = %s, receipt_id = %s, version = %s, "
+            "updated_at = %s WHERE id = %s AND profile_id = %s AND version = %s",
+            (
+                expense.amount.minor_units,
+                expense.amount.currency,
+                expense.occurred_at,
+                expense.description,
+                expense.merchant,
+                expense.status.value,
+                expense.original_expense_id,
+                expense.receipt_id,
+                expense.version,
+                audit_event.occurred_at,
+                expense.id,
+                expense.profile_id,
+                expected_version,
+            ),
+        )
+        if cursor.rowcount != 1:
+            raise OptimisticConcurrencyError(
+                "expense changed since the requested version"
             )
-            connection.execute(
-                "DELETE FROM finance.payment_allocations WHERE expense_id = %s",
-                (expense.id,),
-            )
-            self._insert_allocations(connection, expense)
-            self._insert_audit(connection, audit_event)
+        connection.execute(
+            "DELETE FROM finance.category_allocations WHERE expense_id = %s",
+            (expense.id,),
+        )
+        connection.execute(
+            "DELETE FROM finance.payment_allocations WHERE expense_id = %s",
+            (expense.id,),
+        )
+        self._insert_allocations(connection, expense)
+        self._insert_audit(connection, audit_event)
 
     def get_wallet_entries(
         self,
@@ -844,6 +971,127 @@ class PostgresFinanceRepository:
                     ),
                 )
             self._insert_audit(connection, audit_event)
+
+    @staticmethod
+    def _category_proposal_from_row(row: tuple[Any, ...]) -> CategoryProposal:
+        """Reconstruct one proposal from its selected column order."""
+
+        return CategoryProposal(
+            id=row[0],
+            profile_id=row[1],
+            proposed_name=row[2],
+            description=row[3],
+            parent_id=row[4],
+            rationale=row[5],
+            alternative_category_ids=tuple(row[6]),
+            excluded_names=tuple(row[7]),
+            source_reference=row[8],
+            status=CategoryProposalStatus(row[9]),
+        )
+
+    def _settle_proposal_row(
+        self,
+        connection: Connection[Any],
+        proposal: CategoryProposal,
+        audit_event: AuditEvent,
+    ) -> None:
+        """Move one still-pending proposal to its decided status.
+
+        The `status = 'pending'` predicate is the idempotency guard: a replayed
+        decision matches no row and is refused here rather than settling the
+        review a second time.
+
+        Raises:
+            ValueError: If the review was already settled.
+        """
+
+        cursor = connection.execute(
+            "UPDATE finance.category_proposals SET status = %s, updated_at = %s "
+            "WHERE id = %s AND profile_id = %s AND status = 'pending'",
+            (
+                proposal.status.value,
+                audit_event.occurred_at,
+                proposal.id,
+                proposal.profile_id,
+            ),
+        )
+        if cursor.rowcount != 1:
+            raise ValueError("category review is no longer pending")
+
+    def _insert_reviewed_category(
+        self,
+        connection: Connection[Any],
+        profile_id: UUID,
+        category: Category,
+        occurred_at: datetime,
+    ) -> None:
+        """Create one owner-approved node inside the active transaction.
+
+        Unlike a seed node this is never idempotent by identifier: a second
+        insertion of the same approved candidate is a defect, not a replay, so
+        the unique active-name constraint is allowed to reject it.
+
+        Raises:
+            ValueError: If the parent is not an active root of this profile.
+        """
+
+        if category.parent_id is not None:
+            parent = connection.execute(
+                "SELECT parent_id, status FROM finance.categories "
+                "WHERE id = %s AND profile_id = %s",
+                (category.parent_id, profile_id),
+            ).fetchone()
+            if parent is None or parent[0] is not None or parent[1] != "active":
+                raise ValueError("approved category parent must be an active root")
+        connection.execute(
+            "INSERT INTO finance.categories "
+            "(id, profile_id, name, normalized_name, description, parent_id, "
+            "status, seeded, taxonomy_version, version, created_at, updated_at) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, false, %s, 1, %s, %s)",
+            (
+                category.id,
+                profile_id,
+                category.name,
+                category.normalized_name,
+                category.description,
+                category.parent_id,
+                category.status.value,
+                TAXONOMY_VERSION,
+                occurred_at,
+                occurred_at,
+            ),
+        )
+
+    def _insert_category_proposal_row(
+        self,
+        connection: Connection[Any],
+        proposal: CategoryProposal,
+        audit_event: AuditEvent,
+    ) -> None:
+        """Insert one proposal row inside a caller-owned transaction."""
+
+        connection.execute(
+            "INSERT INTO finance.category_proposals "
+            "(id, profile_id, proposed_name, normalized_name, description, "
+            "parent_id, rationale, alternative_category_ids, excluded_names, "
+            "source_reference, status, created_at, updated_at) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            (
+                proposal.id,
+                proposal.profile_id,
+                proposal.proposed_name,
+                normalize_category_name(proposal.proposed_name),
+                proposal.description,
+                proposal.parent_id,
+                proposal.rationale,
+                list(proposal.alternative_category_ids),
+                list(proposal.excluded_names),
+                proposal.source_reference,
+                proposal.status.value,
+                audit_event.occurred_at,
+                audit_event.occurred_at,
+            ),
+        )
 
     def _insert_seed_category(
         self,

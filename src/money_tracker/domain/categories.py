@@ -4,14 +4,25 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import StrEnum
 from uuid import UUID
 
-from money_tracker.domain.errors import DomainError, TaxonomyError
+from money_tracker.domain.errors import (
+    DomainError,
+    InvalidTransitionError,
+    TaxonomyError,
+)
 
 MAX_ACTIVE_CATEGORIES = 30
 MAX_CHILDREN_PER_PARENT = 5
+MAX_REVIEW_PROPOSALS = 3
+"""Candidates one review may offer before it stops proposing.
+
+AD-008 forbids an unbounded proposal loop. After this many rejected candidates
+the review offers the owner existing categories and manual entry instead, so a
+model that cannot find an adequate name cannot keep asking.
+"""
 
 
 class CategoryStatus(StrEnum):
@@ -142,6 +153,80 @@ class CategoryProposal:
         ):
             raise TaxonomyError("proposal alternatives must be unique")
 
+    def _decided(self, status: CategoryProposalStatus) -> CategoryProposal:
+        """Return this proposal in one terminal review state.
+
+        Args:
+            status: Terminal state the owner's decision selects.
+
+        Returns:
+            A new proposal carrying the decided status.
+
+        Raises:
+            InvalidTransitionError: If this proposal is not pending. A decided
+                proposal is never re-decided, so a replayed owner decision is
+                recognized by its stored status rather than applied twice.
+        """
+
+        if self.status is not CategoryProposalStatus.PENDING:
+            raise InvalidTransitionError("only a pending proposal can be decided")
+        return replace(self, status=status)
+
+    def approve(self) -> CategoryProposal:
+        """Accept the candidate so a taxonomy node may be created from it.
+
+        Approval alone creates nothing. `Taxonomy.with_category` builds the node
+        and re-validates the whole taxonomy, so governance stays in one place.
+
+        Returns:
+            The approved proposal.
+
+        Raises:
+            InvalidTransitionError: If this proposal is not pending.
+        """
+
+        return self._decided(CategoryProposalStatus.APPROVED)
+
+    def reject(self) -> CategoryProposal:
+        """Refuse this candidate while the review continues.
+
+        The owner asked for a different candidate, so the review stays open and
+        the next proposal must exclude this name.
+
+        Returns:
+            The rejected proposal.
+
+        Raises:
+            InvalidTransitionError: If this proposal is not pending.
+        """
+
+        return self._decided(CategoryProposalStatus.REJECTED)
+
+    def cancel(self) -> CategoryProposal:
+        """End the review without a category and without a posted movement.
+
+        Returns:
+            The cancelled proposal.
+
+        Raises:
+            InvalidTransitionError: If this proposal is not pending.
+        """
+
+        return self._decided(CategoryProposalStatus.CANCELLED)
+
+    def exclusions_for_next(self) -> tuple[str, ...]:
+        """Return the candidate names a successor proposal may not reuse.
+
+        A re-proposal must differ from every candidate already refused in this
+        review, so this accumulates rather than replaces: AD-008 excludes a
+        rejected candidate from subsequent suggestions in the same review.
+
+        Returns:
+            This proposal's own exclusions extended by its own name.
+        """
+
+        return (*self.excluded_names, self.proposed_name)
+
 
 @dataclass(frozen=True, slots=True)
 class TaxonomyWarning:
@@ -224,6 +309,28 @@ class Taxonomy:
             if needle in keys:
                 return category
         raise TaxonomyError("active category does not exist")
+
+    def with_category(self, category: Category) -> Taxonomy:
+        """Return this taxonomy extended by one new node.
+
+        Every governance rule is re-checked by rebuilding the whole taxonomy
+        rather than restating a subset here: identifier uniqueness, the
+        two-level depth limit, an existing active parent, and unambiguous
+        active names and aliases. A node that would violate any of them is
+        refused, so an approved proposal cannot widen the taxonomy in a way a
+        freshly loaded profile would reject.
+
+        Args:
+            category: New node to add.
+
+        Returns:
+            A validated taxonomy including the new node.
+
+        Raises:
+            TaxonomyError: If the extended taxonomy would violate governance.
+        """
+
+        return Taxonomy((*self._categories, category))
 
     def ancestor_ids(self, category_id: UUID) -> tuple[UUID, ...]:
         """Return the assigned category and its optional root for roll-ups.

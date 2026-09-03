@@ -8,6 +8,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from money_tracker.evaluations.advice import run_advice_suite
+from money_tracker.evaluations.calibration import run_calibration
 from money_tracker.evaluations.capabilities import run_capability_suite
 from money_tracker.evaluations.categorization import run_categorization_suite
 from money_tracker.evaluations.category_review import run_category_review_suite
@@ -172,6 +173,22 @@ def _parser() -> argparse.ArgumentParser:
         type=Path,
         default=repository_root / "artifacts" / "evals",
     )
+    calibration = subparsers.add_parser(
+        "calibrate-routing",
+        help="sweep the routing confidence bar and score a held-out split once",
+    )
+    calibration.add_argument(
+        "--dataset",
+        type=Path,
+        default=(
+            repository_root / "evals" / "datasets" / "routing-intent-it-v1.1.jsonl"
+        ),
+    )
+    calibration.add_argument(
+        "--output-root",
+        type=Path,
+        default=repository_root / "artifacts" / "evals",
+    )
     return parser
 
 
@@ -232,6 +249,16 @@ def main(argv: Sequence[str] | None = None) -> None:
                 output_root=args.output_root,
                 repository_root=_repository_root(),
                 database_url=database_url_from_env(test_database=True),
+            )
+        )
+        return
+    if args.suite == "calibrate-routing":
+        _print_and_exit(
+            run_calibration(
+                CapabilitySettings.from_env(),
+                dataset_path=args.dataset,
+                output_root=args.output_root,
+                repository_root=_repository_root(),
             )
         )
         return

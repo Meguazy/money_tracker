@@ -73,6 +73,14 @@ notes: >-
   their aliases; that has never mattered for the seed taxonomy, which declares
   none, and the run configuration records that the suite wrote them itself.
 
+  This suite found two defects on its first run, a refusal reason code
+  conflated between the reuse and re-proposal branches, and a checkpoint
+  serializer whose strictness depended on an import-time environment lookup that
+  defaults the opposite way to the local guard. Both are fixed and the suite now
+  passes every gate. A clean run licenses nothing on its own: the promotion
+  effect above is none and the model port is scripted, so the suite establishes
+  that the workflow is correct and says nothing about any model.
+
   Replaying a decision on a review that already ended is a no-op: the thread has
   reached its end, so the graph has nothing to resume, returns the stored
   terminal state, and writes nothing. The settling node's `already_settled`

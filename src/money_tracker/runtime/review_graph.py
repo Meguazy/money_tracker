@@ -21,6 +21,12 @@ rather than the original owner message: the description is what the movement
 actually records, and a review may wait indefinitely, so the paused checkpoint
 holds no raw owner text it does not need.
 
+That branch handles its own taxonomy refusals rather than leaving them to the
+settling handler. Both branches raise `TaxonomyError`, but it means different
+things in each: from reuse the owner named a category that does not exist, and
+from re-proposal the replacement candidate was refused by governance. The reason
+code selects which question the owner is asked, so the two cannot share one.
+
 State stays small and serializable. The proposal, the movement, and the taxonomy
 live in repositories and are referenced here by identifier, because a review may
 outlive many application restarts.
@@ -251,16 +257,26 @@ def build_review_graph(
             or fit.rationale is None
         ):
             return _pending(ReviewReason.INVALID_CANDIDATE)
-        successor = review.repropose(
-            profile_id=profile_id,
-            proposal_id=proposal_id,
-            proposed_name=fit.proposed_name,
-            description=fit.description,
-            parent_name=fit.parent_name,
-            rationale=fit.rationale,
-            actor="owner",
-            reason="owner asked for a different candidate",
-        )
+        try:
+            successor = review.repropose(
+                profile_id=profile_id,
+                proposal_id=proposal_id,
+                proposed_name=fit.proposed_name,
+                description=fit.description,
+                parent_name=fit.parent_name,
+                rationale=fit.rationale,
+                actor="owner",
+                reason="owner asked for a different candidate",
+            )
+        except TaxonomyError:
+            # Taxonomy governance refusing a replacement is not the owner
+            # naming a category that does not exist. It means the candidate
+            # duplicates an active node, repeats one already rejected in this
+            # review, or hangs under something that is not an active root. The
+            # owner is owed "that name will not work", not "which category did
+            # you mean", and the settling handler below cannot tell the two
+            # apart because both branches raise the same error type.
+            return _pending(ReviewReason.INVALID_CANDIDATE)
         return ReviewWorkflowState(
             proposal_id=str(successor.id),
             outcome=None,

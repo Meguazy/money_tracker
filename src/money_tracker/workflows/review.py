@@ -97,12 +97,19 @@ class ReviewQuestion:
     can_repropose: bool
 
     def __post_init__(self) -> None:
-        """Reject a question the owner could not act on.
+        """Normalize the shortlist and reject a question the owner cannot act on.
+
+        The shortlist is coerced to a tuple because this contract crosses a
+        pause. A review may wait indefinitely and is restored from a checkpoint,
+        where a sequence arrives as a list, and this class is frozen and
+        therefore hashable: a list would silently make a restored question
+        unhashable and unequal to the one that was stored.
 
         Raises:
             DomainError: If the candidate or its rationale is blank.
         """
 
+        object.__setattr__(self, "alternative_names", tuple(self.alternative_names))
         if not self.candidate_name.strip():
             raise DomainError("a review question requires a candidate name")
         if not self.rationale.strip():

@@ -43,20 +43,25 @@ do not rewrite historical outcomes when a later experiment supersedes them.
   change is recorded in the evidence of
   [Step 3](../roadmap/step-3-evaluated-text-workflows.md).
 - Owner category review: measured by `category-review-it-v1` (37 multi-turn
-  scenarios) against real PostgreSQL. Seven of eight blocking gates pass at
-  100%, including zero duplicate writes across every replayed branch, so the
-  human-in-the-loop workflow itself is sound. Two defects are open and neither
-  is a model problem:
-  - `run_settle` maps every `TaxonomyError` to `unknown_category`, but a
+  scenarios) against real PostgreSQL. The workflow now passes all eight blocking
+  gates and every scenario, including zero duplicate writes across each replayed
+  branch. The suite found two defects on its first run and both are fixed, with
+  the same suite as the evidence:
+  - `run_settle` mapped every `TaxonomyError` to `unknown_category`, but a
     re-proposal refused by taxonomy governance is `invalid_candidate` under the
-    documented reason vocabulary. The owner would be asked which category they
-    meant when the candidate is simply unusable.
-  - The strict msgpack allowlist refuses to reconstruct `ReviewQuestion`,
-    `ReviewDecision`, and `CallbackAction`, so a review paused in one process
-    reads its question back as a plain mapping. No field is lost and nothing
-    consumes it across a restart yet, but the channel adapter will.
-  Neither is promoted or fixed here: both are recorded for the change that
-  addresses them, with the run that found them.
+    documented reason vocabulary. The re-proposal branch now handles its own
+    refusals instead of leaving them to a handler that cannot tell the causes
+    apart.
+  - The checkpoint serializer relied on the library's own
+    `LANGGRAPH_STRICT_MSGPACK` lookup, which happens at import time and defaults
+    to false, while the local guard treated an absent variable as true. An unset
+    variable would therefore have allowed arbitrary types to be reconstructed
+    from checkpoint data while the guard reported the invariant as satisfied.
+    The allowlist is now passed explicitly, which is additive over the library's
+    safe types, and names the three contracts that cross a pause.
+  Nothing is promoted by this run. The suite's `promotion_effect` is `none` and
+  its model port is scripted, so it establishes that the workflow is correct and
+  says nothing about any model.
 - Auto-post threshold: disabled until categorization precision gates pass.
 - Routing confidence bar: none promoted. The implemented router requires the
   value as an explicit argument and has no default, so no runtime can adopt

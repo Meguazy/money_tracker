@@ -476,31 +476,52 @@ own tests and documentation, and none may ship a later step's behavior.
   or mimic the wiring failure the suite exists to find. Postconditions are read
   back from storage rather than from returned state, because a graph reporting
   an approval while writing nothing would satisfy a state-only check.
-- Seven of the eight blocking gates pass at 100%. Approve, best-existing,
+- The suite found two defects on its first run and both are now fixed, with the
+  same suite as the evidence. It now passes all eight blocking gates, both
+  diagnostics, and every one of its 37 scenarios. Approve, best-existing,
   named-existing including alias and accent resolution, the three-proposal cap
   and its transition to manual resolution, cancel, and independent handling of
   concurrent work all hold their postconditions exactly, and
-  `duplicate_writes_under_replay` counted zero across every replayed branch.
-- `repropose_excludes_rejected` fails at 0.714 on a real defect. `run_settle`
-  catches `TaxonomyError` once and maps every instance to
-  `unknown_category`, but that error has two distinct causes. From the reuse
-  branch it does mean the owner named a category that does not exist. From the
-  re-proposal branch it means the replacement candidate was refused by taxonomy
-  governance, either as a duplicate of an active node or as a name already
-  rejected in this review, which the reason vocabulary defines as
-  `invalid_candidate`. The channel would ask the owner which category they meant
-  when the correct response is that the candidate is unusable. The re-proposal
-  branch already returns `invalid_candidate` for its other refusals, so the
-  intent is clear and the outer handler simply catches too broadly.
-- A diagnostic records a second, latent defect. `pause_payload_survives_restart`
-  is 0.0 across four scenarios: the strict msgpack allowlist that forbids pickle
-  fallback also refuses to reconstruct `ReviewQuestion`, `ReviewDecision`, and
-  `CallbackAction`, so a review paused in one process reads its question back as
-  a plain mapping. No field is lost, and nothing consumes the question across a
-  restart yet, so this costs nothing today. It will cost the channel adapter
-  immediately, because a persistent checkpointer exists precisely so a review
-  can outlive the process that opened it. `_decision_from` already accepts either
-  shape on the resume side; the question side has no equivalent.
+  `duplicate_writes_under_replay` counted zero across every replayed branch. A
+  clean run licenses nothing on its own: this suite's `promotion_effect` is
+  `none`, and its model port is scripted, so it establishes that the workflow is
+  correct and says nothing about any model.
+- The first defect was a conflated refusal reason. `run_settle` caught
+  `TaxonomyError` once and mapped every instance to `unknown_category`, but that
+  error has two causes. From the reuse branch it does mean the owner named a
+  category that does not exist. From the re-proposal branch it means the
+  replacement candidate was refused by taxonomy governance, either as a
+  duplicate of an active node or as a name already rejected in this review,
+  which the reason vocabulary defines as `invalid_candidate`. The owner would
+  have been asked which category they meant when the candidate was simply
+  unusable. The re-proposal branch already returned `invalid_candidate` for its
+  other refusals, so the intent was never in doubt; the branch now handles its
+  own taxonomy refusals instead of leaving them to a handler that cannot tell
+  the causes apart. A unit test had encoded the defective reason, and correcting
+  it required a second test pinning the reuse branch so the fix could not
+  silently reclassify that one too.
+- The second defect was latent and turned out to be larger than it first looked.
+  `pause_payload_survives_restart` measured 0.0: the msgpack allowlist refused to
+  reconstruct `ReviewQuestion`, `ReviewDecision`, and `CallbackAction`, so a
+  review paused in one process read its question back as a plain mapping.
+  Investigating it surfaced the real problem. The library resolves
+  `LANGGRAPH_STRICT_MSGPACK` once at import time and defaults it to false, while
+  `_checkpoint_serializer_from_env` treated an absent variable as true. The local
+  guard therefore reported the invariant as satisfied while the library, given an
+  unset or late-set variable, would have reconstructed arbitrary types from
+  checkpoint data. The serializer now passes its allowlist explicitly, which
+  makes strictness independent of that import-time lookup and additive over the
+  library's own safe types, and adds exactly the three contracts that cross a
+  pause. The env-var guard is kept, so an operator who tries to relax the
+  invariant is still refused.
+- Fixing that exposed a third, quieter problem worth recording as its own
+  lesson. With the classes allowlisted, a restored `ReviewQuestion` still was not
+  equal to the stored one: `alternative_names` came back as a list, and because
+  the contract is a frozen dataclass and therefore hashable, the restored value
+  was also unhashable. Every field read correctly, so a test asserting field
+  access would have passed while the contract was quietly violated.
+  `ReviewQuestion` now normalizes the shortlist to a tuple in `__post_init__`,
+  and the test asserts equality and hash rather than field access.
 - The fixture extends the seed taxonomy with one aliased node and one archived
   node, because the accepted taxonomy declares neither and both branches are
   gated. Writing the aliases surfaced a third observation: `bootstrap_profile`

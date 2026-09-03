@@ -21,11 +21,36 @@ WORKFLOW_SCHEMA = "workflow"
 STRICT_MSGPACK_ENV = "LANGGRAPH_STRICT_MSGPACK"
 
 
+CHECKPOINT_ALLOWED_TYPES: tuple[tuple[str, str], ...] = (
+    ("money_tracker.workflows.review", "ReviewQuestion"),
+    ("money_tracker.workflows.review", "ReviewDecision"),
+    ("money_tracker.workflows.messages", "CallbackAction"),
+)
+"""Workflow contracts a checkpoint may reconstruct, beyond the library's own.
+
+A paused review outlives the process that opened it, so the question the owner
+is shown and the decision that resumes it must survive a restart as themselves
+rather than as anonymous mappings. Only contracts this repository owns and that
+actually cross a pause are listed; the list is additive over the library's safe
+types and never enables arbitrary reconstruction.
+"""
+
+
 def _checkpoint_serializer_from_env() -> JsonPlusSerializer:
     """Build the checkpointer serializer while prohibiting pickle fallback.
 
+    The allowlist is passed explicitly rather than left to the library's own
+    environment lookup. That lookup happens at import time and defaults to
+    permissive, while this repository's invariant is that strictness is the
+    default; passing the list closes that gap, because an unset or late-set
+    variable can no longer decide whether unregistered types are reconstructed.
+    The local check is kept, so an operator who tries to relax the invariant is
+    still refused rather than silently ignored.
+
     Returns:
-        A JSON/msgpack serializer that cannot deserialize pickle payloads.
+        A JSON/msgpack serializer that cannot deserialize pickle payloads and
+        reconstructs only the library's safe types plus this repository's
+        pause contracts.
 
     Raises:
         RuntimeError: If local configuration attempts to relax the invariant.
@@ -36,7 +61,10 @@ def _checkpoint_serializer_from_env() -> JsonPlusSerializer:
         raise RuntimeError(
             f"{STRICT_MSGPACK_ENV} must remain true; pickle fallback is prohibited"
         )
-    return JsonPlusSerializer(pickle_fallback=False)
+    return JsonPlusSerializer(
+        pickle_fallback=False,
+        allowed_msgpack_modules=CHECKPOINT_ALLOWED_TYPES,
+    )
 
 
 @dataclass(frozen=True, slots=True)

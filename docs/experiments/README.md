@@ -107,8 +107,10 @@ identifiers, Telegram IDs, tokens, or Langfuse exports.
   blocking gates.
 - `workflow/category-review-it`: every approval/reuse/named/re-proposal/cancel,
   unrelated-message, multi-pending, retry, and resume branch. Executable;
-  dataset `category-review-it-v1` reaches its minimum and currently fails one
-  blocking gate on a conflated refusal reason code.
+  dataset `category-review-it-v1` reaches its minimum and passes every blocking
+  gate. It found two defects on its first run, both since fixed. Its model port
+  is scripted and its promotion effect is none: it establishes that the workflow
+  is correct and says nothing about any model.
 - `tools/selection-and-use`: permitted tool name, arguments, order, result
   handling, forbidden mutation rate, and execution postconditions.
 - `advice/grounding-it`: budget/status math, period comparisons, numeric

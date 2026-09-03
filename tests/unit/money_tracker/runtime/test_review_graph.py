@@ -520,7 +520,16 @@ def test_an_unusable_model_answer_keeps_the_review_open() -> None:
 
 
 def test_a_duplicate_reproposal_keeps_the_review_open() -> None:
-    """Refuse a replacement the taxonomy already covers."""
+    """Refuse a replacement the taxonomy already covers, as an unusable one.
+
+    A candidate duplicating an active node was refused by taxonomy governance,
+    which is what `invalid_candidate` means. It is not the owner naming a
+    category that does not exist, so it must not report `unknown_category`: the
+    reason code picks the question the owner is asked, and the two questions
+    are different. This expectation was corrected once the pinned
+    `workflow/category-review-it` suite measured the branch against the
+    documented reason vocabulary.
+    """
 
     store, compiled, config, _, _, _ = _fixture(
         completions=[_fit(proposed_name="Abbonamenti", parent_name=None)]
@@ -528,6 +537,29 @@ def test_a_duplicate_reproposal_keeps_the_review_open() -> None:
 
     again = compiled.invoke(
         Command(resume=ReviewDecision(CallbackAction.REPROPOSE_CATEGORY)), config
+    )
+
+    assert again["clarification_reason"] == ReviewReason.INVALID_CANDIDATE.value
+    assert again["outcome"] is None
+    assert store.settlements == 0
+
+
+def test_a_reused_name_the_owner_typed_still_reports_an_unknown_category() -> None:
+    """Keep the reuse branch reporting the refusal that actually happened.
+
+    The two branches raise the same error type, so separating the re-proposal
+    case must not silently reclassify this one.
+    """
+
+    store, compiled, config, _, _, _ = _fixture()
+
+    again = compiled.invoke(
+        Command(
+            resume=ReviewDecision(
+                CallbackAction.USE_NAMED_EXISTING, "Categoria inesistente"
+            )
+        ),
+        config,
     )
 
     assert again["clarification_reason"] == ReviewReason.UNKNOWN_CATEGORY.value

@@ -31,7 +31,8 @@ do not rewrite historical outcomes when a later experiment supersedes them.
   schema let the model judge its own uncertainty, which the deterministic side
   was better placed to decide. Removing that channel resolved it. No row is
   added below, because no experiment concluded and nothing was promoted; the
-  change is recorded in the Step 3 evidence of [Roadmap](../roadmap.md).
+  change is recorded in the evidence of
+  [Step 3](../roadmap/step-3-evaluated-text-workflows.md).
 - Auto-post threshold: disabled until categorization precision gates pass.
 - Routing confidence bar: none promoted. The implemented router requires the
   value as an explicit argument and has no default, so no runtime can adopt

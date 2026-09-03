@@ -13,8 +13,9 @@ roadmap step is completed.
 
 1. [Product baseline](product/README.md) for V1 goals, scope, journeys, domain
    rules, taxonomy, and shared language.
-2. [Delivery roadmap](roadmap.md) for the active step, prerequisites, and exit
-   criteria.
+2. [Delivery roadmap](roadmap.md) to find the active step, then that step's own
+   document under [`roadmap/`](roadmap/) for its prerequisites, deliverables,
+   exit criteria, and implementation evidence.
 3. [arc42 architecture](arc42/README.md) for current and target components,
    interfaces, runtime, deployment, quality, and risks.
 4. [Architecture decisions](arc42/decisions/README.md) for binding choices and

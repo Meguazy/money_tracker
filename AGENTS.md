@@ -73,8 +73,9 @@ These instructions apply to the entire repository.
   sources in order:
   1. `docs/product/README.md` and the linked product baseline for goals, V1
      scope, user journeys, domain language, and taxonomy.
-  2. `docs/roadmap.md` to identify the active delivery step, prerequisites, and
-     exit criteria.
+  2. `docs/roadmap.md` to identify the active delivery step, then that step's
+     document under `docs/roadmap/` for its prerequisites, deliverables, exit
+     criteria, and implementation evidence.
   3. `docs/arc42/README.md` for current and target architecture, component
      boundaries, runtime interactions, deployment, and cross-cutting rules.
   4. `docs/arc42/decisions/README.md` and every ADR relevant to the change.
@@ -92,7 +93,10 @@ These instructions apply to the entire repository.
   the same change.
 - Work within the active roadmap step unless the user explicitly changes scope.
   Do not implement later-step infrastructure opportunistically.
-- When a roadmap item is completed, update its status and evidence. Keep
+- When a roadmap item is completed, update its status and evidence in that
+  step's document under `docs/roadmap/`, and update the matching row of the
+  status table in `docs/roadmap.md` in the same change. The table and the step
+  documents must never disagree about which step is active. Keep
   `implemented`, `planned`, and experiment-gated decisions accurate across the
   roadmap, arc42, ADR index, and operations guides.
 - Do not promote a model, prompt, routing threshold, tool contract, taxonomy

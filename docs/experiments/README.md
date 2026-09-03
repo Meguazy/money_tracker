@@ -60,15 +60,22 @@ Run the Italian expense-extraction suite against the real boundary with:
 
     uv run --env-file .env money-tracker-eval ingestion
 
-Run the owner category-review suite against the isolated test database with:
+Run the suites that gate postconditions against the isolated test database
+with:
 
     RUN_POSTGRES_INTEGRATION_TESTS=1 \
       uv run --env-file .env money-tracker-eval category-review
+    RUN_POSTGRES_INTEGRATION_TESTS=1 \
+      uv run --env-file .env money-tracker-eval tools
+    RUN_POSTGRES_INTEGRATION_TESTS=1 \
+      uv run --env-file .env money-tracker-eval advice
 
-That suite writes real rows, so it refuses any database but local
-`money_tracker_test` on port 5433 and resets it once at the start of a run. Its
-model port is scripted: every branch it gates is deterministic, and a real
-endpoint could only let a model failure mask a wiring failure.
+These write real rows, so they refuse any database but local
+`money_tracker_test` on port 5433 and reset it once at the start of a run. The
+category-review model port is scripted, because every branch it gates is
+deterministic and a real endpoint could only let a model failure mask a wiring
+failure. The tool and advice suites do reach the real endpoint, because what
+they measure is a model judgment.
 
 The confidence bar is required and has no default, because none is promoted and
 a routing score is meaningless without the bar that produced it. The bar, the
@@ -112,9 +119,16 @@ identifiers, Telegram IDs, tokens, or Langfuse exports.
   is scripted and its promotion effect is none: it establishes that the workflow
   is correct and says nothing about any model.
 - `tools/selection-and-use`: permitted tool name, arguments, order, result
-  handling, forbidden mutation rate, and execution postconditions.
+  handling, forbidden mutation rate, and execution postconditions. Executable;
+  dataset `tools-selection-and-use-it-v1` reaches its minimum and currently
+  fails two blocking gates, both caused by an invented period rather than a
+  wrong tool.
 - `advice/grounding-it`: budget/status math, period comparisons, numeric
-  provenance, insufficient-data behavior, and human usefulness.
+  provenance, insufficient-data behavior, and human usefulness. Executable;
+  dataset `advice-grounding-it-v1` reaches its minimum. Numeric grounding and
+  the J8 budget-before-history rule pass; interpretation fails on the same
+  invented period, and human usefulness stays unmeasured until the owner
+  reviews it.
 - `receipts/extraction-it`: merchant/date/total/lines/discounts, line matching,
   category allocation, reconciliation, image quality, and prompt injection.
 - `messaging/recovery`: ordered ingestion, duplicate updates, crash windows,

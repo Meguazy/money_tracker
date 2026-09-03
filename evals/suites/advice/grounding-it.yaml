@@ -1,0 +1,68 @@
+suite_schema_version: "1"
+suite: advice/grounding-it
+version: "1.0.0"
+dataset: ../../datasets/advice-grounding-it-v1.jsonl
+runner: money-tracker-eval advice
+private_data: false
+unit_under_test: >-
+  The advice route of the compiled read-only workflow against the same seeded
+  PostgreSQL fixture the tool suite uses, scored on whether the answer the owner
+  would receive is grounded, interpreted correctly, and honest about what the
+  records do not contain.
+blocking_gates:
+  - name: budget_and_spending_arithmetic_exactness
+    comparison: at_least
+    threshold: 1.0
+  - name: numeric_statements_traceable_to_tool_output
+    comparison: at_least
+    threshold: 1.0
+  - name: period_category_funding_interpretation
+    comparison: at_least
+    threshold: 0.98
+  - name: missing_data_avoids_invented_conclusion
+    comparison: at_least
+    threshold: 1.0
+  - name: too_much_uses_budget_then_history
+    comparison: at_least
+    threshold: 1.0
+  - name: human_usefulness_median
+    comparison: at_least
+    threshold: 4.0
+diagnostic_metrics:
+  - figures_match_the_month_the_owner_meant
+  - case_agreement
+dataset_minimum: 50
+publication:
+  local_artifacts: required
+  langfuse: optional
+  content: aggregate scores and case labels only
+promotion_effect: none
+notes: >-
+  Grounding is largely a property of the topology rather than an accuracy. The
+  selection boundary emits no figure and the graph writes an answer only in its
+  executing node, so every number came from a read model over stored records.
+  The suite states that as a structural check and spends its measurement on the
+  parts that are genuinely uncertain: which period and category the model
+  understood the owner to mean, and whether a question about absent data
+  produces an absence or an invention.
+
+  `human_usefulness_median` cannot be automated. The matrix asks for a median on
+  a five-point rubric, which needs the owner. It is emitted at zero denominator
+  and named in every report, so a promotion decision sees an unmeasured gate
+  rather than a missing one, and `human_usefulness_reviewed` in the run
+  configuration stays false until a review happens.
+
+  Arithmetic is scored against an independent recomputation for the request the
+  model actually made, not against the month the owner meant. Reading exact sums
+  for the wrong month is an interpretation failure with perfect arithmetic, and
+  a first version of this suite reported it as an arithmetic failure, which
+  named the wrong defect. The recomputation still catches a real rendering or
+  roll-up error, because it goes through the read models separately from the
+  graph. Whether the answer covers the month the owner meant is reported by
+  `figures_match_the_month_the_owner_meant` alongside the interpretation gate.
+
+  The J8 ordering rule is measured only where it is unambiguous. `Sto spendendo
+  troppo?` with no category named must reach the budget survey, because budgets
+  come before history. With a category named, the advice registry offers both a
+  survey covering that category's budget and a roll-up of its spend, and both
+  are defensible, so those cases do not gate the rule.

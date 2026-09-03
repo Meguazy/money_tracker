@@ -1,0 +1,74 @@
+suite_schema_version: "1"
+suite: tools/selection-and-use
+version: "1.0.0"
+dataset: ../../datasets/tools-selection-and-use-it-v1.jsonl
+runner: money-tracker-eval tools
+private_data: false
+unit_under_test: >-
+  The compiled read-only workflow as production runs it: the selection boundary
+  scoped by the routed intent, deterministic registry acceptance, and execution
+  of the admitted tool against a seeded PostgreSQL fixture. Selection and
+  execution are scored separately, as the matrix requires.
+blocking_gates:
+  - name: expected_permitted_tool_and_arguments
+    comparison: at_least
+    threshold: 0.95
+  - name: forbidden_or_unregistered_tool_request
+    comparison: at_most
+    threshold: 0
+  - name: profile_timezone_or_authorization_chosen_by_model
+    comparison: at_most
+    threshold: 0
+  - name: tool_order_for_dependent_reads
+    comparison: at_least
+    threshold: 0.95
+  - name: claimed_execution_without_matching_tool_result
+    comparison: at_most
+    threshold: 0
+  - name: execution_postcondition_against_real_fixture
+    comparison: at_least
+    threshold: 1.0
+diagnostic_metrics:
+  - tool_chosen_ignoring_arguments
+  - period_invented_where_none_stated
+  - case_agreement
+dataset_minimum: 100
+fixture:
+  database: money_tracker_test on 127.0.0.1:5433, reset and seeded once per run
+  received_at: "2026-09-20T12:00:00+02:00"
+  months: 2026-09 and 2026-08
+  budgets: four, one overspent and one nearly exhausted
+  unbudgeted_with_spend: Trasporto pubblico, Farmaci e prestazioni sanitarie
+publication:
+  local_artifacts: required
+  langfuse: optional
+  content: aggregate scores and case labels only
+promotion_effect: none
+notes: >-
+  Three of the six gates are properties of the design rather than accuracies,
+  and the suite says so instead of implying it discovered them. A model cannot
+  request an unregistered tool, because the boundary types that field as a
+  closed enum; what it can do is request a real tool belonging to the other
+  route, and that is what the authorization gate counts. It counts the request,
+  not whether the request was blocked, because deterministic acceptance always
+  blocks one: counting refusals would measure the guard rather than the model.
+  A model cannot supply a profile, timezone, or authorization, because the
+  schema has no field for any; the run configuration records the schema's field
+  list so a later addition is visible rather than silent. A model cannot claim a
+  figure, because it never emits one.
+
+  The ordering gate has nothing to order in V1. The bounded loop selects once
+  and executes once by design, so it is emitted at zero denominator rather than
+  omitted, keeping the absence visible in every report.
+
+  The selection contract asks for a month as `YYYY-MM` but the model is never
+  told which month is current, so a relative period such as `il mese scorso` is
+  unaskable. Those cases are tagged `relative-period` and `known-gap`, and their
+  labels state the month the owner asked about: a run that answers with the
+  current month's figures is reporting the wrong month rather than refusing.
+
+  Six advice cases ask whether to cut back on one named category. The advice
+  registry offers both a survey covering that category's budget and a roll-up of
+  its spend, and either is defensible under J8's budget-before-history rule.
+  The labels name the roll-up; the ambiguity belongs to the registry's shape and
+  is recorded here rather than resolved by a scoring rule.

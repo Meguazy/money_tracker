@@ -16,9 +16,10 @@ specialist workflow runs end to end, storing a draft through the existing
 application services or reporting the question it owes, and the extraction
 boundary no longer blocks that path. The owner category review pauses on a
 persistent interrupt and settles every J3 branch, and the read-only routes
-answer from scoped registries of domain read tools. All four pinned suites are
-executable and measured, and each fails at least one blocking gate. No channel
-wiring exists yet, and no confidence bar, prompt, or model is promoted.
+answer from scoped registries of domain read tools. All six pinned suites are
+executable and measured. The workflow suite passes every gate; the five that
+measure model judgment each fail at least one. No channel wiring exists yet,
+and no confidence bar, prompt, or model is promoted.
 
 ## Prerequisites
 
@@ -39,12 +40,17 @@ own tests and documentation, and none may ship a later step's behavior.
    effects placed after the interrupt and made idempotent for replay.
    Implemented; see the evidence below.
 3. The pinned `routing/intent-it`, `ingestion/expense-it`,
-   `categorization/purpose-it`, and `workflow/category-review-it` datasets and
-   suites, then calibration of the routing confidence bar and the auto-post
-   eligibility policy on held-out labels. All four suites are executable, reach
-   their promotion minimums, and have been measured; each fails at least one
-   blocking gate, so none supports a promotion or a calibration conclusion. This
-   increment now blocks usable end-to-end behaviour, not just promotion: see the
+   `categorization/purpose-it`, `workflow/category-review-it`,
+   `tools/selection-and-use`, and `advice/grounding-it` datasets and suites,
+   then calibration of the routing confidence bar and the auto-post eligibility
+   policy on held-out labels. The last two were added to this increment by an
+   explicit owner scope decision: increment 1 shipped the read-only query and
+   advice routes, and the suite catalog already gated them, so leaving them
+   unmeasured would have left implemented behaviour outside the evaluation
+   boundary. All six suites are executable and reach their promotion minimums.
+   `workflow/category-review-it` passes every gate; the other five fail at
+   least one, so none supports a promotion or a calibration conclusion. This
+   increment blocks usable end-to-end behaviour, not just promotion: see the
    measured findings in the evidence below. An ad-hoc check against the screened
    Qwen3 14B profile routed the expense, refund, split-funding, query, budget,
    advice, and non-finance journeys as the product baseline expects, but routed
@@ -538,13 +544,77 @@ own tests and documentation, and none may ship a later step's behavior.
   contract that could have been established by reading it, not a threshold moved
   to fit an outcome, and the gate the matrix states, zero duplicate writes,
   passed unchanged before and after.
-- The purpose boundary is confirmed as Step 3's binding constraint. Routing
-  fails three gates with most errors landing safely; categorization fails four
-  with a majority of cases producing an unusable judgment. The two suites that
-  measure model judgment fail broadly, while the two that measure deterministic
-  behaviour, extraction of what a message states and the review workflow's
-  postconditions, are close to exact. The remaining work in this step is a model
-  and boundary-shape problem, not a workflow problem.
+- `tools/selection-and-use` v1.0.0 holds 110 authored cases across both
+  read-only routes against a seeded PostgreSQL fixture spanning two months, one
+  split payment, four budgets of which one is overspent and one nearly
+  exhausted, and two categories with posted spend and no budget. Selection and
+  execution are scored apart, as the matrix requires, and three of its six gates
+  are properties of the design that the suite reports as such rather than
+  implying it discovered them: an unregistered tool name cannot be expressed
+  because the field is a closed enum, no profile or timezone field exists for a
+  model to fill, and no figure can be claimed because the boundary emits none.
+- Its result is the sharpest diagnosis in this step. `tool_chosen_ignoring_
+  arguments` is 0.969: the model picks the correct tool 95 times out of 98.
+  `period_invented_where_none_stated` is 0.791: on messages that state no month
+  it supplies one anyway, against instructions that say verbatim that `questo
+  mese` states no month and must be omitted. Both blocking accuracy gates fail
+  for that single reason, `expected_permitted_tool_and_arguments` at 0.286 and
+  `execution_postcondition_against_real_fixture` at 0.301.
+- The consequence is worse than a wrong tool would be. `Quanto ho speso di spesa
+  alimentare questo mese?` produced a request for `2023-10`, and the system read
+  that month from the real database, found nothing, and answered zero. The
+  figure is grounded, auditable, and false. Unlike the fabricated funding word in
+  `ingestion/expense-it`, nothing can veto it: any syntactically valid `YYYY-MM`
+  passes the pattern and names a month the owner simply has no records for.
+- A controlled contrast inside the dataset isolates the cause. Cases where the
+  owner states a full month score 13 of 14; cases where the owner states none
+  score 15 of 67. The model handles a stated month almost perfectly and cannot
+  leave the field empty when none is stated.
+- Two design properties passed and are worth recording as passes rather than as
+  absences of failure. `forbidden_or_unregistered_tool_request` counted zero
+  across all 110 cases, including twelve written specifically to tempt the tool
+  belonging to the other route, so rendering each route's vocabulary from its
+  own registry holds under pressure. And the advice route's J8 rule,
+  `too_much_uses_budget_then_history`, scored 10 of 10.
+- The suite also documents a gap in the boundary rather than in the model. The
+  contract asks for a month as `YYYY-MM` but the model is never told which month
+  is current, so `il mese scorso` is unaskable: it can only omit the field, which
+  means the current month, or guess a year. Those five cases are tagged
+  `known-gap` and labelled with the month the owner meant.
+- `advice/grounding-it` v1.0.0 holds 52 fixture-backed questions on the same
+  fixture. `numeric_statements_traceable_to_tool_output` is 1.0 across all 52 and
+  `budget_and_spending_arithmetic_exactness` is 1.0 across all 47 answers,
+  confirming that grounding and arithmetic are properties of the topology: the
+  selection boundary emits no figure, the graph writes an answer only in its
+  executing node, and an independent recomputation through the read models
+  matches every answer the graph produced.
+  `period_category_funding_interpretation` fails at 0.615 and
+  `missing_data_avoids_invented_conclusion` at 0.667, both on the same invented
+  period. `human_usefulness_median` is emitted at zero denominator: it needs the
+  owner's five-point review and is recorded as unmeasured rather than omitted.
+- One correction to this suite is worth recording because it changed which
+  component the report blamed. Its first version scored arithmetic against the
+  month the owner meant and reported 0.577, which reads as sums being wrong two
+  times in five. The sums were never wrong. Arithmetic is now scored against an
+  independent recomputation of the request the model actually made, and reads
+  1.0, while whether the answer covers the intended month is reported separately.
+  A metric that names the wrong component is worse than a missing one, because a
+  reader would have gone looking for a defect in the read models.
+- Three suites now share one root cause, and the tool suite is the first to
+  isolate it by design rather than infer it. Categorization filled
+  `proposed_name` while also filling `category_name`; extraction filled
+  `payment_parts`, `merchant`, and even `amount` where the message was silent;
+  tool selection fills `period` where the owner stated no month. In every case
+  the field is optional, the instructions say to omit it, and the model fills it
+  anyway. Reliable omission of an optional field is therefore a capability to
+  screen in Step 1 alongside union output, not a prompt to revise in Step 3.
+- Across all six suites the split is consistent. Everything deterministic is
+  correct or nearly so: the review workflow passes every gate, extraction is
+  exact on amounts, dates, splits and polarity, tool authorization never leaked,
+  and every figure any route produced was traceable and arithmetically exact.
+  Everything that depends on the model leaving an optional field alone fails.
+  The remaining work in this step is a model and boundary-shape problem, not a
+  workflow problem.
 - Four routing dataset labels warrant owner review before the next run, and
   none was changed after seeing the outcome. `Mio fratello ha speso 50 euro` and `Quanto
   costa un iPhone?` were labelled clarification and routed to non-finance and

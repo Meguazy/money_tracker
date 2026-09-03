@@ -15,8 +15,8 @@ from money_tracker.evaluations.category_review import (
     SUITE,
     ScriptedModel,
     fixture_taxonomy,
-    require_isolated_database,
 )
+from money_tracker.evaluations.fixtures import require_isolated_database
 from money_tracker.evaluations.suites import dataset_metadata, load_cases
 from money_tracker.workflows import CATEGORY_REVIEW_ACTIONS, CallbackAction
 

@@ -33,12 +33,11 @@ from collections.abc import Mapping, Sequence
 from hashlib import sha256
 from pathlib import Path
 from typing import Any, cast
-from urllib.parse import urlparse
 from uuid import UUID, uuid4
 
 from langchain_core.runnables import RunnableConfig
 from langgraph.types import Command
-from psycopg import connect, sql
+from psycopg import connect
 from pydantic import BaseModel, JsonValue
 
 from money_tracker.application import (
@@ -47,20 +46,24 @@ from money_tracker.application import (
 )
 from money_tracker.application.runtime import SystemClock, UUID4Generator
 from money_tracker.domain import (
-    AuditEvent,
-    BalanceMode,
     Category,
     CategoryProposal,
     CategoryStatus,
     Expense,
     ExpenseStatus,
-    FundingClass,
     FundingSource,
     Money,
     PaymentAllocation,
     Profile,
     Taxonomy,
     initial_taxonomy,
+)
+from money_tracker.evaluations.fixtures import (
+    DEFAULT_SOURCES,
+    audit_event,
+    bootstrap_owner,
+    require_isolated_database,
+    reset_database,
 )
 from money_tracker.evaluations.metadata import (
     CapabilitySettings,
@@ -140,36 +143,6 @@ class ScriptedModel:
         return self.completions[self.calls - 1]
 
 
-def require_isolated_database(database_url: str) -> str:
-    """Refuse any database but the local isolated integration-test one.
-
-    Args:
-        database_url: Candidate PostgreSQL URL.
-
-    Returns:
-        The same URL when it names the expected local test database.
-
-    Raises:
-        ValueError: If the URL names anything else. A suite that bootstraps
-            profiles and posts movements must never reach the owner's real
-            data, and a name check is the only guard that cannot be bypassed
-            by a misconfigured environment file.
-    """
-
-    parsed = urlparse(database_url)
-    if (
-        parsed.scheme != "postgresql"
-        or parsed.hostname not in {"127.0.0.1", "localhost"}
-        or parsed.port != 5433
-        or parsed.path != "/money_tracker_test"
-    ):
-        raise ValueError(
-            "the category review suite writes real rows and runs only against "
-            "the local money_tracker_test database on port 5433"
-        )
-    return database_url
-
-
 def fixture_taxonomy() -> Taxonomy:
     """Extend the seed taxonomy with the two nodes the matrix branches need.
 
@@ -203,34 +176,6 @@ def fixture_taxonomy() -> Taxonomy:
     )
 
 
-def _reset_database(database_url: str) -> None:
-    """Drop only the schemas this repository owns in the test database.
-
-    The run starts from a known empty database so that node counts, proposal
-    states, and checkpoint threads mean the same thing on every execution. The
-    current-database check repeats the URL guard from inside the connection,
-    because that is the only place a mistake could still be caught.
-
-    Args:
-        database_url: Already-guarded isolated test database URL.
-
-    Raises:
-        ValueError: If the open connection is not the test database.
-    """
-
-    with connect(database_url, autocommit=True) as connection:
-        current = connection.execute("SELECT current_database()").fetchone()
-        if current != ("money_tracker_test",):
-            raise ValueError("refusing to reset a database other than the test one")
-        for schema_name in ("workflow", "messaging", "finance"):
-            connection.execute(
-                sql.SQL("DROP SCHEMA IF EXISTS {} CASCADE").format(
-                    sql.Identifier(schema_name)
-                )
-            )
-        connection.execute("DROP TABLE IF EXISTS public.alembic_version")
-
-
 def _insert_fixture_aliases(database_url: str, category_id: UUID) -> None:
     """Persist the fixture aliases the bootstrap path does not carry.
 
@@ -255,25 +200,16 @@ def _bootstrap_profile(
     repository: PostgresFinanceRepository,
     database_url: str,
 ) -> tuple[Profile, FundingSource]:
-    """Seed one fresh profile, its taxonomy, and one active default source."""
+    """Seed the run's single owner and the aliases bootstrap does not carry."""
 
-    profile = Profile(uuid4())
-    now = SystemClock().now()
-    repository.bootstrap_profile(profile, taxonomy=fixture_taxonomy(), occurred_at=now)
+    owner = bootstrap_owner(
+        repository, taxonomy=fixture_taxonomy(), sources=DEFAULT_SOURCES
+    )
     _insert_fixture_aliases(
         database_url,
-        repository.get_taxonomy(profile.id).resolve_active(ALIAS_CATEGORY).id,
+        repository.get_taxonomy(owner.profile.id).resolve_active(ALIAS_CATEGORY).id,
     )
-    card = FundingSource(
-        id=uuid4(),
-        profile_id=profile.id,
-        name="Carta",
-        funding_class=FundingClass.PERSONAL_FUNDS,
-        balance_mode=BalanceMode.UNTRACKED,
-        is_default=True,
-    )
-    repository.create_funding_source(card, occurred_at=now)
-    return profile, card
+    return owner.profile, owner.source("Carta")
 
 
 def _store_draft(
@@ -302,19 +238,7 @@ def _store_draft(
     )
     return repository.create_expense(
         expense,
-        audit_event=AuditEvent(
-            id=uuid4(),
-            profile_id=profile.id,
-            aggregate_type="expense",
-            aggregate_id=expense.id,
-            action="create",
-            actor="eval",
-            source_reference=reference,
-            occurred_at=SystemClock().now(),
-            prior_version=None,
-            current_version=1,
-            reason="category review suite fixture",
-        ),
+        audit_event=audit_event(expense, action="create"),
         request_hash=sha256(reference.encode()).hexdigest(),
     )
 
@@ -764,7 +688,7 @@ def run_category_review_suite(
     dataset = dataset_metadata(
         suite=SUITE, path=dataset_path, cases=cases, content_hash=content_hash
     )
-    _reset_database(database_url)
+    reset_database(database_url)
     upgrade_database(database_url)
     bootstrap_checkpointer(database_url)
     repository = PostgresFinanceRepository(database_url)

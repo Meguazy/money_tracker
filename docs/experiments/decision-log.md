@@ -62,6 +62,31 @@ do not rewrite historical outcomes when a later experiment supersedes them.
   Nothing is promoted by this run. The suite's `promotion_effect` is `none` and
   its model port is scripted, so it establishes that the workflow is correct and
   says nothing about any model.
+- Read-tool selection: `candidate-tool-selection-it-v1` is measured by
+  `tools-selection-and-use-it-v1` (110 cases) and `advice-grounding-it-v1` (52
+  cases), both against a seeded PostgreSQL fixture. The design properties hold:
+  zero forbidden or unregistered tool requests across 110 cases including twelve
+  written to tempt one, no profile or timezone field for a model to fill, every
+  figure traceable to an executed tool, arithmetic exact on every answer, and
+  J8's budget-before-history rule at 10 of 10. The accuracy gates fail for a
+  single reason. The model chooses the correct tool 95 times in 98 and then
+  supplies a month on 79% of the messages that state none, against instructions
+  that say `questo mese` states no month and must be omitted. The system then
+  reads that month, finds no records, and answers zero: grounded, auditable, and
+  wrong, with no deterministic veto available because any valid `YYYY-MM` names a
+  real month. Cases stating a full month score 13 of 14; cases stating none score
+  15 of 67.
+- A boundary gap is recorded with it: the selection contract asks for `YYYY-MM`
+  but never tells the model which month is current, so a relative period such as
+  `il mese scorso` cannot be expressed at all. Nothing is promoted or changed
+  here; both are evidence for the experiment that would address them.
+- One failure mode now spans three boundaries and is no longer an inference.
+  Categorization fills `proposed_name` beside `category_name`, extraction fills
+  `payment_parts`, `merchant` and `amount` where the message is silent, and tool
+  selection fills `period` where no month is stated. Each field is optional, each
+  set of instructions says to omit it, and the model fills it anyway. Reliable
+  omission of an optional field joins union output as a capability to screen
+  before a candidate is considered for a product role.
 - Auto-post threshold: disabled until categorization precision gates pass.
 - Routing confidence bar: none promoted. The implemented router requires the
   value as an explicit argument and has no default, so no runtime can adopt

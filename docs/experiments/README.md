@@ -75,7 +75,8 @@ identifiers, Telegram IDs, tokens, or Langfuse exports.
   and context-limit behavior.
 - `routing/intent-it`: Italian intent classification, ambiguity, negation,
   compound requests, callbacks, non-finance text, and query-versus-write
-  safety. Executable; dataset `routing-intent-it-v1` is below its minimum.
+  safety. Executable; dataset `routing-intent-it-v1.1` reaches its minimum and
+  currently fails three blocking gates.
 - `ingestion/expense-it`: amount, currency, occurrence time, merchant,
   description, funding source, split payments, refund, and missing-field
   extraction.

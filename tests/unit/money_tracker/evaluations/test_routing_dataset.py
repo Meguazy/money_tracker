@@ -20,7 +20,8 @@ from money_tracker.workflows import (
     WorkflowIntent,
 )
 
-DATASET = Path("evals/datasets/routing-intent-it-v1.jsonl")
+DATASET = Path("evals/datasets/routing-intent-it-v1.1.jsonl")
+PREVIOUS = Path("evals/datasets/routing-intent-it-v1.jsonl")
 
 
 @pytest.fixture(scope="module")
@@ -42,7 +43,7 @@ def test_the_committed_dataset_parses_and_hashes(
     )
 
     assert metadata.item_count == len(cases)
-    assert metadata.version == "1.0.0"
+    assert metadata.version == "1.1.0"
     assert len(metadata.content_hash) == 64
 
 
@@ -128,19 +129,38 @@ def test_read_only_and_mutating_labels_stay_disjoint() -> None:
     assert not READ_ONLY_INTENTS & MUTATING_INTENTS
 
 
-def test_the_dataset_is_below_its_promotion_minimum(
+def test_the_dataset_reaches_its_promotion_minimum(
     cases: list[dict[str, object]],
 ) -> None:
-    """State the coverage gap in a test rather than only in prose.
+    """Keep the size claim in a test rather than only in prose.
 
     The experiment process requires 200 cases before this suite may support a
-    promotion. The committed dataset is smaller, so a run of it can pass every
-    blocking gate and still be ineligible. This test fails when the dataset
-    reaches the minimum, at which point the roadmap and decision log claims
-    about eligibility must be revisited in the same change.
+    promotion. Falling back below the minimum would silently make every future
+    run ineligible, so the size is asserted rather than assumed.
     """
 
-    assert len(cases) < DATASET_MINIMUM
+    assert len(cases) >= DATASET_MINIMUM
+
+
+def test_the_prior_version_is_carried_forward_unchanged() -> None:
+    """Never rewrite a prior run's meaning when a dataset grows.
+
+    The dataset policy versions a change rather than editing in place. Every
+    1.0.0 case must therefore survive into 1.1.0 with its label, message, and
+    context intact; only the version field may differ.
+    """
+
+    previous, _ = load_cases(PREVIOUS)
+    current = {case["case_id"]: case for case in load_cases(DATASET)[0]}
+
+    assert len(current) > len(previous)
+    for case in previous:
+        carried = current[str(case["case_id"])]
+        assert carried["message"] == case["message"]
+        assert carried["context"] == case["context"]
+        assert carried["expected_intent"] == case["expected_intent"]
+        assert carried["expected_source"] == case["expected_source"]
+        assert carried["dataset_version"] != case["dataset_version"]
 
 
 def test_no_case_carries_a_personal_identifier(

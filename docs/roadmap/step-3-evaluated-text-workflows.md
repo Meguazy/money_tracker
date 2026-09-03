@@ -346,37 +346,47 @@ own tests and documentation, and none may ship a later step's behavior.
   reconstruct anything private. Promotion eligibility requires both every
   blocking gate and the dataset minimum, and the runner refuses to compute it
   any other way.
-- `routing/intent-it` v1.0.0 holds 112 authored synthetic Italian cases covering
-  every routable intent and the risk classes the evaluation matrix names:
-  negation, hypothetical and reported speech, compound requests, prompt
-  injection, benefit credits, relative dates, split funding, and every
-  deterministic pre-routing branch. It is below the 200-case minimum the
-  experiment process requires, so no run of it can support a promotion; a unit
-  test asserts that gap rather than leaving it in prose only.
-- The first measurement ran the whole compiled router against the screened
-  Qwen3 14B profile at a 0.5 confidence bar. Deterministic pre-routing scored
-  16/16 and no expense or refund was demoted to a read-only route. Three
-  blocking gates failed:
-  - `read_only_input_routed_to_write` counted 3 cases against a zero-tolerance
-    gate, and all three are one failure mode: a benefit or income *credit* read
-    as spending. `Vorrei caricare 100 euro di buoni pasto` and `Aggiungi 50
-    euro al portafoglio buoni pasto` routed to expense, and `Accreditami lo
-    stipendio di questo mese` routed to refund. The ad-hoc J5 finding recorded
-    earlier in this step is now measured, and it generalises beyond the one
-    phrase that first exposed it.
-  - `ambiguous_safely_clarified` reached 0.857 against a 0.98 gate, driven by
-    the same three cases plus two whose labels are themselves debatable.
-  - `macro_f1` reached 0.926 against a 0.95 gate.
-  Remaining misses are safe: an unrecognised banking term, a draft cancellation,
-  and an advice question read as a query all failed towards asking or towards
-  another read-only route.
-- Two dataset labels warrant review before the next run. `Mio fratello ha speso
-  50 euro` was labelled clarification and routed to non-finance, and `Quanto
-  costa un iPhone?` was labelled clarification and routed to unsupported. Both
-  model answers are defensible, so these may be annotation errors rather than
-  routing errors. The dataset records `reviewer_status: unreviewed`, which is
-  what that field is for; no label was changed after seeing the result, because
-  the experiment process forbids tuning a run after its outcome is known.
+- `routing/intent-it` v1.1.0 holds 201 authored synthetic Italian cases and is
+  the first dataset in this repository to reach its promotion minimum. It
+  covers every routable intent and the risk classes the evaluation matrix
+  names: negation, hypothetical and reported speech, compound requests, prompt
+  injection, benefit credits, income, relative dates, thousands separators,
+  amounts written as words, typos, and every deterministic pre-routing branch.
+  Version 1.1.0 carries all 112 v1.0.0 cases forward unchanged and adds 89, so
+  the earlier run keeps its meaning; a unit test asserts that carry-forward
+  field by field rather than trusting it.
+- Measured against the screened Qwen3 14B profile at a 0.5 confidence bar,
+  v1.1.0 fails three blocking gates. Deterministic pre-routing scored 16/16 and
+  no expense or refund was demoted to a read-only route.
+  - `read_only_input_routed_to_write` counted 10 of 70 against a zero-tolerance
+    gate. Every one of them is the same blind spot, and none came from a
+    question, an advice request, or a greeting: the router has no concept of
+    money *arriving* that is not a refund. Six benefit credits and four income
+    reports were forced into a movement route, seven as refunds and three as
+    expenses. `Ho caricato la carta welfare con 250 euro` and `Registra
+    l'entrata dello stipendio, 1800 euro` were both read as spending.
+  - `ambiguous_safely_clarified` reached 0.708 against a 0.98 gate. The ten
+    credit cases dominate it; the rest are a bare `Spesa` read as an expense
+    and two advice questions read as queries.
+  - `macro_f1` reached 0.8955 against a 0.95 gate.
+  Every remaining miss is safe: an unrecognised banking term, a terse review
+  approval, and two out-of-scope requests all failed towards asking or towards
+  another read-only route, and a prompt-injection attempt landed on unsupported.
+- The finding is sharper than the ad-hoc J5 note recorded earlier in this step.
+  That note read as a phrasing problem around one sentence. Measured across
+  sixteen credit and income cases, it is a missing concept: V1's taxonomy has a
+  destination for incoming money it does not handle, and the candidate router
+  text never teaches the model that such a destination exists. No prompt change
+  was attempted, because AD-012 reserves that for a gated experiment and this
+  run is the evidence such an experiment would start from.
+- Four dataset labels warrant owner review before the next run, and none was
+  changed after seeing the outcome. `Mio fratello ha speso 50 euro` and `Quanto
+  costa un iPhone?` were labelled clarification and routed to non-finance and
+  unsupported. `Come sto andando con le spese questo mese?` and `Come sono
+  messo con i budget?` were labelled advice and routed to query. All four model
+  answers are defensible, so these may be annotation errors rather than routing
+  errors; every case records `reviewer_status: unreviewed`, which is what that
+  field is for.
 - `money-tracker-admin profile-init`, `profile-list`, and
   `funding-source-add` make the finance components reachable without
   hand-written Python. Until they existed, every command taking a profile

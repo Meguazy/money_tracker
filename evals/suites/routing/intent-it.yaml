@@ -1,7 +1,7 @@
 suite_schema_version: "1"
 suite: routing/intent-it
-version: "1.0.0"
-dataset: ../../datasets/routing-intent-it-v1.jsonl
+version: "1.1.0"
+dataset: ../../datasets/routing-intent-it-v1.1.jsonl
 runner: money-tracker-eval routing
 private_data: false
 unit_under_test: >-
@@ -38,3 +38,5 @@ notes: >-
   Passing every blocking gate is necessary but not sufficient. A run is
   eligible for promotion only when the dataset also reaches its minimum, and
   the confidence bar it was measured at is recorded in the run configuration.
+  Version 1.1.0 carries every 1.0.0 case forward unchanged and adds 89, so a
+  1.0.0 run keeps its original meaning and remains comparable by label.

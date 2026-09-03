@@ -37,12 +37,12 @@ do not rewrite historical outcomes when a later experiment supersedes them.
 - Routing confidence bar: none promoted. The implemented router requires the
   value as an explicit argument and has no default, so no runtime can adopt
   one before calibration on the pinned `routing/intent-it` dataset is
-  recorded here. A first measurement exists at a 0.5 bar against
-  `routing-intent-it-v1` (112 cases, below the 200-case minimum) and fails
-  three blocking gates, so it supports no promotion and no calibration
-  conclusion. Its decisive failure is a safety one: benefit and income credits
-  routed to a financial write, which the intent dataset was built to catch and
-  did.
+  recorded here. `routing-intent-it-v1.1` (201 cases) reaches the minimum and
+  has been measured at a 0.5 bar, but fails three blocking gates, so it
+  supports no promotion and no calibration conclusion. Its decisive failure is
+  a safety one: 10 of 70 read-only inputs reached a financial write, all of
+  them incoming money the router has no concept of. No question, advice
+  request, or greeting was ever escalated to a write.
 - Receipt pipeline: no pipeline selected; receipt extraction remains planned.
 - Langfuse: optional local integration; the Step 1 capability runner emits
   deterministic local reports and can publish only redacted aggregate scores.

@@ -64,7 +64,9 @@ def _parser() -> argparse.ArgumentParser:
     routing.add_argument(
         "--dataset",
         type=Path,
-        default=(repository_root / "evals" / "datasets" / "routing-intent-it-v1.jsonl"),
+        default=(
+            repository_root / "evals" / "datasets" / "routing-intent-it-v1.1.jsonl"
+        ),
     )
     routing.add_argument(
         "--output-root",

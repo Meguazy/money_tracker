@@ -1,7 +1,8 @@
 # Experiments and Evaluations
 
 - Status: accepted process; Step 1 executable foundation complete
-- Executable infrastructure: capability runner and deterministic local reports
+- Executable infrastructure: capability runner, dataset-backed workflow suite
+  runner, and deterministic local reports
 - Decision authority: [Evaluation Matrix](evaluation-matrix.md) and
   [Decision Log](decision-log.md)
 - Current hardware shortlist:
@@ -47,6 +48,16 @@ Run the local-model capability suite with:
 
     uv run --env-file .env money-tracker-eval capabilities
 
+Run the Italian intent-routing suite against the real compiled router with:
+
+    uv run --env-file .env money-tracker-eval routing --minimum-confidence 0.5
+
+The confidence bar is required and has no default, because none is promoted and
+a routing score is meaningless without the bar that produced it. The bar, the
+dataset content hash, and the instruction-text hash are all recorded in the run
+configuration, so a score can never be read apart from the settings that
+produced it.
+
 The command writes a manifest and deterministic score report even when the real
 endpoint is unavailable. A blocking pass additionally requires the exact model
 alias, GGUF hash and quantization, llama.cpp executable hash/version, chat
@@ -63,7 +74,8 @@ identifiers, Telegram IDs, tokens, or Langfuse exports.
   tool/result sequencing, image input, deterministic temperature/seed support,
   and context-limit behavior.
 - `routing/intent-it`: Italian intent classification, ambiguity, negation,
-  compound requests, callbacks, non-finance text, and query-versus-write safety.
+  compound requests, callbacks, non-finance text, and query-versus-write
+  safety. Executable; dataset `routing-intent-it-v1` is below its minimum.
 - `ingestion/expense-it`: amount, currency, occurrence time, merchant,
   description, funding source, split payments, refund, and missing-field
   extraction.

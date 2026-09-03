@@ -9,6 +9,7 @@ from pathlib import Path
 
 from money_tracker.evaluations.capabilities import run_capability_suite
 from money_tracker.evaluations.metadata import CapabilitySettings
+from money_tracker.evaluations.routing import run_routing_suite
 
 
 def _repository_root() -> Path:
@@ -56,6 +57,26 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="publish only aggregate scores to the configured local Langfuse",
     )
+    routing = subparsers.add_parser(
+        "routing",
+        help="score Italian intent routing through the real compiled router",
+    )
+    routing.add_argument(
+        "--dataset",
+        type=Path,
+        default=(repository_root / "evals" / "datasets" / "routing-intent-it-v1.jsonl"),
+    )
+    routing.add_argument(
+        "--output-root",
+        type=Path,
+        default=repository_root / "artifacts" / "evals",
+    )
+    routing.add_argument(
+        "--minimum-confidence",
+        type=float,
+        required=True,
+        help="confidence bar under test; no value is promoted, so it has no default",
+    )
     return parser
 
 
@@ -70,6 +91,31 @@ def main(argv: Sequence[str] | None = None) -> None:
     """
 
     args = _parser().parse_args(argv)
+    if args.suite == "routing":
+        report = run_routing_suite(
+            CapabilitySettings.from_env(),
+            dataset_path=args.dataset,
+            output_root=args.output_root,
+            minimum_confidence=args.minimum_confidence,
+            repository_root=_repository_root(),
+        )
+        print(
+            json.dumps(
+                {
+                    "run_id": report.run_id,
+                    "suite": report.suite,
+                    "blocking_gates_passed": report.blocking_gates_passed,
+                    "meets_dataset_minimum": report.meets_dataset_minimum,
+                    "eligible_for_promotion": report.eligible_for_promotion,
+                    "metrics": {metric.name: metric.value for metric in report.metrics},
+                    "artifact_directory": report.local_artifact_path,
+                },
+                sort_keys=True,
+            )
+        )
+        if not report.blocking_gates_passed:
+            raise SystemExit(1)
+        return
     if args.suite != "capabilities":
         raise SystemExit(f"unsupported suite: {args.suite}")
 

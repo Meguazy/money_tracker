@@ -41,7 +41,9 @@ own tests and documentation, and none may ship a later step's behavior.
 3. The pinned `routing/intent-it`, `ingestion/expense-it`,
    `categorization/purpose-it`, and `workflow/category-review-it` datasets and
    suites, then calibration of the routing confidence bar and the auto-post
-   eligibility policy on held-out labels. This increment now blocks usable
+   eligibility policy on held-out labels. The suite machinery and the routing
+   dataset exist and have produced a first measurement; the routing dataset is
+   below its promotion minimum and the other three suites are open. This increment now blocks usable
    end-to-end behaviour, not just promotion: see the extraction finding in the
    evidence below. An ad-hoc check against the screened
    Qwen3 14B profile routed the expense, refund, split-funding, query, budget,
@@ -336,6 +338,45 @@ own tests and documentation, and none may ship a later step's behavior.
 - Real PostgreSQL tests read a month bounded by the real occurrence column,
   exclude an unposted draft, separate benefits from personal funds, read a
   stored budget, order the survey, and name posted spend that has no budget.
+- Dataset-backed workflow suites are executable. A suite loads a JSONL dataset,
+  identifies it by content hash rather than by filename, refuses a repeated
+  case identifier or mixed dataset versions, scores every gate as data rather
+  than judgment, and writes a manifest plus a compact score summary. A case
+  record carries labels and tags but never prose, so a committed summary cannot
+  reconstruct anything private. Promotion eligibility requires both every
+  blocking gate and the dataset minimum, and the runner refuses to compute it
+  any other way.
+- `routing/intent-it` v1.0.0 holds 112 authored synthetic Italian cases covering
+  every routable intent and the risk classes the evaluation matrix names:
+  negation, hypothetical and reported speech, compound requests, prompt
+  injection, benefit credits, relative dates, split funding, and every
+  deterministic pre-routing branch. It is below the 200-case minimum the
+  experiment process requires, so no run of it can support a promotion; a unit
+  test asserts that gap rather than leaving it in prose only.
+- The first measurement ran the whole compiled router against the screened
+  Qwen3 14B profile at a 0.5 confidence bar. Deterministic pre-routing scored
+  16/16 and no expense or refund was demoted to a read-only route. Three
+  blocking gates failed:
+  - `read_only_input_routed_to_write` counted 3 cases against a zero-tolerance
+    gate, and all three are one failure mode: a benefit or income *credit* read
+    as spending. `Vorrei caricare 100 euro di buoni pasto` and `Aggiungi 50
+    euro al portafoglio buoni pasto` routed to expense, and `Accreditami lo
+    stipendio di questo mese` routed to refund. The ad-hoc J5 finding recorded
+    earlier in this step is now measured, and it generalises beyond the one
+    phrase that first exposed it.
+  - `ambiguous_safely_clarified` reached 0.857 against a 0.98 gate, driven by
+    the same three cases plus two whose labels are themselves debatable.
+  - `macro_f1` reached 0.926 against a 0.95 gate.
+  Remaining misses are safe: an unrecognised banking term, a draft cancellation,
+  and an advice question read as a query all failed towards asking or towards
+  another read-only route.
+- Two dataset labels warrant review before the next run. `Mio fratello ha speso
+  50 euro` was labelled clarification and routed to non-finance, and `Quanto
+  costa un iPhone?` was labelled clarification and routed to unsupported. Both
+  model answers are defensible, so these may be annotation errors rather than
+  routing errors. The dataset records `reviewer_status: unreviewed`, which is
+  what that field is for; no label was changed after seeing the result, because
+  the experiment process forbids tuning a run after its outcome is known.
 - `money-tracker-admin profile-init`, `profile-list`, and
   `funding-source-add` make the finance components reachable without
   hand-written Python. Until they existed, every command taking a profile

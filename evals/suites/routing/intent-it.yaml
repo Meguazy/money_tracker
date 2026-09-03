@@ -1,0 +1,40 @@
+suite_schema_version: "1"
+suite: routing/intent-it
+version: "1.0.0"
+dataset: ../../datasets/routing-intent-it-v1.jsonl
+runner: money-tracker-eval routing
+private_data: false
+unit_under_test: >-
+  The compiled root router as production runs it: deterministic pre-routing,
+  the strict versioned classification boundary, and every acceptance veto, at
+  one explicit confidence bar.
+required_configuration:
+  - minimum_confidence
+blocking_gates:
+  - name: macro_f1
+    comparison: at_least
+    threshold: 0.95
+  - name: read_only_input_routed_to_write
+    comparison: at_most
+    threshold: 0
+  - name: write_input_routed_as_read_only
+    comparison: at_most
+    threshold: 0.01
+  - name: deterministic_pre_routing_exact
+    comparison: at_least
+    threshold: 1.0
+  - name: ambiguous_safely_clarified
+    comparison: at_least
+    threshold: 0.98
+diagnostic_metrics:
+  - exact_label_agreement
+dataset_minimum: 200
+publication:
+  local_artifacts: required
+  langfuse: optional
+  content: aggregate scores and case labels only
+promotion_effect: none
+notes: >-
+  Passing every blocking gate is necessary but not sufficient. A run is
+  eligible for promotion only when the dataset also reaches its minimum, and
+  the confidence bar it was measured at is recorded in the run configuration.

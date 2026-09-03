@@ -16,9 +16,10 @@ specialist workflow runs end to end, storing a draft through the existing
 application services or reporting the question it owes, and the extraction
 boundary no longer blocks that path. The owner category review pauses on a
 persistent interrupt and settles every J3 branch, and the read-only routes
-answer from scoped registries of domain read tools. No channel wiring or
-evaluation dataset exists yet, and no confidence bar, prompt, or model is
-promoted.
+answer from scoped registries of domain read tools. Three of the four pinned
+suites are executable and measured against the screened local profile, and all
+three fail blocking gates. No channel wiring exists yet, and no confidence bar,
+prompt, or model is promoted.
 
 ## Prerequisites
 
@@ -41,11 +42,12 @@ own tests and documentation, and none may ship a later step's behavior.
 3. The pinned `routing/intent-it`, `ingestion/expense-it`,
    `categorization/purpose-it`, and `workflow/category-review-it` datasets and
    suites, then calibration of the routing confidence bar and the auto-post
-   eligibility policy on held-out labels. The suite machinery and the routing
-   dataset exist and have produced a first measurement; the routing dataset is
-   below its promotion minimum and the other three suites are open. This increment now blocks usable
-   end-to-end behaviour, not just promotion: see the extraction finding in the
-   evidence below. An ad-hoc check against the screened
+   eligibility policy on held-out labels. Three of the four suites are
+   executable, reach their promotion minimums, and have been measured; each
+   fails blocking gates, so none supports a promotion or a calibration
+   conclusion. `workflow/category-review-it` is open. This increment now blocks
+   usable end-to-end behaviour, not just promotion: see the measured findings
+   in the evidence below. An ad-hoc check against the screened
    Qwen3 14B profile routed the expense, refund, split-funding, query, budget,
    advice, and non-finance journeys as the product baseline expects, but routed
    `Vorrei caricare 100 euro di buoni pasto` to the expense route instead of
@@ -379,6 +381,63 @@ own tests and documentation, and none may ship a later step's behavior.
   text never teaches the model that such a destination exists. No prompt change
   was attempted, because AD-012 reserves that for a gated experiment and this
   run is the evidence such an experiment would start from.
+- `ingestion/expense-it` v1.0.0 holds 170 authored synthetic cases against a
+  fixture profile with a default card, cash, meal vouchers, a company card, and
+  an archived source, reaching its 150-case minimum. It covers the risk classes
+  the matrix names for extraction: Italian decimal commas and thousands
+  separators, amounts written as words, every temporal form the resolver
+  accepts and eight it refuses, explicit calendar dates, twelve splits, twelve
+  refunds, negation, quoted expenses, multiple numbers in one message, typos,
+  and eight funding words the profile does not configure. Every date label was
+  checked against the real resolver before the first run, and one case was
+  rewritten rather than relabelled when its outcome turned out to depend on
+  which words the model chose to copy.
+- Measured against the screened Qwen3 14B profile, the boundary is accurate on
+  everything a message actually states, and fails three blocking gates on
+  everything it does not.
+  - Exact: `amount_exact_match` 162/162, `occurrence_semantic_exactness`
+    152/152, `split_parts_exact_and_reconciled` 12/12,
+    `expense_refund_polarity` 170/170, and
+    `schema_validity_after_one_repair` 170/170. Warm latency was a 2.0 second
+    median and a 2.7 second p95 per case.
+  - `fabricated_merchant_date_or_payment_field` 0.682 against a 0.01 gate: 116
+    of 170 cases supplied a field the message leaves empty.
+  - `funding_source_and_class_match` 0.855 against a 0.97 gate, and
+    `required_ambiguity_reported` 0.929 against a 0.98 gate.
+- The shape of the fabrication is the finding, not its rate. The model does not
+  choose the configured default; it fills the funding slot with whichever noun
+  is nearest. `Ho speso 250 euro di affitto` returned a payment part named
+  `affitto`, `Ho speso 5 euro di pane` returned `pane`, `ho spes 20 eur di
+  spesa` returned the currency token `eur`, and `Mi hanno rimborsato 20 euro`
+  returned `non specificato`, which is the placeholder the instructions forbid
+  by name in three other spellings.
+- Purpose nouns appearing as payment methods is the AD-007 dimension collapse
+  running in the opposite direction from the one `categorization/purpose-it`
+  measured. There, purpose absorbed funding and proposed `Spesa con buoni e
+  carte`. Here funding absorbs purpose. One defect, two directions, and neither
+  boundary is shown the other's dimension.
+- The `fabricated_funding_silently_resolved` diagnostic is 0.845 and corrects a
+  claim previously recorded in the decision log and in the development guide.
+  The fabrication does not fail safe. 98 of 116 invented words name a real
+  active source, usually the default card, so deterministic resolution accepts
+  them; only the 18 that are purpose nouns are refused. On a profile whose
+  default is cash rather than a card, the accepted guess would charge the wrong
+  resource with nothing to catch it.
+- The two `required_ambiguity_reported` misses are worse than an unasked
+  question. `amount_invented_where_none_stated` is 0.25: `Ho fatto benzina
+  stamattina`, a message carrying no figure at all, returned 2500 cents, and
+  because the same answer also invented a resolvable funding word the case
+  assembled into a storable draft built on a total the owner never wrote.
+- Taken with the categorization result, one hypothesis now covers both. This
+  model does not reliably leave an optional field empty. Categorization filled
+  `proposed_name` while also filling `category_name`; extraction fills
+  `payment_parts`, `merchant`, and even `amount` where the message is silent.
+  Both boundaries are flat schemas with conditional fields, chosen because no
+  candidate is capability-screened for union output. Reliable omission of an
+  optional field therefore joins union output as a capability worth screening
+  in Step 1, rather than a prompt worth revising in Step 3. No prompt or schema
+  was changed, because AD-012 reserves that for a gated experiment and these
+  runs are the evidence one would start from.
 - `categorization/purpose-it` v1.0.0 holds 153 authored synthetic cases against
   the real seed taxonomy, reaching its 150-case minimum. It covers 21 of the 24
   active nodes, 18 safety cases that foreground a merchant, brand, or payment

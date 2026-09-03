@@ -162,10 +162,12 @@ prompt gaps remain, both open for the pinned suites to measure and both
 recorded in [Decision Log](experiments/decision-log.md):
 
 - The candidate extraction instructions fabricate a payment method when the
-  message names none, including the literal placeholder they forbid. The
-  fabrication fails safe, because deterministic resolution refuses words that
-  match no configured source, but it costs the owner a question the documented
-  default should have answered. Gap for `ingestion/expense-it`.
+  message names none, including a placeholder of the kind they forbid. This is
+  now measured by `ingestion/expense-it`, and the measurement corrects an
+  earlier note here: the fabrication does **not** fail safe. Most invented
+  words name a real active source, usually the profile default, so resolution
+  accepts them and the guess is invisible rather than refused. Only an invented
+  word that is a purpose noun, such as `affitto`, gets refused.
 - The candidate category-fit instructions prefer a new proposal over an
   adequate existing category, sometimes proposing a name the taxonomy already
   has, and name a non-root parent. Deterministic acceptance refuses both, so

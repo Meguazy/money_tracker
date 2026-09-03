@@ -13,11 +13,18 @@ do not rewrite historical outcomes when a later experiment supersedes them.
   mistake them for a promoted configuration. Two candidate-quality gaps are
   known against the screened Qwen3 14B profile and remain open for the pinned
   suites to measure rather than to tune by hand:
-  - `candidate-extraction-it-v2` fabricates a payment method when the message
-    names none, including the literal placeholder the text forbids. It fails
-    safe, because deterministic resolution refuses words matching no configured
-    source, but it costs a question the documented default should have
-    answered. Gap for `ingestion/expense-it`.
+  - `candidate-extraction-it-v2` is now measured by `ingestion-expense-it-v1`
+    (170 cases) and fails three blocking gates. It is accurate on everything a
+    message states: amounts, occurrence dates, split parts, polarity, and
+    schema validity all scored exactly. Every failure is the model filling a
+    field the message leaves empty, on 116 of 170 cases against a 1% gate.
+    The earlier note that this fabrication "fails safe" is **corrected**: it
+    does not. `fabricated_funding_silently_resolved` is 0.845, so 98 of 116
+    invented funding words name a real active source, usually the profile
+    default, and resolution accepts them. On a profile whose default is not the
+    card, that silently charges a resource the owner never mentioned. Only the
+    remaining 18 are refused, and those are refused because the invented word
+    was a purpose noun such as `affitto` or `pane`.
   - `candidate-category-fit-it-v1` is now measured by
     `categorization-purpose-it-v1` (153 cases) and fails four blocking gates.
     It proposes a new category on 131 of 141 cases where an adequate node

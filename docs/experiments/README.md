@@ -56,6 +56,10 @@ Run the Italian purpose-categorization suite against the real boundary with:
 
     uv run --env-file .env money-tracker-eval categorization
 
+Run the Italian expense-extraction suite against the real boundary with:
+
+    uv run --env-file .env money-tracker-eval ingestion
+
 The confidence bar is required and has no default, because none is promoted and
 a routing score is meaningless without the bar that produced it. The bar, the
 dataset content hash, and the instruction-text hash are all recorded in the run
@@ -83,7 +87,9 @@ identifiers, Telegram IDs, tokens, or Langfuse exports.
   currently fails three blocking gates.
 - `ingestion/expense-it`: amount, currency, occurrence time, merchant,
   description, funding source, split payments, refund, and missing-field
-  extraction.
+  extraction. Executable; dataset `ingestion-expense-it-v1` reaches its minimum
+  and currently fails three blocking gates, all of them the model filling a
+  field the message leaves empty.
 - `categorization/purpose-it`: existing fit, alias resolution, abstention,
   purpose-versus-merchant rules, new-category proposal precision, and
   calibrated auto-post subset. Executable; dataset

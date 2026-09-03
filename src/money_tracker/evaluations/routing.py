@@ -44,6 +44,7 @@ from money_tracker.evaluations.suites import (
     model_metadata,
     new_run_id,
     rate,
+    sha256_text,
     utc_now,
     write_report,
 )
@@ -351,7 +352,7 @@ def run_routing_suite(
         environment=collect_environment_metadata(),
         configuration={
             "minimum_confidence": minimum_confidence,
-            "instructions_sha256": _sha256_text(instructions),
+            "instructions_sha256": sha256_text(instructions),
             "dataset_minimum": DATASET_MINIMUM,
         },
         metrics=metrics,
@@ -400,14 +401,6 @@ def _execute(graph: object, case: Mapping[str, JsonValue], index: int) -> CaseRe
         latency_ms=round((time.monotonic() - started) * 1000),
         detail=decision.reason.value,
     )
-
-
-def _sha256_text(value: str) -> str:
-    """Return the hex SHA-256 of one instruction text."""
-
-    from hashlib import sha256
-
-    return sha256(value.encode("utf-8")).hexdigest()
 
 
 def intent_distribution(cases: Sequence[Mapping[str, JsonValue]]) -> dict[str, int]:

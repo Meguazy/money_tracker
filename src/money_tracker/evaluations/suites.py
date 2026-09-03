@@ -356,6 +356,23 @@ def new_run_id(prefix: str) -> str:
     return f"{prefix}-{stamp}-{uuid4().hex[:8]}"
 
 
+def sha256_text(value: str) -> str:
+    """Return the hex SHA-256 of one instruction text.
+
+    A score belongs to the exact text that produced it. Recording the hash
+    rather than the prose keeps a run attributable without copying a prompt
+    into every committed report.
+
+    Args:
+        value: Instruction text under test.
+
+    Returns:
+        Hex SHA-256 of the UTF-8 encoding.
+    """
+
+    return sha256(value.encode("utf-8")).hexdigest()
+
+
 def utc_now() -> str:
     """Return the current instant as ISO text for a manifest."""
 
@@ -384,6 +401,7 @@ __all__ = [
     "model_metadata",
     "new_run_id",
     "rate",
+    "sha256_text",
     "utc_now",
     "write_report",
 ]

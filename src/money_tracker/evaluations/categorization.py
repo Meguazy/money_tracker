@@ -52,6 +52,7 @@ from money_tracker.evaluations.suites import (
     model_metadata,
     new_run_id,
     rate,
+    sha256_text,
     utc_now,
     write_report,
 )
@@ -329,7 +330,7 @@ def run_categorization_suite(
         model=model_metadata(settings),
         environment=collect_environment_metadata(),
         configuration={
-            "instructions_sha256": _sha256_text(instructions),
+            "instructions_sha256": sha256_text(instructions),
             "taxonomy_active_categories": len(_active_names(taxonomy)),
             "dataset_minimum": DATASET_MINIMUM,
             "auto_post_policy_promoted": False,
@@ -393,14 +394,6 @@ def _execute(
         _proposed_name(fit),
         _named_while_proposing(fit, taxonomy),
     )
-
-
-def _sha256_text(value: str) -> str:
-    """Return the hex SHA-256 of one instruction text."""
-
-    from hashlib import sha256
-
-    return sha256(value.encode("utf-8")).hexdigest()
 
 
 __all__ = ["DATASET_MINIMUM", "SUITE", "run_categorization_suite"]

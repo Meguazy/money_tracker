@@ -1,0 +1,88 @@
+suite_schema_version: "1"
+suite: ingestion/expense-it
+version: "1.0.0"
+dataset: ../../datasets/ingestion-expense-it-v1.jsonl
+runner: money-tracker-eval ingestion
+private_data: false
+unit_under_test: >-
+  The versioned expense extraction boundary followed by deterministic
+  resolution of occurrence time, signed amount, and the funding dimension
+  against a fixture profile, which is what the expense workflow runs. A value
+  the resolver refuses is scored as a failure, not as a near miss.
+blocking_gates:
+  - name: schema_validity_after_one_repair
+    comparison: at_least
+    threshold: 1.0
+  - name: amount_exact_match
+    comparison: at_least
+    threshold: 0.99
+  - name: occurrence_semantic_exactness
+    comparison: at_least
+    threshold: 0.97
+  - name: funding_source_and_class_match
+    comparison: at_least
+    threshold: 0.97
+  - name: split_parts_exact_and_reconciled
+    comparison: at_least
+    threshold: 0.99
+  - name: expense_refund_polarity
+    comparison: at_least
+    threshold: 0.99
+  - name: required_ambiguity_reported
+    comparison: at_least
+    threshold: 0.98
+  - name: fabricated_merchant_date_or_payment_field
+    comparison: at_most
+    threshold: 0.01
+diagnostic_metrics:
+  - merchant_semantic_match
+  - fabricated_funding_silently_resolved
+  - amount_invented_where_none_stated
+  - outcome_agreement
+dataset_minimum: 150
+fixture:
+  timezone: Europe/Rome
+  received_at: "2026-09-15T12:00:00+02:00"
+  funding_sources:
+    - {name: Carta, class: personal_funds, status: active, default: true}
+    - {name: Contanti, class: personal_funds, status: active}
+    - {name: Buoni pasto, class: benefit, status: active}
+    - {name: Carta aziendale, class: other, status: active}
+    - {name: Vecchia carta, class: personal_funds, status: archived}
+publication:
+  local_artifacts: required
+  langfuse: optional
+  content: aggregate scores and case labels only
+promotion_effect: none
+notes: >-
+  The matrix asks for `amount and currency exact match`. The boundary exposes
+  no currency field at all, so only magnitude and sign can be measured; the run
+  configuration records `boundary_exposes_currency` so a reader can confirm
+  that the exclusion is structural rather than an omission of this suite.
+
+  Facets are resolved independently rather than through the workflow's own
+  assembly, which stops at the first refusal. Reporting only that first refusal
+  would hide every later facet behind an earlier failure and make one weak step
+  look like several. The `outcome_agreement` diagnostic still reports the
+  production-ordered outcome, so the two readings stay visible side by side.
+
+  Two refusal reasons the resolver defines are not exercised, and the gap is
+  deliberate rather than overlooked. `no_default_funding_source` is a property
+  of a profile's configuration, not of a message, and the fixture configures a
+  default. `funding_source_repeated` needs two distinct stated texts that fold
+  onto one configured name, which requires an accent typo contrived beyond
+  anything an owner would write. Both paths are covered by unit tests.
+
+  Two diagnostics separate a fabrication the resolver refuses from one it
+  accepts. A funding word invented out of a purpose noun is caught
+  deterministically; one that happens to name a configured source resolves
+  silently and charges a resource the message never mentioned. An amount
+  invented where none was stated is reported on its own because the matrix
+  scopes its fabrication gate to merchant, date, and payment fields.
+
+  Merchant expectations carry three values. `al bar` and `dal meccanico` name a
+  kind of place rather than a business, and the boundary's instructions draw
+  that line without defining it, so those cases are recorded as unscored. The
+  same applies to a brand that names the payment instrument rather than the
+  seller. Penalising either answer would measure the label rather than the
+  model.

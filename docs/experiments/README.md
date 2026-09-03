@@ -9,6 +9,8 @@
   [Local Model Shortlist - 2026-09-01](local-model-shortlist-2026-09-01.md)
 - Capability screening:
   [Local Model Capability Results - 2026-09-02](local-model-capability-results-2026-09-02.md)
+  and its extension,
+  [Local Model Capability Results - 2026-09-03](local-model-capability-results-2026-09-03.md)
 
 Experiments determine whether a nondeterministic component is suitable for an
 approved role. They do not replace software tests and they do not grant a model
@@ -112,7 +114,12 @@ identifiers, Telegram IDs, tokens, or Langfuse exports.
 
 - `capabilities/local-model`: strict JSON schema, repair behavior, tool calling,
   tool/result sequencing, image input, deterministic temperature/seed support,
-  and context-limit behavior.
+  and context-limit behavior. Suite 1.2.0 adds the two capabilities Step 3
+  measured a need for: leaving an optional field alone when the message states
+  nothing for it, and answering with a discriminated union. Both are screened
+  under two boundary shapes, because the failure may belong to the shape rather
+  than to the model. Against the Qwen3 14B profile omission fails in both shapes
+  and union output passes in both.
 - `routing/intent-it`: Italian intent classification, ambiguity, negation,
   compound requests, callbacks, non-finance text, and query-versus-write
   safety. Executable; dataset `routing-intent-it-v1.1` reaches its minimum and

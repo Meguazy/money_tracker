@@ -18,8 +18,12 @@ boundary no longer blocks that path. The owner category review pauses on a
 persistent interrupt and settles every J3 branch, and the read-only routes
 answer from scoped registries of domain read tools. All six pinned suites are
 executable and measured. The workflow suite passes every gate; the five that
-measure model judgment each fail at least one. No channel wiring exists yet,
-and no confidence bar, prompt, or model is promoted.
+measure model judgment each fail at least one. The binding constraint the
+suites isolated has since been screened directly at Step 1's capability screen,
+which answers it in two halves: the candidate cannot leave an optional field
+alone in any boundary shape, and it can answer with a discriminated union. No
+channel wiring exists yet, and no confidence bar, prompt, or model is
+promoted.
 
 ## Prerequisites
 
@@ -67,7 +71,14 @@ own tests and documentation, and none may ship a later step's behavior.
    held-out labels rather than on model self-report.
 4. Promotion of the model, prompts, schemas, and thresholds through
    [Decision Log](../experiments/decision-log.md), which currently records that no
-   routing confidence bar and no auto-post threshold are promoted.
+   routing confidence bar and no auto-post threshold are promoted. Blocked, and
+   correctly so: five of the six suites fail a blocking gate, and the auto-post
+   eligibility policy cannot even be calibrated, because categorization
+   agreement is 0.124 and no eligible subset can be defined at any threshold.
+   Nothing here is waiting on work inside this step. The capability screen run
+   on 2026-09-03 is what the blockage was waiting for, and it does not clear
+   the candidate: see the two entries at the end of the evidence below for what
+   it did and did not settle.
 
 ## Deliverables
 
@@ -613,6 +624,57 @@ own tests and documentation, and none may ship a later step's behavior.
   the field is optional, the instructions say to omit it, and the model fills it
   anyway. Reliable omission of an optional field is therefore a capability to
   screen in Step 1 alongside union output, not a prompt to revise in Step 3.
+- Both were screened on 2026-09-03 as suite `capabilities/local-model` 1.2.0,
+  against the same Qwen3 14B profile every measurement above used. See the
+  [capability results](../experiments/local-model-capability-results-2026-09-03.md).
+  The screen is decontextualized on purpose: it asks whether the candidate can
+  do the thing at all, on 26 synthetic messages, apart from any product
+  boundary. Its draft schema was given the width of a real contract, four
+  optional slots inside instructions the length the extraction boundary sends,
+  because a single optional field in a short schema is answered correctly and a
+  probe easier than the boundary it screens would have cleared the capability
+  the boundary then fails.
+- Omission fails, and the shape comparison is what the step gains from it. Of
+  68 slots the message leaves silent, the shape the local adapter sends today
+  leaves 0.7647 empty; making the fields genuinely optional rather than required
+  and nullable makes it worse, 0.4265, not better. What changes is the kind of
+  failure. Under the optional-absent shape almost every failure is an empty
+  string, which `NonEmptyText` refuses, so silent fabrication drops from 14
+  slots to 7 while refusals rise from 2 to 32: a wrong record becomes a failed
+  turn. Stated slots are still captured at 1.0 and 0.9722, so the model is not
+  emptying slots indiscriminately. That is a trade this step may choose to make
+  deliberately, and it is the first evidence that any part of the failure is
+  reachable by reshaping a boundary rather than by replacing the model.
+- Union output passes, mechanically, in both the root and the nested shape and
+  in both runs: the build accepts a `oneOf` schema, every answer matched exactly
+  one variant, none carried a field of the variant it did not choose, and both
+  variants were reachable. `CategoryFit` documents that it is a flat schema with
+  conditional validation partly because "no model is capability-screened for
+  union output". That reason no longer holds for this profile, and the flat
+  schema's dominant measured failure, filling `proposed_name` while also filling
+  `category_name`, is unexpressible in a union. Zero foreign fields is a
+  property of the grammar rather than an achievement of the model, which is
+  exactly why it is worth having.
+- That leaves a documented statement inside `CategoryFit` that the screen has
+  measured false, and it is deliberately not corrected here. A Pydantic class
+  docstring is rendered into the schema as `description` and sent to the model,
+  so this contract's design rationale is also part of the categorization
+  boundary's prompt. Editing the sentence would change the text every
+  `categorization/purpose-it` score was produced against, which needs a contract
+  version bump and a re-run rather than a quiet edit. The sentence is left
+  standing and the correction is recorded here and in the
+  [Decision Log](../experiments/decision-log.md).
+- Worth carrying forward as its own lesson: a comment written for a reader of
+  the code is read by the model too. Any explanation placed in a boundary
+  contract's docstring is prompt text under version control, and stale rationale
+  there is not a documentation nit but an unmeasured change waiting to happen.
+- Neither result promotes anything or changes a contract yet. The union probe's
+  variant-selection accuracy is a diagnostic over six synthetic categories and
+  is not comparable with `categorization/purpose-it`'s 0.124 agreement over the
+  real taxonomy; reading it as evidence that a union fixes categorization would
+  be reading a mechanism check as a domain score. What the screen establishes is
+  narrower and firmer: a union is available to a boundary that wants one, and no
+  boundary may rely on this candidate leaving an optional field alone.
 - The routing confidence bar has been calibrated on a held-out split, and the
   answer is that no usable bar exists. The bar is applied deterministically
   after the model answers, so one pass over the 201 cases recorded each

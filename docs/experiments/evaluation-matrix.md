@@ -31,6 +31,13 @@ use. It does not establish product quality by itself.
 | Tool result continuation | Model consumes real structured tool results without inventing execution. |
 | Images | Exact server/model/mmproj combination accepts supported image input when evaluated for receipts. |
 | Context limits | Worst planned prompt/schema/tool payload completes without truncating safety/system contracts. |
+| Optional field omission | An optional slot the message leaves silent stays empty on >= 95% of slots, while stated slots are still captured on >= 95%. Screened under both the required-nullable and the optional-absent shape; either may satisfy it. |
+| Union output | A discriminated union is accepted by the build, every answer matches exactly one variant, no answer carries a field of the variant it did not choose, and both variants are reachable. |
+
+The last two rows were added on 2026-09-03, after three Step 3 boundaries
+measured the same optional-field failure. Union variant-selection accuracy is
+deliberately not a gate here: categorization owns it below, and two documents
+must not gate the same behaviour.
 
 An unsupported capability is disabled explicitly. There is no silent fallback
 from one structured-output or tool method to another.

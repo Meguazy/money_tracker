@@ -1,7 +1,7 @@
 suite_schema_version: "1"
 suite: capabilities/local-model
-version: "1.1.0"
-dataset: ../../datasets/capabilities-local-model-v1.1.jsonl
+version: "1.2.0"
+dataset: ../../datasets/capabilities-local-model-v1.2.jsonl
 runner: money-tracker-eval capabilities
 private_data: false
 required_probes:
@@ -9,6 +9,8 @@ required_probes:
   - strict_structured_output
   - tool_calling
   - tool_result_sequencing
+  - optional_field_omission
+  - union_output
 conditional_probes:
   - name: image_input
     condition: image fixture supplied and model is evaluated for vision
@@ -18,6 +20,45 @@ blocking_rules:
   - exact llama.cpp binary SHA-256 and version are recorded
   - exact chat-template SHA-256 is recorded
   - configured context size is recorded
+probe_gates:
+  optional_field_omission:
+    added_in: "1.2.0"
+    question: >
+      Does the candidate leave an optional field alone when the message states
+      nothing for it, while still capturing the ones the message does state?
+    shapes:
+      - required_nullable
+      - optional_absent
+    pre_registered_thresholds:
+      silent_slots_left_empty: 0.95
+      stated_slots_captured: 0.95
+      schema_invalid_responses: 0
+    rule: >
+      Passes when at least one shape reaches both thresholds with no invalid
+      answer. Either shape is admissible because a boundary may adopt the one
+      that works; which shape passed is the actionable half of the result.
+  union_output:
+    added_in: "1.2.0"
+    question: >
+      Can the candidate answer with a discriminated union, so that filling a
+      field belonging to the branch it did not choose is unexpressible?
+    shapes:
+      - root_union
+      - nested_union
+    pre_registered_thresholds:
+      schema_accepted: true
+      schema_invalid_responses: 0
+      answers_carrying_a_foreign_field: 0
+      both_variants_reachable: true
+    rule: >
+      Passes when at least one shape satisfies every mechanical expectation.
+      Variant-selection accuracy is recorded as a diagnostic only, because
+      categorization/purpose-it owns that gate and two documents must not gate
+      the same behaviour.
+reading_the_report: >
+  blocking_gates_passed is true only when every screened capability passed. A
+  per-probe result is the answer to whether one boundary shape may be used, so
+  a false aggregate does not by itself reject a candidate for every interface.
 publication:
   local_artifacts: required
   langfuse: optional

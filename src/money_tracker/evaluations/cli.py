@@ -47,7 +47,7 @@ def _parser() -> argparse.ArgumentParser:
             repository_root
             / "evals"
             / "datasets"
-            / "capabilities-local-model-v1.1.jsonl"
+            / "capabilities-local-model-v1.2.jsonl"
         ),
     )
     capabilities.add_argument(

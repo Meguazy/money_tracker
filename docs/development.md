@@ -282,10 +282,15 @@ Run the real OpenAI-compatible protocol probes:
     uv run --env-file .env money-tracker-eval capabilities
 
 The suite checks strict nested structured output, forced tool calling,
-tool-result continuation, and optional image input. It always writes ignored
-machine-readable results under `artifacts/evals/`; an unavailable endpoint or
-incomplete exact model/build metadata is an explicit blocking failure. Supply a
-local image only for a model expected to support vision:
+tool-result continuation, optional image input, leaving an optional field alone
+when the message states nothing for it, and answering with a discriminated
+union. The last two are screened under two boundary shapes each and take about
+seventy seconds together, since they are dataset batteries rather than single
+probes. It always writes ignored machine-readable results under
+`artifacts/evals/`; an unavailable endpoint or incomplete exact model/build
+metadata is an explicit blocking failure. A probe that ran and missed its
+pre-registered threshold is reported as `failed` rather than as `error`. Supply
+a local image only for a model expected to support vision:
 
     uv run --env-file .env money-tracker-eval capabilities \\
       --image /private/path/to/fixture.png

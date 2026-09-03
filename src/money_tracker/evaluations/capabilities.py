@@ -53,6 +53,94 @@ class _StructuredExpense(BaseModel):
     items: list[_LineItem]
 
 
+class _PaymentPart(BaseModel):
+    """One payment method the owner named, mirroring a real boundary's shape."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    method: str
+    amount_minor: int | None
+
+
+class _OptionalFieldDraft(BaseModel):
+    """Draft whose four optional slots the message usually leaves unstated.
+
+    The width is deliberate. Three product boundaries fill an optional field
+    the message never states, and each of them offers the model several
+    optional slots at once inside a longer instruction. A probe holding one
+    optional field would be easier than the boundary it screens and could
+    clear a capability the boundary then fails, so this schema carries the
+    three optionality encodings a contract can use: a nullable scalar, a
+    nullable string, and an emptiable list.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    amount_minor: int | None
+    description: str
+    occurred_at_text: str | None
+    merchant: str | None
+    payment_parts: list[_PaymentPart]
+
+
+class _ExistingCategoryChoice(BaseModel):
+    """Union variant selecting a category the owner's list already holds."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    outcome: Literal["existing"]
+    category_name: str
+
+
+class _ProposedCategoryChoice(BaseModel):
+    """Union variant offering a new category for owner approval."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    outcome: Literal["proposal"]
+    proposed_name: str
+    rationale: str
+
+
+ALWAYS_STATED_DRAFT_FIELDS = ("description",)
+"""Draft properties every message fills, so absence never expresses silence."""
+
+OPTIONAL_DRAFT_SLOTS = (
+    "amount_minor",
+    "occurred_at_text",
+    "merchant",
+    "payment_parts",
+)
+"""Draft properties a message may leave unstated, scored slot by slot."""
+
+EMPTY_PLACEHOLDERS = frozenset(
+    {
+        "-",
+        "?",
+        "n/a",
+        "na",
+        "nessuna",
+        "nessuno",
+        "non disponibile",
+        "non specificato",
+        "none",
+        "null",
+        "sconosciuta",
+        "sconosciuto",
+        "unknown",
+    }
+)
+"""Words a model writes instead of leaving a slot empty.
+
+These are counted apart from empty text and apart from invented values,
+because the three have different consequences. A contract constraining its
+text to a non-empty string refuses empty text loudly and spends a retry, but
+it accepts one of these words and stores it as the merchant's name or as a
+payment method, which is the silent corruption the extraction instructions
+warn against by name.
+"""
+
+
 class _ProbeError(RuntimeError):
     """Expected deterministic failure that contains only safe diagnostics."""
 
@@ -377,8 +465,615 @@ def _image_probe(
     return {"latency_ms": latency, "accepted": True, "media_type": media_type}
 
 
+SILENT_SLOT_THRESHOLD = 0.95
+"""Share of unstated optional slots a candidate must leave empty.
+
+Pre-registered before the first run. It is the weakest bar a downstream gate
+could still rest on: text extraction allows a fabricated field on at most 1% of
+cases, and tool selection needs an unstated period left out entirely, so a
+shape scoring below this here cannot support either.
+"""
+
+STATED_SLOT_THRESHOLD = 0.95
+"""Share of stated optional slots a candidate must capture.
+
+Pre-registered with the threshold above and inseparable from it. A model that
+empties every optional slot would otherwise screen as perfectly reliable while
+discarding what the owner actually wrote.
+"""
+
+_ABSENT = object()
+"""Marker distinguishing a property left out from one present and null."""
+
+
+def _cases_by_capability(
+    cases: list[dict[str, object]], capability: str
+) -> list[dict[str, object]]:
+    """Return every dataset case for a capability, in dataset order.
+
+    Args:
+        cases: Decoded dataset records.
+        capability: Stable capability identifier.
+
+    Returns:
+        The capability's cases.
+
+    Raises:
+        _ProbeError: If the capability has no cases.
+    """
+
+    matches = [case for case in cases if case.get("capability") == capability]
+    if not matches:
+        raise _ProbeError(f"dataset_case_count:{capability}:0")
+    return matches
+
+
+def _require_every_property(node: object) -> object:
+    """Mark every property of every object required.
+
+    This repeats the local adapter's rendering rather than importing it. A
+    screen that asked the component it informs how to shape a request could not
+    report that the shape itself is the variable under test.
+
+    Args:
+        node: JSON Schema fragment.
+
+    Returns:
+        The fragment with each object requiring all of its properties.
+    """
+
+    if isinstance(node, dict):
+        transformed = {
+            key: _require_every_property(value) for key, value in node.items()
+        }
+        properties = transformed.get("properties")
+        if isinstance(properties, dict):
+            transformed["required"] = sorted(properties)
+        return transformed
+    if isinstance(node, list):
+        return [_require_every_property(item) for item in node]
+    return node
+
+
+def _without_null_branch(prop: object) -> object | None:
+    """Return a property schema with its null alternative removed.
+
+    The outer annotations are carried onto the surviving branch. The two
+    shapes must differ only in how a message's silence is expressed: if
+    unwrapping also dropped the title and description a model reads as
+    guidance, a difference in scores could be a difference in the prompt.
+
+    Args:
+        prop: Property schema that may be a two-branch nullable union.
+
+    Returns:
+        The single remaining branch, or None when the property was not a
+        nullable union and must stay required.
+    """
+
+    if not isinstance(prop, dict):
+        return None
+    branches = prop.get("anyOf")
+    if not isinstance(branches, list):
+        return None
+    kept: list[object] = [
+        branch
+        for branch in branches
+        if not (isinstance(branch, dict) and branch.get("type") == "null")
+    ]
+    if len(kept) == len(branches) or len(kept) != 1:
+        return None
+    surviving = kept[0]
+    if not isinstance(surviving, dict):
+        return surviving
+    annotations = {
+        key: value
+        for key, value in prop.items()
+        if key in {"title", "description", "default"}
+    }
+    return {**annotations, **surviving}
+
+
+def _strip_null_branches(node: object) -> object:
+    """Replace nullable unions with their value branch and drop them from required.
+
+    Args:
+        node: JSON Schema fragment whose objects require every property.
+
+    Returns:
+        A fragment in which a nullable property becomes an optional one, so
+        absence is the only way left to say that a message states nothing.
+    """
+
+    if isinstance(node, list):
+        return [_strip_null_branches(item) for item in node]
+    if not isinstance(node, dict):
+        return node
+    transformed: dict[str, object] = {
+        key: _strip_null_branches(value)
+        for key, value in node.items()
+        if key != "required"
+    }
+    properties = node.get("properties")
+    if isinstance(properties, dict):
+        required: list[str] = []
+        rewritten: dict[str, object] = {}
+        for name, prop in properties.items():
+            replacement = _without_null_branch(prop)
+            if replacement is None:
+                required.append(str(name))
+                rewritten[str(name)] = _strip_null_branches(prop)
+            else:
+                rewritten[str(name)] = _strip_null_branches(replacement)
+        transformed["properties"] = rewritten
+        transformed["required"] = sorted(required)
+    return transformed
+
+
+def _draft_schema(shape: str) -> dict[str, object]:
+    """Render the draft contract under one optionality shape.
+
+    Args:
+        shape: Either `required_nullable`, the shape the local adapter sends
+            today, or `optional_absent`, in which an unstated property is left
+            out rather than set to null.
+
+    Returns:
+        The JSON Schema for that shape.
+    """
+
+    rendered = cast(
+        dict[str, object],
+        _require_every_property(_OptionalFieldDraft.model_json_schema()),
+    )
+    if shape == "required_nullable":
+        return rendered
+    absent = cast(dict[str, object], _strip_null_branches(rendered))
+    absent["required"] = sorted(ALWAYS_STATED_DRAFT_FIELDS)
+    return absent
+
+
+DRAFT_INSTRUCTIONS = """\
+You read one message in which the owner of a personal finance assistant \
+reports money they spent. The owner writes in Italian. Report only what the \
+message states.
+
+- amount_minor: the magnitude in euro cents as a positive integer. Twelve \
+euro is 1200, and Italian writes decimals with a comma, so `12,50` is 1250.
+- description: a short Italian description of what the money was for.
+- occurred_at_text: the owner's own temporal words copied verbatim, for \
+example `ieri` or `il 3 marzo`. Do not convert them into a date.
+- merchant: the shop, brand, or business the message names. A product is not \
+a merchant.
+- payment_parts: one part for each payment method the owner names, in the \
+owner's own words such as `carta`, `contanti`, or `buoni pasto`. Give a part \
+its own amount only when the owner splits the payment across methods.
+
+Never invent a value and never choose a default. Never write a placeholder \
+such as `unknown`, `n/a`, or `sconosciuto` as if it were a value: it would be \
+recorded as the merchant's name or as a payment method."""
+"""Shared draft instructions, sized like the boundary this probe screens."""
+
+SHAPE_INSTRUCTIONS = {
+    "required_nullable": (
+        "Every property is present in your answer. Set a property the message "
+        "does not state to null, and use an empty list when the message names "
+        "no payment method."
+    ),
+    "optional_absent": (
+        "Leave out entirely any property the message does not state; only "
+        "`description` is always present. Use an empty list when the message "
+        "names no payment method."
+    ),
+}
+"""How each shape expresses that a message states nothing for a property."""
+
+
+def _normalized(text: str) -> str:
+    """Collapse whitespace and case for comparing owner words."""
+
+    return " ".join(text.split()).casefold()
+
+
+def _slot_state(value: object) -> str:
+    """Classify what a model put in one optional slot.
+
+    The three ways of not leaving a slot empty are kept apart because a
+    downstream contract treats them differently: empty text is refused and
+    costs a retry, a placeholder word validates and is stored as if the owner
+    had written it, and an invented value is indistinguishable from a real one.
+
+    Args:
+        value: Decoded slot value, or the absent marker.
+
+    Returns:
+        One of `empty`, `empty_text`, `placeholder_word`, or `filled`.
+    """
+
+    if value is _ABSENT or value is None:
+        return "empty"
+    if isinstance(value, str):
+        text = " ".join(value.split())
+        if not text:
+            return "empty_text"
+        return "placeholder_word" if text.casefold() in EMPTY_PLACEHOLDERS else "filled"
+    if isinstance(value, list):
+        if not value:
+            return "empty"
+        states = {
+            _slot_state(item.get("method") if isinstance(item, dict) else item)
+            for item in value
+        }
+        for state in ("empty_text", "placeholder_word"):
+            if states == {state}:
+                return state
+        return "filled"
+    return "filled"
+
+
+def _texts_match(expected: str, actual: object) -> bool:
+    """Compare owner words allowing a longer verbatim span to count.
+
+    A model that copies `il 3 marzo` where the label records `3 marzo` has
+    captured what the message stated. Containment therefore counts, because
+    this metric exists to prove a slot is not emptied indiscriminately rather
+    than to score span boundaries.
+    """
+
+    if not isinstance(actual, str):
+        return False
+    wanted, given = _normalized(expected), _normalized(actual)
+    return bool(given) and (wanted == given or wanted in given or given in wanted)
+
+
+def _payment_parts_match(expected: object, actual: object) -> bool:
+    """Compare payment methods in order, and amounts only where stated."""
+
+    if not isinstance(expected, list) or not isinstance(actual, list):
+        return False
+    if len(expected) != len(actual):
+        return False
+    for wanted, given in zip(expected, actual, strict=True):
+        if not isinstance(wanted, dict) or not isinstance(given, dict):
+            return False
+        if not _texts_match(str(wanted.get("method", "")), given.get("method")):
+            return False
+        wanted_amount = wanted.get("amount_minor")
+        if wanted_amount is not None and given.get("amount_minor") != wanted_amount:
+            return False
+    return True
+
+
+def _stated_slot_matches(slot: str, expected: object, actual: object) -> bool:
+    """Decide whether a slot the message states was captured."""
+
+    if slot == "payment_parts":
+        return _payment_parts_match(expected, actual)
+    if slot == "amount_minor":
+        return actual == expected
+    return _texts_match(str(expected), actual)
+
+
+def _draft_keys_permitted(decoded: Mapping[str, object], shape: str) -> bool:
+    """Check that a draft answer carries only declared properties."""
+
+    permitted = set(OPTIONAL_DRAFT_SLOTS) | set(ALWAYS_STATED_DRAFT_FIELDS)
+    if not set(decoded) <= permitted:
+        return False
+    if not set(ALWAYS_STATED_DRAFT_FIELDS) <= set(decoded):
+        return False
+    if shape == "required_nullable":
+        return permitted <= set(decoded)
+    return True
+
+
+def _omission_shape_result(
+    client: httpx.Client,
+    settings: CapabilitySettings,
+    cases: list[dict[str, object]],
+    shape: str,
+) -> tuple[dict[str, float | int], int]:
+    """Score every omission case under one optionality shape.
+
+    Returns:
+        The shape's scores and the total latency it spent.
+    """
+
+    schema = _draft_schema(shape)
+    latency_total = 0
+    invalid = 0
+    silent_total = silent_empty = 0
+    empty_text = placeholder_words = fabricated = 0
+    stated_total = stated_captured = 0
+    for case in cases:
+        payload: dict[str, object] = {
+            "model": settings.model_alias,
+            "temperature": 0,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": f"{DRAFT_INSTRUCTIONS}\n\n{SHAPE_INSTRUCTIONS[shape]}",
+                },
+                {"role": "user", "content": str(case.get("prompt", ""))},
+            ],
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "money_tracker_capability_draft",
+                    "strict": True,
+                    "schema": schema,
+                },
+            },
+            "max_tokens": 384,
+        }
+        response, latency = _request(client, settings, payload)
+        latency_total += latency
+        try:
+            decoded = json.loads(_text_content(_message(response)))
+        except ValueError:
+            invalid += 1
+            continue
+        if not isinstance(decoded, dict) or not _draft_keys_permitted(decoded, shape):
+            invalid += 1
+            continue
+        expected = as_object_mapping(case.get("expected"))
+        for slot in OPTIONAL_DRAFT_SLOTS:
+            wanted = expected.get(slot)
+            given = decoded.get(slot, _ABSENT)
+            if wanted is None or wanted == []:
+                silent_total += 1
+                state = _slot_state(given)
+                if state == "empty":
+                    silent_empty += 1
+                elif state == "empty_text":
+                    empty_text += 1
+                elif state == "placeholder_word":
+                    placeholder_words += 1
+                else:
+                    fabricated += 1
+                continue
+            stated_total += 1
+            if _stated_slot_matches(slot, wanted, given):
+                stated_captured += 1
+    scores: dict[str, float | int] = {
+        "schema_invalid_responses": invalid,
+        "silent_slots": silent_total,
+        "silent_slots_left_empty": round(silent_empty / silent_total, 4)
+        if silent_total
+        else 0.0,
+        "silent_slots_given_empty_text": empty_text,
+        "silent_slots_given_placeholder_word": placeholder_words,
+        "silent_slots_fabricated": fabricated,
+        "stated_slots": stated_total,
+        "stated_slots_captured": round(stated_captured / stated_total, 4)
+        if stated_total
+        else 0.0,
+    }
+    return scores, latency_total
+
+
+def _meets_omission_gate(scores: Mapping[str, float | int]) -> bool:
+    """Decide whether one shape reached both pre-registered thresholds."""
+
+    return (
+        scores["schema_invalid_responses"] == 0
+        and scores["silent_slots_left_empty"] >= SILENT_SLOT_THRESHOLD
+        and scores["stated_slots_captured"] >= STATED_SLOT_THRESHOLD
+    )
+
+
+def _omission_probe(
+    client: httpx.Client,
+    settings: CapabilitySettings,
+    cases: list[dict[str, object]],
+) -> dict[str, JsonValue]:
+    """Screen whether a candidate leaves an unstated optional field alone.
+
+    Both optionality shapes are measured, because the failure three product
+    boundaries share may belong to the shape rather than to the model. The
+    probe passes when either shape reaches both pre-registered thresholds with
+    no invalid answer, since a boundary is free to adopt the shape that works.
+    """
+
+    measured: dict[str, dict[str, float | int]] = {}
+    latency_total = 0
+    for shape in SHAPE_INSTRUCTIONS:
+        scores, latency = _omission_shape_result(client, settings, cases, shape)
+        measured[shape] = scores
+        latency_total += latency
+    return {
+        "latency_ms": latency_total,
+        "gate_passed": any(map(_meets_omission_gate, measured.values())),
+        "cases": len(cases),
+        "silent_slot_threshold": SILENT_SLOT_THRESHOLD,
+        "stated_slot_threshold": STATED_SLOT_THRESHOLD,
+        "shapes": cast(JsonValue, measured),
+    }
+
+
+def _union_schema(shape: str) -> dict[str, object]:
+    """Render the two-variant category judgment under one union shape.
+
+    Args:
+        shape: Either `root_union`, where the whole answer is one variant, or
+            `nested_union`, where the variant sits under a single property.
+
+    Returns:
+        The JSON Schema for that shape.
+    """
+
+    existing = cast(
+        dict[str, object],
+        _require_every_property(_ExistingCategoryChoice.model_json_schema()),
+    )
+    proposal = cast(
+        dict[str, object],
+        _require_every_property(_ProposedCategoryChoice.model_json_schema()),
+    )
+    alternatives = [existing, proposal]
+    if shape == "root_union":
+        return {"oneOf": alternatives}
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {"judgment": {"oneOf": alternatives}},
+        "required": ["judgment"],
+    }
+
+
+UNION_INSTRUCTIONS = """\
+You decide which spending purpose describes one movement, choosing from the \
+owner's active category list below. Categories are named, never numbered: \
+reply with a name exactly as it appears in that list.
+
+Active categories: {categories}
+
+Classify by the purpose of the spending, not by the shop that sold it and not \
+by the payment method. Choose the existing outcome whenever any active \
+category adequately describes the purpose. Choose the proposal outcome only \
+when no active category is adequate, and then give the candidate a short \
+Italian purpose name and say why no active category is adequate.
+
+Your answer takes exactly one of the two shapes the schema offers. Never \
+answer with a field belonging to the shape you did not choose."""
+"""Union instructions, deliberately short of the domain suite's taxonomy rules."""
+
+UNION_VARIANT_KEYS = {
+    "existing": frozenset({"outcome", "category_name"}),
+    "proposal": frozenset({"outcome", "proposed_name", "rationale"}),
+}
+"""Exact property set each variant may carry."""
+
+
+def _meets_union_gate(scores: Mapping[str, JsonValue]) -> bool:
+    """Decide whether one shape satisfied every mechanical expectation."""
+
+    return (
+        scores["schema_accepted"] is True
+        and scores["schema_invalid_responses"] == 0
+        and scores["answers_carrying_a_foreign_field"] == 0
+        and scores["both_variants_reachable"] is True
+    )
+
+
+def _union_probe(
+    client: httpx.Client,
+    settings: CapabilitySettings,
+    cases: list[dict[str, object]],
+) -> dict[str, JsonValue]:
+    """Screen whether a candidate can answer with a discriminated union.
+
+    The blocking half is mechanical: the server accepts the schema, every
+    answer matches exactly one variant, and no answer carries a field from the
+    variant it did not choose. Which variant is correct is scored only as a
+    diagnostic, because `categorization/purpose-it` owns that gate and two
+    documents must not gate the same thing.
+    """
+
+    measured: dict[str, dict[str, JsonValue]] = {}
+    latency_total = 0
+    for shape in ("root_union", "nested_union"):
+        schema = _union_schema(shape)
+        accepted = True
+        invalid = foreign_fields = 0
+        selected_correctly = names_from_list = existing_answers = 0
+        produced: set[str] = set()
+        for case in cases:
+            payload: dict[str, object] = {
+                "model": settings.model_alias,
+                "temperature": 0,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": UNION_INSTRUCTIONS.format(
+                            categories=", ".join(
+                                str(name)
+                                for name in cast(
+                                    list[object], case.get("active_categories", [])
+                                )
+                            )
+                        ),
+                    },
+                    {"role": "user", "content": str(case.get("prompt", ""))},
+                ],
+                "response_format": {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "money_tracker_capability_category",
+                        "strict": True,
+                        "schema": schema,
+                    },
+                },
+                "max_tokens": 256,
+            }
+            try:
+                response, latency = _request(client, settings, payload)
+            except _ProbeError as error:
+                if not str(error).startswith("http_status:"):
+                    raise
+                accepted = False
+                break
+            latency_total += latency
+            try:
+                decoded = json.loads(_text_content(_message(response)))
+            except ValueError:
+                invalid += 1
+                continue
+            if shape == "nested_union" and isinstance(decoded, dict):
+                decoded = decoded.get("judgment")
+            if not isinstance(decoded, dict):
+                invalid += 1
+                continue
+            outcome = decoded.get("outcome")
+            if not isinstance(outcome, str) or outcome not in UNION_VARIANT_KEYS:
+                invalid += 1
+                continue
+            produced.add(outcome)
+            if set(decoded) != UNION_VARIANT_KEYS[outcome]:
+                foreign_fields += 1
+            expected = as_object_mapping(case.get("expected"))
+            if outcome == expected.get("outcome"):
+                selected_correctly += 1
+            if outcome == "existing":
+                existing_answers += 1
+                permitted = {
+                    _normalized(str(name))
+                    for name in cast(list[object], case.get("active_categories", []))
+                }
+                if _normalized(str(decoded.get("category_name", ""))) in permitted:
+                    names_from_list += 1
+        measured[shape] = {
+            "schema_accepted": accepted,
+            "schema_invalid_responses": invalid,
+            "answers_carrying_a_foreign_field": foreign_fields,
+            "both_variants_reachable": produced == set(UNION_VARIANT_KEYS),
+            "variant_selected_correctly": round(selected_correctly / len(cases), 4)
+            if cases
+            else 0.0,
+            "existing_names_from_supplied_list": round(
+                names_from_list / existing_answers, 4
+            )
+            if existing_answers
+            else 0.0,
+            "scored_answers": len(cases) - invalid if accepted else 0,
+        }
+    return {
+        "latency_ms": latency_total,
+        "gate_passed": any(map(_meets_union_gate, measured.values())),
+        "cases": len(cases),
+        "shapes": cast(JsonValue, measured),
+    }
+
+
 def _execute_probe(name: str, probe: ProbeCallable) -> ProbeResult:
-    """Convert one probe into a safe result without leaking response content."""
+    """Convert one probe into a safe result without leaking response content.
+
+    A probe that could not run at all reports `error`; a probe that ran and
+    missed its pre-registered threshold reports `failed` through the
+    `gate_passed` key. Keeping the two apart matters here, because a screen
+    whose report cannot distinguish an unreachable server from a measured
+    refusal would answer the wrong question.
+    """
 
     started = time.monotonic()
     try:
@@ -394,9 +1089,10 @@ def _execute_probe(name: str, probe: ProbeCallable) -> ProbeResult:
             details={"error": safe_error},
         )
     latency = details.pop("latency_ms", None)
+    gate_passed = details.get("gate_passed", True)
     return ProbeResult(
         name=name,
-        status=ProbeStatus.PASSED,
+        status=ProbeStatus.PASSED if gate_passed is not False else ProbeStatus.FAILED,
         latency_ms=int(latency) if isinstance(latency, int) else None,
         details=details,
     )
@@ -520,6 +1216,26 @@ def run_capability_suite(
                 ),
             )
         )
+        probes.append(
+            _execute_probe(
+                "optional_field_omission",
+                lambda: _omission_probe(
+                    client,
+                    settings,
+                    _cases_by_capability(cases, "optional_field_omission"),
+                ),
+            )
+        )
+        probes.append(
+            _execute_probe(
+                "union_output",
+                lambda: _union_probe(
+                    client,
+                    settings,
+                    _cases_by_capability(cases, "union_output"),
+                ),
+            )
+        )
         if image_path is None:
             probes.append(
                 ProbeResult(
@@ -551,6 +1267,8 @@ def run_capability_suite(
         "strict_structured_output",
         "tool_calling",
         "tool_result_sequencing",
+        "optional_field_omission",
+        "union_output",
     }
     if image_path is not None:
         required.add("image_input")

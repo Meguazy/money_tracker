@@ -34,7 +34,8 @@ do not rewrite historical outcomes when a later experiment supersedes them.
     correct existing category, so the dominant failure is discriminator
     selection on the flat schema rather than missing knowledge. Union output is
     consequently a capability worth screening, not only a prompt worth
-    revising.
+    revising. It has since been screened and passes; see the capability
+    baseline below.
   The earlier over-declaration gap in `candidate-extraction-it-v1` is closed.
   It was a boundary-design defect rather than a prompt-tuning problem: the
   schema let the model judge its own uncertainty, which the deterministic side
@@ -85,8 +86,9 @@ do not rewrite historical outcomes when a later experiment supersedes them.
   `payment_parts`, `merchant` and `amount` where the message is silent, and tool
   selection fills `period` where no month is stated. Each field is optional, each
   set of instructions says to omit it, and the model fills it anyway. Reliable
-  omission of an optional field joins union output as a capability to screen
-  before a candidate is considered for a product role.
+  omission of an optional field joined union output as a capability to screen
+  before a candidate is considered for a product role. Both have now been
+  screened directly, and they answer differently: see the capability baseline.
 - Auto-post threshold: disabled until categorization precision gates pass.
 - Routing confidence bar: none promoted, and calibration has now established
   that none should be. The implemented router requires the value as an explicit
@@ -110,9 +112,32 @@ do not rewrite historical outcomes when a later experiment supersedes them.
 - Receipt pipeline: no pipeline selected; receipt extraction remains planned.
 - Langfuse: optional local integration; the Step 1 capability runner emits
   deterministic local reports and can publish only redacted aggregate scores.
-- Capability baseline: Qwen3 14B, Qwen3.5 9B, and Gemma 4 12B pass the Step 1
-  technical screen. They remain experimental candidates; no model has been
-  promoted to a product role.
+- Capability baseline: Qwen3 14B, Qwen3.5 9B, and Gemma 4 12B pass the four
+  protocol probes of screen version 1.1.0. They remain experimental candidates;
+  no model has been promoted to a product role.
+  Screen version 1.2.0 adds the two capabilities Step 3 measured a need for and
+  has been run against Qwen3 14B, the only candidate the text boundaries use.
+  See [2026-09-03 results](local-model-capability-results-2026-09-03.md).
+  - `optional_field_omission` **fails**, in both boundary shapes. Of 68 slots a
+    message leaves silent, the shape the adapter sends today leaves 0.7647
+    empty and the genuinely-optional shape 0.4265, against a pre-registered
+    0.95. Stated slots are still captured at 1.0 and 0.9722, so the model is
+    not emptying slots indiscriminately; it cannot leave one alone.
+  - The shape comparison changes which failure occurs, not whether it occurs.
+    Under the optional-absent shape almost every failure is an empty string,
+    which `NonEmptyText` refuses, so a wrong record becomes a failed turn:
+    silent fabrication drops from 14 slots to 7 while refusals rise from 2 to
+    32. This is the first evidence that any part of the failure is reachable by
+    reshaping a boundary rather than by replacing the model.
+  - `union_output` **passes**, mechanically, in both the root and the nested
+    shape and in both runs. llama.cpp accepts a `oneOf` schema, every answer
+    matched exactly one variant, none carried a field of the variant it did not
+    choose, and both variants were reachable. The `CategoryFit` contract's
+    stated reason for staying flat, that no model is capability-screened for
+    union output, no longer holds for this profile.
+  - Variant-selection accuracy inside that probe is a diagnostic and gates
+    nothing. `categorization/purpose-it` owns categorization accuracy, and the
+    probe's six synthetic categories are not its taxonomy.
 
 ## Decisions
 
@@ -120,6 +145,7 @@ do not rewrite historical outcomes when a later experiment supersedes them.
 | --- | --- | --- | --- | --- | --- | --- |
 | EVD-000 | 2026-09-01 | Step 0 documentation baseline | Establish gates before model/pipeline selection | Evaluation process and matrix in this directory | None | Product baseline and AD-012 |
 | EVD-001 | 2026-09-02 | Local capability shortlist 1.1.0 | Retain three downstream candidates; reject the current Ministral and GPT-OSS profiles; promote none | Qwen3 14B text; Qwen3.5 9B and Gemma 4 12B vision | None | [Capability results](local-model-capability-results-2026-09-02.md) |
+| EVD-002 | 2026-09-03 | Local capability screen 1.2.0 | Record optional-field omission as failed and union output as passed for the text candidate; promote none; retain EVD-001 | Qwen3 14B `Q5_K_M`, llama.cpp `3466812d`, dataset 1.2.0, canonical run `CAP-20260903-183125-ea4695f3` reproduced twice | None; extends EVD-001 | [Capability results](local-model-capability-results-2026-09-03.md) |
 
 ## Entry requirements
 

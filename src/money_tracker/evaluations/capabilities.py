@@ -232,13 +232,46 @@ def _message(response: Mapping[str, object]) -> Mapping[str, object]:
     return as_object_mapping(choice.get("message"))
 
 
-def _text_content(message: Mapping[str, object]) -> str:
-    """Extract plain assistant text without persisting raw response objects."""
+def _answer_text(message: Mapping[str, object]) -> str | None:
+    """Extract plain assistant text, or None when the model produced none.
+
+    An empty answer is a measured refusal rather than a broken exchange: the
+    server replied, and the model spent its token budget without emitting one.
+    A probe that scores many cases counts it and carries on, because losing the
+    other cases to an exception would report an unmeasured screen where a
+    measured failure happened.
+
+    Args:
+        message: Assistant message from an OpenAI-compatible response.
+
+    Returns:
+        The stripped text, or None when the model answered with nothing.
+    """
 
     content = message.get("content")
     if not isinstance(content, str) or not content.strip():
-        raise _ProbeError("missing_text_content")
+        return None
     return content.strip()
+
+
+def _text_content(message: Mapping[str, object]) -> str:
+    """Extract assistant text, refusing an exchange that carries none.
+
+    Args:
+        message: Assistant message from an OpenAI-compatible response.
+
+    Returns:
+        The stripped text.
+
+    Raises:
+        _ProbeError: If the model produced no text. Single-case probes have no
+            denominator to record the refusal in, so for them it ends the probe.
+    """
+
+    text = _answer_text(message)
+    if text is None:
+        raise _ProbeError("missing_text_content")
+    return text
 
 
 def _tool_call(message: Mapping[str, object]) -> Mapping[str, object]:
@@ -420,13 +453,21 @@ def _tool_sequence_probe(
         "max_tokens": 256,
     }
     second_response, second_latency = _request(client, settings, second_payload)
-    content = _text_content(_message(second_response)).lower()
-    if not any(marker in content for marker in ("37", "37,00", "37.00")):
-        raise _ProbeError("tool_result_not_consumed")
+    answer = _answer_text(_message(second_response))
+    lowered = (answer or "").lower()
+    converted = any(marker in lowered for marker in ("37", "37,00", "37.00"))
+    # A candidate that repeats the minor units unconverted did consume the tool
+    # result and then read cents as euros. That is a different defect from
+    # ignoring the result, and a gate that cannot tell them apart names the
+    # wrong one, so both are recorded.
+    unconverted = any(marker in lowered for marker in ("3700", "3.700", "3,700"))
     return {
         "latency_ms": first_latency + second_latency,
+        "gate_passed": converted,
         "tool_result_minor": 3700,
-        "answer_contains_expected_amount": True,
+        "answer_produced": answer is not None,
+        "answer_contains_expected_amount": converted,
+        "answer_contains_unconverted_minor_units": unconverted and not converted,
     }
 
 
@@ -782,7 +823,7 @@ def _omission_shape_result(
 
     schema = _draft_schema(shape)
     latency_total = 0
-    invalid = 0
+    invalid = unanswered = 0
     silent_total = silent_empty = 0
     empty_text = placeholder_words = fabricated = 0
     stated_total = stated_captured = 0
@@ -809,8 +850,13 @@ def _omission_shape_result(
         }
         response, latency = _request(client, settings, payload)
         latency_total += latency
+        answer = _answer_text(_message(response))
+        if answer is None:
+            invalid += 1
+            unanswered += 1
+            continue
         try:
-            decoded = json.loads(_text_content(_message(response)))
+            decoded = json.loads(answer)
         except ValueError:
             invalid += 1
             continue
@@ -838,6 +884,7 @@ def _omission_shape_result(
                 stated_captured += 1
     scores: dict[str, float | int] = {
         "schema_invalid_responses": invalid,
+        "answers_not_produced": unanswered,
         "silent_slots": silent_total,
         "silent_slots_left_empty": round(silent_empty / silent_total, 4)
         if silent_total
@@ -976,7 +1023,7 @@ def _union_probe(
     for shape in ("root_union", "nested_union"):
         schema = _union_schema(shape)
         accepted = True
-        invalid = foreign_fields = 0
+        invalid = unanswered = foreign_fields = 0
         selected_correctly = names_from_list = existing_answers = 0
         produced: set[str] = set()
         for case in cases:
@@ -1015,8 +1062,13 @@ def _union_probe(
                 accepted = False
                 break
             latency_total += latency
+            answer = _answer_text(_message(response))
+            if answer is None:
+                invalid += 1
+                unanswered += 1
+                continue
             try:
-                decoded = json.loads(_text_content(_message(response)))
+                decoded = json.loads(answer)
             except ValueError:
                 invalid += 1
                 continue
@@ -1046,6 +1098,7 @@ def _union_probe(
         measured[shape] = {
             "schema_accepted": accepted,
             "schema_invalid_responses": invalid,
+            "answers_not_produced": unanswered,
             "answers_carrying_a_foreign_field": foreign_fields,
             "both_variants_reachable": produced == set(UNION_VARIANT_KEYS),
             "variant_selected_correctly": round(selected_correctly / len(cases), 4)

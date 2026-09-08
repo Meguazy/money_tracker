@@ -781,7 +781,17 @@ own tests and documentation, and none may ship a later step's behavior.
   the candidate that produced them, so a second candidate no longer overwrites
   or interleaves with the first. `scripts/sweep_models.sh` runs the suites
   across several candidates, restarting the inference server for each and
-  restoring the server it found running before it exits. This measures nothing on its
+  restoring the server it found running before it exits.
+- Measuring a second candidate immediately found a reporting defect in the
+  Step 1 capability screen. Its probes raised on a measured refusal, so a
+  candidate that answered and answered wrongly was reported as a probe that
+  could not run, contradicting the contract the runner documents. Worse, the
+  probes that score many cases lost every remaining case to the first
+  unanswered one. Both are fixed: an unanswered case is counted as an invalid
+  response and reported separately, and a wrong answer fails its gate. Two of
+  Ministral 3 14B's probes moved from `error` to `failed` with their numbers
+  visible, which is the difference between an unmeasured screen and a measured
+  one. Nothing is promoted by it, and no threshold moved. This measures nothing on its
   own. It removes the reason every product suite so far has run on one
   candidate: the six pinned suites have only ever measured Qwen3 14B, and until
   now a second candidate's scores would have replaced the first's in the

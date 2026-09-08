@@ -59,6 +59,16 @@ reading_the_report: >
   blocking_gates_passed is true only when every screened capability passed. A
   per-probe result is the answer to whether one boundary shape may be used, so
   a false aggregate does not by itself reject a candidate for every interface.
+
+  A probe reports `error` only when it could not run: an unreachable server, a
+  malformed response, a rejected schema. A candidate that answers and answers
+  wrongly reports `failed`, with the numbers behind the verdict. A case the
+  candidate never answered, having spent its token budget without emitting one,
+  counts as an invalid response and is also reported on its own as
+  `answers_not_produced`, because a refusal and a malformed answer have
+  different causes. No threshold changed with that counting: an unanswered case
+  was previously fatal to its whole probe, so a screen that reported a measured
+  failure now reported an unmeasured one instead.
 publication:
   local_artifacts: required
   langfuse: optional

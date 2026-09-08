@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import json
+from collections.abc import Iterator
+
+import httpx
 import pytest
 from pydantic import JsonValue
 
@@ -9,6 +13,7 @@ from money_tracker.evaluations.capabilities import (
     ALWAYS_STATED_DRAFT_FIELDS,
     OPTIONAL_DRAFT_SLOTS,
     UNION_VARIANT_KEYS,
+    _answer_text,
     _cases_by_capability,
     _dataset_version,
     _draft_keys_permitted,
@@ -18,6 +23,8 @@ from money_tracker.evaluations.capabilities import (
     _slot_state,
     _stated_slot_matches,
     _tool_request_payload,
+    _tool_sequence_probe,
+    _union_probe,
     _union_schema,
 )
 from money_tracker.evaluations.metadata import CapabilitySettings
@@ -195,3 +202,142 @@ def test_a_capability_with_no_cases_is_refused() -> None:
 
     with pytest.raises(_ProbeError, match="dataset_case_count:union_output:0"):
         _cases_by_capability([{"capability": "tool_calling"}], "union_output")
+
+
+def _settings() -> CapabilitySettings:
+    """Build endpoint settings for a probe driven by a scripted transport."""
+
+    return CapabilitySettings(
+        base_url="http://127.0.0.1:8080/v1",
+        api_key="local",
+        model_alias="synthetic",
+        timeout_seconds=5,
+        model_path=None,
+        server_binary=None,
+        vision_projector_path=None,
+        context_size=8192,
+    )
+
+
+def _client(replies: Iterator[dict[str, object]]) -> httpx.Client:
+    """Answer each chat request with the next scripted assistant message."""
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"choices": [{"message": next(replies)}]})
+
+    return httpx.Client(transport=httpx.MockTransport(handle))
+
+
+def _union_case() -> dict[str, object]:
+    """Build one union case with the fields the probe reads."""
+
+    return {
+        "capability": "union_output",
+        "prompt": "Ho speso 60 euro di spesa",
+        "active_categories": ["alimentari"],
+        "expected": {"outcome": "existing", "category_name": "alimentari"},
+    }
+
+
+def test_an_answer_the_model_never_produced_is_a_value_not_an_exception() -> None:
+    """Separate an empty answer from a broken exchange at the source."""
+
+    assert _answer_text({"content": " hello "}) == "hello"
+    assert _answer_text({"content": ""}) is None
+    assert _answer_text({"content": None}) is None
+    assert _answer_text({}) is None
+
+
+def test_a_case_the_model_never_answered_is_counted_not_fatal() -> None:
+    """Keep the other cases measured when one exhausts its token budget."""
+
+    answered = 0
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        nonlocal answered
+        schema = json.loads(request.content)["response_format"]["json_schema"]["schema"]
+        judgment = {"outcome": "existing", "category_name": "alimentari"}
+        nested = "judgment" in schema.get("properties", {})
+        answered += 1
+        # Every shape answers its first case and runs out of budget on the
+        # second, which is what a real candidate did on one union case.
+        if answered % 2 == 0:
+            message: dict[str, object] = {
+                "role": "assistant",
+                "content": "",
+                "reasoning_content": "...",
+            }
+        else:
+            message = {
+                "role": "assistant",
+                "content": json.dumps({"judgment": judgment} if nested else judgment),
+            }
+        return httpx.Response(200, json={"choices": [{"message": message}]})
+
+    with httpx.Client(transport=httpx.MockTransport(handle)) as client:
+        details = _union_probe(client, _settings(), [_union_case(), _union_case()])
+
+    shapes = details["shapes"]
+    assert isinstance(shapes, dict)
+    for shape in ("root_union", "nested_union"):
+        assert shapes[shape]["answers_not_produced"] == 1
+        assert shapes[shape]["schema_invalid_responses"] == 1
+        assert shapes[shape]["scored_answers"] == 1
+        assert shapes[shape]["schema_accepted"] is True
+    assert details["gate_passed"] is False
+
+
+def test_a_tool_result_read_as_euros_fails_and_says_which_defect_it_was() -> None:
+    """Name a hundredfold unit error rather than calling it an ignored result."""
+
+    call = {
+        "id": "call-1",
+        "type": "function",
+        "function": {
+            "name": "get_budget_remaining",
+            "arguments": json.dumps({"category_id": "subscriptions"}),
+        },
+    }
+    replies = iter(
+        [
+            {"role": "assistant", "content": "", "tool_calls": [call]},
+            {
+                "role": "assistant",
+                "content": "Resta un budget di **3.700 EUR** per subscriptions.",
+            },
+        ]
+    )
+    with _client(replies) as client:
+        details = _tool_sequence_probe(client, _settings(), {"prompt": "Quanto resta?"})
+
+    assert details["gate_passed"] is False
+    assert details["answer_produced"] is True
+    assert details["answer_contains_expected_amount"] is False
+    assert details["answer_contains_unconverted_minor_units"] is True
+    assert _execute_probe("tool_result_sequencing", lambda: dict(details)).status is (
+        ProbeStatus.FAILED
+    )
+
+
+def test_a_converted_tool_result_still_passes() -> None:
+    """Keep the success path intact for a candidate that reads minor units."""
+
+    call = {
+        "id": "call-1",
+        "type": "function",
+        "function": {
+            "name": "get_budget_remaining",
+            "arguments": json.dumps({"category_id": "subscriptions"}),
+        },
+    }
+    replies = iter(
+        [
+            {"role": "assistant", "content": "", "tool_calls": [call]},
+            {"role": "assistant", "content": "Restano 37,00 EUR."},
+        ]
+    )
+    with _client(replies) as client:
+        details = _tool_sequence_probe(client, _settings(), {"prompt": "Quanto resta?"})
+
+    assert details["gate_passed"] is True
+    assert details["answer_contains_unconverted_minor_units"] is False

@@ -62,7 +62,13 @@ reading_the_report: >
 
   A probe reports `error` only when it could not run: an unreachable server, a
   malformed response, a rejected schema. A candidate that answers and answers
-  wrongly reports `failed`, with the numbers behind the verdict. A case the
+  wrongly reports `failed`, with the numbers behind the verdict. Which of the
+  two a refusal is gets decided per case rather than by a rule, because the
+  runtime produces some of them: a tool call carries an identifier llama.cpp
+  generates and arguments its template serializes, so neither missing says
+  anything about the candidate, while a wrong tool name or wrong arguments is
+  the candidate's own answer. A probe that errored reports no gate outcome at
+  all, since it reached none. A case the
   candidate never answered, having spent its token budget without emitting one,
   counts as an invalid response and is also reported on its own as
   `answers_not_produced`, because a refusal and a malformed answer have

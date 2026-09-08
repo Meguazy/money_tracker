@@ -143,7 +143,27 @@ warn against by name.
 
 
 class _ProbeError(RuntimeError):
-    """Expected deterministic failure that contains only safe diagnostics."""
+    """Expected deterministic failure that contains only safe diagnostics.
+
+    Attributes:
+        measured: Whether the candidate produced the failure. A model that
+            answers wrongly has been measured and its probe failed; a server,
+            template, or transport that could not deliver an answer leaves the
+            capability unknown and its probe errored. Every raise site decides
+            this, because the two are indistinguishable from the exception type
+            and a blanket rule would mislabel one of them.
+    """
+
+    def __init__(self, code: str, *, measured: bool = False) -> None:
+        """Record one safe diagnostic code and whose failure it was.
+
+        Args:
+            code: Stable diagnostic identifier carrying no model or owner text.
+            measured: True when the candidate itself produced the failure.
+        """
+
+        super().__init__(code)
+        self.measured = measured
 
 
 ProbeCallable = Callable[[], dict[str, JsonValue]]
@@ -279,7 +299,7 @@ def _tool_call(message: Mapping[str, object]) -> Mapping[str, object]:
 
     tool_calls = message.get("tool_calls")
     if not isinstance(tool_calls, list) or len(tool_calls) != 1:
-        raise _ProbeError("expected_one_tool_call")
+        raise _ProbeError("expected_one_tool_call", measured=True)
     return as_object_mapping(tool_calls[0])
 
 
@@ -318,9 +338,9 @@ def _structured_probe(
     try:
         parsed = _StructuredExpense.model_validate_json(content)
     except ValueError as error:
-        raise _ProbeError("schema_validation_failed") from error
+        raise _ProbeError("schema_validation_failed", measured=True) from error
     if parsed.model_dump(mode="json") != dict(expected):
-        raise _ProbeError("structured_value_mismatch")
+        raise _ProbeError("structured_value_mismatch", measured=True)
     return {"latency_ms": latency, "schema": "strict_nested_v1"}
 
 
@@ -375,13 +395,13 @@ def _validate_tool_call(call: Mapping[str, object]) -> tuple[str, dict[str, obje
     if not isinstance(call_id, str) or not call_id:
         raise _ProbeError("missing_tool_call_id")
     if function.get("name") != "get_budget_remaining":
-        raise _ProbeError("wrong_tool_name")
+        raise _ProbeError("wrong_tool_name", measured=True)
     arguments = function.get("arguments")
     if not isinstance(arguments, str):
         raise _ProbeError("tool_arguments_not_json_string")
     decoded = json.loads(arguments)
     if decoded != {"category_id": "subscriptions"}:
-        raise _ProbeError("wrong_tool_arguments")
+        raise _ProbeError("wrong_tool_arguments", measured=True)
     return call_id, decoded
 
 
@@ -1123,24 +1143,31 @@ def _execute_probe(name: str, probe: ProbeCallable) -> ProbeResult:
     """Convert one probe into a safe result without leaking response content.
 
     A probe that could not run at all reports `error`; a probe that ran and
-    missed its pre-registered threshold reports `failed` through the
-    `gate_passed` key. Keeping the two apart matters here, because a screen
-    whose report cannot distinguish an unreachable server from a measured
-    refusal would answer the wrong question.
+    missed its pre-registered threshold reports `failed`, either through the
+    `gate_passed` key or through a refusal the candidate itself produced.
+    Keeping the two apart matters here, because a screen whose report cannot
+    distinguish an unreachable server from a measured refusal would answer the
+    wrong question.
     """
 
     started = time.monotonic()
     try:
         details = probe()
     except (httpx.HTTPError, OSError, ValueError, TypeError, _ProbeError) as error:
+        measured = isinstance(error, _ProbeError) and error.measured
         safe_error = (
             str(error) if isinstance(error, _ProbeError) else type(error).__name__
         )
+        # A probe that errored reports no gate outcome at all, because it has
+        # none: claiming one either way would answer a question it never asked.
+        reported: dict[str, JsonValue] = {"error": safe_error}
+        if measured:
+            reported["gate_passed"] = False
         return ProbeResult(
             name=name,
-            status=ProbeStatus.ERROR,
+            status=ProbeStatus.FAILED if measured else ProbeStatus.ERROR,
             latency_ms=round((time.monotonic() - started) * 1000),
-            details={"error": safe_error},
+            details=reported,
         )
     latency = details.pop("latency_ms", None)
     gate_passed = details.get("gate_passed", True)

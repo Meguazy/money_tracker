@@ -781,7 +781,7 @@ own tests and documentation, and none may ship a later step's behavior.
   the candidate that produced them, so a second candidate no longer overwrites
   or interleaves with the first. `scripts/sweep_models.sh` runs the suites
   across several candidates, restarting the inference server for each and
-  refusing to stop a server it did not start. This measures nothing on its
+  restoring the server it found running before it exits. This measures nothing on its
   own. It removes the reason every product suite so far has run on one
   candidate: the six pinned suites have only ever measured Qwen3 14B, and until
   now a second candidate's scores would have replaced the first's in the

@@ -101,9 +101,12 @@ The sweep resolves each candidate's weights from the catalog, restarts the
 inference server for it, runs every suite with `--model-profile`, and writes one
 directory per candidate under `artifacts/sweeps/<run>/`. A failing blocking gate
 is a measurement, so the sweep records it and continues; only a run that could
-not execute counts as a failure. It never stops a server it did not start: one
-already serving the requested candidate is reused, and one serving a different
-candidate stops the sweep with the fix rather than being killed.
+not execute counts as a failure. A server already serving the requested
+candidate is reused as is; one serving different weights is taken over and put
+back before the sweep exits, including when it is interrupted, so a sweep needs
+no manual step around the server that is already running. Pass
+`--keep-running-server` to refuse the takeover instead, which is worth doing
+when something other than this project answers on that port.
 
 These write real rows, so they refuse any database but local
 `money_tracker_test` on port 5433 and reset it once at the start of a run. The

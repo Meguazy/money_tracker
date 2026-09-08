@@ -262,8 +262,9 @@ runs. Start the server:
 
 To measure several candidates rather than run one, `scripts/sweep_models.sh`
 owns the whole cycle instead: it resolves each candidate's weights from the
-catalog, starts and stops the server around each one, and runs the suites with
-`--model-profile` so that a forgotten restart cannot go unnoticed. See
+catalog, starts and stops the server around each one, restores the server it
+found running, and runs the suites with `--model-profile` so that a forgotten
+restart cannot go unnoticed. See
 [Experiments](experiments/README.md).
 
 The launcher reads the shell environment rather than `.env`, because it starts

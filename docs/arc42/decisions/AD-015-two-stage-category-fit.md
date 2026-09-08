@@ -1,10 +1,9 @@
 # AD-015: Two-Stage Category Fit
 
-- Status: proposed
-- Implementation: boundaries, schemas and the composing component implemented
-  and wired into the evaluation suite; the expense and review graphs still run
-  the single-call boundary, because the decision is proposed and nothing is
-  promoted before it measures better.
+- Status: rejected
+- Implementation: implemented, measured, and rejected on the measurement. The
+  boundaries, schemas, composition and the `--two-stage` evaluation flag are
+  kept so the result stays reproducible; no runtime path uses them.
 - Date: 2026-09-08
 - Supersedes: nothing. Extends [AD-006](AD-006-bounded-agent-workflows.md) and
   [AD-008](AD-008-controlled-taxonomy.md); promotion still runs through
@@ -104,6 +103,40 @@ model brings to a small closed choice has far less room than across eighteen.
   hierarchy exactly, but it enlarges the enum rather than shrinking it and does
   not separate the two decisions.
 
+## Measured outcome, and why the case for this decision was wrong
+
+`CAT-20260908-161944-e9204e87`, Qwen3 14B on `categorization-purpose-it-v1.1`:
+118 of 153 = 0.7712, against the single call's 133 of 153 = 0.8693. Twenty cases
+worsened and five improved.
+
+Both stages measured worse than the numbers this ADR was built on:
+
+| | Single call | Two stages |
+| --- | ---: | ---: |
+| Subtree correct | 0.9574 | 0.8905 |
+| Level correct given the subtree | 0.9704 | 0.9344 |
+| Agreement | 0.8693 | 0.7712 |
+
+The context above quotes 0.9574 as the accuracy of subtree selection. It is not.
+It is the accuracy of *the subtree implied by a leaf the model chose while
+looking at all eighteen categories*. No subtree decision was ever made, so
+nothing measured how well this candidate makes one. Presenting a derived
+quantity as a decision accuracy is the error, and the two-stage design is what
+exposed it by finally making the decision explicit.
+
+The failure cases show the mechanism. A veterinary visit went to `Salute e cura
+personale` rather than `Animali`; a streaming subscription to `Formazione` and
+to `Acquisti personali` rather than `Tempo libero`; a utility bill to
+`Mobilità`. In the single call the child's name and guidance were the evidence
+that disambiguated the heading: choosing `Veterinario` implies `Animali` without
+reasoning about `Animali` in the abstract. Hiding the children to make the first
+decision cleaner removed the evidence that made it easy.
+
+Proposals rose from 3 to 9 and `false_new_category_proposal` from 0.007 to
+0.0352, still inside its 0.05 ceiling. Judging that no heading covers a purpose,
+against ten abstract headings, is a lower bar than judging that no category
+covers it against eighteen concrete ones.
+
 ## Consequences
 
 - Two model calls per categorized movement, roughly five seconds against two and
@@ -120,7 +153,20 @@ model brings to a small closed choice has far less room than across eighteen.
   this size than it would at a deeper one, which is the strongest argument for
   deferring it and the reason the two cheaper attempts were measured first.
 
-## Open questions before acceptance
+## What stands after the rejection
+
+The two attempts inside one call, v7 and v8, remain measured regressions, so the
+heading-versus-entry error is not solved and `candidate-category-fit-it-v6` at
+0.8693 remains the best measured configuration. What has changed is the reason
+to prefer it: the level error is not evidence that the two decisions should be
+separated, because separating them makes the first one harder.
+
+Anything revisiting this should measure a subtree decision directly before
+designing around its accuracy. The cheapest form is a first stage that sees the
+children as evidence while still answering a heading, which is neither this
+design nor the single call.
+
+## Open questions, no longer blocking acceptance
 
 - Whether stage one's no-heading-fits variant should carry the proposal fields
   or hand off to a third boundary. Carrying them keeps the call count at two and

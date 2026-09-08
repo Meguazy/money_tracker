@@ -2,16 +2,17 @@
   "blocking_gates_passed": false,
   "case_totals": {
     "error": 0,
-    "failed": 32,
-    "passed": 121
+    "failed": 35,
+    "passed": 118
   },
-  "completed_at": "2026-09-08T16:03:26.783070+00:00",
+  "completed_at": "2026-09-08T16:19:44.382182+00:00",
   "configuration": {
     "auto_post_policy_promoted": false,
-    "boundary_schema": "BoundWireCategoryFit",
+    "boundary_schema": "TwoStageCategoryFit",
     "dataset_minimum": 150,
-    "instructions_sha256": "531ca44ad94aff3a44b063784971335db2afa07435468b3375804e73b837f2e6",
-    "instructions_version": "candidate-category-fit-it-v8",
+    "instructions_sha256": "78c36a571ec3898799bd729006f687983bbb790037736821cd8a9ae7852762ed",
+    "instructions_version": "candidate-category-subtree-it-v1+candidate-category-leaf-it-v1",
+    "model_calls_per_case": "one or two",
     "taxonomy_active_categories": 24
   },
   "dataset": {
@@ -30,10 +31,10 @@
       "denominator": 153,
       "inapplicability_reason": null,
       "name": "purpose_label_agreement",
-      "numerator": 121,
+      "numerator": 118,
       "passed": false,
       "threshold": 0.85,
-      "value": 0.7908
+      "value": 0.7712
     },
     {
       "applicable": true,
@@ -42,10 +43,10 @@
       "denominator": 142,
       "inapplicability_reason": null,
       "name": "false_new_category_proposal",
-      "numerator": 0,
+      "numerator": 5,
       "passed": true,
       "threshold": 0.05,
-      "value": 0.0
+      "value": 0.0352
     },
     {
       "applicable": true,
@@ -63,13 +64,13 @@
       "applicable": true,
       "blocking": true,
       "comparison": "at_most",
-      "denominator": 0,
+      "denominator": 9,
       "inapplicability_reason": null,
       "name": "duplicate_or_alias_equivalent_proposal",
       "numerator": 0,
-      "passed": false,
+      "passed": true,
       "threshold": 0.02,
-      "value": 1.0
+      "value": 0.0
     },
     {
       "applicable": true,
@@ -114,10 +115,34 @@
       "denominator": 153,
       "inapplicability_reason": null,
       "name": "proposals_offered",
-      "numerator": 0,
+      "numerator": 9,
       "passed": true,
       "threshold": null,
-      "value": 0.0
+      "value": 9.0
+    },
+    {
+      "applicable": true,
+      "blocking": false,
+      "comparison": "at_least",
+      "denominator": 137,
+      "inapplicability_reason": null,
+      "name": "subtree_selected_correctly",
+      "numerator": 122,
+      "passed": true,
+      "threshold": null,
+      "value": 0.8905
+    },
+    {
+      "applicable": true,
+      "blocking": false,
+      "comparison": "at_least",
+      "denominator": 122,
+      "inapplicability_reason": null,
+      "name": "level_correct_given_the_subtree",
+      "numerator": 114,
+      "passed": true,
+      "threshold": null,
+      "value": 0.9344
     }
   ],
   "model": {
@@ -130,7 +155,7 @@
   "promotion_blockers": [
     "blocking_gate_failed_or_unmeasured"
   ],
-  "run_id": "CAT-20260908-160326-504fc810",
-  "source_commit": "22f711d87c256e30df65b5016c0c7f72af6f9c57",
+  "run_id": "CAT-20260908-161944-e9204e87",
+  "source_commit": "ffa7cc7df764a55752e8a91a563cf95c0e5e0e54",
   "suite": "categorization/purpose-it"
 }

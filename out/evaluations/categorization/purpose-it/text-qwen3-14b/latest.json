@@ -2,16 +2,16 @@
   "blocking_gates_passed": false,
   "case_totals": {
     "error": 0,
-    "failed": 20,
-    "passed": 133
+    "failed": 32,
+    "passed": 121
   },
-  "completed_at": "2026-09-08T15:35:38.225200+00:00",
+  "completed_at": "2026-09-08T16:03:26.783070+00:00",
   "configuration": {
     "auto_post_policy_promoted": false,
     "boundary_schema": "BoundWireCategoryFit",
     "dataset_minimum": 150,
-    "instructions_sha256": "ebf3bd697ccda207ab05f3cec878103386482e86076c1e74fdcb20e97f5f111f",
-    "instructions_version": "candidate-category-fit-it-v6",
+    "instructions_sha256": "531ca44ad94aff3a44b063784971335db2afa07435468b3375804e73b837f2e6",
+    "instructions_version": "candidate-category-fit-it-v8",
     "taxonomy_active_categories": 24
   },
   "dataset": {
@@ -30,10 +30,10 @@
       "denominator": 153,
       "inapplicability_reason": null,
       "name": "purpose_label_agreement",
-      "numerator": 133,
-      "passed": true,
+      "numerator": 121,
+      "passed": false,
       "threshold": 0.85,
-      "value": 0.8693
+      "value": 0.7908
     },
     {
       "applicable": true,
@@ -42,10 +42,10 @@
       "denominator": 142,
       "inapplicability_reason": null,
       "name": "false_new_category_proposal",
-      "numerator": 1,
+      "numerator": 0,
       "passed": true,
       "threshold": 0.05,
-      "value": 0.007
+      "value": 0.0
     },
     {
       "applicable": true,
@@ -63,13 +63,13 @@
       "applicable": true,
       "blocking": true,
       "comparison": "at_most",
-      "denominator": 3,
+      "denominator": 0,
       "inapplicability_reason": null,
       "name": "duplicate_or_alias_equivalent_proposal",
       "numerator": 0,
-      "passed": true,
+      "passed": false,
       "threshold": 0.02,
-      "value": 0.0
+      "value": 1.0
     },
     {
       "applicable": true,
@@ -114,10 +114,10 @@
       "denominator": 153,
       "inapplicability_reason": null,
       "name": "proposals_offered",
-      "numerator": 3,
+      "numerator": 0,
       "passed": true,
       "threshold": null,
-      "value": 3.0
+      "value": 0.0
     }
   ],
   "model": {
@@ -130,7 +130,7 @@
   "promotion_blockers": [
     "blocking_gate_failed_or_unmeasured"
   ],
-  "run_id": "CAT-20260908-153538-8281a737",
-  "source_commit": "1c27d4fdd84e22ecdccc409ea9fba6bfda31aa6d",
+  "run_id": "CAT-20260908-160326-504fc810",
+  "source_commit": "22f711d87c256e30df65b5016c0c7f72af6f9c57",
   "suite": "categorization/purpose-it"
 }

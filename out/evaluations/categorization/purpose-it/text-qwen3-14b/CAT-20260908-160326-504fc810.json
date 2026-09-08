@@ -1,0 +1,136 @@
+{
+  "blocking_gates_passed": false,
+  "case_totals": {
+    "error": 0,
+    "failed": 32,
+    "passed": 121
+  },
+  "completed_at": "2026-09-08T16:03:26.783070+00:00",
+  "configuration": {
+    "auto_post_policy_promoted": false,
+    "boundary_schema": "BoundWireCategoryFit",
+    "dataset_minimum": 150,
+    "instructions_sha256": "531ca44ad94aff3a44b063784971335db2afa07435468b3375804e73b837f2e6",
+    "instructions_version": "candidate-category-fit-it-v8",
+    "taxonomy_active_categories": 24
+  },
+  "dataset": {
+    "content_hash": "94dd54ceb3622cae1a03de804a7df5c1e7f44cb7f3de689dc0b696de98b7467a",
+    "id": "categorization-purpose-it-v1.1",
+    "item_count": 153,
+    "version": "1.1.0"
+  },
+  "eligible_for_promotion": false,
+  "meets_dataset_minimum": true,
+  "metrics": [
+    {
+      "applicable": true,
+      "blocking": true,
+      "comparison": "at_least",
+      "denominator": 153,
+      "inapplicability_reason": null,
+      "name": "purpose_label_agreement",
+      "numerator": 121,
+      "passed": false,
+      "threshold": 0.85,
+      "value": 0.7908
+    },
+    {
+      "applicable": true,
+      "blocking": true,
+      "comparison": "at_most",
+      "denominator": 142,
+      "inapplicability_reason": null,
+      "name": "false_new_category_proposal",
+      "numerator": 0,
+      "passed": true,
+      "threshold": 0.05,
+      "value": 0.0
+    },
+    {
+      "applicable": true,
+      "blocking": true,
+      "comparison": "at_most",
+      "denominator": 18,
+      "inapplicability_reason": null,
+      "name": "merchant_or_payment_method_proposed_as_category",
+      "numerator": 0,
+      "passed": true,
+      "threshold": 0.0,
+      "value": 0.0
+    },
+    {
+      "applicable": true,
+      "blocking": true,
+      "comparison": "at_most",
+      "denominator": 0,
+      "inapplicability_reason": null,
+      "name": "duplicate_or_alias_equivalent_proposal",
+      "numerator": 0,
+      "passed": false,
+      "threshold": 0.02,
+      "value": 1.0
+    },
+    {
+      "applicable": true,
+      "blocking": true,
+      "comparison": "at_least",
+      "denominator": 0,
+      "inapplicability_reason": null,
+      "name": "auto_post_subset_category_precision",
+      "numerator": 0,
+      "passed": false,
+      "threshold": 0.98,
+      "value": 1.0
+    },
+    {
+      "applicable": true,
+      "blocking": true,
+      "comparison": "at_least",
+      "denominator": 0,
+      "inapplicability_reason": null,
+      "name": "auto_post_subset_invariant_validity",
+      "numerator": 0,
+      "passed": false,
+      "threshold": 1.0,
+      "value": 1.0
+    },
+    {
+      "applicable": true,
+      "blocking": false,
+      "comparison": "at_least",
+      "denominator": 0,
+      "inapplicability_reason": null,
+      "name": "existing_category_named_while_proposing",
+      "numerator": 0,
+      "passed": true,
+      "threshold": null,
+      "value": 1.0
+    },
+    {
+      "applicable": true,
+      "blocking": false,
+      "comparison": "at_least",
+      "denominator": 153,
+      "inapplicability_reason": null,
+      "name": "proposals_offered",
+      "numerator": 0,
+      "passed": true,
+      "threshold": null,
+      "value": 0.0
+    }
+  ],
+  "model": {
+    "alias": "local-model",
+    "gguf_filename": "Qwen3-14B-Q5_K_M.gguf",
+    "gguf_sha256": "sha256:e7c9aba1129ca2936be9eca01419d9f86af40e08caa01230d5574b34d08e3e31",
+    "metadata_complete": true,
+    "quantization": "Q5_K_M"
+  },
+  "promotion_blockers": [
+    "blocking_gate_failed_or_unmeasured"
+  ],
+  "run_id": "CAT-20260908-160326-504fc810",
+  "source_commit": "22f711d87c256e30df65b5016c0c7f72af6f9c57",
+  "suite": "categorization/purpose-it"
+}

@@ -104,6 +104,29 @@ advice route, whose registry excludes `budget_status`, and the expected outcome
 is refusal. Both versions answer them. This is the one genuine open defect in
 this suite, and it is the same confusion in one direction rather than two.
 
+## The funding cluster, diagnosed and then mis-treated
+
+Running v5's seven failing meal-voucher cases through the boundary and printing
+what it emits: **six of seven select `category_spending` with
+`Bar, ristoranti e asporto`.** Only one names `buoni pasto` as a category, the
+move the instruction already forbids. The rest is a real-world inference — meal
+vouchers are spent at restaurants — that no sentence in v5 addresses.
+
+`candidate-tool-selection-it-v7` tested one explanation: that the vocabulary,
+not the prose, was steering the choice. `category_spending` was described as
+"how much the owner spent on one category they named", the question's shape,
+while `funding_class_split` was described as an aggregate. v7 kept v5's
+instruction text byte for byte and restated only that one description in the
+question's form.
+
+It was refuted. 97 of 119 against v5's 102, **zero cases improved and five
+worsened**, with the funding cluster falling from 9 of 16 to 5. The six
+`Bar, ristoranti e asporto` cases did not move, so the association is stronger
+than the description. And naming `welfare credit` in the description made
+`TOO-BAL-003`, `Quanto credito welfare ho ancora?`, select the tool where the
+dataset requires a refusal — the added terms attracted the adjacent wrong
+question.
+
 ## Proposed fixes
 
 1. **Done: the default is v5 again.** The rendered vocabulary already contains
@@ -111,10 +134,16 @@ this suite, and it is the same confusion in one direction rather than two.
    a tool is "offered" duplicated a fact it was being shown. Any future revision
    should keep that duplication out rather than reinstate it with better
    wording.
-2. **Scope the balance rule to balances.** Keep "spending is not a balance" for
-   wallet and meal-voucher credit, which the `TOO-BAL-*` cases need, and make it
-   name those rather than "remaining", so a budget remainder is not caught by
-   the same sentence.
+2. **Stop treating the funding cluster as a wording problem.** Four changes have
+   now been measured against this boundary — two instruction rewrites, a
+   demonstration set on the sibling boundary, and this vocabulary change — and
+   each made the boundary attract an adjacent wrong case. The information needed
+   to catch this one is deterministic and already present: the instruction
+   enumerates the payment-method vocabulary (`buoni pasto`, `ticket restaurant`,
+   `carta`, `bancomat`, `contanti`, `welfare`), so a `category_tool` request
+   whose evidence span cites one of those terms can be refused by the resolver
+   rather than argued out of the model. That is the move that worked for
+   forbidden tools, which sit at zero across every run.
 3. **Address `TOO-AAD-*`, the one defect the isolation leaves standing.** Six
    cases, 1 of 6 under both versions, where the advice route answers a
    per-category budget question its registry cannot serve. It is the only

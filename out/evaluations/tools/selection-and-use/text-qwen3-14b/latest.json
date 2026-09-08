@@ -2,10 +2,10 @@
   "blocking_gates_passed": false,
   "case_totals": {
     "error": 0,
-    "failed": 17,
-    "passed": 102
+    "failed": 22,
+    "passed": 97
   },
-  "completed_at": "2026-09-08T16:32:54.474459+00:00",
+  "completed_at": "2026-09-08T16:58:01.539251+00:00",
   "configuration": {
     "advice_tools": [
       "budgets_at_risk",
@@ -15,7 +15,7 @@
     "boundary_schema": "WireToolRequest",
     "dataset_minimum": 100,
     "instructions_sha256": "50431521575b25fd4e3fc6bdb8269f7212b56e2608ee38ab8b2b3d37f9080a22",
-    "instructions_version": "candidate-tool-selection-it-v5",
+    "instructions_version": "candidate-tool-selection-it-v7",
     "query_tools": [
       "budget_status",
       "category_spending",
@@ -45,10 +45,10 @@
       "denominator": 119,
       "inapplicability_reason": null,
       "name": "expected_permitted_tool_and_arguments",
-      "numerator": 102,
+      "numerator": 97,
       "passed": false,
       "threshold": 0.95,
-      "value": 0.8571
+      "value": 0.8151
     },
     {
       "applicable": true,
@@ -105,10 +105,10 @@
       "denominator": 99,
       "inapplicability_reason": null,
       "name": "execution_postcondition_against_real_fixture",
-      "numerator": 90,
+      "numerator": 86,
       "passed": false,
       "threshold": 1.0,
-      "value": 0.9091
+      "value": 0.8687
     },
     {
       "applicable": true,
@@ -117,10 +117,10 @@
       "denominator": 99,
       "inapplicability_reason": null,
       "name": "tool_chosen_ignoring_arguments",
-      "numerator": 90,
+      "numerator": 86,
       "passed": true,
       "threshold": null,
-      "value": 0.9091
+      "value": 0.8687
     },
     {
       "applicable": true,
@@ -141,10 +141,10 @@
       "denominator": 119,
       "inapplicability_reason": null,
       "name": "case_agreement",
-      "numerator": 102,
+      "numerator": 97,
       "passed": true,
       "threshold": null,
-      "value": 0.8571
+      "value": 0.8151
     }
   ],
   "model": {
@@ -157,7 +157,7 @@
   "promotion_blockers": [
     "blocking_gate_failed_or_unmeasured"
   ],
-  "run_id": "TOO-20260908-163254-9b17a006",
-  "source_commit": "cf0b369974c795ba38236eb2c2e5303cb82365bb",
+  "run_id": "TOO-20260908-165801-b2771402",
+  "source_commit": "43ae3afa69520054df5467831a1c891525b4043d",
   "suite": "tools/selection-and-use"
 }

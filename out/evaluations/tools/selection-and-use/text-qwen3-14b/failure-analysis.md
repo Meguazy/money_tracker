@@ -134,20 +134,35 @@ question.
    a tool is "offered" duplicated a fact it was being shown. Any future revision
    should keep that duplication out rather than reinstate it with better
    wording.
-2. **Stop treating the funding cluster as a wording problem.** Four changes have
-   now been measured against this boundary — two instruction rewrites, a
-   demonstration set on the sibling boundary, and this vocabulary change — and
-   each made the boundary attract an adjacent wrong case. The information needed
-   to catch this one is deterministic and already present: the instruction
-   enumerates the payment-method vocabulary (`buoni pasto`, `ticket restaurant`,
-   `carta`, `bancomat`, `contanti`, `welfare`), so a `category_tool` request
-   whose evidence span cites one of those terms can be refused by the resolver
-   rather than argued out of the model. That is the move that worked for
-   forbidden tools, which sit at zero across every run.
-3. **Address `TOO-AAD-*`, the one defect the isolation leaves standing.** Six
-   cases, 1 of 6 under both versions, where the advice route answers a
-   per-category budget question its registry cannot serve. It is the only
-   cluster here not explained by the v6 regression.
+2. **Refuse deterministically where refusal is the expected answer — and only
+   there.** Eight of the seventeen failures expect a refusal: three `TOO-QUN-*`
+   naming a category the taxonomy does not contain, five `TOO-AAD-*` asking the
+   advice route for a per-category budget its registry cannot serve. Both facts
+   are known to the system without interpreting intent, so the resolver can
+   produce the refusal instead of the model arguing itself into one. That is the
+   move that keeps forbidden-tool requests at zero across every run.
+
+   An earlier version of this document proposed extending the same idea to the
+   funding cluster, refusing a `category_tool` whose evidence cites a payment
+   method. That was wrong twice over and is withdrawn. A veto can reject but
+   cannot select: the six meal-voucher cases expect `funding_class_split`, so
+   refusing them fails `expected_permitted_tool_and_arguments` exactly as
+   choosing the wrong tool does, for no gain. And the rule cannot be written
+   safely anyway — of the nine cases citing a payment method, six expect an
+   answer and three expect a refusal, the difference being spending against
+   balance; a message naming several methods while asking about a category
+   would be refused on a token it merely mentions.
+
+3. **Note what the arithmetic requires.** Fixing the funding cluster alone moves
+   selection from 0.8571 to a projected 0.9076, still under the 0.95 gate.
+   Fixing the eight refusal cases reaches a projected 0.9748. The deterministic
+   half is both the tractable one and the one that clears the gate.
+4. **Leave the funding cluster measured and unfixed for now.** Five levers have
+   been tried against this class of error across both boundaries — two
+   instruction rewrites, a demonstration set, a topology change, and a
+   vocabulary change — and each made the boundary attract an adjacent wrong
+   case. Six cases, no deterministic handle, and the gate is reachable without
+   them.
 
 ## What would not be a fix
 

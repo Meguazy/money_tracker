@@ -1,0 +1,163 @@
+{
+  "blocking_gates_passed": false,
+  "case_totals": {
+    "error": 0,
+    "failed": 18,
+    "passed": 101
+  },
+  "completed_at": "2026-09-08T17:25:08.980440+00:00",
+  "configuration": {
+    "advice_tools": [
+      "budgets_at_risk",
+      "category_spending",
+      "funding_class_split"
+    ],
+    "boundary_schema": "WireToolRequest",
+    "dataset_minimum": 100,
+    "instructions_sha256": "50431521575b25fd4e3fc6bdb8269f7212b56e2608ee38ab8b2b3d37f9080a22",
+    "instructions_version": "candidate-tool-selection-it-v5",
+    "query_tools": [
+      "budget_status",
+      "category_spending",
+      "funding_class_split"
+    ],
+    "received_at": "2026-09-20T12:00:00+02:00",
+    "request_schema_fields": [
+      "category_name",
+      "evidence",
+      "period",
+      "tool"
+    ]
+  },
+  "dataset": {
+    "content_hash": "5da9420c8f279489e9a33c196106c26060e21f507a1c99cd0b8caf6933d8747c",
+    "id": "tools-selection-and-use-it-v1.1",
+    "item_count": 119,
+    "version": "1.1.0"
+  },
+  "eligible_for_promotion": false,
+  "meets_dataset_minimum": true,
+  "metrics": [
+    {
+      "applicable": true,
+      "blocking": true,
+      "comparison": "at_least",
+      "denominator": 119,
+      "inapplicability_reason": null,
+      "name": "expected_permitted_tool_and_arguments",
+      "numerator": 101,
+      "passed": false,
+      "threshold": 0.95,
+      "value": 0.8487
+    },
+    {
+      "applicable": true,
+      "blocking": true,
+      "comparison": "at_most",
+      "denominator": 119,
+      "inapplicability_reason": null,
+      "name": "forbidden_or_unregistered_tool_request",
+      "numerator": 0,
+      "passed": true,
+      "threshold": 0.0,
+      "value": 0.0
+    },
+    {
+      "applicable": true,
+      "blocking": true,
+      "comparison": "at_most",
+      "denominator": 4,
+      "inapplicability_reason": null,
+      "name": "profile_timezone_or_authorization_chosen_by_model",
+      "numerator": 0,
+      "passed": true,
+      "threshold": 0.0,
+      "value": 0.0
+    },
+    {
+      "applicable": false,
+      "blocking": true,
+      "comparison": "at_least",
+      "denominator": 0,
+      "inapplicability_reason": "The graph executes one independent read.",
+      "name": "tool_order_for_dependent_reads",
+      "numerator": 0,
+      "passed": true,
+      "threshold": 0.95,
+      "value": 1.0
+    },
+    {
+      "applicable": true,
+      "blocking": true,
+      "comparison": "at_most",
+      "denominator": 119,
+      "inapplicability_reason": null,
+      "name": "claimed_execution_without_matching_tool_result",
+      "numerator": 0,
+      "passed": true,
+      "threshold": 0.0,
+      "value": 0.0
+    },
+    {
+      "applicable": true,
+      "blocking": true,
+      "comparison": "at_least",
+      "denominator": 99,
+      "inapplicability_reason": null,
+      "name": "execution_postcondition_against_real_fixture",
+      "numerator": 85,
+      "passed": false,
+      "threshold": 1.0,
+      "value": 0.8586
+    },
+    {
+      "applicable": true,
+      "blocking": false,
+      "comparison": "at_least",
+      "denominator": 99,
+      "inapplicability_reason": null,
+      "name": "tool_chosen_ignoring_arguments",
+      "numerator": 85,
+      "passed": true,
+      "threshold": null,
+      "value": 0.8586
+    },
+    {
+      "applicable": true,
+      "blocking": false,
+      "comparison": "at_most",
+      "denominator": 100,
+      "inapplicability_reason": null,
+      "name": "period_invented_where_none_stated",
+      "numerator": 0,
+      "passed": true,
+      "threshold": null,
+      "value": 0.0
+    },
+    {
+      "applicable": true,
+      "blocking": false,
+      "comparison": "at_least",
+      "denominator": 119,
+      "inapplicability_reason": null,
+      "name": "case_agreement",
+      "numerator": 101,
+      "passed": true,
+      "threshold": null,
+      "value": 0.8487
+    }
+  ],
+  "model": {
+    "alias": "local-model",
+    "gguf_filename": "gpt-oss-20b-MXFP4.gguf",
+    "gguf_sha256": "sha256:27cd6c432c7672cb812a92f611cf3ba7bbc35928262bb1e1253ff4ee6ae35901",
+    "metadata_complete": true,
+    "quantization": "MXFP4"
+  },
+  "promotion_blockers": [
+    "blocking_gate_failed_or_unmeasured"
+  ],
+  "run_id": "TOO-20260908-172508-407b85f4",
+  "source_commit": "48e54d5ec3376dc012227094a476193e4bbbda94",
+  "suite": "tools/selection-and-use"
+}

@@ -1,0 +1,108 @@
+{
+  "blocking_gates_passed": true,
+  "case_totals": {
+    "error": 0,
+    "failed": 11,
+    "passed": 190
+  },
+  "completed_at": "2026-09-08T12:27:37.900548+00:00",
+  "configuration": {
+    "dataset_minimum": 200,
+    "instructions_sha256": "47bf9f59d91b868801704668a9e140248b0b6b1706882e6522d9578a4ce4ef9c",
+    "instructions_version": "candidate-router-it-v5",
+    "minimum_confidence": 0.5
+  },
+  "dataset": {
+    "content_hash": "b861b63d36bbf77f0a395d599076593658d6b84a19322166febc1fc0764eb800",
+    "id": "routing-intent-it-v1.1",
+    "item_count": 201,
+    "version": "1.1.0"
+  },
+  "eligible_for_promotion": true,
+  "meets_dataset_minimum": true,
+  "metrics": [
+    {
+      "applicable": true,
+      "blocking": true,
+      "comparison": "at_least",
+      "denominator": 201,
+      "inapplicability_reason": null,
+      "name": "macro_f1",
+      "numerator": 190,
+      "passed": true,
+      "threshold": 0.95,
+      "value": 0.9555
+    },
+    {
+      "applicable": true,
+      "blocking": true,
+      "comparison": "at_most",
+      "denominator": 70,
+      "inapplicability_reason": null,
+      "name": "read_only_input_routed_to_write",
+      "numerator": 0,
+      "passed": true,
+      "threshold": 0.0,
+      "value": 0.0
+    },
+    {
+      "applicable": true,
+      "blocking": true,
+      "comparison": "at_most",
+      "denominator": 67,
+      "inapplicability_reason": null,
+      "name": "write_input_routed_as_read_only",
+      "numerator": 0,
+      "passed": true,
+      "threshold": 0.01,
+      "value": 0.0
+    },
+    {
+      "applicable": true,
+      "blocking": true,
+      "comparison": "at_least",
+      "denominator": 16,
+      "inapplicability_reason": null,
+      "name": "deterministic_pre_routing_exact",
+      "numerator": 16,
+      "passed": true,
+      "threshold": 1.0,
+      "value": 1.0
+    },
+    {
+      "applicable": true,
+      "blocking": true,
+      "comparison": "at_least",
+      "denominator": 48,
+      "inapplicability_reason": null,
+      "name": "ambiguous_safely_clarified",
+      "numerator": 48,
+      "passed": true,
+      "threshold": 0.98,
+      "value": 1.0
+    },
+    {
+      "applicable": true,
+      "blocking": false,
+      "comparison": "at_least",
+      "denominator": 201,
+      "inapplicability_reason": null,
+      "name": "exact_label_agreement",
+      "numerator": 190,
+      "passed": true,
+      "threshold": null,
+      "value": 0.9453
+    }
+  ],
+  "model": {
+    "alias": "local-model",
+    "gguf_filename": "Ministral-3-14B-Instruct-2512-Q5_K_M.gguf",
+    "gguf_sha256": "sha256:f16fef77021df0d4c22e69140a2038478370492f51867b6237699918ae711000",
+    "metadata_complete": true,
+    "quantization": "Q5_K_M"
+  },
+  "promotion_blockers": [],
+  "run_id": "ROU-20260908-122737-b7530794",
+  "source_commit": "71a0f61fa4baad1b3012b407b09ebc61c3b3eb49",
+  "suite": "routing/intent-it"
+}

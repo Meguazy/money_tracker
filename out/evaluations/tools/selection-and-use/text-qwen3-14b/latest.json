@@ -2,10 +2,10 @@
   "blocking_gates_passed": false,
   "case_totals": {
     "error": 0,
-    "failed": 18,
-    "passed": 92
+    "failed": 21,
+    "passed": 89
   },
-  "completed_at": "2026-09-03T20:00:12.384847+00:00",
+  "completed_at": "2026-09-08T12:22:02.829901+00:00",
   "configuration": {
     "advice_tools": [
       "budgets_at_risk",
@@ -14,8 +14,8 @@
     ],
     "boundary_schema": "WireToolRequest",
     "dataset_minimum": 100,
-    "instructions_sha256": "8cbd9be5a89ea062258acbb900923149b98a121bf9a0933dbf21c9ed0edf9bcb",
-    "instructions_version": "candidate-tool-selection-it-v4",
+    "instructions_sha256": "50431521575b25fd4e3fc6bdb8269f7212b56e2608ee38ab8b2b3d37f9080a22",
+    "instructions_version": "candidate-tool-selection-it-v5",
     "query_tools": [
       "budget_status",
       "category_spending",
@@ -39,19 +39,23 @@
   "meets_dataset_minimum": true,
   "metrics": [
     {
+      "applicable": true,
       "blocking": true,
       "comparison": "at_least",
       "denominator": 98,
+      "inapplicability_reason": null,
       "name": "expected_permitted_tool_and_arguments",
-      "numerator": 86,
+      "numerator": 84,
       "passed": false,
       "threshold": 0.95,
-      "value": 0.8776
+      "value": 0.8571
     },
     {
+      "applicable": true,
       "blocking": true,
       "comparison": "at_most",
       "denominator": 110,
+      "inapplicability_reason": null,
       "name": "forbidden_or_unregistered_tool_request",
       "numerator": 0,
       "passed": true,
@@ -59,9 +63,11 @@
       "value": 0.0
     },
     {
+      "applicable": true,
       "blocking": true,
       "comparison": "at_most",
       "denominator": 4,
+      "inapplicability_reason": null,
       "name": "profile_timezone_or_authorization_chosen_by_model",
       "numerator": 0,
       "passed": true,
@@ -69,9 +75,11 @@
       "value": 0.0
     },
     {
+      "applicable": false,
       "blocking": true,
       "comparison": "at_least",
       "denominator": 0,
+      "inapplicability_reason": "The graph executes one independent read.",
       "name": "tool_order_for_dependent_reads",
       "numerator": 0,
       "passed": true,
@@ -79,9 +87,11 @@
       "value": 1.0
     },
     {
+      "applicable": true,
       "blocking": true,
       "comparison": "at_most",
       "denominator": 110,
+      "inapplicability_reason": null,
       "name": "claimed_execution_without_matching_tool_result",
       "numerator": 0,
       "passed": true,
@@ -89,29 +99,35 @@
       "value": 0.0
     },
     {
+      "applicable": true,
       "blocking": true,
       "comparison": "at_least",
       "denominator": 93,
+      "inapplicability_reason": null,
       "name": "execution_postcondition_against_real_fixture",
-      "numerator": 85,
+      "numerator": 84,
       "passed": false,
       "threshold": 1.0,
-      "value": 0.914
+      "value": 0.9032
     },
     {
+      "applicable": true,
       "blocking": false,
       "comparison": "at_least",
       "denominator": 98,
+      "inapplicability_reason": null,
       "name": "tool_chosen_ignoring_arguments",
-      "numerator": 90,
+      "numerator": 87,
       "passed": true,
       "threshold": null,
-      "value": 0.9184
+      "value": 0.8878
     },
     {
+      "applicable": true,
       "blocking": false,
       "comparison": "at_most",
       "denominator": 91,
+      "inapplicability_reason": null,
       "name": "period_invented_where_none_stated",
       "numerator": 0,
       "passed": true,
@@ -119,23 +135,29 @@
       "value": 0.0
     },
     {
+      "applicable": true,
       "blocking": false,
       "comparison": "at_least",
       "denominator": 110,
+      "inapplicability_reason": null,
       "name": "case_agreement",
-      "numerator": 92,
+      "numerator": 89,
       "passed": true,
       "threshold": null,
-      "value": 0.8364
+      "value": 0.8091
     }
   ],
   "model": {
     "alias": "local-model",
     "gguf_filename": "Qwen3-14B-Q5_K_M.gguf",
-    "metadata_complete": false,
+    "gguf_sha256": "sha256:e7c9aba1129ca2936be9eca01419d9f86af40e08caa01230d5574b34d08e3e31",
+    "metadata_complete": true,
     "quantization": "Q5_K_M"
   },
-  "run_id": "TOO-20260903-200012-ce1df8cb",
-  "source_commit": "4d2281c8d83e5bc842dcc1e7d067c756c3f12768",
+  "promotion_blockers": [
+    "blocking_gate_failed_or_unmeasured"
+  ],
+  "run_id": "TOO-20260908-122202-57be4f56",
+  "source_commit": "71a0f61fa4baad1b3012b407b09ebc61c3b3eb49",
   "suite": "tools/selection-and-use"
 }

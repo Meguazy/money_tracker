@@ -5,13 +5,13 @@
     "failed": 24,
     "passed": 129
   },
-  "completed_at": "2026-09-03T20:16:27.863052+00:00",
+  "completed_at": "2026-09-08T12:18:57.817608+00:00",
   "configuration": {
     "auto_post_policy_promoted": false,
-    "boundary_schema": "WireCategoryFit",
+    "boundary_schema": "BoundWireCategoryFit",
     "dataset_minimum": 150,
-    "instructions_sha256": "e81e70819eb0bf1f3b6baf880b7ad5d49c807061b9d34d9c24b9bec98ccc50bb",
-    "instructions_version": "candidate-category-fit-it-v5",
+    "instructions_sha256": "ebf3bd697ccda207ab05f3cec878103386482e86076c1e74fdcb20e97f5f111f",
+    "instructions_version": "candidate-category-fit-it-v6",
     "taxonomy_active_categories": 24
   },
   "dataset": {
@@ -24,9 +24,11 @@
   "meets_dataset_minimum": true,
   "metrics": [
     {
+      "applicable": true,
       "blocking": true,
       "comparison": "at_least",
       "denominator": 153,
+      "inapplicability_reason": null,
       "name": "purpose_label_agreement",
       "numerator": 129,
       "passed": false,
@@ -34,9 +36,11 @@
       "value": 0.8431
     },
     {
+      "applicable": true,
       "blocking": true,
       "comparison": "at_most",
       "denominator": 141,
+      "inapplicability_reason": null,
       "name": "false_new_category_proposal",
       "numerator": 1,
       "passed": true,
@@ -44,9 +48,11 @@
       "value": 0.0071
     },
     {
+      "applicable": true,
       "blocking": true,
       "comparison": "at_most",
       "denominator": 18,
+      "inapplicability_reason": null,
       "name": "merchant_or_payment_method_proposed_as_category",
       "numerator": 0,
       "passed": true,
@@ -54,9 +60,11 @@
       "value": 0.0
     },
     {
+      "applicable": true,
       "blocking": true,
       "comparison": "at_most",
-      "denominator": 5,
+      "denominator": 3,
+      "inapplicability_reason": null,
       "name": "duplicate_or_alias_equivalent_proposal",
       "numerator": 0,
       "passed": true,
@@ -64,29 +72,35 @@
       "value": 0.0
     },
     {
+      "applicable": true,
       "blocking": true,
       "comparison": "at_least",
       "denominator": 0,
+      "inapplicability_reason": null,
       "name": "auto_post_subset_category_precision",
       "numerator": 0,
-      "passed": true,
+      "passed": false,
       "threshold": 0.98,
       "value": 1.0
     },
     {
+      "applicable": true,
       "blocking": true,
       "comparison": "at_least",
       "denominator": 0,
+      "inapplicability_reason": null,
       "name": "auto_post_subset_invariant_validity",
       "numerator": 0,
-      "passed": true,
+      "passed": false,
       "threshold": 1.0,
       "value": 1.0
     },
     {
+      "applicable": true,
       "blocking": false,
       "comparison": "at_least",
       "denominator": 0,
+      "inapplicability_reason": null,
       "name": "existing_category_named_while_proposing",
       "numerator": 0,
       "passed": true,
@@ -94,23 +108,29 @@
       "value": 1.0
     },
     {
+      "applicable": true,
       "blocking": false,
       "comparison": "at_least",
       "denominator": 153,
+      "inapplicability_reason": null,
       "name": "proposals_offered",
-      "numerator": 5,
+      "numerator": 3,
       "passed": true,
       "threshold": null,
-      "value": 5.0
+      "value": 3.0
     }
   ],
   "model": {
     "alias": "local-model",
     "gguf_filename": "Qwen3-14B-Q5_K_M.gguf",
-    "metadata_complete": false,
+    "gguf_sha256": "sha256:e7c9aba1129ca2936be9eca01419d9f86af40e08caa01230d5574b34d08e3e31",
+    "metadata_complete": true,
     "quantization": "Q5_K_M"
   },
-  "run_id": "CAT-20260903-201627-c2d42e7e",
-  "source_commit": "4d2281c8d83e5bc842dcc1e7d067c756c3f12768",
+  "promotion_blockers": [
+    "blocking_gate_failed_or_unmeasured"
+  ],
+  "run_id": "CAT-20260908-121857-94182b39",
+  "source_commit": "71a0f61fa4baad1b3012b407b09ebc61c3b3eb49",
   "suite": "categorization/purpose-it"
 }

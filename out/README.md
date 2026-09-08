@@ -11,6 +11,12 @@ score can be read and compared without rerunning a suite.
   published run on that candidate.
 - `evaluations/<suite>/<model>/<run id>.json` is the history beside it, so a
   boundary change can be read as a before and after.
+- `evaluations/<suite>/<model>/failure-analysis.md`, where one exists, is the
+  hand-written reading of why that pair fails: which cases, grouped by what the
+  model actually did, and the fixes proposed for each group. It is analysis
+  rather than evidence. It proposes; it decides nothing, and a fix recorded
+  there is not a fix applied. Promotion still runs through the evaluation matrix
+  and the decision log.
 
 The model segment is the catalogue profile the run's weights are declared as,
 such as `text-qwen3-14b`, and falls back to the weights filename when the model

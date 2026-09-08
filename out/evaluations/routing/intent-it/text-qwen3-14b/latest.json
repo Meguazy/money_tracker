@@ -5,7 +5,7 @@
     "failed": 1,
     "passed": 200
   },
-  "completed_at": "2026-09-03T20:06:10.964524+00:00",
+  "completed_at": "2026-09-08T12:08:05.604383+00:00",
   "configuration": {
     "dataset_minimum": 200,
     "instructions_sha256": "47bf9f59d91b868801704668a9e140248b0b6b1706882e6522d9578a4ce4ef9c",
@@ -22,9 +22,11 @@
   "meets_dataset_minimum": true,
   "metrics": [
     {
+      "applicable": true,
       "blocking": true,
       "comparison": "at_least",
       "denominator": 201,
+      "inapplicability_reason": null,
       "name": "macro_f1",
       "numerator": 200,
       "passed": true,
@@ -32,9 +34,11 @@
       "value": 0.9953
     },
     {
+      "applicable": true,
       "blocking": true,
       "comparison": "at_most",
       "denominator": 70,
+      "inapplicability_reason": null,
       "name": "read_only_input_routed_to_write",
       "numerator": 0,
       "passed": true,
@@ -42,9 +46,11 @@
       "value": 0.0
     },
     {
+      "applicable": true,
       "blocking": true,
       "comparison": "at_most",
       "denominator": 67,
+      "inapplicability_reason": null,
       "name": "write_input_routed_as_read_only",
       "numerator": 0,
       "passed": true,
@@ -52,9 +58,11 @@
       "value": 0.0
     },
     {
+      "applicable": true,
       "blocking": true,
       "comparison": "at_least",
       "denominator": 16,
+      "inapplicability_reason": null,
       "name": "deterministic_pre_routing_exact",
       "numerator": 16,
       "passed": true,
@@ -62,9 +70,11 @@
       "value": 1.0
     },
     {
+      "applicable": true,
       "blocking": true,
       "comparison": "at_least",
       "denominator": 48,
+      "inapplicability_reason": null,
       "name": "ambiguous_safely_clarified",
       "numerator": 47,
       "passed": false,
@@ -72,9 +82,11 @@
       "value": 0.9792
     },
     {
+      "applicable": true,
       "blocking": false,
       "comparison": "at_least",
       "denominator": 201,
+      "inapplicability_reason": null,
       "name": "exact_label_agreement",
       "numerator": 200,
       "passed": true,
@@ -85,10 +97,14 @@
   "model": {
     "alias": "local-model",
     "gguf_filename": "Qwen3-14B-Q5_K_M.gguf",
-    "metadata_complete": false,
+    "gguf_sha256": "sha256:e7c9aba1129ca2936be9eca01419d9f86af40e08caa01230d5574b34d08e3e31",
+    "metadata_complete": true,
     "quantization": "Q5_K_M"
   },
-  "run_id": "ROU-20260903-200610-99ee42ba",
-  "source_commit": "4d2281c8d83e5bc842dcc1e7d067c756c3f12768",
+  "promotion_blockers": [
+    "blocking_gate_failed_or_unmeasured"
+  ],
+  "run_id": "ROU-20260908-120805-dfd44365",
+  "source_commit": "71a0f61fa4baad1b3012b407b09ebc61c3b3eb49",
   "suite": "routing/intent-it"
 }

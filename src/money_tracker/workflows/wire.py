@@ -620,6 +620,160 @@ def build_category_fit_schema(active_names: tuple[str, ...]) -> type[BaseModel]:
     )
 
 
+def build_subtree_choice_schema(heading_names: tuple[str, ...]) -> type[BaseModel]:
+    """Build the first stage of a two-stage category judgment.
+
+    The stage answers which heading covers the purpose, and offers no child, so
+    a heading answer here carries no information about the level. The proposal
+    lives in this stage's second variant, because a purpose no heading covers is
+    exactly what a proposal is, and because the parent a proposal needs is a
+    heading the model is already choosing between.
+
+    Args:
+        heading_names: Active root category names, in taxonomy order.
+
+    Returns:
+        A discriminated union over `subtree` and `no_heading_fits`.
+
+    Raises:
+        ValueError: If no heading was supplied.
+    """
+
+    if not heading_names:
+        raise ValueError("subtree choice requires at least one heading")
+    name_type: Any = Literal[heading_names]
+    chosen = create_model(
+        "BoundSubtreeChoice",
+        __config__=ConfigDict(extra="forbid", strict=True),
+        kind=(Literal["subtree"], ...),
+        heading_name=(name_type, ...),
+        evidence=(EvidenceText, ...),
+    )
+    proposal = create_model(
+        "BoundNoHeadingFits",
+        __config__=ConfigDict(extra="forbid", strict=True),
+        kind=(Literal["no_heading_fits"], ...),
+        closest_heading=(name_type, ...),
+        why_closest_is_inadequate=(NonEmptyText, ...),
+        proposed_name=(NonEmptyText, ...),
+        parent_name=(name_type, ...),
+        description=(NonEmptyText, ...),
+        evidence=(EvidenceText, ...),
+    )
+    choice: Any = Annotated[
+        Union[chosen, proposal],  # noqa: UP007 - built at runtime, not a syntax union
+        Field(discriminator="kind"),
+    ]
+    return create_model(
+        "BoundWireSubtreeChoice",
+        __config__=ConfigDict(extra="forbid", strict=True),
+        choice=(choice, ...),
+    )
+
+
+def build_leaf_choice_schema(
+    heading_name: str, child_names: tuple[str, ...]
+) -> type[BaseModel]:
+    """Build the second stage of a two-stage category judgment.
+
+    The stage answers the level within one heading. The heading competes only
+    against its own children, which is the comparison the taxonomy's shape makes
+    meaningful, and the enum is three or four values rather than eighteen. A
+    heading with no children never reaches this stage.
+
+    Args:
+        heading_name: Heading the first stage chose.
+        child_names: That heading's active children, in taxonomy order.
+
+    Returns:
+        A discriminated union over `child` and `the_heading`.
+
+    Raises:
+        ValueError: If the heading has no children.
+    """
+
+    if not child_names:
+        raise ValueError(f"{heading_name} has no children to choose between")
+    name_type: Any = Literal[child_names]
+    child = create_model(
+        "BoundChildChoice",
+        __config__=ConfigDict(extra="forbid", strict=True),
+        kind=(Literal["child"], ...),
+        category_name=(name_type, ...),
+        evidence=(EvidenceText, ...),
+    )
+    heading = create_model(
+        "BoundHeadingChoice",
+        __config__=ConfigDict(extra="forbid", strict=True),
+        kind=(Literal["the_heading"], ...),
+        why_no_child_fits=(NonEmptyText, ...),
+        evidence=(EvidenceText, ...),
+    )
+    choice: Any = Annotated[
+        Union[child, heading],  # noqa: UP007 - built at runtime, not a syntax union
+        Field(discriminator="kind"),
+    ]
+    return create_model(
+        "BoundWireLeafChoice",
+        __config__=ConfigDict(extra="forbid", strict=True),
+        choice=(choice, ...),
+    )
+
+
+def subtree_choice_to_domain(parsed: BaseModel, heading: str) -> CategoryFit:
+    """Convert a first-stage answer that ends the judgment.
+
+    A `subtree` answer does not end it: the level is still open, so the caller
+    runs the second stage. Only `no_heading_fits` is terminal here.
+
+    Args:
+        parsed: A schema from `build_subtree_choice_schema`.
+        heading: The heading a `subtree` answer chose, used when the caller has
+            already decided the heading is childless and therefore final.
+
+    Returns:
+        The equivalent `CategoryFit`.
+    """
+
+    choice = parsed.choice  # type: ignore[attr-defined]
+    if choice.kind == "subtree":
+        return CategoryFit(
+            outcome=CategoryFitOutcome.EXISTING,
+            category_name=heading,
+            evidence=choice.evidence,
+        )
+    return CategoryFit(
+        outcome=CategoryFitOutcome.PROPOSAL,
+        proposed_name=choice.proposed_name,
+        parent_name=choice.parent_name,
+        description=choice.description,
+        rationale=choice.why_closest_is_inadequate,
+        considered_category_names=(choice.closest_heading,),
+        evidence=choice.evidence,
+    )
+
+
+def leaf_choice_to_domain(parsed: BaseModel, heading: str) -> CategoryFit:
+    """Convert a second-stage answer into the domain judgment.
+
+    Args:
+        parsed: A schema from `build_leaf_choice_schema`.
+        heading: The heading the first stage chose, which is the answer when no
+            child fits.
+
+    Returns:
+        The equivalent `CategoryFit`, always an existing category.
+    """
+
+    choice = parsed.choice  # type: ignore[attr-defined]
+    name = heading if choice.kind == "the_heading" else choice.category_name
+    return CategoryFit(
+        outcome=CategoryFitOutcome.EXISTING,
+        category_name=name,
+        evidence=choice.evidence,
+    )
+
+
 def category_fit_to_domain(parsed: BaseModel) -> CategoryFit:
     """Convert either category-fit contract to the domain judgment.
 

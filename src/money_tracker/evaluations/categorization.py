@@ -78,6 +78,7 @@ from money_tracker.workflows.candidates import (
 from money_tracker.workflows.candidates import (
     active_category_names as _active_names,
 )
+from money_tracker.workflows.two_stage import TwoStageCategoryFit
 
 SUITE = "categorization/purpose-it"
 """Suite name from the catalog in the experiment process."""
@@ -294,6 +295,7 @@ def run_categorization_suite(
     repository_root: Path,
     model: StructuredOutputModel | None = None,
     candidate: CategoryFitCandidate = DEFAULT_CATEGORY_FIT_CANDIDATE,
+    two_stage: TwoStageCategoryFit | None = None,
 ) -> SuiteReport:
     """Execute the categorization suite and always emit a deterministic report.
 
@@ -324,13 +326,21 @@ def run_categorization_suite(
     results: list[CaseResult] = []
     proposed_names: dict[str, str | None] = {}
     named_while_proposing: dict[str, bool] = {}
+    headings: dict[str, str | None] = {}
     for case in cases:
-        result, proposed, named = _execute(
-            port, candidate, schema, rendered, case, taxonomy
-        )
+        if two_stage is None:
+            result, proposed, named = _execute(
+                port, candidate, schema, rendered, case, taxonomy
+            )
+            heading: str | None = None
+        else:
+            result, proposed, named, heading = _execute_two_stage(
+                port, two_stage, case, taxonomy
+            )
         results.append(result)
         proposed_names[result.case_id] = proposed
         named_while_proposing[result.case_id] = named
+        headings[result.case_id] = heading
 
     metrics = _metrics(
         cases,
@@ -352,14 +362,23 @@ def run_categorization_suite(
         model=model_metadata(settings),
         environment=collect_environment_metadata(),
         configuration={
-            "instructions_version": candidate.version,
-            "instructions_sha256": sha256_text(rendered),
-            "boundary_schema": schema.__name__,
+            "instructions_version": (
+                candidate.version if two_stage is None else two_stage.version
+            ),
+            "instructions_sha256": sha256_text(
+                rendered
+                if two_stage is None
+                else two_stage.subtree_instructions + two_stage.leaf_instructions
+            ),
+            "boundary_schema": (
+                schema.__name__ if two_stage is None else "TwoStageCategoryFit"
+            ),
+            "model_calls_per_case": 1 if two_stage is None else "one or two",
             "taxonomy_active_categories": len(_active_names(taxonomy)),
             "dataset_minimum": DATASET_MINIMUM,
             "auto_post_policy_promoted": False,
         },
-        metrics=metrics,
+        metrics=metrics + _two_stage_diagnostics(results, headings, taxonomy),
         cases=results,
         blocking_gates_passed=passed,
         meets_dataset_minimum=meets_minimum,
@@ -421,6 +440,116 @@ def _execute(
         ),
         _proposed_name(fit),
         _named_while_proposing(fit, taxonomy),
+    )
+
+
+def _subtree_of(name: str, taxonomy: Taxonomy) -> str | None:
+    """Return the root a category name sits under, or itself when it is a root."""
+
+    by_name = {category.name: category for category in taxonomy.categories}
+    by_id = {category.id: category for category in taxonomy.categories}
+    node = by_name.get(name)
+    if node is None:
+        return None
+    return by_id[node.parent_id].name if node.parent_id else node.name
+
+
+def _two_stage_diagnostics(
+    results: Sequence[CaseResult],
+    headings: Mapping[str, str | None],
+    taxonomy: Taxonomy,
+) -> list[MetricScore]:
+    """Report what each stage contributed, for a two-stage run only.
+
+    The decision behind the two stages rests on two numbers that were computed
+    by hand from a manifest. A run that uses the stages reports them itself.
+
+    Args:
+        results: Per-case outcomes.
+        headings: Heading the first stage chose, by case, None when it proposed.
+        taxonomy: Active owner taxonomy.
+
+    Returns:
+        Two diagnostics, or nothing when no case reached the second stage.
+    """
+
+    scored = [
+        result
+        for result in results
+        if headings.get(result.case_id) and result.expected != PROPOSAL
+    ]
+    if not scored:
+        return []
+    subtree_right = [
+        result
+        for result in scored
+        if headings[result.case_id] == _subtree_of(str(result.expected), taxonomy)
+    ]
+    leaf_right = sum(
+        1 for result in subtree_right if result.status is CaseStatus.PASSED
+    )
+    return [
+        MetricScore(
+            name="subtree_selected_correctly",
+            value=rate(len(subtree_right), len(scored)),
+            threshold=None,
+            blocking=False,
+            numerator=len(subtree_right),
+            denominator=len(scored),
+        ),
+        MetricScore(
+            name="level_correct_given_the_subtree",
+            value=rate(leaf_right, len(subtree_right)),
+            threshold=None,
+            blocking=False,
+            numerator=leaf_right,
+            denominator=len(subtree_right),
+        ),
+    ]
+
+
+def _execute_two_stage(
+    model: StructuredOutputModel,
+    two_stage: TwoStageCategoryFit,
+    case: Mapping[str, JsonValue],
+    taxonomy: Taxonomy,
+) -> tuple[CaseResult, str | None, bool, str | None]:
+    """Classify one labelled message through both stages."""
+
+    case_id = str(case["case_id"])
+    expected = str(case.get("expected_category_name") or PROPOSAL)
+    tags = [str(tag) for tag in cast(list[JsonValue], case.get("tags", []))]
+    started = time.monotonic()
+    try:
+        judgment = two_stage.judge(model, taxonomy, str(case["message"]))
+    except StructuredOutputError:
+        return (
+            CaseResult(
+                case_id=case_id,
+                status=CaseStatus.ERROR,
+                expected=expected,
+                tags=tags,
+                latency_ms=round((time.monotonic() - started) * 1000),
+                detail="invalid_model_output",
+            ),
+            None,
+            False,
+            None,
+        )
+    actual, detail = _outcome(judgment.fit, taxonomy)
+    return (
+        CaseResult(
+            case_id=case_id,
+            status=CaseStatus.PASSED if actual == expected else CaseStatus.FAILED,
+            expected=expected,
+            actual=actual,
+            tags=tags,
+            latency_ms=round((time.monotonic() - started) * 1000),
+            detail=detail,
+        ),
+        _proposed_name(judgment.fit),
+        _named_while_proposing(judgment.fit, taxonomy),
+        judgment.heading,
     )
 
 

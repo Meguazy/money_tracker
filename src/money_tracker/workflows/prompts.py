@@ -43,9 +43,18 @@ _DATA_ROOT: Final = Path(__file__).parent / "prompt_data"
 ROUTER: Final = "router"
 EXTRACTION: Final = "extraction"
 CATEGORY_FIT: Final = "category_fit"
+CATEGORY_SUBTREE: Final = "category_subtree"
+CATEGORY_LEAF: Final = "category_leaf"
 TOOL_SELECTION: Final = "tool_selection"
 
-BOUNDARIES: Final = (ROUTER, EXTRACTION, CATEGORY_FIT, TOOL_SELECTION)
+BOUNDARIES: Final = (
+    ROUTER,
+    EXTRACTION,
+    CATEGORY_FIT,
+    CATEGORY_SUBTREE,
+    CATEGORY_LEAF,
+    TOOL_SELECTION,
+)
 """Every boundary that owns an instruction catalog."""
 
 
@@ -367,6 +376,8 @@ __all__ = [
     "default_prompt",
     "prompt",
     "prompt_versions",
+    "CATEGORY_SUBTREE",
+    "CATEGORY_LEAF",
     "render_active_categories",
     "render_active_category_tree",
     "render_selection_categories",

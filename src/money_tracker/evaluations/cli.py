@@ -40,6 +40,8 @@ from money_tracker.persistence.database import database_url_from_env
 from money_tracker.runtime.read_graph import SELECTION_BOUNDARIES
 from money_tracker.workflows.prompts import (
     CATEGORY_FIT,
+    CATEGORY_LEAF,
+    CATEGORY_SUBTREE,
     EXTRACTION,
     ROUTER,
     TOOL_SELECTION,
@@ -47,6 +49,7 @@ from money_tracker.workflows.prompts import (
     prompt,
     prompt_versions,
 )
+from money_tracker.workflows.two_stage import TwoStageCategoryFit
 
 
 def _version_choices(boundary: str) -> list[str]:
@@ -230,6 +233,14 @@ def _parser() -> argparse.ArgumentParser:
         choices=_version_choices(CATEGORY_FIT),
         default=default_prompt(CATEGORY_FIT).short_name,
         help="category-fit boundary under test; recorded with the score",
+    )
+    categorization.add_argument(
+        "--two-stage",
+        action="store_true",
+        help=(
+            "run the two-stage judgment from AD-015 instead of the single "
+            "category-fit call; --instructions is ignored when it is set"
+        ),
     )
     categorization.add_argument(
         "--output-root",
@@ -430,6 +441,19 @@ def _run_catalog(profile_id: str | None, field: str | None) -> None:
     )
 
 
+def _two_stage_candidate() -> TwoStageCategoryFit:
+    """Compose the two boundaries AD-015 proposes from their catalogs."""
+
+    subtree = default_prompt(CATEGORY_SUBTREE)
+    leaf = default_prompt(CATEGORY_LEAF)
+    return TwoStageCategoryFit(
+        subtree_version=subtree.id,
+        leaf_version=leaf.id,
+        subtree_instructions=subtree.text,
+        leaf_instructions=leaf.text,
+    )
+
+
 def _command_summary(report: SuiteReport) -> dict[str, object]:
     """Render the summary one suite run prints when it finishes.
 
@@ -501,6 +525,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                 output_root=args.output_root,
                 repository_root=_repository_root(),
                 candidate=CATEGORY_FIT_CANDIDATES[args.instructions],
+                two_stage=_two_stage_candidate() if args.two_stage else None,
             )
         )
         return

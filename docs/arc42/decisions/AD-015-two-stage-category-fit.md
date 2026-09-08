@@ -1,8 +1,10 @@
 # AD-015: Two-Stage Category Fit
 
 - Status: proposed
-- Implementation: none. This records a design and the evidence for it; no code,
-  contract, or graph node is changed by this ADR.
+- Implementation: boundaries, schemas and the composing component implemented
+  and wired into the evaluation suite; the expense and review graphs still run
+  the single-call boundary, because the decision is proposed and nothing is
+  promoted before it measures better.
 - Date: 2026-09-08
 - Supersedes: nothing. Extends [AD-006](AD-006-bounded-agent-workflows.md) and
   [AD-008](AD-008-controlled-taxonomy.md); promotion still runs through

@@ -21,7 +21,7 @@ implementation state is still `planned`.
 | [AD-013](AD-013-local-runtime-and-backup.md) | Host runtime and encrypted backup | Accepted | Compose topology, encrypted backup, retention, and isolated restore drill implemented; systemd units and scheduling planned |
 | [AD-014](AD-014-private-receipt-archive.md) | Private content-addressed receipt archive | Accepted | Local adapter, admin CLI, versioned review state, filesystem/PostgreSQL integration, and encrypted archive backup/restore implemented; API/worker wiring and deletion planned |
 
-| [AD-015](AD-015-two-stage-category-fit.md) | Two-stage category fit | Proposed | None; design and measured evidence only |
+| [AD-015](AD-015-two-stage-category-fit.md) | Two-stage category fit | Proposed | Boundaries, schemas and composition implemented and measurable through the evaluation suite; runtime graphs unchanged |
 
 ## Maintenance rules
 

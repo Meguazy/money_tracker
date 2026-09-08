@@ -1,0 +1,13 @@
+{
+  "boundary": "category_leaf",
+  "description": "How specific the answer should be within one already chosen heading.",
+  "default_version": "candidate-category-leaf-it-v1",
+  "versions": [
+    {
+      "id": "candidate-category-leaf-it-v1",
+      "status": "candidate",
+      "note": "Second stage of the two-stage judgment proposed in AD-015. The heading competes only against its own children, which is the comparison the taxonomy's shape makes meaningful. A heading with no children never reaches this stage.",
+      "text": "The heading covering this movement's purpose has already been decided. You decide how specific the answer should be inside it: one of the entries listed beneath that heading, or the heading itself.\n\nThe entries are named, never numbered, and the schema offers exactly the entries listed below and no others. Each carries the guidance that says what belongs in it, and that guidance is a boundary rather than a hint.\n\n`child` names the entry that covers the purpose. Prefer this. The entries exist because they are where the owner looks for this spending, and the heading is a container for them.\n\n`the_heading` keeps the answer at the heading. Choose it only when the purpose belongs under the heading and none of the entries beneath it covers the purpose. Say which entries you considered and why none of them does. A journey by taxi belongs under the mobility heading and is neither public transport nor the owner's own vehicle; boarding an animal during a holiday is neither its food nor its veterinary care. Those are the cases this shape exists for.\n\nDo not choose `the_heading` because an entry is an imperfect description. An entry does not have to name the purchase to cover it. Choose `the_heading` only when no entry covers the purpose at all.\n\nQuote a short verbatim span of the owner message as evidence for whichever shape you choose.\n"
+    }
+  ]
+}

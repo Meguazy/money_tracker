@@ -122,6 +122,12 @@ _SELECTION_SHAPES: dict[
             current=current
         ),
     ),
+    "v7": (
+        WireToolRequest,
+        lambda parsed, current: cast(WireToolRequest, parsed).to_domain(
+            current=current
+        ),
+    ),
     "v6": (
         WireToolRequest,
         lambda parsed, current: cast(WireToolRequest, parsed).to_domain(

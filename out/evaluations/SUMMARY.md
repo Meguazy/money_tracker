@@ -20,7 +20,7 @@ directory, and the raw manifests stay under the ignored
 | `routing/intent-it` | text-qwen3-14b | `candidate-router-it-v6` | routing-intent-it-v1.2 1.2.0 | 206 | pass | none | `ROU-20260908-144401-4722778d` |
 | `routing/intent-it` | text-qwen35-9b | `candidate-router-it-v5` | routing-intent-it-v1.1 1.1.0 | 201 | **fail** | `macro_f1`, `write_input_routed_as_read_only`, `ambiguous_safely_clarified` | `ROU-20260908-132224-33ae272c` |
 | `tools/selection-and-use` | text-ministral3-14b | `candidate-tool-selection-it-v5` | tools-selection-and-use-it-v1 1.0.0 | 110 | **fail** | `expected_permitted_tool_and_arguments`, `execution_postcondition_against_real_fixture` | `TOO-20260908-130502-fe948001` |
-| `tools/selection-and-use` | text-qwen3-14b | `candidate-tool-selection-it-v7` | tools-selection-and-use-it-v1.1 1.1.0 | 119 | **fail** | `expected_permitted_tool_and_arguments`, `execution_postcondition_against_real_fixture` | `TOO-20260908-165801-b2771402` |
+| `tools/selection-and-use` | text-qwen3-14b | `candidate-tool-selection-it-v5` | tools-selection-and-use-it-v1.1 1.1.0 | 119 | **fail** | `expected_permitted_tool_and_arguments`, `execution_postcondition_against_real_fixture` | `TOO-20260908-171002-410fca00` |
 | `tools/selection-and-use` | text-qwen35-9b | `candidate-tool-selection-it-v5` | tools-selection-and-use-it-v1 1.0.0 | 110 | **fail** | `expected_permitted_tool_and_arguments`, `execution_postcondition_against_real_fixture` | `TOO-20260908-133253-56fc6298` |
 | `workflow/category-review-it` | text-ministral3-14b | — | category-review-it-v1 1.0.0 | 37 | pass | none | `REV-20260908-130634-948fc0cd` |
 | `workflow/category-review-it` | text-qwen3-14b | — | category-review-it-v1 1.0.0 | 37 | pass | none | `REV-20260908-145438-02ed496a` |

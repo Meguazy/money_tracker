@@ -127,6 +127,27 @@ than the description. And naming `welfare credit` in the description made
 dataset requires a refusal — the added terms attracted the adjacent wrong
 question.
 
+## The deterministic refusal, applied and measured
+
+`TOO-20260908-171002-410fca00`, v5 unchanged, with
+`asks_for_an_unavailable_budget` in the acceptance path:
+
+| | before | after |
+| --- | ---: | ---: |
+| `expected_permitted_tool_and_arguments` | 102/119 = 0.8571 | **106/119 = 0.8908** |
+| `TOO-AAD-*` | 1/6 | **6/6** |
+
+All five targeted cases flipped and **no case was refused that should have been
+answered**. The single regression, `TOO-QSL-003`, is answered-to-answered, so
+the rule did not touch it: the refusal path can only produce refusals. It is a
+funding case this candidate answered correctly in the previous run and wrongly
+in this one, which is the run-to-run variation already recorded for this suite.
+
+The gate needs 114 of 119. Thirteen failures remain and the deterministic levers
+are spent: six meal-voucher cases and three unknown-category cases are semantic
+associations with no mechanical handle, since in both the model requests a legal
+tool with a real category.
+
 ## Proposed fixes
 
 1. **Done: the default is v5 again.** The rendered vocabulary already contains

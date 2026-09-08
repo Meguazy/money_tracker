@@ -26,6 +26,22 @@ observability profile is stopped. Image provenance and upgrade constraints are
 recorded in [Container Versions](container-versions.md). Never delete volumes or
 force migration versions merely to clear an error.
 
+## Current Step 3 dispatch smoke
+
+`money-tracker-admin route` is the current operator entry point for one
+normalized text work unit. Without `--profile-id` it is a database-free routing
+diagnostic. With a bootstrapped profile it opens the application PostgreSQL
+repository and persistent checkpointer, then calls the single workflow
+dispatcher for expense/refund, query/advice, correction/undo, or category
+follow-up. Exact commands and required correlation flags are maintained in
+[Development and Local Operations](../development.md#exercising-text-dispatch-by-hand).
+
+The command is one-shot and emits safe JSON. It is not the planned worker: it
+does not ingest Telegram updates, own an inbox/outbox, retry delivery, or render
+owner-facing messages. A model-dependent work unit fails with the launcher hint
+when local inference is unavailable; deterministic routing-only input does not
+need the endpoint.
+
 ## Current and target process topology
 
 Implemented foundation services and accepted future services are distinguished

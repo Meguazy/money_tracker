@@ -16,7 +16,9 @@ specialist workflow runs end to end, storing a draft through the existing
 application services or reporting the question it owes, and the extraction
 boundary no longer blocks that path. The owner category review pauses on a
 persistent interrupt and settles every J3 branch, and the read-only routes
-answer from scoped registries of domain read tools. All six pinned suites are
+answer from scoped registries of domain read tools. One explicit dispatcher now
+connects the router to every Step 3 specialist and is wired to the local
+administration command. All six pinned suites are
 executable and measured. The workflow suite passes every gate; the five that
 measure model judgment each fail at least one. The binding constraint the
 suites isolated has since been screened directly at Step 1's capability screen,
@@ -92,18 +94,19 @@ own tests and documentation, and none may ship a later step's behavior.
 
 - Typed root router with deterministic handling for channel commands/callbacks
   and specialist routes for expense, refund, queries, advice, category follow-up,
-  correction/undo, and clarification.
+  correction/undo, and clarification. Implemented behind one dispatcher.
 - Versioned structured extraction and category-fit contracts with evidence.
 - Deterministic expense/refund and correction/undo mutation paths that call
   application services; query/advice agents remain read-only. Implemented.
 - Persistent human-in-the-loop category review covering approve, best existing,
-  named existing, re-propose, cancel, and unrelated input.
+  named existing, re-propose, cancel, and unrelated input. Implemented and
+  composed through the dispatcher.
 - Auto-post eligibility policy calibrated on the evaluation set; all other
   inputs remain drafts.
 - A minimal local administration command for bootstrapping the owner profile
   and its funding sources, and for exercising implemented workflow components
   by hand before a channel exists; no channel adapter, durable worker, or
-  owner-facing response.
+  owner-facing response. Implemented for every Step 3 text specialist.
 - Production prompt/model configuration promoted through the experiment
   decision log.
 
@@ -243,6 +246,22 @@ own tests and documentation, and none may ship a later step's behavior.
 - Graph state for both routes contains only primitive boundary JSON, outcomes,
   reason codes, and stable profile/movement references; the target aggregate
   remains in the repository.
+- `WorkflowDispatcher.dispatch` is the single transport-neutral entry point for
+  Step 3. It invokes the root router once and explicitly sends the accepted
+  intent to expense/refund, query/advice, correction/undo, or the persistent
+  category review, returning one typed outcome. Graphs retain separate state
+  contracts and namespaced thread identifiers; the dispatcher owns no data.
+  A new proposal opens its review checkpoint before return, stale review
+  callbacks are refused, and movement callbacks use an injected action-to-
+  movement mapping rather than treating an interface identifier as domain data.
+  Receipt, command, non-finance, and unsupported decisions remain typed routed
+  handoffs because their behavior belongs to later steps. AD-016 records the
+  explicit composition choice over a single union-state LangGraph.
+- The administration `route` command now calls only that dispatcher. Without a
+  profile it remains a database-free routing diagnostic; with a profile it
+  opens the real repository and PostgreSQL checkpointer and reaches every Step
+  3 text specialist. Its JSON contains safe references, read-tool facts, and
+  reason codes but no inbound message, presentation text, or Telegram concept.
 - Real PostgreSQL tests store a reconciled draft and the split-funding journey
   against a seeded profile, submit a pending candidate without extending the
   taxonomy, leave the database untouched on every clarification path, store

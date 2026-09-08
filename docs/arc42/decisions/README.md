@@ -22,6 +22,7 @@ implementation state is still `planned`.
 | [AD-014](AD-014-private-receipt-archive.md) | Private content-addressed receipt archive | Accepted | Local adapter, admin CLI, versioned review state, filesystem/PostgreSQL integration, and encrypted archive backup/restore implemented; API/worker wiring and deletion planned |
 
 | [AD-015](AD-015-two-stage-category-fit.md) | Two-stage category fit | Rejected | Implemented, measured at 0.7712 against the single call's 0.8693, and rejected; kept behind an evaluation flag so the result stays reproducible |
+| [AD-016](AD-016-explicit-workflow-dispatcher.md) | Explicit workflow dispatcher | Accepted | Implemented for all Step 3 text specialists; channel presentation remains planned |
 
 ## Maintenance rules
 

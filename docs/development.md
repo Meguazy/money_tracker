@@ -102,79 +102,86 @@ The command refuses final input symlinks, directories, unsupported/oversized
 images, and unknown profiles. It prints only safe JSON metadata, not file paths
 or bytes. Retrying the same content returns the first database record.
 
-## Exercising the root router by hand
+## Exercising text dispatch by hand
 
-There is no bot yet: the Telegram channel, the durable worker, and owner-facing
-replies are Step 4. Until then this command sends one message through the real
-compiled router and prints only the routing decision it reached.
+There is no bot yet: the Telegram channel, durable worker, and owner-facing
+responses are Step 4. The `route` command nevertheless uses the complete Step 3
+entry point. It builds one normalized work unit, invokes the root router, and,
+when `--profile-id` is present, dispatches it to the selected text specialist.
+It prints safe sorted JSON containing the typed route and outcome; it never
+echoes the owner message.
 
-A deterministic route needs no model at all:
+Routing-only diagnostics need neither PostgreSQL nor a model for deterministic
+input:
 
     uv run --env-file .env money-tracker-admin route \
       --with-image --minimum-confidence 0.8
     uv run --env-file .env money-tracker-admin route \
       --text '/status' --minimum-confidence 0.8
 
-Free text is classified by the local model, so start it first with
-`scripts/run_llama_server.sh`:
+Free text reaches local inference, so start `scripts/run_llama_server.sh` first.
+`--minimum-confidence` is required because no production routing bar is
+promoted. The following only reports routing because it supplies no profile:
 
     uv run --env-file .env money-tracker-admin route \
       --text 'Ho speso 12 euro per i croccantini dei gatti' \
       --minimum-confidence 0.8
 
-`--minimum-confidence` is required and has no default, because no calibrated
-routing bar is promoted; see [Decision Log](experiments/decision-log.md). Supply
-the trusted routing context explicitly to make a correlated route reachable
-without an active profile:
-
-    uv run --env-file .env money-tracker-admin route \
-      --text 'usa la categoria Animali' \
-      --minimum-confidence 0.8 \
-      --pending-review-id PENDING_ACTION_UUID
-
-    uv run --env-file .env money-tracker-admin route \
-      --text "annulla l'ultima spesa" \
-      --minimum-confidence 0.8 \
-      --latest-movement-id EXPENSE_UUID
-
-Without that context the same messages are clarified rather than accepted,
-which is the policy veto rather than a failure. The command reads no database,
-writes nothing, keeps no thread, and prints no message content: a routing
-decision carries none by contract.
-
-Add `--profile-id` to also run the expense or refund workflow when routing
-selects one, storing a draft through the real application services:
+Supply the bootstrapped profile to execute expense/refund, query/advice,
+correction/undo, or category follow-up. The command opens the real PostgreSQL
+checkpointer and application repository, and all writes use the existing
+idempotent services:
 
     uv run --env-file .env money-tracker-admin route \
       --text 'Ho speso 50 euro al supermercato, 30 con i buoni pasto e 20 con la carta' \
       --minimum-confidence 0.5 \
       --profile-id PROFILE_UUID
 
-The profile must already be bootstrapped with at least one active default
-funding source; see [Bootstrapping the owner profile](#bootstrapping-the-owner-profile). A stored movement is always a draft: no auto-post policy is
-promoted. The output adds the outcome, the stored movement identifier, any
-pending candidate, and the clarification reason when nothing was stored.
+    uv run --env-file .env money-tracker-admin route \
+      --text 'Quanto ho speso per gli animali questo mese?' \
+      --minimum-confidence 0.5 \
+      --profile-id PROFILE_UUID
 
-Expect clarifications on clear messages for now, but no longer from
-extraction. Removing the extraction boundary's abstention channel cleared that
-blockage: every V1 acceptance example now parses and resolves. Two candidate
-prompt gaps remain, both open for the pinned suites to measure and both
-recorded in [Decision Log](experiments/decision-log.md):
+A free-text correction or undo needs the exact movement selected by trusted
+runtime context. Without it, deterministic acceptance returns clarification:
 
-- The candidate extraction instructions fabricate a payment method when the
-  message names none, including a placeholder of the kind they forbid. This is
-  now measured by `ingestion/expense-it`, and the measurement corrects an
-  earlier note here: the fabrication does **not** fail safe. Most invented
-  words name a real active source, usually the profile default, so resolution
-  accepts them and the guess is invisible rather than refused. Only an invented
-  word that is a purpose noun, such as `affitto`, gets refused.
-- The candidate category-fit instructions prefer a new proposal over an
-  adequate existing category, sometimes proposing a name the taxonomy already
-  has, and name a non-root parent. Deterministic acceptance refuses both, so
-  the run clarifies instead of drafting. Gap for `categorization/purpose-it`.
+    uv run --env-file .env money-tracker-admin route \
+      --text 'Correggi la spesa a 15 euro' \
+      --minimum-confidence 0.5 \
+      --profile-id PROFILE_UUID \
+      --latest-movement-id EXPENSE_UUID
 
-The mechanism itself completes: a message whose funding words resolve and whose
-purpose matches an active category stores a reconciled draft end to end.
+When an expense outcome contains a `proposal_id`, dispatch has already opened
+that proposal's persistent review checkpoint. Resume it with either a direct
+J3 statement and the pending set:
+
+    uv run --env-file .env money-tracker-admin route \
+      --text 'Usa la categoria Cibo e accessori' \
+      --minimum-confidence 0.5 \
+      --profile-id PROFILE_UUID \
+      --pending-review-id PROPOSAL_UUID
+
+or an explicit callback. A callback supplies both the action reference carried
+by the work unit and the repository-derived pending set:
+
+    uv run --env-file .env money-tracker-admin route \
+      --callback-action approve_category \
+      --pending-action-id PROPOSAL_UUID \
+      --pending-review-id PROPOSAL_UUID \
+      --minimum-confidence 0.5 \
+      --profile-id PROFILE_UUID
+
+For modify/undo callbacks, `--pending-action-id` is the interface action and
+`--latest-movement-id` supplies its trusted target for this development command.
+The dispatcher treats neither as model output and never assumes that an action
+identifier is itself a movement identifier.
+
+Use `--source-reference` to replay a particular inbound work unit deliberately;
+otherwise the command generates a fresh reference. The profile needs at least
+one active default funding source. A new movement remains a draft: Step 3 has no
+promoted auto-post subset. The result reports any movement/proposal/category
+references, admitted read tool and grounded facts, or the stable clarification
+reason.
 
 ## Authoritative backup
 

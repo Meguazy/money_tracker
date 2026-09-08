@@ -167,7 +167,7 @@ Money Tracker workstation
 │   ├── FastAPI application and compiled React UI        [planned]
 │   ├── Telegram gateway                                [planned]
 │   ├── Sequential workflow worker                      [planned]
-│   │   └── typed root router                          [implemented, unwired to a channel]
+│   │   └── typed dispatcher, router, and text graphs  [implemented library]
 │   └── llama.cpp/OpenAI-compatible inference           [scaffolded]
 ├── Private host data
 │   ├── Receipt archive adapter                         [implemented, admin CLI wired]
@@ -191,10 +191,10 @@ Money Tracker workstation
 | `domain` | Enforce exact money, expense/refund, dual-allocation, taxonomy, wallet, budget, receipt-metadata, and audit contracts | Pure Python value objects and policies; no framework or infrastructure import | No infrastructure state | Shared host-process library; deterministic validation of untrusted inputs |
 | `application` | Coordinate idempotent expense lifecycle and receipt registration/review, audited wallet/budget mutations, pending proposal submission, owner category decisions, and read-only reporting through narrow ports | Finance, administration, proposal, review, reporting, and receipt-metadata repository ports plus clock and ID contracts | Command, concurrency, review-boundary, and audit semantics, not stored state | Shared by future CLI/API/worker; profile scope comes from trusted caller context; node creation is reachable only through an owner decision, and receipt deletion is not exposed |
 | `workflows` | Own the bounded intent taxonomy, normalized channel work unit, deterministic pre-routing, strict versioned model boundaries and policy vetoes, deterministic allocation resolution, draft and correction preparation, stable creation/correction/undo command identities, and the strict-schema retry boundary behind a narrow model port | Pydantic, `zoneinfo`, and pure domain values; no LangGraph, model client, repository, or transport import | Routing destinations, authority classes, stable routing and resolution reason codes, and the product calendar; no persistent state | Shared by the planned worker; a model can select no deterministic route and supply no profile/timezone/authorization field, no resolved instant, no amount sign, and no funding-source identifier; reason codes carry no owner text |
-| `runtime` | Assemble the compiled root-router, expense/refund, correction/undo, category-review, and read graphs and adapt the local endpoint to the structured-output port | LangGraph, LangChain, the persistent checkpointer, and the `workflows` contracts | No state of its own; checkpoint contents are owned by the state contract | Host worker process; holds no routing policy, so the framework cannot change how a decision is made |
+| `runtime` | Assemble the compiled root-router, expense/refund, correction/undo, category-review, and read graphs; dispatch one normalized work unit to exactly one specialist; adapt the local endpoint to the structured-output port | LangGraph, LangChain, application services, the persistent checkpointer, and `workflows` contracts | No domain state of its own; checkpoint contents remain owned by each graph state contract | Host administration CLI today and future worker; dispatcher trusts only injected profile/correlation context and emits no presentation text |
 | `api.contracts` | Define strict, versioned finance request/response, mutation-header, and problem wire shapes | Pydantic and domain response values; no web framework | No state; stable JSON field semantics only | Shared by future FastAPI adapter; no endpoint, network listener, credentials, or private media fields |
 | `backup` | Create verified encrypted authoritative snapshots, report their freshness, and restore only into explicitly empty isolated targets | Restic and PostgreSQL client executables, psycopg identity/receipt queries, private archive and configuration paths | Snapshot contents and the versioned integrity manifest in the owner repository; no finance state of its own | Host CLI under an exclusive lock; absolute-path and owner-only input checks, recovery secret passed only by file path, failures name no argument or environment |
-| `administration` | Expose bounded local profile bootstrap, funding-source configuration, receipt storage/registration, and one-shot routing and movement processing for development and bootstrap | Database URL, absolute archive setting, media and metadata services, the compiled router and its local adapter | No independent state; emits safe identifiers/facts only | Host CLI; active-profile preflight for storage, no-follow bounded input, explicit routing context, no private paths or message content in JSON |
+| `administration` | Expose bounded local profile bootstrap, funding-source configuration, receipt storage/registration, and one-shot dispatch of every Step 3 text route | Database URL, absolute archive setting, application services, the workflow dispatcher, and local model adapter | No independent state; emits safe identifiers, grounded facts, and reason codes only | Host CLI; active-profile preflight for specialists, explicit trusted correlations, no private paths or message content in JSON |
 | `persistence.finance` | Bootstrap profile/taxonomy, persist complete expense and budget aggregates, append balance-safe wallet movements, validate/store pending proposals, and register/transition receipt metadata transactionally | psycopg and narrow application repository contracts | Finance tables, allocations, budgets/overrides, wallet ledger, proposals, versioned receipt metadata, audit, and idempotency records | Dedicated application PostgreSQL; no receipt bytes or paths; optimistic versions protect mutable aggregates |
 | `media.local` | Decode, validate, atomically retain, and integrity-check private receipt originals | Receipt-media port, Pillow, private filesystem | Original bytes under sharded SHA-256 keys; no database state | Host library outside web roots; `0700` directories, `0600` files, no-follow verified reads; root wired explicitly by admin CLI, API/worker planned |
 | `evaluations` | Probe real model protocols, capture exact runtime metadata, score deterministically, optionally publish aggregates | OpenAI-compatible HTTP, local files, optional Langfuse SDK | Ignored local run artifacts, and published aggregate scores keyed by suite and by the model that produced them; no domain authority | Host CLI; secrets, image bytes and paths are excluded |
@@ -244,7 +244,7 @@ catalog is promoted; every identifier carries a `candidate-` prefix.
 | Application services (expense/wallet/budget, proposal submission and settlement, and receipt registration/review implemented) | Execute validated commands and queries transactionally | Narrow repository ports, clock, ID and future media ports | Command/content idempotency, versioning, review boundary, and audit semantics | Future FastAPI/worker host processes; profile scope injected; product receipt review remains workflow-owned |
 | Finance repositories (expense/wallet/budget/proposal/versioned receipt metadata implemented) | Persist authoritative domain records and analytics projections | PostgreSQL protocol through explicit repository contracts | Finance schema implemented; proposal decisions and receipt deletion open | Dedicated application database; least-privilege credentials; optimistic versions and source locks protect concurrent mutations; no media payloads |
 | Messaging inbox/outbox | Receive, order, retry, dead-letter, replay and dispatch transport work | PostgreSQL and Telegram adapter | Raw updates, offsets, delivery attempts, result references | Gateway and worker; bot token never stored in rows |
-| Workflow runtime (root router implemented) | Route intents and execute specialist graphs | LangGraph, typed model gateway, application services, checkpointer | Small versioned workflow state only | Sequential worker; no images or service objects in checkpoints |
+| Workflow runtime (dispatcher, router, and Step 3 text specialists implemented) | Route one normalized work unit and execute exactly one bounded specialist | Typed dispatcher outcome, LangGraph, model gateway, application services, checkpointer | Small per-graph versioned workflow state only; authoritative domain data stays in repositories | Administration CLI today and sequential worker in Step 4; no media, credentials, or service objects in checkpoints |
 | Receipt service | Validate media, invoke extractor, reconcile lines, prepare review | Implemented media-store port, planned extractor, finance service | Receipt metadata, extraction versions, review state | Private filesystem; untrusted image boundary; orchestration planned |
 | Analytics service | Compute time, category, budget and funding summaries | Read repositories and deterministic calendar policies | No separate authoritative data | FastAPI and read-only agent tools |
 | Backup service (implemented, unscheduled) | Create consistent encrypted backups and verify restores | `pg_dump`, Restic, receipt/configuration paths | Backup snapshots in owner repository | Owner-invoked today; systemd timer and clean-machine qualification planned; recovery secret stored off-device |
@@ -253,7 +253,7 @@ catalog is promoted; every identifier carries a `candidate-` prefix.
 
 | Component | Responsibility | Interfaces/dependencies | Data ownership | Deployment/security |
 | --- | --- | --- | --- | --- |
-| Root router and subgraphs (deterministic half and model boundary implemented) | Route one intent and coordinate extraction, review, query or advice | Versioned Pydantic schemas, scoped tool registries | Checkpoint references and workflow IDs | Worker; mutation paths are deterministic |
+| Workflow dispatcher, root router, and text specialists (implemented) | Route one intent and coordinate expense/refund, correction/undo, category review, query, or advice | Typed normalized work unit/outcome, versioned schemas, scoped tool registries, trusted correlations | Namespaced checkpoint references and workflow IDs; no domain ownership | Administration CLI now, worker later; mutation paths call replay-safe application services |
 | Telegram adapter | Pair owner, long poll, download media and send/edit responses | Telegram Bot API and messaging services | No authoritative finance data | Separate host service; private chats only |
 | FastAPI adapter | Expose versioned REST resources and health/operations endpoints | Application services | No independent data | Loopback, allowed Host/Origin, CSRF protection |
 | React dashboard | Display and edit finance, review, budget, wallet and operational state | Same-origin REST API | Browser session/UI state only | Compiled static assets; no secrets |
@@ -687,9 +687,39 @@ defaults, so the assembly cannot imply a production configuration for either.
 The graph holds no routing policy of its own; every decision it makes is
 implemented and tested in the framework-independent component.
 
-The router is not wired to a channel or a worker process, produces no owner
-response, and reaches no application service. Specialist workflows and the
-persistent owner-approval interrupt remain open.
+The router remains independently testable and emits no owner response. The
+explicit dispatcher below now connects it to the implemented specialists; no
+channel or worker process exists yet.
+
+### Current workflow dispatcher
+
+1. `WorkflowDispatcher.dispatch` is the single transport-neutral call. It takes
+   a normalized `ChannelMessage` plus a `DispatchContext` containing trusted
+   profile and correlation facts, invokes routing once, and returns a typed
+   `DispatchOutcome` rather than exposing a graph state mapping.
+2. An explicit intent switch sends expense/refund, query/advice,
+   correction/undo, and category follow-up to their independently compiled
+   specialists. Clarification terminates safely. Receipt, command, non-finance,
+   and unsupported intents remain typed handoffs because their behavior belongs
+   to later roadmap steps.
+3. Each graph keeps its narrow state schema and a namespaced stable thread ID.
+   No union graph state carries unrelated boundary answers, and domain records
+   stay in PostgreSQL behind application services.
+4. A movement that creates a category proposal opens the persistent review
+   checkpoint before the dispatcher returns. A later correlated decision
+   resumes that exact proposal. Direct Italian J3 statements use a bounded pure
+   parser; text that does not explicitly name a branch cannot settle a review.
+5. Category callbacks must still be present in the trusted pending-review set.
+   Movement callbacks resolve through a trusted pending-action-to-movement map;
+   the callback identifier is never guessed to be the movement identifier.
+6. The component owns orchestration, no data or presentation. It runs in the
+   host administration CLI now; Step 4's durable worker will construct context
+   from its repositories and call the same operation.
+
+[AD-016](decisions/AD-016-explicit-workflow-dispatcher.md) records why this is
+explicit composition rather than a LangGraph containing every specialist as a
+subgraph. The choice keeps checkpoint lifecycle, replay behavior, and state
+migration local to each bounded workflow.
 
 ### Current version-one finance wire contracts
 
@@ -1051,17 +1081,16 @@ environment file.
   reports implemented; remaining adapters planned.
 - [AD-008: Controlled two-level taxonomy](decisions/AD-008-controlled-taxonomy.md):
   policy, accepted stable seed, schema, bootstrap, taxonomy-scoped pending
-  proposal submission, the deterministic category-fit boundary, and the owner
-  decision service that creates a node implemented; the review workflow that
-  pauses for the owner is planned.
+  proposal submission, the deterministic category-fit boundary, the owner
+  decision service, and the persistent review workflow implemented.
 - [AD-006: Bounded typed agent workflows](decisions/AD-006-bounded-agent-workflows.md):
   persistent checkpoint adapter, bounded intent taxonomy with partitioned
   authority, deterministic pre-routing, and the strict versioned router model
   boundary, the extraction and category-fit boundaries, deterministic
   dual-allocation resolution, the expense and refund specialist graph, and the
-  persistent owner category review interrupt, and the scoped read-only query
-  and advice routes implemented; promoted prompts and threshold calibration
-  planned.
+  persistent owner category review interrupt, scoped read-only query/advice
+  routes, correction/undo specialists, and explicit dispatcher implemented;
+  promoted prompts and threshold calibration planned.
 - [AD-012: Evaluation-driven model and prompt promotion](decisions/AD-012-evaluation-driven-promotion.md):
   capability runner, artifact contract, and passing technical candidates
   implemented; product-role promotion remains experiment-gated.
@@ -1079,6 +1108,10 @@ environment file.
   safe local adapter, versioned review state, and real filesystem/PostgreSQL
   integration implemented; administration CLI wiring and encrypted archive
   backup/restore implemented; API/worker wiring and deletion planned.
+- [AD-016: Explicit workflow dispatcher](decisions/AD-016-explicit-workflow-dispatcher.md):
+  transport-neutral typed outcome, explicit router-to-specialist composition,
+  trusted action correlation, and administration CLI wiring implemented;
+  durable worker and channel presentation planned.
 
 ### Planned accepted decisions
 

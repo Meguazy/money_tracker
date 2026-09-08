@@ -14,20 +14,23 @@ import os
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import cast
 from uuid import UUID, uuid4
 
 from langchain_core.exceptions import ModelConnectionError
+from langgraph.checkpoint.base import BaseCheckpointSaver
 
 from money_tracker.application import (
     CategoryProposalService,
+    CategoryReviewService,
     FinanceService,
     ReceiptMediaError,
     ReceiptMetadataService,
+    ReportingService,
 )
 from money_tracker.application.runtime import SystemClock, UUID4Generator
 from money_tracker.domain import (
     BalanceMode,
+    CategoryStatus,
     FundingClass,
     FundingSource,
     Profile,
@@ -38,28 +41,32 @@ from money_tracker.domain.errors import DomainError
 from money_tracker.domain.taxonomy_seed import TAXONOMY_VERSION
 from money_tracker.media import LocalReceiptMediaStore, ReceiptArchiveSettings
 from money_tracker.media.local import MAX_RECEIPT_BYTES
-from money_tracker.persistence.database import database_url_from_env
+from money_tracker.persistence.database import (
+    database_url_from_env,
+    open_postgres_checkpointer,
+)
 from money_tracker.persistence.finance import PostgresFinanceRepository
 from money_tracker.runtime import (
     LocalStructuredOutputModel,
-    build_expense_graph,
+    WorkflowDispatcher,
     build_router_graph,
+    build_workflow_dispatcher,
 )
+from money_tracker.runtime.read_graph import DEFAULT_SELECTION
 from money_tracker.workflows import (
     CATEGORY_FIT,
     EXTRACTION,
     ROUTER,
+    TOOL_SELECTION,
+    CallbackAction,
     ChannelMessage,
-    ExpenseWorkflowState,
-    RouterState,
+    DispatchContext,
+    DispatchOutcome,
+    PendingMovementAction,
     RoutingContext,
     RoutingDecision,
-    WorkflowIntent,
     default_prompt,
-    initial_expense_state,
-    initial_router_state,
     normalize_owner_text,
-    routing_decision_from_state,
 )
 from money_tracker.workflows.candidates import (
     DEFAULT_CATEGORY_FIT_CANDIDATE,
@@ -83,8 +90,8 @@ def _parser() -> argparse.ArgumentParser:
     route = subparsers.add_parser(
         "route",
         help=(
-            "send one message through the real root router and print only its "
-            "routing decision; extraction and posting are not implemented yet"
+            "send one normalized message through the root router and its "
+            "Step 3 specialist, when a profile is supplied"
         ),
     )
     route.add_argument("--text")
@@ -101,6 +108,27 @@ def _parser() -> argparse.ArgumentParser:
         "--with-image",
         action="store_true",
         help="treat the message as carrying image media",
+    )
+    route.add_argument(
+        "--callback-action",
+        choices=[item.value for item in CallbackAction],
+        help="typed action selected by the owner",
+    )
+    route.add_argument(
+        "--pending-action-id",
+        type=UUID,
+        metavar="UUID",
+        help="pending action reference carried by a callback",
+    )
+    route.add_argument(
+        "--reply-to-action-id",
+        type=UUID,
+        metavar="UUID",
+        help="pending review reference addressed by a free-text reply",
+    )
+    route.add_argument(
+        "--source-reference",
+        help="stable inbound reference; generated for a one-shot call when omitted",
     )
     route.add_argument(
         "--pending-review-id",
@@ -121,8 +149,8 @@ def _parser() -> argparse.ArgumentParser:
         type=UUID,
         metavar="UUID",
         help=(
-            "run the expense or refund workflow for this profile when routing "
-            "selects one, storing a draft; routing only when omitted"
+            "run the selected Step 3 specialist in this trusted profile; "
+            "routing-only diagnostics when omitted"
         ),
     )
     subparsers.add_parser(
@@ -234,39 +262,35 @@ def _receipt_store(args: argparse.Namespace) -> dict[str, object]:
 
 
 def _route(args: argparse.Namespace) -> dict[str, object]:
-    """Route one message through the real router and return its decision.
+    """Dispatch one normalized message through the real Step 3 entry point.
 
-    The trusted routing context is supplied by flags rather than read from the
-    database, so the command exercises the router without requiring an active
-    profile. That also makes the policy vetoes reachable by hand: without a
-    pending review or a resolvable movement, a follow-up, correction, or undo
-    is clarified rather than accepted.
-
-    A deterministic route needs no inference call at all. Only free text
-    reaches the model, so a running local endpoint is required for that case
-    and for nothing else.
+    The operator supplies the same trusted correlations a future durable worker
+    will derive from repositories.  Without a profile the command remains a
+    routing-only diagnostic and opens no finance specialist.
 
     Args:
-        args: Parsed `route` arguments.
+        args: Parsed ``route`` arguments.
 
     Returns:
-        Non-sensitive decision facts. The owner message is not echoed, because
-        a routing decision deliberately carries no message content.
+        Non-sensitive routing and specialist outcome facts.
 
     Raises:
-        SystemExit: If the message carries nothing routable, the confidence bar
-            lies outside the unit interval, or the local endpoint is
-            unreachable. An unreachable endpoint is a normal operational state
-            for a development command, so it names the missing service rather
-            than surfacing a transport traceback. It is never turned into a
-            routing decision.
+        SystemExit: If the work unit is invalid, profile scope is unknown, the
+            confidence bar is invalid, or local inference is unavailable.
     """
 
     try:
         message = ChannelMessage(
-            source_reference="local-admin:route",
+            source_reference=(args.source_reference or f"local-admin:route:{uuid4()}"),
             received_at=datetime.now(UTC),
             text=args.text,
+            callback_action=(
+                None
+                if args.callback_action is None
+                else CallbackAction(args.callback_action)
+            ),
+            pending_action_id=args.pending_action_id,
+            reply_to_action_id=args.reply_to_action_id,
             has_image=args.with_image,
         )
     except DomainError as error:
@@ -274,39 +298,112 @@ def _route(args: argparse.Namespace) -> dict[str, object]:
     if not 0.0 <= args.minimum_confidence <= 1.0:
         raise SystemExit("--minimum-confidence must lie between 0 and 1")
 
-    graph = build_router_graph(
-        model=LocalStructuredOutputModel(),
-        instructions=default_prompt(ROUTER).text,
-        minimum_confidence=args.minimum_confidence,
-    )
-    initial = initial_router_state(
-        message,
-        context=RoutingContext(
+    ids = UUID4Generator()
+    model = LocalStructuredOutputModel()
+    context = DispatchContext(
+        profile_id=args.profile_id,
+        routing=RoutingContext(
             pending_category_review_ids=tuple(args.pending_review_id),
             latest_correctable_movement_id=args.latest_movement_id,
         ),
+        movement_actions=(
+            ()
+            if args.pending_action_id is None or args.latest_movement_id is None
+            else (
+                PendingMovementAction(args.pending_action_id, args.latest_movement_id),
+            )
+        ),
     )
+
+    if args.profile_id is None:
+        dispatcher = WorkflowDispatcher.routing_only(
+            build_router_graph(
+                model=model,
+                instructions=default_prompt(ROUTER).text,
+                minimum_confidence=args.minimum_confidence,
+            )
+        )
+        try:
+            return _dispatch_facts(dispatcher.dispatch(message, context=context))
+        except ModelConnectionError as error:
+            raise SystemExit(
+                "this work unit needs the local inference server; start it with "
+                "scripts/run_llama_server.sh (deterministic routes need no model)"
+            ) from error
+
+    database_url = database_url_from_env()
+    repository = PostgresFinanceRepository(database_url)
+    if not repository.profile_exists(args.profile_id):
+        raise SystemExit("active profile does not exist")
+
+    def run(
+        checkpointer: BaseCheckpointSaver[str] | None = None,
+    ) -> DispatchOutcome:
+        """Assemble against the selected checkpoint lifetime and dispatch once."""
+
+        category_names = tuple(
+            category.name
+            for category in repository.get_taxonomy(args.profile_id).categories
+            if category.status is CategoryStatus.ACTIVE
+        )
+        dispatcher = build_workflow_dispatcher(
+            model=model,
+            configuration=repository,
+            finance=FinanceService(repository, clock=SystemClock(), ids=ids),
+            proposals=CategoryProposalService(repository, clock=SystemClock(), ids=ids),
+            review=CategoryReviewService(
+                repository,
+                repository,
+                clock=SystemClock(),
+                ids=ids,
+            ),
+            reporting=ReportingService(repository),
+            ids=ids,
+            router_instructions=default_prompt(ROUTER).text,
+            minimum_confidence=args.minimum_confidence,
+            extraction_instructions=default_prompt(EXTRACTION).text,
+            category_instructions=default_prompt(CATEGORY_FIT).text,
+            selection_instructions=default_prompt(TOOL_SELECTION).text,
+            extraction_candidate=DEFAULT_EXTRACTION_CANDIDATE,
+            category_candidate=DEFAULT_CATEGORY_FIT_CANDIDATE,
+            selection_boundary=DEFAULT_SELECTION,
+            category_names=category_names,
+            checkpointer=checkpointer,
+        )
+        return dispatcher.dispatch(message, context=context)
+
     try:
-        # The compiled graph returns its state as a plain mapping; the router's
-        # own state contract names the keys it may contain.
-        final = cast(RouterState, graph.invoke(initial))
+        with open_postgres_checkpointer(database_url) as checkpointer:
+            outcome = run(checkpointer)
     except ModelConnectionError as error:
         raise SystemExit(
-            "free text needs the local inference server; start it with "
-            "scripts/run_llama_server.sh (a deterministic route needs no model)"
+            "this work unit needs the local inference server; start it with "
+            "scripts/run_llama_server.sh (deterministic routes need no model)"
         ) from error
-    decision = routing_decision_from_state(final)
-    if decision is None:
-        raise SystemExit("router reached no decision")
-    routed = _routing_facts(decision)
-    if args.profile_id is None or decision.intent not in {
-        WorkflowIntent.EXPENSE,
-        WorkflowIntent.REFUND,
-    }:
-        return routed
-    return routed | _run_movement_workflow(
-        message, profile_id=args.profile_id, intent=decision.intent
-    )
+    return _dispatch_facts(outcome)
+
+
+def _dispatch_facts(outcome: DispatchOutcome) -> dict[str, object]:
+    """Render one typed dispatch outcome as safe administration JSON."""
+
+    decision = outcome.routing
+    return _routing_facts(decision) | {
+        "answer": outcome.facts,
+        "clarification_reason": outcome.clarification_reason,
+        "executed_tool": (
+            None if outcome.executed_tool is None else outcome.executed_tool.value
+        ),
+        "expense_id": None if outcome.expense_id is None else str(outcome.expense_id),
+        "outcome": outcome.status.value,
+        "proposal_id": (
+            None if outcome.proposal_id is None else str(outcome.proposal_id)
+        ),
+        "settled_category_id": (
+            None
+            if outcome.settled_category_id is None
+            else str(outcome.settled_category_id)
+        ),
+    }
 
 
 def _routing_facts(decision: RoutingDecision) -> dict[str, object]:
@@ -324,70 +421,6 @@ def _routing_facts(decision: RoutingDecision) -> dict[str, object]:
         "target_movement_id": (
             str(decision.target_movement_id) if decision.target_movement_id else None
         ),
-    }
-
-
-def _run_movement_workflow(
-    message: ChannelMessage,
-    *,
-    profile_id: UUID,
-    intent: WorkflowIntent,
-) -> dict[str, object]:
-    """Run the expense or refund workflow and return its safe outcome.
-
-    The profile scope is supplied by the operator, which is what makes this a
-    development command: a channel would derive it from owner pairing instead.
-    Nothing is stored unless every part of the message resolves, and a stored
-    movement is always a draft.
-
-    Args:
-        message: The inbound record routing accepted.
-        profile_id: Trusted owner scope for repository reads and writes.
-        intent: The movement route routing selected.
-
-    Returns:
-        Outcome facts, including the stored draft's identifier when one exists.
-
-    Raises:
-        SystemExit: If the profile does not exist or the local endpoint is
-            unreachable.
-    """
-
-    repository = PostgresFinanceRepository(database_url_from_env())
-    if not repository.profile_exists(profile_id):
-        raise SystemExit("active profile does not exist")
-    graph = build_expense_graph(
-        model=LocalStructuredOutputModel(),
-        configuration=repository,
-        finance=FinanceService(repository, clock=SystemClock(), ids=UUID4Generator()),
-        proposals=CategoryProposalService(
-            repository, clock=SystemClock(), ids=UUID4Generator()
-        ),
-        ids=UUID4Generator(),
-        extraction_instructions=default_prompt(EXTRACTION).text,
-        category_instructions=default_prompt(CATEGORY_FIT).text,
-        extraction_candidate=DEFAULT_EXTRACTION_CANDIDATE,
-        category_candidate=DEFAULT_CATEGORY_FIT_CANDIDATE,
-    )
-    try:
-        final = cast(
-            ExpenseWorkflowState,
-            graph.invoke(
-                initial_expense_state(
-                    message, profile_id=profile_id, routed_intent=intent
-                )
-            ),
-        )
-    except ModelConnectionError as error:
-        raise SystemExit(
-            "the expense workflow needs the local inference server; start it "
-            "with scripts/run_llama_server.sh"
-        ) from error
-    return {
-        "clarification_reason": final.get("clarification_reason"),
-        "expense_id": final.get("expense_id"),
-        "outcome": final.get("outcome"),
-        "proposal_id": final.get("proposal_id"),
     }
 
 

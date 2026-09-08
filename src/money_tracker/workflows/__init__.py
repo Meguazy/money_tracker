@@ -27,6 +27,14 @@ from money_tracker.workflows.correction import (
     prepare_expense_correction,
     undo_request_hash,
 )
+from money_tracker.workflows.dispatch import (
+    DispatchContext,
+    DispatchOutcome,
+    DispatchReason,
+    DispatchStatus,
+    PendingMovementAction,
+    review_decision_from_message,
+)
 from money_tracker.workflows.errors import (
     ResolutionReason,
     UnresolvedExtractionError,
@@ -158,6 +166,11 @@ __all__ = [
     "CATEGORY_PROVENANCE",
     "CATEGORY_REVIEW_ACTIONS",
     "DETERMINISTIC_ONLY_INTENTS",
+    "DispatchContext",
+    "DispatchOutcome",
+    "DispatchReason",
+    "DispatchStatus",
+    "PendingMovementAction",
     "EXPENSE_COMMAND_PREFIX",
     "EXTRACTION_CONTRACT_VERSION",
     "INERT_INTENTS",
@@ -237,6 +250,7 @@ __all__ = [
     "resolve_funding_source",
     "resolve_occurrence_time",
     "resolve_payment_allocations",
+    "review_decision_from_message",
     "routing_context_from_state",
     "routing_decision_from_state",
     "render_active_categories",

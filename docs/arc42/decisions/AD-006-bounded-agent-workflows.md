@@ -5,9 +5,9 @@
   router, extraction, category-fit, and tool-selection model boundaries,
   deterministic occurrence-time, sign, and both allocation dimensions, the
   expense/refund and correction/undo specialist graphs, the persistent
-  owner-approval interrupt, and the scoped read-only query and advice routes
-  implemented; promoted
-  prompts and threshold calibration planned
+  owner-approval interrupt, scoped read-only query and advice routes, and the
+  explicit router-to-specialist dispatcher implemented; promoted prompts and
+  threshold calibration planned
 - Date: 2026-09-01
 
 ## Context
@@ -157,7 +157,12 @@ the model supplies a tool name, an owner-named category, and at most a calendar
 month, and never a figure. The reporting service depends on a port exposing
 only reads, so a mutation is absent from the object graph those nodes reach.
 
-The router is not wired to a channel or worker process.
+[AD-016](AD-016-explicit-workflow-dispatcher.md) composes the router and all
+Step 3 specialists behind one transport-neutral call. It keeps the graphs and
+their checkpoint state independent, starts a persistent category review when a
+movement creates a proposal, and resolves a later callback through trusted
+pending-action mappings before any write. The dispatcher is wired to the local
+administration command; no channel or worker process exists yet.
 
 ## Consequences
 

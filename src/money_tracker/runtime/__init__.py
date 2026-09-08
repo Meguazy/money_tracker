@@ -3,9 +3,14 @@
 `money_tracker.workflows` stays framework-independent so its routing,
 extraction, resolution, and retry policy can be verified without LangGraph, an
 inference server, or a database. This package holds the parts that cannot:
-the local structured-output adapter and the compiled root-router graph.
+the local structured-output adapter, the compiled specialist graphs, and the
+single explicit workflow dispatcher.
 """
 
+from money_tracker.runtime.dispatcher import (
+    WorkflowDispatcher,
+    build_workflow_dispatcher,
+)
 from money_tracker.runtime.expense_graph import (
     CLASSIFY_CATEGORY_NODE,
     EXTRACT_NODE,
@@ -53,6 +58,7 @@ __all__ = [
     "SELECT_NODE",
     "SETTLE_NODE",
     "LocalStructuredOutputModel",
+    "WorkflowDispatcher",
     "ProfileConfigurationReader",
     "ReviewConfigurationReader",
     "build_expense_graph",
@@ -60,4 +66,5 @@ __all__ = [
     "build_read_graph",
     "build_review_graph",
     "build_router_graph",
+    "build_workflow_dispatcher",
 ]

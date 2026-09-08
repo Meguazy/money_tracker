@@ -4,7 +4,8 @@
   product operations planned
 - Current executable operations: local inference/CLI, dedicated application
   PostgreSQL, migrations/checkpoint bootstrap, optional healthy Langfuse, and
-  capability evaluation, plus profile-scoped administrative receipt storage
+  capability evaluation, profile-scoped receipt storage, and one-shot Step 3
+  workflow dispatch
 - Implemented Step 2: authoritative finance schema and transactional
   expense, wallet, budget, pending category-proposal, and versioned receipt-review
   repository operations, a safe local receipt-media adapter, and verified
@@ -51,7 +52,8 @@ the referenced file or entry point exists in the repository.
 ## Current known operational state
 
 - The CLI, environment generator/upgrader, llama.cpp launcher, database
-  administration CLI, capability runner, and optional Langfuse callbacks exist.
+  administration CLI, single Step 3 workflow dispatcher, capability runner,
+  and optional Langfuse callbacks exist.
 - The dedicated application PostgreSQL is healthy, independently persistent,
   least-privileged, and separate from the Langfuse database. It now owns the
   Step 2 finance schema, while messaging product tables remain planned.

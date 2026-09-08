@@ -71,22 +71,54 @@ absent, but the model applies it where the tool is present.
 v5 carried neither phrase. It listed the tools the route offers and let the
 model choose among them.
 
+## The isolation run settles it
+
+`TOO-20260908-163254-9b17a006` ran v5 against the same `v1.1` dataset. The
+regression is the prompt, not the relabelling.
+
+| | v6 | v5 |
+| --- | ---: | ---: |
+| `expected_permitted_tool_and_arguments` | 87/119 = 0.7311 | **102/119 = 0.8571** |
+| `execution_postcondition_against_real_fixture` | 73/99 = 0.7374 | **0.9091** |
+| `TOO-QBU-*` per-category budget, query route | 2/15 | **15/15** |
+| `TOO-QNB-*` unbudgeted category, query route | 0/3 | **3/3** |
+| `TOO-QAD-*` survey on the query route, relabelled to refuse | 6/6 | 6/6 |
+| `TOO-SUR-*` new advice-route survey cases | 6/6 | 6/6 |
+| `TOO-BAL-*` new balance cases | 3/3 | 3/3 |
+
+v5 recovers 18 of v6's 19 undue refusals, and v5 scores exactly what it scored
+on the previous dataset, so the relabelling cost it nothing.
+
+The second half matters as much as the first: **v5 already satisfies every case
+the rewrite was written for.** The relabelled survey cases, the new advice-route
+survey cases and the new balance cases all pass under v5, without the prose that
+caused the regression. The corrected dataset did that work; the added rules did
+not.
+
+`candidate-tool-selection-it-v5` is restored as the default on this evidence.
+
+## What neither version handles
+
+`TOO-AAD-*` is 1 of 6 under both. These are per-category budget questions on the
+advice route, whose registry excludes `budget_status`, and the expected outcome
+is refusal. Both versions answer them. This is the one genuine open defect in
+this suite, and it is the same confusion in one direction rather than two.
+
 ## Proposed fixes
 
-1. **Let the registry state availability, and stop restating it.** The rendered
-   vocabulary already contains exactly the tools this route has; asking the
-   model to also judge whether a tool is "offered" duplicates a fact it is
-   being shown, and the duplication is where both error directions enter. Drop
-   `Use only if offered` and `Also refuse requests for an unavailable budget
-   tool`. **Recommended first**, and it is a deletion rather than new text.
+1. **Done: the default is v5 again.** The rendered vocabulary already contains
+   exactly the tools this route has, and asking the model to also judge whether
+   a tool is "offered" duplicated a fact it was being shown. Any future revision
+   should keep that duplication out rather than reinstate it with better
+   wording.
 2. **Scope the balance rule to balances.** Keep "spending is not a balance" for
    wallet and meal-voucher credit, which the `TOO-BAL-*` cases need, and make it
    name those rather than "remaining", so a budget remainder is not caught by
    the same sentence.
-3. **Measure against v5 on this dataset before keeping v6.** v5 has never run on
-   `v1.1`, so the 14 improvements and 25 regressions are entangled with the
-   relabelling. One run of v5 on the current dataset separates them, and it is
-   the same isolation that settled the categorization question.
+3. **Address `TOO-AAD-*`, the one defect the isolation leaves standing.** Six
+   cases, 1 of 6 under both versions, where the advice route answers a
+   per-category budget question its registry cannot serve. It is the only
+   cluster here not explained by the v6 regression.
 
 ## What would not be a fix
 

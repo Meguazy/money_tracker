@@ -2,10 +2,10 @@
   "blocking_gates_passed": false,
   "case_totals": {
     "error": 0,
-    "failed": 32,
-    "passed": 87
+    "failed": 17,
+    "passed": 102
   },
-  "completed_at": "2026-09-08T14:40:09.472344+00:00",
+  "completed_at": "2026-09-08T16:32:54.474459+00:00",
   "configuration": {
     "advice_tools": [
       "budgets_at_risk",
@@ -14,8 +14,8 @@
     ],
     "boundary_schema": "WireToolRequest",
     "dataset_minimum": 100,
-    "instructions_sha256": "30e84910f4292226a1f7bd9151697946bf72a47d41b4d71ecc2bf3952b03942a",
-    "instructions_version": "candidate-tool-selection-it-v6",
+    "instructions_sha256": "50431521575b25fd4e3fc6bdb8269f7212b56e2608ee38ab8b2b3d37f9080a22",
+    "instructions_version": "candidate-tool-selection-it-v5",
     "query_tools": [
       "budget_status",
       "category_spending",
@@ -45,10 +45,10 @@
       "denominator": 119,
       "inapplicability_reason": null,
       "name": "expected_permitted_tool_and_arguments",
-      "numerator": 87,
+      "numerator": 102,
       "passed": false,
       "threshold": 0.95,
-      "value": 0.7311
+      "value": 0.8571
     },
     {
       "applicable": true,
@@ -105,10 +105,10 @@
       "denominator": 99,
       "inapplicability_reason": null,
       "name": "execution_postcondition_against_real_fixture",
-      "numerator": 73,
+      "numerator": 90,
       "passed": false,
       "threshold": 1.0,
-      "value": 0.7374
+      "value": 0.9091
     },
     {
       "applicable": true,
@@ -117,10 +117,10 @@
       "denominator": 99,
       "inapplicability_reason": null,
       "name": "tool_chosen_ignoring_arguments",
-      "numerator": 73,
+      "numerator": 90,
       "passed": true,
       "threshold": null,
-      "value": 0.7374
+      "value": 0.9091
     },
     {
       "applicable": true,
@@ -141,10 +141,10 @@
       "denominator": 119,
       "inapplicability_reason": null,
       "name": "case_agreement",
-      "numerator": 87,
+      "numerator": 102,
       "passed": true,
       "threshold": null,
-      "value": 0.7311
+      "value": 0.8571
     }
   ],
   "model": {
@@ -157,7 +157,7 @@
   "promotion_blockers": [
     "blocking_gate_failed_or_unmeasured"
   ],
-  "run_id": "TOO-20260908-144009-35824673",
-  "source_commit": "c046e6cef9ec8703204577e266a8f72215c3072b",
+  "run_id": "TOO-20260908-163254-9b17a006",
+  "source_commit": "cf0b369974c795ba38236eb2c2e5303cb82365bb",
   "suite": "tools/selection-and-use"
 }

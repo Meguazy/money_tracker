@@ -44,8 +44,11 @@ class ModelProfile:
         path: Absolute local path the weights are expected at.
         sha256: Lowercase hex SHA-256 the weights must hash to.
         quantization: Declared quantization label.
-        projector_path: Absolute local path of the multimodal projector, when
-            the artifact declares one.
+        projector_path: Absolute local path of the multimodal projector, for a
+            vision profile whose artifact declares one. A text profile has none
+            even when its artifact does: the same weights are declared twice so
+            they can be measured with and without the projector, and a text
+            profile is the half without it.
         projector_sha256: Lowercase hex SHA-256 of that projector.
     """
 
@@ -246,16 +249,21 @@ def load_catalog(catalog_path: Path) -> ModelCatalog:
                 f"profile {identifier!r} refers to undeclared artifact {artifact_key!r}"
             )
         artifact = _require_mapping(artifacts[artifact_key], f"artifact {artifact_key}")
+        modality = str(profile.get("modality", "")).strip()
         projector = artifact.get("projector")
+        # A projector belongs to the profile that uses it, not to the weights.
+        # Handing one to a text profile would make it indistinguishable from
+        # the vision profile over the same artifact, which is the comparison
+        # the catalog declares two profiles to make.
         projector_node = (
             _require_mapping(projector, f"artifact {artifact_key} projector")
-            if projector is not None
+            if projector is not None and modality == "vision"
             else None
         )
         quantization = artifact.get("quantization")
         profiles[identifier] = ModelProfile(
             id=identifier,
-            modality=str(profile.get("modality", "")).strip(),
+            modality=modality,
             artifact=artifact_key,
             path=model_root / str(artifact.get("local_path", "")),
             sha256=_digest(artifact.get("sha256"), f"artifact {artifact_key}"),

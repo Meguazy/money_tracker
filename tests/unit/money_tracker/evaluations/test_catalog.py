@@ -67,6 +67,25 @@ def test_the_committed_catalog_pins_every_declared_candidate() -> None:
         if profile.modality == "vision":
             assert profile.projector_path is not None
             assert profile.projector_sha256 is not None
+        else:
+            assert profile.projector_path is None
+
+
+def test_a_text_profile_over_multimodal_weights_carries_no_projector() -> None:
+    """Keep the two profiles over one artifact measuring different things.
+
+    The shortlist declares an artifact twice so it can be measured with and
+    without its projector. Handing the projector to both halves would make the
+    text profile a second vision run wearing another name.
+    """
+
+    catalog = load_catalog(COMMITTED)
+    shared = [p for p in catalog.profiles.values() if p.filename == MINISTRAL]
+
+    assert {p.modality for p in shared} == {"text", "vision"}
+    for profile in shared:
+        assert (profile.projector_path is None) is (profile.modality == "text")
+        assert (profile.projector_sha256 is None) is (profile.modality == "text")
 
 
 def test_weights_shared_by_two_profiles_are_told_apart_by_modality() -> None:

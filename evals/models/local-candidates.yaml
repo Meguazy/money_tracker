@@ -80,6 +80,12 @@ profiles:
   - id: text-ministral3-14b
     modality: text
     artifact: ministral3_14b
+  - id: text-qwen35-9b
+    modality: text
+    artifact: qwen35_9b
+  - id: text-gemma4-12b
+    modality: text
+    artifact: gemma4_12b
   - id: vision-qwen35-9b
     modality: vision
     artifact: qwen35_9b

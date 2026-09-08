@@ -35,6 +35,31 @@ Artifact sizes exclude KV cache, CUDA/runtime allocations, and temporary prompt
 state. Fit therefore remains an empirical gate at the configured context and
 must not be inferred from weight size alone.
 
+## Addendum 2026-09-08: two installed candidates promoted to text profiles
+
+No new weights. Qwen3.5 9B and Gemma 4 12B were installed and screened as vision
+candidates, and neither had ever run a product suite, because a profile carries
+its modality and the text suites select text profiles. Both passed the
+capability screen at the time, both are the lightest artifacts installed
+(6.28 and 6.50 GiB against 9.79 for Qwen3 14B), and Qwen3.5 is a later
+generation than the text Qwen in this shortlist. Measuring them on text costs a
+catalog entry and a sweep, so `text-qwen35-9b` and `text-gemma4-12b` are now
+declared beside the vision profiles over the same artifacts.
+
+Their capability passes are not carried over. Both were screened against suite
+versions 1.0.0 and 1.1.0, which predate the `optional_field_omission` and
+`union_output` probes added in 1.2.0 — the two capabilities that turned out to
+be the binding constraint on Step 3. Neither has been screened on them.
+
+The same change corrected what a text profile means. A projector belongs to the
+profile that uses it rather than to the weights: this document already states
+that Ministral 3 is tested "both with and without its matching vision
+projector", but the catalog attached the projector to the artifact, so a text
+profile over multimodal weights loaded it too. `text-ministral3-14b` was
+therefore a second vision run under another name. Text profiles now carry no
+projector, and the Ministral text runs recorded on 2026-09-08 were produced
+before the correction, with the projector loaded.
+
 ## Local installation layout
 
 Weights are workstation-owned and are never committed. Installed candidates go

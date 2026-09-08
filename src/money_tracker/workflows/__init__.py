@@ -114,6 +114,7 @@ from money_tracker.workflows.tools import (
     ReadTool,
     ToolRequest,
     accept_tool_request,
+    asks_for_an_unavailable_budget,
     registry_for,
     tool_vocabulary,
 )
@@ -196,6 +197,7 @@ __all__ = [
     "expense_command_key",
     "expense_message_from_state",
     "accept_tool_request",
+    "asks_for_an_unavailable_budget",
     "build_category_proposal",
     "initial_expense_state",
     "initial_read_state",

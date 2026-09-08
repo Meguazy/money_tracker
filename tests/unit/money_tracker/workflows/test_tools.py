@@ -207,3 +207,70 @@ def test_the_request_carries_auditable_evidence() -> None:
         _parse(evidence="   ")
     with pytest.raises(ValidationError):
         _parse(evidence="x" * 281)
+
+
+def test_a_category_budget_question_is_refused_where_no_budget_tool_exists() -> None:
+    """Refuse a substitution the route cannot answer, rather than reporting spend.
+
+    The advice registry excludes `budget_status`, so a question about one
+    category's budget has no tool there. The measured behaviour is that the
+    boundary selects `category_spending`, which answers a different question
+    with a correct figure.
+    """
+
+    from money_tracker.workflows.tools import asks_for_an_unavailable_budget
+
+    spending = ToolRequest(
+        tool=ReadTool.CATEGORY_SPENDING,
+        category_name="Abbonamenti",
+        evidence="budget degli abbonamenti",
+    )
+
+    assert asks_for_an_unavailable_budget(
+        spending,
+        intent=WorkflowIntent.ADVICE,
+        message="Come sto con il budget degli abbonamenti?",
+    )
+    assert asks_for_an_unavailable_budget(
+        spending,
+        intent=WorkflowIntent.ADVICE,
+        message="Dimmi il residuo del budget di bar",
+    )
+    assert asks_for_an_unavailable_budget(
+        spending,
+        intent=WorkflowIntent.ADVICE,
+        message="Quanto manca al limite del budget",
+    )
+
+
+def test_the_budget_refusal_leaves_every_other_shape_alone() -> None:
+    """Keep the rule to the one substitution it exists for.
+
+    The query route owns `budget_status`, so the same question is answerable
+    there. A survey request is not category-scoped, which is why
+    `budgets_at_risk` questions still reach their tool on the advice route
+    although their messages name budgets.
+    """
+
+    from money_tracker.workflows.tools import asks_for_an_unavailable_budget
+
+    spending = ToolRequest(
+        tool=ReadTool.CATEGORY_SPENDING,
+        category_name="Abbonamenti",
+        evidence="budget",
+    )
+    survey = ToolRequest(tool=ReadTool.BUDGETS_AT_RISK, evidence="i miei budget")
+
+    assert not asks_for_an_unavailable_budget(
+        spending,
+        intent=WorkflowIntent.QUERY,
+        message="Come sto con il budget degli abbonamenti?",
+    )
+    assert not asks_for_an_unavailable_budget(
+        survey, intent=WorkflowIntent.ADVICE, message="Come vanno tutti i miei budget?"
+    )
+    assert not asks_for_an_unavailable_budget(
+        spending,
+        intent=WorkflowIntent.ADVICE,
+        message="Quanto ho speso in abbonamenti?",
+    )

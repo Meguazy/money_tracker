@@ -23,7 +23,7 @@ measure and hope for.
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Annotated, Self
+from typing import Annotated, Final, Self
 
 from pydantic import StringConstraints, model_validator
 
@@ -201,6 +201,49 @@ class ToolRequest(_WorkflowContract):
             return current
         year, month = self.period.split("-")
         return YearMonth(int(year), int(month))
+
+
+BUDGET_QUESTION_TERMS: Final = ("budget", "limite", "residuo")
+"""Italian words that mark a question about a budget rather than about spending."""
+
+
+def asks_for_an_unavailable_budget(
+    request: ToolRequest, *, intent: WorkflowIntent, message: str
+) -> bool:
+    """Whether a category request answers a budget question the route cannot serve.
+
+    The advice registry deliberately excludes `budget_status`, so a question
+    about one named category's budget has no tool on that route and the honest
+    answer is a question back. The measured behaviour is otherwise: the boundary
+    selects `category_spending`, which reports what was spent rather than what
+    the budget allows, and the owner receives a correct figure answering a
+    question they did not ask.
+
+    This is deterministic on purpose. Five instruction, demonstration, topology
+    and vocabulary changes were measured against this class of substitution and
+    each made the boundary attract an adjacent wrong case; the route's registry
+    and the words the owner used are known without interpreting intent.
+
+    The rule fires only on a category-scoped request. A survey request on the
+    same route is untouched, which is why `budgets_at_risk` questions still
+    reach their tool: no advice case in the pinned dataset expects a
+    category-scoped tool for a message naming a budget.
+
+    Args:
+        request: Parsed model request, already admitted against the registry.
+        intent: Route the runtime is executing, from trusted context.
+        message: Normalized owner text, used only for the words it contains.
+
+    Returns:
+        True when the request must be refused instead of executed.
+    """
+
+    if ReadTool.BUDGET_STATUS in registry_for(intent):
+        return False
+    if request.category_name is None:
+        return False
+    lowered = message.lower()
+    return any(term in lowered for term in BUDGET_QUESTION_TERMS)
 
 
 def accept_tool_request(

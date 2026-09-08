@@ -58,6 +58,7 @@ from money_tracker.workflows import (
     ToolRequest,
     WorkflowIntent,
     accept_tool_request,
+    asks_for_an_unavailable_budget,
     default_prompt,
     parse_with_one_repair,
     prompt_versions,
@@ -214,6 +215,10 @@ def build_read_graph(
             accept_tool_request(request, intent=intent)
         except DomainError:
             return _clarify(ReadReason.TOOL_NOT_REGISTERED)
+        if asks_for_an_unavailable_budget(
+            request, intent=intent, message=message.normalized_text
+        ):
+            return _clarify(ReadReason.BUDGET_TOOL_UNAVAILABLE)
         return ReadWorkflowState(tool_request_json=request.model_dump_json())
 
     def run_execute(state: ReadWorkflowState) -> ReadWorkflowState:

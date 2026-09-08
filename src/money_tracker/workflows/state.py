@@ -542,11 +542,15 @@ class ReadReason(StrEnum):
         TOOL_NOT_REGISTERED: The requested tool is outside the calling route's
             registry.
         UNKNOWN_CATEGORY: The named category matches no active name or alias.
+        BUDGET_TOOL_UNAVAILABLE: The message asks about one category's budget on
+            a route whose registry has no budget tool, so no admitted tool can
+            answer the question that was asked.
     """
 
     MODEL_OUTPUT_INVALID = "invalid_model_output"
     TOOL_NOT_REGISTERED = "tool_not_registered"
     UNKNOWN_CATEGORY = "unknown_category"
+    BUDGET_TOOL_UNAVAILABLE = "budget_tool_unavailable"
 
 
 class ReadWorkflowState(TypedDict, total=False):

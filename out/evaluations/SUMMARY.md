@@ -13,7 +13,7 @@ directory, and the raw manifests stay under the ignored
 | `categorization/purpose-it` | text-qwen3-14b | `candidate-category-fit-it-v6` | categorization-purpose-it-v1 1.0.0 | 153 | **fail** | `purpose_label_agreement`, `auto_post_subset_category_precision`, `auto_post_subset_invariant_validity` | `CAT-20260908-121857-94182b39` |
 | `ingestion/expense-it` | text-ministral3-14b | `candidate-extraction-it-v6` | ingestion-expense-it-v1 1.0.0 | 170 | **fail** | `amount_exact_match`, `expense_refund_polarity`, `required_ambiguity_reported`, `fabricated_merchant_date_or_payment_field` | `ING-20260908-123525-3c9108a6` |
 | `ingestion/expense-it` | text-qwen3-14b | `candidate-extraction-it-v6` | ingestion-expense-it-v1 1.0.0 | 170 | pass | none | `ING-20260908-121548-fa27c123` |
-| `routing/intent-it` | text-ministral3-14b | `candidate-router-it-v5` | routing-intent-it-v1.1 1.1.0 | 201 | pass | none | `ROU-20260908-122737-b7530794` |
+| `routing/intent-it` | text-ministral3-14b | `candidate-router-it-v5` | routing-intent-it-v1.1 1.1.0 | 201 | pass | none | `ROU-20260908-125148-f1cf707f` |
 | `routing/intent-it` | text-qwen3-14b | `candidate-router-it-v5` | routing-intent-it-v1.1 1.1.0 | 201 | **fail** | `ambiguous_safely_clarified` | `ROU-20260908-120805-dfd44365` |
 | `tools/selection-and-use` | text-ministral3-14b | `candidate-tool-selection-it-v5` | tools-selection-and-use-it-v1 1.0.0 | 110 | **fail** | `expected_permitted_tool_and_arguments`, `execution_postcondition_against_real_fixture` | `TOO-20260908-124051-ca218e7b` |
 | `tools/selection-and-use` | text-qwen3-14b | `candidate-tool-selection-it-v5` | tools-selection-and-use-it-v1 1.0.0 | 110 | **fail** | `expected_permitted_tool_and_arguments`, `execution_postcondition_against_real_fixture` | `TOO-20260908-122202-57be4f56` |
@@ -21,3 +21,18 @@ directory, and the raw manifests stay under the ignored
 | `workflow/category-review-it` | text-qwen3-14b | — | category-review-it-v1 1.0.0 | 37 | pass | none | `REV-20260908-122346-38bfb2d4` |
 
 More than one candidate appears above: text-ministral3-14b, text-qwen3-14b. Two rows are comparable only where they share a dataset and an instruction candidate; a row measured on different instructions reports a different experiment, not a worse model.
+
+## Capability screens
+
+Whether a candidate can use an interface at all, which is a different
+question from whether a workflow built on it is accurate enough to
+promote. A screen gates nothing on its own.
+
+| Model | Modality | Dataset | Blocking gates | Probes not passed | Run |
+| --- | --- | --- | --- | --- | --- |
+| vision-gemma4-12b | vision | capabilities-local-model 1.1.0 | pass | none | `CAP-20260902-084405-d5da6314` |
+| text-gpt-oss-20b | text | capabilities-local-model 1.1.0 | **fail** | `strict_structured_output` (error), `tool_result_sequencing` (error) | `CAP-20260902-084658-91a01a68` |
+| text-ministral3-14b | text | capabilities-local-model 1.2.0 | **fail** | `tool_result_sequencing` (failed), `union_output` (failed) | `CAP-20260908-124618-527ac8a2` |
+| vision-ministral3-14b | vision | capabilities-local-model 1.1.0 | **fail** | `tool_result_sequencing` (error) | `CAP-20260902-084504-44d60fee` |
+| text-qwen3-14b | text | capabilities-local-model 1.2.0 | **fail** | `optional_field_omission` (failed) | `CAP-20260908-120220-2577040e` |
+| vision-qwen35-9b | vision | capabilities-local-model 1.1.0 | pass | none | `CAP-20260902-084311-cb222924` |

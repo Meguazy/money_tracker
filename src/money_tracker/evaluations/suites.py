@@ -47,9 +47,11 @@ from money_tracker.evaluations.metadata import (
     collect_model_metadata,
 )
 from money_tracker.evaluations.models import (
+    CapabilityReport,
     DatasetMetadata,
     EnvironmentMetadata,
     ModelMetadata,
+    ProbeStatus,
     SourceMetadata,
 )
 
@@ -602,12 +604,16 @@ def _text(value: object) -> str | None:
     return str(value) if isinstance(value, str) and value else None
 
 
-def _model_cell(row: object, catalog: ModelCatalog | None) -> str:
+def _model_cell(
+    row: object, catalog: ModelCatalog | None, *, modality: str = "text"
+) -> str:
     """Render one published score's model for a summary table cell.
 
     Args:
         row: Model block of a published score.
         catalog: Declared candidates, or None when the catalog is unreadable.
+        modality: How the run exercised the weights, so a vision screen is not
+            named after the text profile over the same artifact.
 
     Returns:
         The model name, marked when the run could not record the exact weights,
@@ -615,7 +621,7 @@ def _model_cell(row: object, catalog: ModelCatalog | None) -> str:
         description, which the table states rather than hides.
     """
 
-    name = model_name(row, catalog)
+    name = model_name(row, catalog, modality=modality)
     complete = isinstance(row, Mapping) and row.get("metadata_complete")
     return name if complete else f"{name} (metadata incomplete)"
 
@@ -717,6 +723,139 @@ def _instructions_label(entry: Mapping[str, JsonValue]) -> str:
     return "—"
 
 
+def _capability_rows(
+    screens: list[dict[str, JsonValue]], catalog: ModelCatalog | None
+) -> list[str]:
+    """Render the capability screens as their own table.
+
+    A screen answers whether a candidate may be used at an interface at all,
+    which has no dataset gate and no threshold. Putting it in the scored-suite
+    table would leave most columns empty and imply a comparison that does not
+    exist.
+
+    Args:
+        screens: Published capability payloads.
+        catalog: Declared candidates, for naming the model behind each screen.
+
+    Returns:
+        Markdown lines, empty when nothing has been screened.
+    """
+
+    if not screens:
+        return []
+    lines = [
+        "",
+        "## Capability screens",
+        "",
+        "Whether a candidate can use an interface at all, which is a different",
+        "question from whether a workflow built on it is accurate enough to",
+        "promote. A screen gates nothing on its own.",
+        "",
+        "| Model | Modality | Dataset | Blocking gates | Probes not passed | Run |",
+        "| --- | --- | --- | --- | --- | --- |",
+    ]
+    for entry in screens:
+        dataset = entry.get("dataset")
+        dataset_label = "unknown"
+        if isinstance(dataset, Mapping):
+            dataset_label = f"{dataset.get('id')} {dataset.get('version')}"
+        probes = entry.get("probes")
+        unmet: list[str] = []
+        if isinstance(probes, list):
+            unmet = [
+                f"`{probe.get('name')}` ({probe.get('status')})"
+                for probe in probes
+                if isinstance(probe, Mapping)
+                and probe.get("status") not in ("passed", "not_applicable")
+            ]
+        modality = str(entry.get("modality") or "text")
+        verdict = "pass" if entry.get("blocking_gates_passed") else "**fail**"
+        lines.append(
+            f"| {_model_cell(entry.get('model'), catalog, modality=modality)} | "
+            f"{modality} | {dataset_label} | {verdict} | "
+            f"{', '.join(unmet) or 'none'} | `{entry.get('run_id')}` |"
+        )
+    return lines
+
+
+def publish_capability_scores(
+    report: CapabilityReport,
+    *,
+    modality: str = "text",
+    out_root: Path | None = None,
+) -> Path | None:
+    """Publish one capability screen's outcome to the committed `out/` tree.
+
+    The screen decides whether a candidate is worth measuring at all, and its
+    results lived only in the ignored raw artifacts. A decision to sweep one
+    model and set another aside therefore rested on evidence a clean checkout
+    does not contain. This writes the same per-probe outcomes to the tracked
+    location the workflow suites already publish to, keyed the same way.
+
+    Probe details are published with the outcomes. They are the numbers the
+    screen exists to produce, and `ProbeResult` already restricts them to small
+    non-sensitive diagnostics.
+
+    Args:
+        report: Complete capability report.
+        modality: How the run exercised the weights, which names the profile
+            when one artifact is declared for both text and vision.
+        out_root: Directory holding published scores. Defaults to
+            `out/evaluations` at the repository root.
+
+    Returns:
+        The directory the screen was written to, or None when every probe
+        errored. Such a run screened nothing, and letting it overwrite a real
+        screen would put an empty result where a verdict used to be.
+    """
+
+    scored = [p for p in report.probes if p.status is not ProbeStatus.NOT_APPLICABLE]
+    if not scored or all(p.status is ProbeStatus.ERROR for p in scored):
+        return None
+
+    root = out_root or (_repository_root() / "out" / "evaluations")
+    directory = (
+        root
+        / report.dataset.suite
+        / model_key(report.model, candidate_catalog(), modality=modality)
+    )
+    directory.mkdir(parents=True, exist_ok=True)
+    payload: dict[str, JsonValue] = {
+        "suite": report.dataset.suite,
+        "run_id": report.run_id,
+        "completed_at": report.completed_at,
+        "modality": modality,
+        "dataset": {
+            "id": report.dataset.dataset_id,
+            "version": report.dataset.version,
+            "content_hash": report.dataset.content_hash,
+            "item_count": report.dataset.item_count,
+        },
+        "model": model_row(report.model),
+        "source_commit": report.source.git_commit,
+        "probes": cast(
+            JsonValue,
+            [
+                {
+                    "name": probe.name,
+                    "status": probe.status.value,
+                    "details": cast(JsonValue, probe.details),
+                }
+                for probe in report.probes
+            ],
+        ),
+        "blocking_gates_passed": report.blocking_gates_passed,
+        "probe_totals": {
+            status.value: sum(1 for p in report.probes if p.status is status)
+            for status in ProbeStatus
+        },
+    }
+    _write_json(directory / f"{report.run_id}.json", payload)
+    _write_json(directory / "latest.json", payload)
+    write_scores_summary(root)
+    return directory
+
+
 def write_scores_summary(out_root: Path) -> Path:
     """Rewrite the Markdown overview of every published suite and model.
 
@@ -744,6 +883,8 @@ def write_scores_summary(out_root: Path) -> Path:
             model_name(entry.get("model"), catalog),
         )
     )
+    screens = [entry for entry in latest if "probes" in entry]
+    latest = [entry for entry in latest if "probes" not in entry]
     lines = [
         "# Evaluation scores",
         "",
@@ -792,6 +933,7 @@ def write_scores_summary(out_root: Path) -> Path:
             "instruction candidate; a row measured on different instructions "
             "reports a different experiment, not a worse model.",
         ]
+    lines.extend(_capability_rows(screens, catalog))
     lines.append("")
     summary = out_root / "SUMMARY.md"
     summary.write_text("\n".join(lines), encoding="utf-8")
@@ -859,6 +1001,7 @@ __all__ = [
     "model_key",
     "model_name",
     "model_row",
+    "publish_capability_scores",
     "publish_scores",
     "write_scores_summary",
     "model_metadata",

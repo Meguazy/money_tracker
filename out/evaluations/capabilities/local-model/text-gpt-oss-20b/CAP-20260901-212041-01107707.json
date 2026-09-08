@@ -1,0 +1,68 @@
+{
+  "blocking_gates_passed": false,
+  "completed_at": "2026-09-01T21:20:51.707769+00:00",
+  "dataset": {
+    "content_hash": "sha256:0b37094168fb779e62d7cb98b9677b83a5278ba27c934c3e64696c71df62f212",
+    "id": "capabilities-local-model",
+    "item_count": 4,
+    "version": "1.0.0"
+  },
+  "modality": "text",
+  "model": {
+    "alias": "text-gpt-oss-20b",
+    "gguf_filename": "gpt-oss-20b-MXFP4.gguf",
+    "gguf_sha256": "sha256:27cd6c432c7672cb812a92f611cf3ba7bbc35928262bb1e1253ff4ee6ae35901",
+    "metadata_complete": true,
+    "quantization": "MXFP4"
+  },
+  "probe_totals": {
+    "error": 2,
+    "failed": 0,
+    "not_applicable": 1,
+    "passed": 2
+  },
+  "probes": [
+    {
+      "details": {
+        "has_chat_template": true,
+        "modalities": []
+      },
+      "name": "server_metadata",
+      "status": "passed"
+    },
+    {
+      "details": {
+        "error": "structured_value_mismatch"
+      },
+      "name": "strict_structured_output",
+      "status": "error"
+    },
+    {
+      "details": {
+        "argument_keys": [
+          "category_id"
+        ],
+        "tool_name": "get_budget_remaining"
+      },
+      "name": "tool_calling",
+      "status": "passed"
+    },
+    {
+      "details": {
+        "error": "missing_text_content"
+      },
+      "name": "tool_result_sequencing",
+      "status": "error"
+    },
+    {
+      "details": {
+        "reason": "no_image_fixture_supplied"
+      },
+      "name": "image_input",
+      "status": "not_applicable"
+    }
+  ],
+  "run_id": "CAP-20260901-212041-01107707",
+  "source_commit": "f73e762fa1c7e96063f097fe78bfebbca2078b3d",
+  "suite": "capabilities/local-model"
+}

@@ -1,0 +1,129 @@
+{
+  "blocking_gates_passed": false,
+  "completed_at": "2026-09-03T18:32:41.353711+00:00",
+  "dataset": {
+    "content_hash": "sha256:419f6596b04d0e49aa695007b5e3c25ff48b744a86781e4516fc81b446f83300",
+    "id": "capabilities-local-model",
+    "item_count": 46,
+    "version": "1.2.0"
+  },
+  "modality": "text",
+  "model": {
+    "alias": "local-model",
+    "gguf_filename": "Qwen3-14B-Q5_K_M.gguf",
+    "gguf_sha256": "sha256:e7c9aba1129ca2936be9eca01419d9f86af40e08caa01230d5574b34d08e3e31",
+    "metadata_complete": true,
+    "quantization": "Q5_K_M"
+  },
+  "probe_totals": {
+    "error": 0,
+    "failed": 1,
+    "not_applicable": 1,
+    "passed": 5
+  },
+  "probes": [
+    {
+      "details": {
+        "has_chat_template": true,
+        "modalities": []
+      },
+      "name": "server_metadata",
+      "status": "passed"
+    },
+    {
+      "details": {
+        "schema": "strict_nested_v1"
+      },
+      "name": "strict_structured_output",
+      "status": "passed"
+    },
+    {
+      "details": {
+        "argument_keys": [
+          "category_id"
+        ],
+        "tool_name": "get_budget_remaining"
+      },
+      "name": "tool_calling",
+      "status": "passed"
+    },
+    {
+      "details": {
+        "answer_contains_expected_amount": true,
+        "tool_result_minor": 3700
+      },
+      "name": "tool_result_sequencing",
+      "status": "passed"
+    },
+    {
+      "details": {
+        "cases": 26,
+        "gate_passed": false,
+        "shapes": {
+          "optional_absent": {
+            "schema_invalid_responses": 0,
+            "silent_slots": 68,
+            "silent_slots_fabricated": 7,
+            "silent_slots_given_empty_text": 32,
+            "silent_slots_given_placeholder_word": 0,
+            "silent_slots_left_empty": 0.4265,
+            "stated_slots": 36,
+            "stated_slots_captured": 0.9722
+          },
+          "required_nullable": {
+            "schema_invalid_responses": 0,
+            "silent_slots": 68,
+            "silent_slots_fabricated": 14,
+            "silent_slots_given_empty_text": 2,
+            "silent_slots_given_placeholder_word": 0,
+            "silent_slots_left_empty": 0.7647,
+            "stated_slots": 36,
+            "stated_slots_captured": 1.0
+          }
+        },
+        "silent_slot_threshold": 0.95,
+        "stated_slot_threshold": 0.95
+      },
+      "name": "optional_field_omission",
+      "status": "failed"
+    },
+    {
+      "details": {
+        "cases": 16,
+        "gate_passed": true,
+        "shapes": {
+          "nested_union": {
+            "answers_carrying_a_foreign_field": 0,
+            "both_variants_reachable": true,
+            "existing_names_from_supplied_list": 1.0,
+            "schema_accepted": true,
+            "schema_invalid_responses": 0,
+            "scored_answers": 16,
+            "variant_selected_correctly": 0.6875
+          },
+          "root_union": {
+            "answers_carrying_a_foreign_field": 0,
+            "both_variants_reachable": true,
+            "existing_names_from_supplied_list": 1.0,
+            "schema_accepted": true,
+            "schema_invalid_responses": 0,
+            "scored_answers": 16,
+            "variant_selected_correctly": 0.8125
+          }
+        }
+      },
+      "name": "union_output",
+      "status": "passed"
+    },
+    {
+      "details": {
+        "reason": "no_image_fixture_supplied"
+      },
+      "name": "image_input",
+      "status": "not_applicable"
+    }
+  ],
+  "run_id": "CAP-20260903-183125-ea4695f3",
+  "source_commit": "60fb3bc86b138f2b017fabdb2aa56468866bb2c5",
+  "suite": "capabilities/local-model"
+}

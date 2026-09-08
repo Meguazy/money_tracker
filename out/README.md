@@ -6,7 +6,13 @@ score can be read and compared without rerunning a suite.
 
 - `evaluations/SUMMARY.md` is regenerated on every published run: one row per
   suite and model, naming the instruction candidate it was measured on and
-  which blocking gates failed.
+  which blocking gates failed. Capability screens have their own table below it,
+  because a screen answers whether a candidate can use an interface at all and
+  has neither a threshold nor an instruction candidate to report.
+- `evaluations/capabilities/local-model/<model>/` holds the capability screens,
+  keyed by the profile that was screened, so a screen with an image is filed
+  under the vision profile and one without under the text profile over the same
+  weights. Each payload carries every probe with its status and its diagnostics.
 - `evaluations/<suite>/<model>/latest.json` is that suite's most recent
   published run on that candidate.
 - `evaluations/<suite>/<model>/<run id>.json` is the history beside it, so a

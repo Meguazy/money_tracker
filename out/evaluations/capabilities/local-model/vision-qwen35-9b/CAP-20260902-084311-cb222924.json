@@ -1,0 +1,70 @@
+{
+  "blocking_gates_passed": true,
+  "completed_at": "2026-09-02T08:43:18.851919+00:00",
+  "dataset": {
+    "content_hash": "sha256:b2b9d61dbd98844bd5da5c593380b0c9a8d36855f29a9577cab163d16760a97f",
+    "id": "capabilities-local-model",
+    "item_count": 4,
+    "version": "1.1.0"
+  },
+  "modality": "vision",
+  "model": {
+    "alias": "vision-qwen35-9b",
+    "gguf_filename": "Qwen3.5-9B-UD-Q5_K_XL.gguf",
+    "gguf_sha256": "sha256:96cf42ddb97f9572410a72b9ed6f2299b1e887ee08da4c2a6c01e897cfa9f673",
+    "metadata_complete": true,
+    "quantization": "Q5_K_XL"
+  },
+  "probe_totals": {
+    "error": 0,
+    "failed": 0,
+    "not_applicable": 0,
+    "passed": 5
+  },
+  "probes": [
+    {
+      "details": {
+        "has_chat_template": true,
+        "modalities": []
+      },
+      "name": "server_metadata",
+      "status": "passed"
+    },
+    {
+      "details": {
+        "schema": "strict_nested_v1"
+      },
+      "name": "strict_structured_output",
+      "status": "passed"
+    },
+    {
+      "details": {
+        "argument_keys": [
+          "category_id"
+        ],
+        "tool_name": "get_budget_remaining"
+      },
+      "name": "tool_calling",
+      "status": "passed"
+    },
+    {
+      "details": {
+        "answer_contains_expected_amount": true,
+        "tool_result_minor": 3700
+      },
+      "name": "tool_result_sequencing",
+      "status": "passed"
+    },
+    {
+      "details": {
+        "accepted": true,
+        "media_type": "image/png"
+      },
+      "name": "image_input",
+      "status": "passed"
+    }
+  ],
+  "run_id": "CAP-20260902-084311-cb222924",
+  "source_commit": "f73e762fa1c7e96063f097fe78bfebbca2078b3d",
+  "suite": "capabilities/local-model"
+}

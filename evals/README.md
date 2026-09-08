@@ -48,6 +48,11 @@ a complete, plausible run measuring the previous model. Leaving it out stays
 valid for an exploratory run against an uncatalogued model, and the report
 records the weights either way.
 
+A screen publishes its per-probe outcome to
+`out/evaluations/capabilities/local-model/<profile>/`, so the verdict that
+decides whether a candidate is worth measuring survives outside the ignored raw
+artifacts.
+
 The command exits non-zero when the endpoint is absent, a probe fails, or exact
 GGUF/server/chat-template metadata is incomplete. A successful capability run
 does not promote a model; product-quality suites and a recorded decision remain

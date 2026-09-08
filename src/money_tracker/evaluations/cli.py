@@ -32,6 +32,7 @@ from money_tracker.evaluations.suites import (
     SuiteReport,
     loaded_model_filename,
     model_row,
+    publish_capability_scores,
     publish_scores,
 )
 from money_tracker.evaluations.tool_use import run_tool_use_suite
@@ -584,6 +585,11 @@ def main(argv: Sequence[str] | None = None) -> None:
         image_path=args.image,
         publish_langfuse=args.publish_langfuse,
     )
+    # Published here rather than in the runner, so that only a screen someone
+    # asked for on the command line can overwrite a published verdict.
+    published = publish_capability_scores(
+        result.report, modality="vision" if args.image is not None else "text"
+    )
     print(
         json.dumps(
             {
@@ -591,6 +597,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                 "model": model_row(result.report.model),
                 "blocking_gates_passed": result.report.blocking_gates_passed,
                 "artifact_directory": str(result.artifact_directory),
+                "published_to": str(published) if published else None,
             },
             sort_keys=True,
         )

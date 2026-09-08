@@ -8,9 +8,12 @@ from pathlib import Path
 import pytest
 
 from money_tracker.evaluations.models import (
+    CapabilityReport,
     DatasetMetadata,
     EnvironmentMetadata,
     ModelMetadata,
+    ProbeResult,
+    ProbeStatus,
     SourceMetadata,
 )
 from money_tracker.evaluations.suites import (
@@ -24,6 +27,7 @@ from money_tracker.evaluations.suites import (
     load_cases,
     model_key,
     new_run_id,
+    publish_capability_scores,
     publish_scores,
     rate,
     utc_now,
@@ -657,3 +661,126 @@ def test_shared_weights_are_named_for_the_way_a_run_used_them(
 
     assert model_key(shared, catalog) == "text-ministral3-14b"
     assert model_key(shared, catalog, modality="vision") == "vision-ministral3-14b"
+
+
+def _screen(**overrides: object) -> CapabilityReport:
+    """Build one capability screen with a passing and a failing probe."""
+
+    fields: dict[str, object] = {
+        "run_id": "CAP-20260908-000000-abcdef12",
+        "started_at": utc_now(),
+        "completed_at": utc_now(),
+        "source": SourceMetadata(
+            git_commit="0" * 40,
+            working_tree_clean=True,
+            application_version="0.1.0",
+            python_version="3.12.3",
+            uv_lock_hash="a" * 64,
+        ),
+        "dataset": DatasetMetadata(
+            suite="capabilities/local-model",
+            dataset_id="capabilities-local-model",
+            version="1.2.0",
+            content_hash="b" * 64,
+            item_count=46,
+        ),
+        "model": _qwen(),
+        "environment": EnvironmentMetadata(
+            os="Linux",
+            kernel="6.11.0",
+            machine="x86_64",
+            gpu=None,
+            driver_version=None,
+            vram_mib=None,
+            timezone="Europe/Rome",
+        ),
+        "probes": [
+            ProbeResult(name="tool_calling", status=ProbeStatus.PASSED),
+            ProbeResult(
+                name="union_output",
+                status=ProbeStatus.FAILED,
+                details={"gate_passed": False},
+            ),
+            ProbeResult(name="image_input", status=ProbeStatus.NOT_APPLICABLE),
+        ],
+        "blocking_gates_passed": False,
+        "local_artifact_path": "artifacts/evals/text-qwen3-14b/CAP-x",
+    }
+    fields.update(overrides)
+    return CapabilityReport(**fields)  # type: ignore[arg-type]
+
+
+def test_a_capability_screen_is_published_where_its_scores_are(
+    tmp_path: Path,
+) -> None:
+    """Keep the verdict that decides whether to sweep a candidate readable."""
+
+    out_root = tmp_path / "published"
+    directory = publish_capability_scores(_screen(), out_root=out_root)
+
+    assert directory == out_root / "capabilities/local-model/text-qwen3-14b"
+    payload = json.loads((directory / "latest.json").read_text())
+    assert payload["modality"] == "text"
+    assert payload["blocking_gates_passed"] is False
+    assert [p["name"] for p in payload["probes"]] == [
+        "tool_calling",
+        "union_output",
+        "image_input",
+    ]
+    assert payload["probe_totals"]["passed"] == 1
+    assert payload["model"]["gguf_filename"] == "Qwen3-14B-Q5_K_M.gguf"
+
+
+def test_a_screen_gets_its_own_table_naming_the_probes_that_did_not_pass(
+    tmp_path: Path,
+) -> None:
+    """Keep a screen out of the scored-suite table, which it cannot fill."""
+
+    out_root = tmp_path / "published"
+    publish_capability_scores(_screen(), out_root=out_root)
+    publish_scores(
+        _report(tmp_path, model=_qwen(), meets_dataset_minimum=True),
+        out_root=out_root,
+    )
+    summary = (out_root / "SUMMARY.md").read_text(encoding="utf-8")
+
+    assert "## Capability screens" in summary
+    assert "`union_output` (failed)" in summary
+    assert "capabilities/local-model" not in summary.split("## Capability screens")[0]
+
+
+def test_a_vision_screen_is_named_after_the_vision_profile(tmp_path: Path) -> None:
+    """Stop a screen with an image from being filed under the text profile."""
+
+    out_root = tmp_path / "published"
+    directory = publish_capability_scores(
+        _screen(model=_qwen(gguf_filename="Ministral-3-14B-Instruct-2512-Q5_K_M.gguf")),
+        modality="vision",
+        out_root=out_root,
+    )
+
+    assert directory is not None
+    assert directory.name == "vision-ministral3-14b"
+    assert "vision-ministral3-14b" in (out_root / "SUMMARY.md").read_text()
+
+
+def test_a_screen_that_reached_nothing_does_not_replace_one_that_did(
+    tmp_path: Path,
+) -> None:
+    """Refuse to overwrite a verdict with a run that screened nothing."""
+
+    out_root = tmp_path / "published"
+    directory = publish_capability_scores(_screen(), out_root=out_root)
+    assert directory is not None
+    previous = (directory / "latest.json").read_bytes()
+
+    errored = _screen(
+        run_id="CAP-20260909-000000-abcdef12",
+        probes=[
+            ProbeResult(name="tool_calling", status=ProbeStatus.ERROR),
+            ProbeResult(name="image_input", status=ProbeStatus.NOT_APPLICABLE),
+        ],
+    )
+
+    assert publish_capability_scores(errored, out_root=out_root) is None
+    assert (directory / "latest.json").read_bytes() == previous

@@ -19,8 +19,10 @@ from money_tracker.evaluations.suites import (
     MetricScore,
     SuiteReport,
     blocking_gates_passed,
+    candidate_catalog,
     dataset_metadata,
     load_cases,
+    model_key,
     new_run_id,
     publish_scores,
     rate,
@@ -517,10 +519,10 @@ def test_the_summary_names_each_row_model_and_says_when_they_differ(
     )
     two_models = (out_root / "SUMMARY.md").read_text(encoding="utf-8")
 
-    assert "| Qwen3-14B-Q5_K_M |" in one_model
-    assert "more than one model" not in one_model
-    assert "Ministral-3-14B-Instruct-2512-Q5_K_M" in two_models
-    assert "more than one model" in two_models
+    assert "| text-qwen3-14b |" in one_model
+    assert "More than one candidate" not in one_model
+    assert "| text-ministral3-14b |" in two_models
+    assert "More than one candidate" in two_models
 
 
 def test_a_run_that_could_not_pin_its_model_says_so_in_the_summary(
@@ -559,6 +561,64 @@ def test_incomplete_metadata_does_not_split_one_model_into_two(
     )
     summary = (out_root / "SUMMARY.md").read_text(encoding="utf-8")
 
-    assert "| Qwen3-14B-Q5_K_M |" in summary
-    assert "| Qwen3-14B-Q5_K_M (metadata incomplete) |" in summary
-    assert "more than one model" not in summary
+    assert "| text-qwen3-14b |" in summary
+    assert "| text-qwen3-14b (metadata incomplete) |" in summary
+    assert "More than one candidate" not in summary
+
+
+def test_a_second_candidate_does_not_overwrite_the_first(tmp_path: Path) -> None:
+    """Keep both candidates' scores so one suite can compare them."""
+
+    out_root = tmp_path / "published"
+    first = publish_scores(
+        _report(tmp_path, model=_qwen(), meets_dataset_minimum=True),
+        out_root=out_root,
+    )
+    second = publish_scores(
+        _report(
+            tmp_path,
+            run_id="ROU-20260909-000000-abcdef12",
+            model=_qwen(
+                gguf_filename="Ministral-3-14B-Instruct-2512-Q5_K_M.gguf",
+                gguf_sha256="sha256:" + "d" * 64,
+            ),
+            meets_dataset_minimum=True,
+        ),
+        out_root=out_root,
+    )
+
+    assert first is not None and second is not None
+    assert first != second
+    assert first.name == "text-qwen3-14b"
+    assert second.name == "text-ministral3-14b"
+    assert first.parent == second.parent == out_root / "routing/intent-it"
+    assert json.loads((first / "latest.json").read_text())["run_id"] == (
+        "ROU-20260903-000000-abcdef12"
+    )
+    assert json.loads((second / "latest.json").read_text())["run_id"] == (
+        "ROU-20260909-000000-abcdef12"
+    )
+
+
+def test_declared_weights_are_named_by_catalog_and_others_by_filename(
+    tmp_path: Path,
+) -> None:
+    """Name a candidate the way a run selects it, without inventing identity."""
+
+    catalog = candidate_catalog()
+    assert catalog is not None
+
+    declared = catalog.profile("text-qwen3-14b")
+    by_hash = _qwen(
+        gguf_filename="renamed-by-hand.gguf",
+        gguf_sha256=f"sha256:{declared.sha256}",
+    )
+    by_filename = _qwen(gguf_sha256=None)
+    uncatalogued = _qwen(gguf_filename="something-else.gguf", gguf_sha256=None)
+    nameless = _model(metadata_complete=True)
+
+    assert model_key(by_hash, catalog) == "text-qwen3-14b"
+    assert model_key(by_filename, catalog) == "text-qwen3-14b"
+    assert model_key(uncatalogued, catalog) == "something-else"
+    assert model_key(nameless, catalog) == "local-model"
+    assert model_key(by_hash, None) == "renamed-by-hand"

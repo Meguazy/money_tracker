@@ -3,7 +3,8 @@
 - Status: Step 1 foundation complete
 - Promotion authority: [evaluation matrix](../docs/experiments/evaluation-matrix.md)
 - Runner: `money-tracker-eval`
-- Candidate catalog: [`models/local-candidates.yaml`](models/local-candidates.yaml)
+- Candidate catalog: [`models/local-candidates.yaml`](models/local-candidates.yaml),
+  read by the runner rather than only by a reader
 
 This directory contains only synthetic or irreversibly anonymized committed
 inputs. Raw outputs are written to the ignored `artifacts/evals/` directory.
@@ -38,6 +39,14 @@ artifacts/evals/CAP-.../
 ├── manifest.json
 └── scores.json
 ```
+
+Add `--model-profile <id>` to any suite to declare which catalogued candidate
+the run is measuring. The run is refused unless the configured weights and the
+running server both agree with it, which is what makes switching candidates
+safe: editing the environment without restarting the server otherwise produces
+a complete, plausible run measuring the previous model. Leaving it out stays
+valid for an exploratory run against an uncatalogued model, and the report
+records the weights either way.
 
 The command exits non-zero when the endpoint is absent, a probe fails, or exact
 GGUF/server/chat-template metadata is incomplete. A successful capability run

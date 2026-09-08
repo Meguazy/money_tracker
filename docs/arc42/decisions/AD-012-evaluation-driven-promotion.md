@@ -41,6 +41,15 @@ tool-result continuation, and optional images. Local reports remain available
 without Langfuse; publication is explicit and aggregate-only. No target model or
 prompt has passed a promotion gate.
 
+Roadmap Step 3 makes the candidate catalog executable rather than descriptive.
+A run may declare the profile it is measuring and is refused when either the
+configured weights or the running inference server disagrees with it, which is
+the failure that would otherwise attribute one candidate's answers to another
+without any downstream signal. Published scores are keyed by suite and by the
+model that produced them, so measuring a second candidate no longer overwrites
+the first and the two can be compared. The model is named on every surface a
+score is read on.
+
 ## Consequences
 
 - Exact and rule-based graders precede subjective review.
@@ -48,3 +57,7 @@ prompt has passed a promotion gate.
   safety gates.
 - Changes to prompts, schemas, tools, or taxonomy require targeted regression
   runs before promotion.
+- Comparing two candidates requires them to share a dataset and an instruction
+  candidate. Both are published beside every score, because a row measured on
+  different instructions reports a different experiment rather than a worse
+  model.

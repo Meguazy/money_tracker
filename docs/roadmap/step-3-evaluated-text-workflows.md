@@ -773,6 +773,18 @@ own tests and documentation, and none may ship a later step's behavior.
   dimensions are verified by building a real domain aggregate rather than
   restating its rules, and routing decisions are asserted to contain no owner
   text and only small serializable values and stable references.
+- Every score now names the model that produced it, on the report the command
+  prints, in the raw `scores.json`, and in the published tree. The candidate
+  catalog is executable: a run may declare its profile with `--model-profile`
+  and is refused when either the configured weights or the running inference
+  server disagrees, and published scores are keyed by suite and model so a
+  second candidate no longer overwrites the first. This measures nothing on its
+  own. It removes the reason every product suite so far has run on one
+  candidate: the six pinned suites have only ever measured Qwen3 14B, and until
+  now a second candidate's scores would have replaced the first's in the
+  published tree with nothing in the table to say so. Five of the six published
+  rows also could not record their chat-template hash, which their promotion
+  blockers already stated and the summary now shows.
 - No exit criterion is met yet. Every gate in the
   [Evaluation Matrix](../experiments/evaluation-matrix.md) requires the model
   half, the specialist workflows, and pinned datasets that remain open.

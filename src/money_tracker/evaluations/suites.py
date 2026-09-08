@@ -36,6 +36,12 @@ from uuid import uuid4
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
+from money_tracker.evaluations.catalog import (
+    CATALOG_RELATIVE_PATH,
+    CatalogError,
+    ModelCatalog,
+    load_catalog,
+)
 from money_tracker.evaluations.metadata import (
     CapabilitySettings,
     collect_model_metadata,
@@ -225,6 +231,51 @@ class SuiteReport(BaseModel):
         return self
 
 
+def server_properties(settings: CapabilitySettings) -> dict[str, object] | None:
+    """Read the local inference server's own description of what it loaded.
+
+    Args:
+        settings: Local endpoint configuration.
+
+    Returns:
+        The server's properties, or None when the endpoint cannot be reached or
+        does not answer with an object. An unreachable server is a condition a
+        caller reports, never an exception a run dies on.
+    """
+
+    try:
+        with httpx.Client(
+            timeout=min(settings.timeout_seconds, 10.0), trust_env=False
+        ) as client:
+            response = client.get(
+                f"{settings.server_root_url}/props",
+                params={"model": settings.model_alias},
+                headers={"Authorization": f"Bearer {settings.api_key}"},
+            )
+            response.raise_for_status()
+            decoded = response.json()
+    except (httpx.HTTPError, ValueError):
+        return None
+    return decoded if isinstance(decoded, dict) else None
+
+
+def loaded_model_filename(settings: CapabilitySettings) -> str | None:
+    """Return the weights filename the inference server reports having loaded.
+
+    Args:
+        settings: Local endpoint configuration.
+
+    Returns:
+        The filename, or None when the server is unreachable or does not name a
+        model. This is what a run is actually talking to, as opposed to what the
+        environment says it should be.
+    """
+
+    properties = server_properties(settings) or {}
+    reported = properties.get("model_path")
+    return Path(str(reported)).name if reported else None
+
+
 def model_metadata(settings: CapabilitySettings) -> ModelMetadata:
     """Collect exact model identity, tolerating an unreachable endpoint.
 
@@ -239,22 +290,7 @@ def model_metadata(settings: CapabilitySettings) -> ModelMetadata:
         Model identity, marked incomplete when the endpoint could not be read.
     """
 
-    properties = None
-    try:
-        with httpx.Client(
-            timeout=min(settings.timeout_seconds, 10.0), trust_env=False
-        ) as client:
-            response = client.get(
-                f"{settings.server_root_url}/props",
-                params={"model": settings.model_alias},
-                headers={"Authorization": f"Bearer {settings.api_key}"},
-            )
-            response.raise_for_status()
-            decoded = response.json()
-            if isinstance(decoded, dict):
-                properties = decoded
-    except (httpx.HTTPError, ValueError):
-        pass
+    properties = server_properties(settings)
     try:
         return collect_model_metadata(settings, properties, vision_required=False)
     except Exception:  # noqa: BLE001 - metadata gaps are reported, not raised
@@ -476,32 +512,86 @@ def model_row(model: ModelMetadata) -> dict[str, JsonValue]:
     }
 
 
-def _model_name(row: object) -> str:
-    """Name the model behind one published score.
-
-    Args:
-        row: Model block of a published score, or anything else when a score
-            predates the block.
+def candidate_catalog() -> ModelCatalog | None:
+    """Load the declared candidate catalog, tolerating its absence.
 
     Returns:
-        The weights filename without its extension, falling back to the server
-        alias. This is identity alone: two runs of the same weights share a
-        name whether or not either pinned its full metadata.
+        The catalog, or None when it cannot be read. Publication must not fail
+        because the catalog is missing: a score is evidence about a run, and a
+        run remains valid when the model it used was never catalogued.
+    """
+
+    try:
+        return load_catalog(_repository_root() / CATALOG_RELATIVE_PATH)
+    except CatalogError:
+        return None
+
+
+def model_key(model: ModelMetadata, catalog: ModelCatalog | None) -> str:
+    """Return the directory segment one run's scores are published under.
+
+    Published scores were keyed by suite alone, so measuring a second candidate
+    overwrote the first and the two could never be compared. Keying by model as
+    well keeps every candidate's scores.
+
+    Args:
+        model: Exact model identity recorded by the run.
+        catalog: Declared candidates, or None when the catalog is unreadable.
+
+    Returns:
+        The name :func:`model_name` gives these weights.
+    """
+
+    return model_name(model_row(model), catalog)
+
+
+def model_name(row: object, catalog: ModelCatalog | None) -> str:
+    """Name the model behind one score, preferring its catalogued identity.
+
+    The name is derived from what a run recorded rather than from what its
+    operator declared, so it stays honest about which weights actually
+    answered. Identity alone: two runs of the same weights share a name whether
+    or not either pinned its full metadata.
+
+    Args:
+        row: Model block of a score, or anything else when a score predates it.
+        catalog: Declared candidates, or None when the catalog is unreadable.
+
+    Returns:
+        The catalog profile identifier when the weights are declared, matched
+        first on the recorded hash and then on the declared filename, which
+        names the candidate but not its revision. An uncatalogued model is named
+        by its weights filename, and a run that could not name its weights at
+        all falls back to the server alias, which pins nothing and is meant to
+        look like it.
     """
 
     if not isinstance(row, Mapping):
         return "unknown"
     filename = row.get("gguf_filename")
+    if catalog is not None:
+        profile = catalog.by_sha256(
+            _text(row.get("gguf_sha256")), modality="text"
+        ) or catalog.by_filename(_text(filename), modality="text")
+        if profile is not None:
+            return profile.id
     if filename:
         return Path(str(filename)).stem
-    return str(row.get("alias") or "unknown")
+    return str(row.get("alias") or "unknown-model")
 
 
-def _model_cell(row: object) -> str:
+def _text(value: object) -> str | None:
+    """Narrow one published JSON field to a string when it carries one."""
+
+    return str(value) if isinstance(value, str) and value else None
+
+
+def _model_cell(row: object, catalog: ModelCatalog | None) -> str:
     """Render one published score's model for a summary table cell.
 
     Args:
         row: Model block of a published score.
+        catalog: Declared candidates, or None when the catalog is unreadable.
 
     Returns:
         The model name, marked when the run could not record the exact weights,
@@ -509,7 +599,7 @@ def _model_cell(row: object) -> str:
         description, which the table states rather than hides.
     """
 
-    name = _model_name(row)
+    name = model_name(row, catalog)
     complete = isinstance(row, Mapping) and row.get("metadata_complete")
     return name if complete else f"{name} (metadata incomplete)"
 
@@ -534,6 +624,11 @@ def publish_scores(report: SuiteReport, *, out_root: Path | None = None) -> Path
     overwrite the published score of a full run would put a number in front of
     a reader that no promotion could ever rest on.
 
+    Scores are keyed by suite and by model. Keying by suite alone meant that
+    measuring a second candidate overwrote the first, so the two could never be
+    compared and the published tree could only ever describe the most recent
+    configuration.
+
     This is deliberately not called by `write_report`. A test that runs a suite
     against a scripted port writes a perfectly valid report to its own
     temporary directory, and publishing from the writer would let that report
@@ -556,7 +651,7 @@ def publish_scores(report: SuiteReport, *, out_root: Path | None = None) -> Path
         return None
 
     root = out_root or (_repository_root() / "out" / "evaluations")
-    directory = root / report.suite
+    directory = root / report.suite / model_key(report.model, candidate_catalog())
     directory.mkdir(parents=True, exist_ok=True)
     payload: dict[str, JsonValue] = {
         "suite": report.suite,
@@ -587,13 +682,32 @@ def publish_scores(report: SuiteReport, *, out_root: Path | None = None) -> Path
     return directory
 
 
-def write_scores_summary(out_root: Path) -> Path:
-    """Rewrite the Markdown overview of every suite's most recent run.
+def _instructions_label(entry: Mapping[str, JsonValue]) -> str:
+    """Name the instruction candidate one published score was measured on.
 
-    Each row names the model that produced it. A published score is keyed by
-    suite alone, so changing the configured model and rerunning one suite
-    leaves the table holding rows from different models; the note under the
-    table states that rather than letting the rows read as a comparison.
+    Args:
+        entry: One published score.
+
+    Returns:
+        The candidate identifier, or an em dash for a suite that drives no
+        model-facing instructions, such as the scripted category review.
+    """
+
+    configuration = entry.get("configuration")
+    if isinstance(configuration, Mapping):
+        version = configuration.get("instructions_version")
+        if version:
+            return f"`{version}`"
+    return "—"
+
+
+def write_scores_summary(out_root: Path) -> Path:
+    """Rewrite the Markdown overview of every published suite and model.
+
+    Scores are keyed by suite and model, so one row is the most recent run of
+    one suite on one candidate and several candidates can appear for the same
+    suite. Comparing two rows is only meaningful when they share a dataset and
+    an instruction candidate, so both are columns rather than prose.
 
     Args:
         out_root: Directory holding published scores.
@@ -602,21 +716,29 @@ def write_scores_summary(out_root: Path) -> Path:
         The summary file.
     """
 
+    catalog = candidate_catalog()
     latest: list[dict[str, JsonValue]] = []
     for path in sorted(out_root.rglob("latest.json")):
         decoded = json.loads(path.read_text(encoding="utf-8"))
         if isinstance(decoded, dict):
             latest.append(decoded)
+    latest.sort(
+        key=lambda entry: (
+            str(entry.get("suite")),
+            model_name(entry.get("model"), catalog),
+        )
+    )
     lines = [
         "# Evaluation scores",
         "",
         "Generated by the suite runners. Every row is the most recent run of one",
-        "suite; per-run history sits beside it in the same directory, and the raw",
-        "manifests stay under the ignored `artifacts/evals/`.",
+        "suite on one model; per-run history sits beside it in the same",
+        "directory, and the raw manifests stay under the ignored",
+        "`artifacts/evals/`.",
         "",
-        "| Suite | Model | Dataset | Cases | Blocking gates | "
+        "| Suite | Model | Instructions | Dataset | Cases | Blocking gates | "
         "Failing blocking metrics | Run |",
-        "| --- | --- | --- | ---: | --- | --- | --- |",
+        "| --- | --- | --- | --- | ---: | --- | --- | --- |",
     ]
     for entry in latest:
         dataset = entry.get("dataset")
@@ -639,19 +761,20 @@ def write_scores_summary(out_root: Path) -> Path:
             failing = ["incomplete_execution"]
         verdict = "pass" if entry.get("blocking_gates_passed") else "**fail**"
         lines.append(
-            f"| `{entry.get('suite')}` | {_model_cell(entry.get('model'))} | "
-            f"{dataset_label} | {item_count} | "
+            f"| `{entry.get('suite')}` | {_model_cell(entry.get('model'), catalog)} | "
+            f"{_instructions_label(entry)} | {dataset_label} | {item_count} | "
             f"{verdict} | {', '.join(f'`{name}`' for name in failing) or 'none'} | "
             f"`{entry.get('run_id')}` |"
         )
-    measured_by = sorted({_model_name(entry.get("model")) for entry in latest})
+    measured_by = sorted({model_name(entry.get("model"), catalog) for entry in latest})
     if len(measured_by) > 1:
         lines += [
             "",
-            "Rows were produced by more than one model: "
+            "More than one candidate appears above: "
             + ", ".join(measured_by)
-            + ". Every row is its own suite's most recent run, so this table "
-            "reports what was measured last, not a comparison between models.",
+            + ". Two rows are comparable only where they share a dataset and an "
+            "instruction candidate; a row measured on different instructions "
+            "reports a different experiment, not a worse model.",
         ]
     lines.append("")
     summary = out_root / "SUMMARY.md"
@@ -714,13 +837,18 @@ __all__ = [
     "SuiteReport",
     "blocking_gates_passed",
     "dataset_metadata",
+    "candidate_catalog",
     "load_cases",
+    "loaded_model_filename",
+    "model_key",
+    "model_name",
     "model_row",
     "publish_scores",
     "write_scores_summary",
     "model_metadata",
     "new_run_id",
     "rate",
+    "server_properties",
     "sha256_text",
     "utc_now",
     "write_report",

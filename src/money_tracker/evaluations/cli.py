@@ -10,6 +10,12 @@ from pathlib import Path
 from money_tracker.evaluations.advice import run_advice_suite
 from money_tracker.evaluations.calibration import run_calibration
 from money_tracker.evaluations.capabilities import run_capability_suite
+from money_tracker.evaluations.catalog import (
+    CATALOG_RELATIVE_PATH,
+    CatalogError,
+    load_catalog,
+    profile_mismatches,
+)
 from money_tracker.evaluations.categorization import (
     CATEGORY_FIT_CANDIDATES,
     run_categorization_suite,
@@ -21,7 +27,12 @@ from money_tracker.evaluations.ingestion import (
 )
 from money_tracker.evaluations.metadata import CapabilitySettings
 from money_tracker.evaluations.routing import run_routing_suite
-from money_tracker.evaluations.suites import SuiteReport, model_row, publish_scores
+from money_tracker.evaluations.suites import (
+    SuiteReport,
+    loaded_model_filename,
+    model_row,
+    publish_scores,
+)
 from money_tracker.evaluations.tool_use import run_tool_use_suite
 from money_tracker.persistence.database import database_url_from_env
 from money_tracker.runtime.read_graph import SELECTION_BOUNDARIES
@@ -48,6 +59,88 @@ def _repository_root() -> Path:
     return Path(__file__).resolve().parents[3]
 
 
+def _profile_choices(repository_root: Path) -> list[str] | None:
+    """Return the candidate identifiers a run may declare.
+
+    Args:
+        repository_root: Repository holding the committed candidate catalog.
+
+    Returns:
+        Declared identifiers, or None when the catalog cannot be read, so that
+        an unreadable catalog costs a late error rather than an unusable CLI.
+    """
+
+    try:
+        return load_catalog(repository_root / CATALOG_RELATIVE_PATH).identifiers()
+    except CatalogError:
+        return None
+
+
+def _add_model_profile(
+    parser: argparse.ArgumentParser, choices: list[str] | None
+) -> None:
+    """Let a run declare which catalogued candidate it is measuring.
+
+    Args:
+        parser: Subcommand parser to extend.
+        choices: Declared candidate identifiers, when the catalog is readable.
+    """
+
+    parser.add_argument(
+        "--model-profile",
+        choices=choices,
+        help=(
+            "catalogued candidate this run must be measuring; the run is "
+            "refused when the configured weights or the running server "
+            "disagree with it"
+        ),
+    )
+
+
+def _require_declared_model(
+    identifier: str | None, settings: CapabilitySettings
+) -> None:
+    """Refuse a run that is not measuring the candidate it declared.
+
+    Switching candidates means editing the environment and restarting the
+    inference server, and forgetting the restart produces a complete, plausible
+    run that attributes one candidate's answers to another. Nothing downstream
+    can detect that, so it is refused here.
+
+    Args:
+        identifier: Declared catalog profile, or None to measure whatever is
+            configured. Leaving it out stays valid: an exploratory run against
+            an uncatalogued model is legitimate, and the report records the
+            weights either way.
+        settings: Local endpoint configuration under test.
+
+    Raises:
+        SystemExit: When the catalog cannot be read, the profile is unknown, or
+            the configured weights and the running server do not both agree
+            with it.
+    """
+
+    if identifier is None:
+        return
+    try:
+        catalog = load_catalog(_repository_root() / CATALOG_RELATIVE_PATH)
+        profile = catalog.profile(identifier)
+    except CatalogError as error:
+        raise SystemExit(str(error)) from error
+    problems = profile_mismatches(
+        profile,
+        configured_path=settings.model_path,
+        server_filename=loaded_model_filename(settings),
+    )
+    if problems:
+        raise SystemExit(
+            "\n".join(
+                [f"this run is not measuring {identifier}:"]
+                + [f"  - {problem}" for problem in problems]
+            )
+        )
+
+
 def _parser() -> argparse.ArgumentParser:
     """Build the evaluation CLI parser.
 
@@ -56,6 +149,7 @@ def _parser() -> argparse.ArgumentParser:
     """
 
     repository_root = _repository_root()
+    profiles = _profile_choices(repository_root)
     parser = argparse.ArgumentParser(description="Run Money Tracker evaluations")
     subparsers = parser.add_subparsers(dest="suite", required=True)
     capabilities = subparsers.add_parser(
@@ -241,6 +335,17 @@ def _parser() -> argparse.ArgumentParser:
         type=Path,
         default=repository_root / "artifacts" / "evals",
     )
+    for suite in (
+        capabilities,
+        routing,
+        categorization,
+        ingestion,
+        review,
+        tools,
+        advice,
+        calibration,
+    ):
+        _add_model_profile(suite, profiles)
     return parser
 
 
@@ -302,10 +407,12 @@ def main(argv: Sequence[str] | None = None) -> None:
     """
 
     args = _parser().parse_args(argv)
+    settings = CapabilitySettings.from_env()
+    _require_declared_model(args.model_profile, settings)
     if args.suite == "categorization":
         _print_and_exit(
             run_categorization_suite(
-                CapabilitySettings.from_env(),
+                settings,
                 dataset_path=args.dataset,
                 output_root=args.output_root,
                 repository_root=_repository_root(),
@@ -316,7 +423,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     if args.suite == "category-review":
         _print_and_exit(
             run_category_review_suite(
-                CapabilitySettings.from_env(),
+                settings,
                 dataset_path=args.dataset,
                 output_root=args.output_root,
                 repository_root=_repository_root(),
@@ -327,7 +434,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     if args.suite == "calibrate-routing":
         _print_and_exit(
             run_calibration(
-                CapabilitySettings.from_env(),
+                settings,
                 dataset_path=args.dataset,
                 output_root=args.output_root,
                 repository_root=_repository_root(),
@@ -337,7 +444,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     if args.suite == "advice":
         _print_and_exit(
             run_advice_suite(
-                CapabilitySettings.from_env(),
+                settings,
                 dataset_path=args.dataset,
                 output_root=args.output_root,
                 repository_root=_repository_root(),
@@ -350,7 +457,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     if args.suite == "tools":
         _print_and_exit(
             run_tool_use_suite(
-                CapabilitySettings.from_env(),
+                settings,
                 dataset_path=args.dataset,
                 output_root=args.output_root,
                 repository_root=_repository_root(),
@@ -363,7 +470,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     if args.suite == "ingestion":
         _print_and_exit(
             run_ingestion_suite(
-                CapabilitySettings.from_env(),
+                settings,
                 dataset_path=args.dataset,
                 output_root=args.output_root,
                 repository_root=_repository_root(),
@@ -374,7 +481,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     if args.suite == "routing":
         _print_and_exit(
             run_routing_suite(
-                CapabilitySettings.from_env(),
+                settings,
                 dataset_path=args.dataset,
                 output_root=args.output_root,
                 minimum_confidence=args.minimum_confidence,
@@ -388,7 +495,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         raise SystemExit(f"unsupported suite: {args.suite}")
 
     result = run_capability_suite(
-        CapabilitySettings.from_env(),
+        settings,
         dataset_path=args.dataset,
         output_root=args.output_root,
         image_path=args.image,

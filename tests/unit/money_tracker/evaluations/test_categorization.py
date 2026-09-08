@@ -11,6 +11,7 @@ from pydantic import BaseModel
 
 from money_tracker.domain import CategoryStatus, initial_taxonomy
 from money_tracker.evaluations.categorization import (
+    CATEGORY_FIT_CANDIDATES,
     DATASET_MINIMUM,
     SUITE,
     run_categorization_suite,
@@ -69,6 +70,41 @@ def _settings() -> CapabilitySettings:
         vision_projector_path=None,
         context_size=None,
     )
+
+
+def _judgment(**fields: object) -> str:
+    """Serialize one category judgment in the union shape the boundary asks for.
+
+    Args:
+        fields: Either `category_name` for an existing choice, or the fields a
+            proposal carries.
+
+    Returns:
+        The serialized completion.
+    """
+
+    evidence = str(fields.pop("evidence", "spesa"))
+    if "category_name" in fields:
+        judgment: dict[str, object] = {
+            "kind": "existing_category",
+            "category_name": fields["category_name"],
+            "evidence": evidence,
+        }
+    else:
+        judgment = {
+            "kind": "new_category",
+            "closest_existing_category": fields.get(
+                "closest_existing_category", "Alimentazione"
+            ),
+            "why_closest_is_inadequate": fields.get(
+                "why_closest_is_inadequate", "non descrive questo scopo"
+            ),
+            "proposed_name": fields["proposed_name"],
+            "parent_name": fields.get("parent_name", "Alimentazione"),
+            "description": fields.get("description", "Guida di inclusione."),
+            "evidence": evidence,
+        }
+    return json.dumps({"judgment": judgment})
 
 
 def test_the_committed_dataset_parses_and_reaches_its_minimum(
@@ -143,18 +179,7 @@ def test_the_dataset_covers_most_of_the_active_taxonomy(
 def test_a_correct_existing_judgment_scores_as_agreement(tmp_path: Path) -> None:
     """Score a resolved existing category against its label."""
 
-    completion = json.dumps(
-        {
-            "outcome": "existing",
-            "category_name": "Spesa alimentare",
-            "proposed_name": None,
-            "parent_name": None,
-            "description": None,
-            "rationale": None,
-            "considered_category_names": [],
-            "evidence": "spesa",
-        }
-    )
+    completion = _judgment(category_name="Spesa alimentare", evidence="spesa")
     report = run_categorization_suite(
         _settings(),
         dataset_path=DATASET,
@@ -174,17 +199,12 @@ def test_a_proposal_echoing_a_payment_method_fails_the_safety_gate(
 ) -> None:
     """Fail the zero-tolerance gate on the dimension collapse it exists for."""
 
-    completion = json.dumps(
-        {
-            "outcome": "proposal",
-            "category_name": None,
-            "proposed_name": "Spesa con buoni e carte",
-            "parent_name": "Alimentazione",
-            "description": "Spesa pagata con buoni e carte.",
-            "rationale": "Nessuna categoria descrive il metodo di pagamento.",
-            "considered_category_names": [],
-            "evidence": "buoni pasto",
-        }
+    completion = _judgment(
+        proposed_name="Spesa con buoni e carte",
+        parent_name="Alimentazione",
+        description="Spesa pagata con buoni e carte.",
+        why_closest_is_inadequate="Nessuna categoria descrive il metodo di pagamento.",
+        evidence="buoni pasto",
     )
     report = run_categorization_suite(
         _settings(),
@@ -203,17 +223,12 @@ def test_a_proposal_echoing_a_payment_method_fails_the_safety_gate(
 def test_a_duplicate_proposal_is_counted_and_refused(tmp_path: Path) -> None:
     """Catch a candidate the taxonomy already covers under the same name."""
 
-    completion = json.dumps(
-        {
-            "outcome": "proposal",
-            "category_name": None,
-            "proposed_name": "Spesa alimentare",
-            "parent_name": "Alimentazione",
-            "description": "Spesa al supermercato.",
-            "rationale": "Serve una categoria per la spesa.",
-            "considered_category_names": [],
-            "evidence": "spesa",
-        }
+    completion = _judgment(
+        proposed_name="Spesa alimentare",
+        parent_name="Alimentazione",
+        description="Spesa al supermercato.",
+        why_closest_is_inadequate="Serve una categoria per la spesa.",
+        evidence="spesa",
     )
     report = run_categorization_suite(
         _settings(),
@@ -236,7 +251,7 @@ def test_the_diagnostic_separates_knowing_from_choosing(tmp_path: Path) -> None:
     from a model that genuinely could not classify the purpose.
     """
 
-    completion = json.dumps(
+    flat = json.dumps(
         {
             "outcome": "proposal",
             "category_name": "Spesa alimentare",
@@ -253,12 +268,44 @@ def test_the_diagnostic_separates_knowing_from_choosing(tmp_path: Path) -> None:
         dataset_path=DATASET,
         output_root=tmp_path,
         repository_root=Path.cwd(),
-        model=ScriptedModel([completion]),
+        model=ScriptedModel([flat]),
+        candidate=CATEGORY_FIT_CANDIDATES["v1"],
     )
 
     metrics = {m.name: m for m in report.metrics}
     assert metrics["existing_category_named_while_proposing"].value == 1.0
     assert metrics["existing_category_named_while_proposing"].blocking is False
+
+
+def test_the_diagnostic_is_unmeasurable_on_a_union_boundary(tmp_path: Path) -> None:
+    """Report the question as unasked rather than as answered no.
+
+    A union has no field in which a proposal could also name an existing
+    category, so a rate of zero would read as the model never knowing the
+    answer. The metric is emitted at zero denominator instead.
+    """
+
+    report = run_categorization_suite(
+        _settings(),
+        dataset_path=DATASET,
+        output_root=tmp_path,
+        repository_root=Path.cwd(),
+        model=ScriptedModel(
+            [
+                _judgment(
+                    proposed_name="Alimentari settimanali",
+                    why_closest_is_inadequate="Motivo.",
+                )
+            ]
+        ),
+    )
+
+    metric = {m.name: m for m in report.metrics}[
+        "existing_category_named_while_proposing"
+    ]
+
+    assert metric.denominator == 0
+    assert metric.passed
 
 
 def test_the_auto_post_gates_are_visible_but_unmeasured(tmp_path: Path) -> None:
@@ -269,18 +316,7 @@ def test_the_auto_post_gates_are_visible_but_unmeasured(tmp_path: Path) -> None:
     them would hide that they exist at all.
     """
 
-    completion = json.dumps(
-        {
-            "outcome": "existing",
-            "category_name": "Spesa alimentare",
-            "proposed_name": None,
-            "parent_name": None,
-            "description": None,
-            "rationale": None,
-            "considered_category_names": [],
-            "evidence": "spesa",
-        }
-    )
+    completion = _judgment(category_name="Spesa alimentare", evidence="spesa")
     report = run_categorization_suite(
         _settings(),
         dataset_path=DATASET,
@@ -296,5 +332,5 @@ def test_the_auto_post_gates_are_visible_but_unmeasured(tmp_path: Path) -> None:
     ):
         assert metrics[name].denominator == 0
         assert metrics[name].blocking is True
-        assert metrics[name].passed is True
+        assert metrics[name].passed is False
     assert report.configuration["auto_post_policy_promoted"] is False

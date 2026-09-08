@@ -28,6 +28,7 @@ from money_tracker.workflows import (
     resolve_occurrence_time,
     resolve_payment_allocations,
 )
+from money_tracker.workflows.wire import WireExpenseExtraction
 
 DATASET = Path("evals/datasets/ingestion-expense-it-v1.jsonl")
 DEFAULT_RECEIVED_AT = datetime.fromisoformat("2026-09-15T12:00:00+02:00")
@@ -82,18 +83,66 @@ def _settings() -> CapabilitySettings:
 
 
 def _extraction(**overrides: object) -> str:
-    """Serialize one boundary completion with explicit overrides."""
+    """Serialize one boundary completion from flat, readable overrides.
 
-    payload: dict[str, object] = {
+    The overrides stay in the domain contract's vocabulary while the payload is
+    written in the union shape the default candidate actually asks for, so a
+    test says what the boundary produced rather than how the boundary is
+    currently shaped.
+    """
+
+    flat: dict[str, object] = {
         "polarity": "expense",
         "amount_minor_units": 1200,
         "occurred_at_text": None,
-        "description": "spesa",
         "merchant": None,
         "payment_parts": [],
+    }
+    flat.update(overrides)
+    amount = flat["amount_minor_units"]
+    occurred = flat["occurred_at_text"]
+    merchant = flat["merchant"]
+    parts = flat["payment_parts"]
+    assert isinstance(parts, list)
+    if not parts:
+        funding: dict[str, object] = {"kind": "funding_not_stated"}
+    elif len(parts) == 1:
+        funding = {
+            "kind": "funding_one_method",
+            "funding_source_text": parts[0]["funding_source_text"],
+        }
+    else:
+        funding = {
+            "kind": "funding_split",
+            "parts": [
+                {
+                    "funding_source_text": part["funding_source_text"],
+                    "minor_units": part["amount_minor_units"],
+                }
+                for part in parts
+            ],
+        }
+    payload: dict[str, object] = {
+        "polarity": flat["polarity"],
+        "amount": (
+            {"kind": "amount_not_stated"}
+            if amount is None
+            else {"kind": "amount_stated", "minor_units": amount}
+        ),
+        "occurrence": (
+            {"kind": "time_not_stated"}
+            if occurred is None
+            else {"kind": "time_stated", "text": occurred}
+        ),
+        "description": "spesa",
+        "merchant": (
+            {"kind": "merchant_not_named"}
+            if merchant is None
+            else {"kind": "merchant_named", "name": merchant}
+        ),
+        "funding": funding,
         "evidence": "12 euro",
     }
-    payload.update(overrides)
     return json.dumps(payload)
 
 
@@ -274,9 +323,9 @@ def test_an_archived_source_is_refused_rather_than_matched() -> None:
         for source in fixture_funding_sources()
         if source.status is FundingSourceStatus.ARCHIVED
     )
-    extraction = ExpenseExtraction.model_validate_json(
+    extraction = WireExpenseExtraction.model_validate_json(
         _extraction(payment_parts=[{"funding_source_text": archived.name}])
-    )
+    ).to_domain()
 
     with pytest.raises(UnresolvedExtractionError) as error:
         resolve_payment_allocations(

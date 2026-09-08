@@ -22,6 +22,7 @@ from money_tracker.evaluations.suites import (
     dataset_metadata,
     load_cases,
     new_run_id,
+    publish_scores,
     rate,
     utc_now,
     write_report,
@@ -170,16 +171,37 @@ def test_a_diagnostic_metric_cannot_block() -> None:
     metric = _metric(threshold=None, value=0.1, blocking=False)
 
     assert metric.passed is True
-    assert blocking_gates_passed([metric]) is True
+    assert (
+        blocking_gates_passed(
+            [metric], [CaseResult(case_id="a", status=CaseStatus.PASSED, expected="x")]
+        )
+        is True
+    )
 
 
-def test_an_empty_case_class_is_a_coverage_gap_not_a_failure() -> None:
-    """Never let an unexercised class silently depress an accuracy score."""
+def test_an_unmeasured_blocking_gate_cannot_pass() -> None:
+    """Do not confuse a missing measurement with a fulfilled requirement."""
 
     metric = _metric(value=1.0, numerator=0, denominator=0)
 
-    assert metric.passed is True
+    assert metric.passed is False
     assert rate(0, 0) == 1.0
+
+
+def test_a_structural_exemption_requires_an_explicit_reason() -> None:
+    """A single read has no ordering obligation; missing review still blocks."""
+
+    metric = _metric(
+        numerator=0,
+        denominator=0,
+        applicable=False,
+        inapplicability_reason="Only one independent read can execute.",
+    )
+    assert metric.passed
+    with pytest.raises(ValueError, match="need a reason"):
+        _metric(numerator=0, denominator=0, applicable=False)
+    with pytest.raises(ValueError, match="cannot claim an exemption"):
+        _metric(inapplicability_reason="No observations")
 
 
 def test_promotion_is_blocked_by_any_failing_blocking_metric() -> None:
@@ -189,9 +211,26 @@ def test_promotion_is_blocked_by_any_failing_blocking_metric() -> None:
     bad = _metric(name="b", value=0.5, threshold=0.95)
     diagnostic = _metric(name="c", value=0.0, threshold=0.95, blocking=False)
 
-    assert blocking_gates_passed([good]) is True
-    assert blocking_gates_passed([good, bad]) is False
-    assert blocking_gates_passed([good, diagnostic]) is True
+    assert (
+        blocking_gates_passed(
+            [good], [CaseResult(case_id="a", status=CaseStatus.PASSED, expected="x")]
+        )
+        is True
+    )
+    assert (
+        blocking_gates_passed(
+            [good, bad],
+            [CaseResult(case_id="a", status=CaseStatus.PASSED, expected="x")],
+        )
+        is False
+    )
+    assert (
+        blocking_gates_passed(
+            [good, diagnostic],
+            [CaseResult(case_id="a", status=CaseStatus.PASSED, expected="x")],
+        )
+        is True
+    )
 
 
 def test_rate_is_exact_to_four_places() -> None:
@@ -232,7 +271,7 @@ def _report(tmp_path: Path, **overrides: object) -> SuiteReport:
             dataset_id="routing-intent-it-v1",
             version="1.0.0",
             content_hash="b" * 64,
-            item_count=112,
+            item_count=1,
         ),
         "model": ModelMetadata(
             endpoint_kind="llamacpp",
@@ -324,3 +363,88 @@ def test_a_case_record_carries_labels_rather_than_prose(tmp_path: Path) -> None:
         "latency_ms",
         "detail",
     }
+
+
+def test_a_run_that_reached_nothing_cannot_pass_its_gates() -> None:
+    """Neither complete nor partial endpoint failure can produce a pass."""
+
+    metric = MetricScore(
+        name="anything",
+        value=1.0,
+        threshold=1.0,
+        blocking=True,
+        numerator=0,
+        denominator=0,
+    )
+    errored = [
+        CaseResult(case_id="a", status=CaseStatus.ERROR, expected="x"),
+        CaseResult(case_id="b", status=CaseStatus.ERROR, expected="x"),
+    ]
+    mixed = [*errored, CaseResult(case_id="c", status=CaseStatus.PASSED, expected="x")]
+
+    assert not metric.passed
+    assert not blocking_gates_passed([metric], errored)
+    assert not blocking_gates_passed([_metric()], mixed)
+    assert not blocking_gates_passed([metric], [])
+
+
+@pytest.mark.parametrize("missing", ["errors", "results", "metadata", "review"])
+def test_report_cannot_claim_promotion_without_complete_evidence(
+    tmp_path: Path, missing: str
+) -> None:
+    """Ignore optimistic caller flags when the report contradicts them."""
+
+    fields = _report(tmp_path).model_dump()
+    fields.update(meets_dataset_minimum=True, eligible_for_promotion=True)
+    fields["model"]["metadata_complete"] = True
+    if missing == "errors":
+        fields["cases"][0]["status"] = CaseStatus.ERROR
+    elif missing == "results":
+        fields["dataset"]["item_count"] = 2
+    elif missing == "metadata":
+        fields["model"]["metadata_complete"] = False
+    else:
+        fields["metrics"] = [
+            _metric(name="human_usefulness_median", numerator=0, denominator=0)
+        ]
+
+    report = SuiteReport.model_validate(fields)
+    assert not report.eligible_for_promotion
+    assert report.promotion_blockers
+    assert report.blocking_gates_passed is (missing == "metadata")
+
+
+def test_complete_measured_report_can_support_promotion(tmp_path: Path) -> None:
+    """Keep the success path available when all prerequisites are present."""
+
+    fields = _report(tmp_path).model_dump()
+    fields.update(meets_dataset_minimum=True, eligible_for_promotion=True)
+    fields["model"]["metadata_complete"] = True
+    report = SuiteReport.model_validate(fields)
+    assert report.blocking_gates_passed
+    assert report.eligible_for_promotion
+    assert not report.promotion_blockers
+
+
+def test_failed_transport_does_not_replace_a_measured_published_run(
+    tmp_path: Path,
+) -> None:
+    """Retain the last measured result while keeping failed raw artifacts."""
+
+    measured = _report(tmp_path, meets_dataset_minimum=True)
+    directory = publish_scores(measured, out_root=tmp_path / "published")
+    assert directory is not None
+    previous = (directory / "latest.json").read_bytes()
+    failed = _report(
+        tmp_path,
+        run_id="ROU-20260908-000000-abcdef12",
+        meets_dataset_minimum=True,
+        eligible_for_promotion=True,
+        cases=[CaseResult(case_id="a", status=CaseStatus.ERROR, expected="expense")],
+    )
+    artifact = write_report(failed, output_root=tmp_path / "raw")
+    assert not json.loads((artifact / "scores.json").read_text())[
+        "blocking_gates_passed"
+    ]
+    assert publish_scores(failed, out_root=tmp_path / "published") is None
+    assert (directory / "latest.json").read_bytes() == previous

@@ -1,0 +1,116 @@
+{
+  "blocking_gates_passed": false,
+  "case_totals": {
+    "error": 0,
+    "failed": 31,
+    "passed": 122
+  },
+  "completed_at": "2026-09-03T19:21:03.630656+00:00",
+  "configuration": {
+    "auto_post_policy_promoted": false,
+    "boundary_schema": "WireCategoryFit",
+    "dataset_minimum": 150,
+    "instructions_sha256": "0bb87f330a19620ebd0e269a2c7e43e0c8992516a5fd0cefad0bb9704b1e152b",
+    "instructions_version": "candidate-category-fit-it-v2",
+    "taxonomy_active_categories": 24
+  },
+  "dataset": {
+    "content_hash": "d4c43a7f9c4d38077458ce8ac45687d6b6a2a8ea54c4fb80ef9cfd4c7148718c",
+    "id": "categorization-purpose-it-v1",
+    "item_count": 153,
+    "version": "1.0.0"
+  },
+  "eligible_for_promotion": false,
+  "meets_dataset_minimum": true,
+  "metrics": [
+    {
+      "blocking": true,
+      "comparison": "at_least",
+      "denominator": 153,
+      "name": "purpose_label_agreement",
+      "numerator": 122,
+      "passed": false,
+      "threshold": 0.85,
+      "value": 0.7974
+    },
+    {
+      "blocking": true,
+      "comparison": "at_most",
+      "denominator": 141,
+      "name": "false_new_category_proposal",
+      "numerator": 2,
+      "passed": true,
+      "threshold": 0.05,
+      "value": 0.0142
+    },
+    {
+      "blocking": true,
+      "comparison": "at_most",
+      "denominator": 18,
+      "name": "merchant_or_payment_method_proposed_as_category",
+      "numerator": 0,
+      "passed": true,
+      "threshold": 0.0,
+      "value": 0.0
+    },
+    {
+      "blocking": true,
+      "comparison": "at_most",
+      "denominator": 6,
+      "name": "duplicate_or_alias_equivalent_proposal",
+      "numerator": 0,
+      "passed": true,
+      "threshold": 0.02,
+      "value": 0.0
+    },
+    {
+      "blocking": true,
+      "comparison": "at_least",
+      "denominator": 0,
+      "name": "auto_post_subset_category_precision",
+      "numerator": 0,
+      "passed": true,
+      "threshold": 0.98,
+      "value": 1.0
+    },
+    {
+      "blocking": true,
+      "comparison": "at_least",
+      "denominator": 0,
+      "name": "auto_post_subset_invariant_validity",
+      "numerator": 0,
+      "passed": true,
+      "threshold": 1.0,
+      "value": 1.0
+    },
+    {
+      "blocking": false,
+      "comparison": "at_least",
+      "denominator": 6,
+      "name": "existing_category_named_while_proposing",
+      "numerator": 0,
+      "passed": true,
+      "threshold": null,
+      "value": 0.0
+    },
+    {
+      "blocking": false,
+      "comparison": "at_least",
+      "denominator": 153,
+      "name": "proposals_offered",
+      "numerator": 6,
+      "passed": true,
+      "threshold": null,
+      "value": 6.0
+    }
+  ],
+  "model": {
+    "alias": "local-model",
+    "gguf_filename": "Qwen3-14B-Q5_K_M.gguf",
+    "metadata_complete": false,
+    "quantization": "Q5_K_M"
+  },
+  "run_id": "CAT-20260903-192103-04e49148",
+  "source_commit": "4d2281c8d83e5bc842dcc1e7d067c756c3f12768",
+  "suite": "categorization/purpose-it"
+}

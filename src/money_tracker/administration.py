@@ -46,19 +46,24 @@ from money_tracker.runtime import (
     build_router_graph,
 )
 from money_tracker.workflows import (
-    CANDIDATE_CATEGORY_FIT_INSTRUCTIONS,
-    CANDIDATE_EXTRACTION_INSTRUCTIONS,
-    CANDIDATE_ROUTER_INSTRUCTIONS,
+    CATEGORY_FIT,
+    EXTRACTION,
+    ROUTER,
     ChannelMessage,
     ExpenseWorkflowState,
     RouterState,
     RoutingContext,
     RoutingDecision,
     WorkflowIntent,
+    default_prompt,
     initial_expense_state,
     initial_router_state,
     normalize_owner_text,
     routing_decision_from_state,
+)
+from money_tracker.workflows.candidates import (
+    DEFAULT_CATEGORY_FIT_CANDIDATE,
+    DEFAULT_EXTRACTION_CANDIDATE,
 )
 
 
@@ -271,7 +276,7 @@ def _route(args: argparse.Namespace) -> dict[str, object]:
 
     graph = build_router_graph(
         model=LocalStructuredOutputModel(),
-        instructions=CANDIDATE_ROUTER_INSTRUCTIONS,
+        instructions=default_prompt(ROUTER).text,
         minimum_confidence=args.minimum_confidence,
     )
     initial = initial_router_state(
@@ -359,8 +364,10 @@ def _run_movement_workflow(
             repository, clock=SystemClock(), ids=UUID4Generator()
         ),
         ids=UUID4Generator(),
-        extraction_instructions=CANDIDATE_EXTRACTION_INSTRUCTIONS,
-        category_instructions=CANDIDATE_CATEGORY_FIT_INSTRUCTIONS,
+        extraction_instructions=default_prompt(EXTRACTION).text,
+        category_instructions=default_prompt(CATEGORY_FIT).text,
+        extraction_candidate=DEFAULT_EXTRACTION_CANDIDATE,
+        category_candidate=DEFAULT_CATEGORY_FIT_CANDIDATE,
     )
     try:
         final = cast(

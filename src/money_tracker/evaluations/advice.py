@@ -36,7 +36,12 @@ from typing import Any, cast
 from pydantic import JsonValue
 
 from money_tracker.application import ReportingService
-from money_tracker.domain import TaxonomyError, YearMonth
+from money_tracker.domain import (
+    CategoryStatus,
+    TaxonomyError,
+    YearMonth,
+    initial_taxonomy,
+)
 from money_tracker.evaluations.fixtures import OwnerFixture, require_isolated_database
 from money_tracker.evaluations.metadata import (
     CapabilitySettings,
@@ -61,22 +66,28 @@ from money_tracker.evaluations.suites import (
 from money_tracker.evaluations.tool_use import (
     RECEIVED_AT,
     LabelledOutcome,
+    _same_category,
     _subset,
     seed_reporting_fixture,
 )
 from money_tracker.persistence.finance import PostgresFinanceRepository
 from money_tracker.runtime import build_read_graph
 from money_tracker.runtime.model import LocalStructuredOutputModel
+from money_tracker.runtime.read_graph import DEFAULT_SELECTION, SelectionBoundary
 from money_tracker.workflows import (
-    CANDIDATE_TOOL_SELECTION_INSTRUCTIONS,
+    TOOL_SELECTION,
     ChannelMessage,
     ReadOutcome,
     ReadTool,
     StructuredOutputModel,
     ToolRequest,
     WorkflowIntent,
+    default_prompt,
     initial_read_state,
 )
+
+DEFAULT_SELECTION_INSTRUCTIONS = default_prompt(TOOL_SELECTION).text
+"""The selection instruction text a run uses when none is named."""
 
 SUITE = "advice/grounding-it"
 """Suite name from the catalog in the experiment process."""
@@ -114,7 +125,9 @@ def _facets(
     if case.get("expected_tool") is not None:
         facets["interpretation"] = (
             observed.get("tool") == case.get("expected_tool")
-            and observed.get("category_name") == case.get("expected_category_name")
+            and _same_category(
+                observed.get("category_name"), case.get("expected_category_name")
+            )
             and observed.get("period") == case.get("expected_period")
         )
 
@@ -239,7 +252,8 @@ def run_advice_suite(
     repository_root: Path,
     database_url: str,
     model: StructuredOutputModel | None = None,
-    instructions: str = CANDIDATE_TOOL_SELECTION_INSTRUCTIONS,
+    instructions: str = DEFAULT_SELECTION_INSTRUCTIONS,
+    boundary: SelectionBoundary = DEFAULT_SELECTION,
 ) -> SuiteReport:
     """Execute the advice suite and always emit a deterministic report.
 
@@ -251,6 +265,9 @@ def run_advice_suite(
         database_url: Isolated integration-test database. Any other is refused.
         model: Structured-output port. The local adapter is used when omitted.
         instructions: Selection instruction text under test.
+        boundary: Selection schema and conversion under test.
+            Defaults to the flat contract, and is recorded so a score
+            is attributable to one boundary shape.
 
     Returns:
         The complete report, already written to its artifact directory.
@@ -267,6 +284,12 @@ def run_advice_suite(
         model=model or LocalStructuredOutputModel(),
         reporting=ReportingService(PostgresFinanceRepository(database_url)),
         selection_instructions=instructions,
+        selection_boundary=boundary,
+        category_names=tuple(
+            category.name
+            for category in initial_taxonomy().categories
+            if category.status is CategoryStatus.ACTIVE
+        ),
     )
 
     reporting = ReportingService(PostgresFinanceRepository(database_url))
@@ -278,7 +301,7 @@ def run_advice_suite(
         observations[result.case_id] = observed
 
     metrics = _metrics(cases, results, observations)
-    passed = blocking_gates_passed(metrics)
+    passed = blocking_gates_passed(metrics, results)
     meets_minimum = dataset.item_count >= DATASET_MINIMUM
     report = SuiteReport(
         run_id=new_run_id("ADV"),
@@ -290,7 +313,9 @@ def run_advice_suite(
         model=model_metadata(settings),
         environment=collect_environment_metadata(),
         configuration={
+            "instructions_version": boundary.version,
             "instructions_sha256": sha256_text(instructions),
+            "boundary_schema": boundary.schema.__name__,
             "received_at": RECEIVED_AT.isoformat(),
             "human_usefulness_reviewed": False,
             "dataset_minimum": DATASET_MINIMUM,

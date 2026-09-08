@@ -1,23 +1,35 @@
-"""Candidate instruction texts for the workflow model boundaries.
+"""Versioned instruction catalogs for the workflow model boundaries.
 
 Nothing here is promoted. AD-012 and the experiment process require a prompt to
 pass its evaluation gates and be recorded in the decision log before a runtime
-adopts it, and no routing dataset exists yet. The `CANDIDATE_` prefix is part of
-the contract: a promoted text would be named and versioned separately, and the
+adopts it, so every version identifier carries a `candidate-` prefix and the
 decision log states that no V1 production prompt exists.
+
+The texts live in `prompt_data/<boundary>.json` rather than in Python, one file
+per boundary, each holding every version of that boundary's instructions with
+the note that says why the version exists. Prompts are data that changes far
+more often than the code reading it, and a boundary accumulates versions: an
+evaluation compares them, so the ones it compares must all still be there,
+readable side by side rather than buried in string literals.
 
 Instruction language is itself an open evaluation variable. These candidates are
 written in English, matching the repository's technical language, while the
-input they interpret and the product surface remain Italian. Whether Italian
-instructions score better on the pinned routing dataset is a question for the
-experiment, not an assumption to bake in here.
+input they interpret and the product surface remain Italian.
 
-The intent vocabulary is derived from the taxonomy in `intents` rather than
-retyped, so an added or renamed route cannot silently disagree with the text the
-model is given.
+Two vocabularies stay derived rather than retyped. The routable intents come
+from the taxonomy in `intents` and the read tools from the registry in `tools`,
+so an added or renamed route cannot silently disagree with the text the model is
+given: a catalog whose vocabulary no longer matches is refused at load time
+instead of quietly offering a route that does not exist.
 """
 
 from __future__ import annotations
+
+import json
+from dataclasses import dataclass
+from functools import cache
+from pathlib import Path
+from typing import Final
 
 from money_tracker.workflows.intents import (
     MODEL_ROUTABLE_INTENTS,
@@ -25,164 +37,203 @@ from money_tracker.workflows.intents import (
 )
 from money_tracker.workflows.tools import ReadTool, registry_for
 
-CANDIDATE_ROUTER_INSTRUCTIONS_VERSION = "candidate-router-it-v1"
-"""Identifier recorded by an evaluation run; not a promoted configuration."""
+_DATA_ROOT: Final = Path(__file__).parent / "prompt_data"
+"""Directory holding one JSON catalog per boundary."""
 
-_INTENT_GUIDANCE: dict[WorkflowIntent, str] = {
-    WorkflowIntent.EXPENSE: "the owner reports money they spent",
-    WorkflowIntent.REFUND: "the owner reports money returned to them",
-    WorkflowIntent.QUERY: "the owner asks a factual question about their own "
-    "spending, budgets, or balances",
-    WorkflowIntent.ADVICE: "the owner asks for an assessment or observation "
-    "rather than a single figure",
-    WorkflowIntent.CATEGORY_FOLLOW_UP: "the owner answers a pending category "
-    "review, for example by naming a category to use instead",
-    WorkflowIntent.CORRECTION: "the owner wants to change a movement already recorded",
-    WorkflowIntent.UNDO: "the owner wants to cancel a movement already recorded",
-    WorkflowIntent.CLARIFICATION: "the request is ambiguous, incomplete, or "
-    "combines several incompatible requests",
-    WorkflowIntent.NON_FINANCE: "the message carries no finance request at all",
-    WorkflowIntent.UNSUPPORTED: "the request is understandable but outside "
-    "what this assistant handles, such as crediting a benefit balance",
-}
+ROUTER: Final = "router"
+EXTRACTION: Final = "extraction"
+CATEGORY_FIT: Final = "category_fit"
+TOOL_SELECTION: Final = "tool_selection"
+
+BOUNDARIES: Final = (ROUTER, EXTRACTION, CATEGORY_FIT, TOOL_SELECTION)
+"""Every boundary that owns an instruction catalog."""
 
 
-def _intent_lines() -> str:
-    """Render the routable vocabulary in a stable deterministic order."""
+@dataclass(frozen=True, slots=True)
+class PromptVersion:
+    """One boundary instruction text and the identity a run records.
 
+    Attributes:
+        boundary: Which boundary the text instructs.
+        id: Version identifier recorded by an evaluation run.
+        short_name: Trailing `vN` of the identifier, which is how a run selects
+            a version on the command line.
+        status: Either `candidate` for the boundary's current default or
+            `superseded` for one kept so its recorded runs stay readable.
+        note: Why this version exists and what its run measured.
+        text: The rendered instruction text, vocabularies already substituted.
+    """
+
+    boundary: str
+    id: str
+    short_name: str
+    status: str
+    note: str
+    text: str
+
+
+class PromptCatalogError(RuntimeError):
+    """Raised when a catalog is missing, malformed, or out of date."""
+
+
+def _short_name(identifier: str) -> str:
+    """Return the trailing version segment used to select a version.
+
+    Args:
+        identifier: Full version identifier such as `candidate-router-it-v4`.
+
+    Returns:
+        The trailing segment, such as `v4`.
+
+    Raises:
+        PromptCatalogError: If the identifier carries no trailing segment.
+    """
+
+    tail = identifier.rsplit("-", 1)[-1]
+    if not tail.startswith("v") or not tail[1:].isdigit():
+        raise PromptCatalogError(f"{identifier} has no trailing version segment")
+    return tail
+
+
+def _render_intent_lines(guidance: dict[str, str]) -> str:
+    """Render the routable vocabulary in a stable deterministic order.
+
+    Args:
+        guidance: One line of guidance per routable intent value.
+
+    Returns:
+        A newline-separated list of intents and their guidance.
+
+    Raises:
+        PromptCatalogError: If the guidance does not cover exactly the routable
+            intents, which would offer the model a route that does not exist or
+            hide one that does.
+    """
+
+    expected = {intent.value for intent in MODEL_ROUTABLE_INTENTS}
+    if set(guidance) != expected:
+        missing = sorted(expected - set(guidance))
+        extra = sorted(set(guidance) - expected)
+        raise PromptCatalogError(
+            f"router guidance mismatch: missing={missing} unexpected={extra}"
+        )
     return "\n".join(
-        f"- {intent.value}: {_INTENT_GUIDANCE[intent]}"
+        f"- {intent.value}: {guidance[intent.value]}"
         for intent in sorted(MODEL_ROUTABLE_INTENTS)
     )
 
 
-CANDIDATE_ROUTER_INSTRUCTIONS = f"""\
-You classify one message from the owner of a personal finance assistant into \
-exactly one intent. The owner writes in Italian.
+@cache
+def _catalog(boundary: str) -> dict[str, object]:
+    """Load and validate one boundary's catalog.
 
-Choose one of these intents:
-{_intent_lines()}
+    Args:
+        boundary: Boundary name.
 
-Rules:
-- Choose clarification whenever the message is ambiguous or asks for several \
-incompatible things at once. Clarification is always safer than a wrong \
-choice, because a wrong choice can record or change money.
-- A question about spending is never an expense. Reporting a purchase is never \
-a question.
-- Quoted, hypothetical, negated, or reported speech about spending is not a \
-report of spending.
-- Choose category_follow_up only when the message answers a category question \
-the assistant asked. If no such question is pending, the system will ignore \
-this choice.
-- Never choose a route for an attached image or a slash command; those are \
-handled before you see the message.
+    Returns:
+        The decoded catalog.
 
-For every decision:
-- Quote a short verbatim span of the owner message as evidence. Do not \
-paraphrase it and do not invent text that is not present.
-- List anything you could not determine in unknowns, using short Italian noun \
-phrases. Declaring an unknown is correct behaviour, not a failure.
-- Report confidence as your own honest certainty. A low value leads to a \
-clarifying question rather than an action.
+    Raises:
+        PromptCatalogError: If the catalog is absent or malformed.
+    """
 
-Never state an amount, a date, a category, a payment method, or an account. \
-You are only choosing where the message goes.
-"""
-"""Unpromoted candidate instructions for the root router boundary."""
+    if boundary not in BOUNDARIES:
+        raise PromptCatalogError(f"unknown prompt boundary {boundary}")
+    path = _DATA_ROOT / f"{boundary}.json"
+    try:
+        decoded = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        raise PromptCatalogError(f"{boundary} catalog is unreadable") from error
+    if not isinstance(decoded, dict) or not isinstance(decoded.get("versions"), list):
+        raise PromptCatalogError(f"{boundary} catalog has no versions")
+    return decoded
 
 
-CANDIDATE_EXTRACTION_INSTRUCTIONS_VERSION = "candidate-extraction-it-v2"
-"""Identifier recorded by an evaluation run; not a promoted configuration."""
+@cache
+def prompt_versions(boundary: str) -> tuple[PromptVersion, ...]:
+    """Return every version of one boundary's instructions, oldest first.
 
-CANDIDATE_EXTRACTION_INSTRUCTIONS = """\
-You read one message in which the owner of a personal finance assistant \
-reports money they spent or money returned to them. The owner writes in \
-Italian. Extract only what the message states.
+    Args:
+        boundary: Boundary name.
 
-Amount:
-- Report the magnitude as a positive integer number of euro cents. Twelve euro \
-is 1200. Twelve euro and fifty cents is 1250.
-- Italian writes decimals with a comma. `12,50` is 1250 cents.
-- Set polarity to refund only when money came back to the owner, and to \
-expense otherwise. Never express direction with a negative amount.
-- If the message states no amount, set the amount to null. Never guess one \
-and never round a vague quantity into a figure.
+    Returns:
+        The boundary's versions.
 
-Time:
-- Copy the owner's own temporal words verbatim into the occurrence field, for \
-example `ieri`, `l'altro ieri`, `il 3 marzo`, `lunedì scorso`. Do not convert \
-them into a date and do not invent a date.
-- If the message states no time at all, set the field to null. It means the \
-movement just happened.
+    Raises:
+        PromptCatalogError: If the catalog is malformed or repeats a version.
+    """
 
-Funding:
-- Copy the owner's own words for each payment method, for example \
-`buoni pasto`, `carta`, `contanti`. Never invent a method and never choose a \
-default; omitting funding entirely is correct when the message names none.
-- When the owner splits a payment, list one part per method and give every \
-part its own positive amount in cents. The parts must add up to the total.
-- When the owner names one method without splitting, list that one part and \
-omit its amount.
+    catalog = _catalog(boundary)
+    raw = catalog["versions"]
+    if not isinstance(raw, list):
+        raise PromptCatalogError(f"{boundary} catalog has no versions")
+    versions: list[PromptVersion] = []
+    for entry in raw:
+        if not isinstance(entry, dict):
+            raise PromptCatalogError(f"{boundary} catalog holds a non-object version")
+        identifier = str(entry["id"])
+        text = str(entry["text"])
+        guidance = entry.get("intent_guidance")
+        if isinstance(guidance, dict):
+            text = text.replace(
+                "{intent_lines}",
+                _render_intent_lines({str(k): str(v) for k, v in guidance.items()}),
+            )
+        versions.append(
+            PromptVersion(
+                boundary=boundary,
+                id=identifier,
+                short_name=_short_name(identifier),
+                status=str(entry.get("status", "superseded")),
+                note=str(entry.get("note", "")),
+                text=text,
+            )
+        )
+    if len({version.id for version in versions}) != len(versions):
+        raise PromptCatalogError(f"{boundary} catalog repeats a version identifier")
+    if len({version.short_name for version in versions}) != len(versions):
+        raise PromptCatalogError(f"{boundary} catalog repeats a short name")
+    return tuple(versions)
 
-Description and merchant:
-- Write a short Italian description of what the money was for.
-- Set the merchant only when the message names a shop, brand, or business. A \
-product is not a merchant.
 
-Never state a category or an account identifier. Never state a currency: the \
-assistant operates in one currency and adds it itself.
+def prompt(boundary: str, version: str) -> PromptVersion:
+    """Return one version of a boundary's instructions.
 
-Never write a placeholder such as `unknown`, `n/a`, or `sconosciuto` as if it \
-were a value: it would be recorded as the merchant's name or as a payment \
-method. Use null for a field the message does not fill.
+    Args:
+        boundary: Boundary name.
+        version: Either the full identifier or its trailing `vN` segment.
 
-Report what the message says and leave out what it does not. Do not judge \
-whether the assistant can act on your answer: it decides that itself, knowing \
-the owner's configured payment methods and the date phrases it can read, none \
-of which you are shown. Copying words you cannot interpret is correct; \
-withholding them is not.
+    Returns:
+        The requested version.
 
-- `Ho pagato 25 euro di benzina` states no time and no payment method. Set \
-both to null. The assistant knows the movement just happened and which method \
-to use.
-- `Ho speso 12 euro l'altro giorno` states a time. Copy `l'altro giorno` even \
-though it is vague; the assistant decides whether it can resolve it.
-- `Ho speso 12 euro, non ricordo con cosa` names no payment method. Leave \
-funding empty rather than copying the words that say there is none.
-- `Ho speso un po' al bar` states no figure. Set the amount to null.
-"""
-"""Unpromoted candidate instructions for the expense extraction boundary."""
+    Raises:
+        PromptCatalogError: If the boundary has no such version.
+    """
 
-CANDIDATE_CATEGORY_FIT_INSTRUCTIONS_VERSION = "candidate-category-fit-it-v1"
-"""Identifier recorded by an evaluation run; not a promoted configuration."""
+    for candidate in prompt_versions(boundary):
+        if version in (candidate.id, candidate.short_name):
+            return candidate
+    known = ", ".join(candidate.short_name for candidate in prompt_versions(boundary))
+    raise PromptCatalogError(f"{boundary} has no version {version}; known: {known}")
 
-CANDIDATE_CATEGORY_FIT_INSTRUCTIONS = """\
-You decide which spending purpose describes one movement, choosing from the \
-owner's active category list supplied below. Categories are named, never \
-numbered: reply with a name exactly as it appears in that list.
 
-Classify by the purpose of the spending, not by the shop that sold it and not \
-by the payment method. Cat food bought at a supermarket is pet food, not \
-groceries. A shop name, a brand, and a payment method are never categories.
+def default_prompt(boundary: str) -> PromptVersion:
+    """Return the version a run uses when none is named.
 
-Prefer an existing category. Choose the existing outcome whenever any active \
-category adequately describes the purpose, even if a more specific one could \
-be imagined. Choose the proposal outcome only when no active category is \
-adequate.
+    Args:
+        boundary: Boundary name.
 
-For a proposal:
-- Give the candidate a short Italian name describing a purpose.
-- Set the parent to an existing top-level category name when the candidate \
-belongs under one. Omit the parent only when no existing purpose fits.
-- Explain in the rationale why no active category is adequate.
-- List in considered the active categories you examined and rejected. Use \
-only names from the supplied list.
-- Never propose a name that already appears in the list.
+    Returns:
+        The catalog's declared default version.
 
-Quote a short verbatim span of the owner message as evidence for whichever \
-outcome you choose.
-"""
-"""Unpromoted candidate instructions for the category-fit boundary."""
+    Raises:
+        PromptCatalogError: If the catalog declares no usable default.
+    """
+
+    declared = _catalog(boundary).get("default_version")
+    if not isinstance(declared, str):
+        raise PromptCatalogError(f"{boundary} catalog declares no default version")
+    return prompt(boundary, declared)
 
 
 def render_active_categories(names: tuple[str, ...]) -> str:
@@ -208,19 +259,61 @@ def render_active_categories(names: tuple[str, ...]) -> str:
     return f"\nActive categories:\n{listed}\n"
 
 
-CANDIDATE_TOOL_SELECTION_INSTRUCTIONS_VERSION = "candidate-tool-selection-it-v1"
-"""Identifier recorded by an evaluation run; not a promoted configuration."""
+def render_active_category_tree(
+    nodes: tuple[tuple[str, str, str | None], ...],
+) -> str:
+    """Render the owner's active taxonomy as the hierarchy it actually is.
 
-_TOOL_GUIDANCE: dict[ReadTool, str] = {
-    ReadTool.CATEGORY_SPENDING: "how much the owner spent on one category they "
-    "named, in one month",
-    ReadTool.BUDGET_STATUS: "the target, the spend, and what is left of one "
-    "named category's budget in one month",
-    ReadTool.FUNDING_CLASS_SPLIT: "a whole month's spending separated into own "
-    "money and benefits such as meal vouchers",
-    ReadTool.BUDGETS_AT_RISK: "every budget in one month, worst position "
-    "first, for questions about where spending is excessive",
-}
+    `render_active_categories` renders a flat list of names, which asks a model
+    to choose from a hierarchy it cannot see. The measured consequence was
+    exactly that: twelve of thirty-one categorization errors were a heading
+    chosen where the label was one of its own specific entries. Each node's
+    inclusion guidance is written into the taxonomy and was likewise never
+    shown, so it is rendered here too.
+
+    Args:
+        nodes: Active categories as `(name, description, parent name)`, in
+            taxonomy order. A node with no parent is a heading.
+
+    Returns:
+        A rendered tree to append to the instructions.
+
+    Raises:
+        ValueError: If no active category was supplied.
+    """
+
+    if not nodes:
+        raise ValueError("category fit requires at least one active category")
+    lines = [
+        f"{'  ' if parent else ''}- {name}: {description}"
+        for name, description, parent in nodes
+    ]
+    listed = "\n".join(lines)
+    return f"\nActive categories:\n{listed}\n"
+
+
+def render_selection_categories(names: tuple[str, ...]) -> str:
+    """Render the categories a read tool may be asked about.
+
+    The selection boundary asks for a category by name and then resolves it
+    against the owner's taxonomy, but v1 and v2 never showed the model what
+    that taxonomy contains. Six of twenty errors in the v2 run were a category
+    named in the owner's words that no active category matches, and three more
+    were a payment method offered as a category. Neither is a judgment the
+    model could have made from what it was given.
+
+    Args:
+        names: Active category display names, in taxonomy order.
+
+    Returns:
+        A rendered list to append to the instructions, or an empty string when
+        no taxonomy was supplied.
+    """
+
+    if not names:
+        return ""
+    listed = "\n".join(f"- {name}" for name in names)
+    return f"\nCategories you may name:\n{listed}\n"
 
 
 def render_tool_vocabulary(intent: WorkflowIntent) -> str:
@@ -237,36 +330,34 @@ def render_tool_vocabulary(intent: WorkflowIntent) -> str:
 
     Raises:
         DomainError: If the route owns no registry.
+        PromptCatalogError: If the catalog does not describe every read tool.
     """
 
+    guidance = _catalog(TOOL_SELECTION).get("tool_guidance")
+    if not isinstance(guidance, dict) or set(guidance) != {
+        tool.value for tool in ReadTool
+    }:
+        raise PromptCatalogError("tool guidance does not cover the read registry")
     listed = "\n".join(
-        f"- {tool.value}: {_TOOL_GUIDANCE[tool]}"
+        f"- {tool.value}: {guidance[tool.value]}"
         for tool in sorted(registry_for(intent))
     )
     return f"\nAvailable tools:\n{listed}\n"
 
 
-CANDIDATE_TOOL_SELECTION_INSTRUCTIONS = """\
-You choose which read-only tool answers one question from the owner of a \
-personal finance assistant. The owner writes in Italian.
-
-Choose exactly one tool from the list supplied below. Never name a tool that \
-is not in that list, and never invent one.
-
-Rules:
-- Report no figure yourself. You choose the tool; the assistant computes every \
-amount from the owner's own stored records.
-- Copy the owner's own words for a category, for example `abbonamenti`, \
-`spesa alimentare`. Never translate a category into an identifier and never \
-invent one that was not mentioned.
-- Give a month only when the owner states one, as `YYYY-MM`. `Questo mese` \
-states no month: omit it and the assistant uses the month in progress.
-- The tools that report one category need that category named. The tools that \
-report a whole month must not name one.
-- Quote a short verbatim span of the owner message as evidence. Do not \
-paraphrase it and do not invent text that is not present.
-
-Never state an amount, a date, an account, or a budget target. You are only \
-choosing which question to compute.
-"""
-"""Unpromoted candidate instructions for the read-tool selection boundary."""
+__all__ = [
+    "BOUNDARIES",
+    "CATEGORY_FIT",
+    "EXTRACTION",
+    "ROUTER",
+    "TOOL_SELECTION",
+    "PromptCatalogError",
+    "PromptVersion",
+    "default_prompt",
+    "prompt",
+    "prompt_versions",
+    "render_active_categories",
+    "render_active_category_tree",
+    "render_selection_categories",
+    "render_tool_vocabulary",
+]

@@ -40,10 +40,11 @@ from money_tracker.persistence.database import (
 from money_tracker.persistence.finance import PostgresFinanceRepository
 from money_tracker.runtime import ASK_NODE, build_review_graph
 from money_tracker.workflows import (
-    CANDIDATE_CATEGORY_FIT_INSTRUCTIONS,
+    CATEGORY_FIT,
     CallbackAction,
     ReviewDecision,
     ReviewOutcome,
+    default_prompt,
     initial_review_state,
 )
 from money_tracker.workflows.resolution import PRODUCT_TIMEZONE
@@ -178,7 +179,7 @@ def _graph(
         review=CategoryReviewService(
             repository, repository, clock=SystemClock(), ids=UUID4Generator()
         ),
-        category_instructions=CANDIDATE_CATEGORY_FIT_INSTRUCTIONS,
+        category_instructions=default_prompt(CATEGORY_FIT).text,
         checkpointer=checkpointer,
     )
 

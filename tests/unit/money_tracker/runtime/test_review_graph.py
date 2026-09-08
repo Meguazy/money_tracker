@@ -32,11 +32,12 @@ from money_tracker.domain import (
 )
 from money_tracker.runtime import ASK_NODE, build_review_graph
 from money_tracker.workflows import (
-    CANDIDATE_CATEGORY_FIT_INSTRUCTIONS,
+    CATEGORY_FIT,
     CallbackAction,
     ReviewDecision,
     ReviewOutcome,
     ReviewReason,
+    default_prompt,
     initial_review_state,
 )
 
@@ -229,7 +230,7 @@ def _graph(
         review=CategoryReviewService(
             store, store, clock=SystemClock(), ids=SequentialIds()
         ),
-        category_instructions=CANDIDATE_CATEGORY_FIT_INSTRUCTIONS,
+        category_instructions=default_prompt(CATEGORY_FIT).text,
         checkpointer=InMemorySaver(),
     )
     return compiled, {"configurable": {"thread_id": str(uuid4())}}

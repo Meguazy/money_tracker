@@ -18,13 +18,14 @@ from money_tracker.persistence.database import (
 )
 from money_tracker.runtime import build_router_graph
 from money_tracker.workflows import (
-    CANDIDATE_ROUTER_INSTRUCTIONS,
+    ROUTER,
     CallbackAction,
     ChannelMessage,
     RepairRequest,
     RoutingContext,
     RoutingSource,
     WorkflowIntent,
+    default_prompt,
     initial_router_state,
     routing_decision_from_state,
 )
@@ -85,7 +86,7 @@ def test_deterministic_decision_survives_a_restart(postgres_url: str) -> None:
     with open_postgres_checkpointer(postgres_url) as checkpointer:
         graph = build_router_graph(
             model=ScriptedModel(),
-            instructions=CANDIDATE_ROUTER_INSTRUCTIONS,
+            instructions=default_prompt(ROUTER).text,
             minimum_confidence=0.9,
             checkpointer=checkpointer,
         )
@@ -97,7 +98,7 @@ def test_deterministic_decision_survives_a_restart(postgres_url: str) -> None:
     with open_postgres_checkpointer(postgres_url) as reopened:
         restarted = build_router_graph(
             model=ScriptedModel(),
-            instructions=CANDIDATE_ROUTER_INSTRUCTIONS,
+            instructions=default_prompt(ROUTER).text,
             minimum_confidence=0.9,
             checkpointer=reopened,
         )
@@ -144,7 +145,7 @@ def test_checkpointed_state_stays_json_primitive(postgres_url: str) -> None:
                     )
                 ]
             ),
-            instructions=CANDIDATE_ROUTER_INSTRUCTIONS,
+            instructions=default_prompt(ROUTER).text,
             minimum_confidence=0.9,
             checkpointer=checkpointer,
         )
@@ -159,7 +160,7 @@ def test_checkpointed_state_stays_json_primitive(postgres_url: str) -> None:
     with open_postgres_checkpointer(postgres_url) as reopened:
         restarted = build_router_graph(
             model=ScriptedModel(),
-            instructions=CANDIDATE_ROUTER_INSTRUCTIONS,
+            instructions=default_prompt(ROUTER).text,
             minimum_confidence=0.9,
             checkpointer=reopened,
         )
@@ -197,7 +198,7 @@ def test_real_local_model_classifies_an_italian_expense(
     with open_postgres_checkpointer(postgres_url) as checkpointer:
         graph = build_router_graph(
             model=LocalStructuredOutputModel(),
-            instructions=CANDIDATE_ROUTER_INSTRUCTIONS,
+            instructions=default_prompt(ROUTER).text,
             minimum_confidence=0.0,
             checkpointer=checkpointer,
         )

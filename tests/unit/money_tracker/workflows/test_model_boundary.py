@@ -9,15 +9,15 @@ import pytest
 from pydantic import BaseModel
 
 from money_tracker.workflows import (
-    CANDIDATE_ROUTER_INSTRUCTIONS,
-    CANDIDATE_ROUTER_INSTRUCTIONS_VERSION,
     DETERMINISTIC_ONLY_INTENTS,
     MODEL_BOUNDARY_ATTEMPTS,
     MODEL_ROUTABLE_INTENTS,
+    ROUTER,
     RepairRequest,
     RouteClassification,
     StructuredOutputError,
     WorkflowIntent,
+    default_prompt,
     parse_with_one_repair,
 )
 
@@ -70,7 +70,7 @@ def _parse(model: ScriptedModel) -> RouteClassification:
     return parse_with_one_repair(
         model,
         schema=RouteClassification,
-        instructions=CANDIDATE_ROUTER_INSTRUCTIONS,
+        instructions=default_prompt(ROUTER).text,
         message="ho speso 12 euro per i croccantini",
     )
 
@@ -183,7 +183,7 @@ def test_failure_message_carries_no_owner_or_model_text() -> None:
         parse_with_one_repair(
             model,
             schema=RouteClassification,
-            instructions=CANDIDATE_ROUTER_INSTRUCTIONS,
+            instructions=default_prompt(ROUTER).text,
             message=secret,
         )
 
@@ -204,25 +204,25 @@ def test_unparsable_output_is_treated_as_a_schema_failure() -> None:
 def test_candidate_instructions_are_labelled_unpromoted() -> None:
     """Keep an unevaluated prompt impossible to mistake for production."""
 
-    assert CANDIDATE_ROUTER_INSTRUCTIONS_VERSION.startswith("candidate-")
+    assert default_prompt(ROUTER).id.startswith("candidate-")
 
 
 def test_candidate_instructions_list_every_routable_intent() -> None:
     """Prevent the offered vocabulary from drifting from the code."""
 
     for intent in MODEL_ROUTABLE_INTENTS:
-        assert f"- {intent.value}:" in CANDIDATE_ROUTER_INSTRUCTIONS
+        assert f"- {intent.value}:" in default_prompt(ROUTER).text
 
 
 def test_candidate_instructions_offer_no_deterministic_route() -> None:
     """Never invite a model to claim a route it cannot be given."""
 
     for intent in DETERMINISTIC_ONLY_INTENTS:
-        assert f"- {intent.value}:" not in CANDIDATE_ROUTER_INSTRUCTIONS
+        assert f"- {intent.value}:" not in default_prompt(ROUTER).text
 
 
 def test_candidate_instructions_forbid_stating_finance_values() -> None:
     """Keep routing instructions from inviting extraction or authorization."""
 
-    assert "Never state an amount" in CANDIDATE_ROUTER_INSTRUCTIONS
-    assert "verbatim span" in CANDIDATE_ROUTER_INSTRUCTIONS
+    assert "Never state an amount" in default_prompt(ROUTER).text
+    assert "verbatim span" in default_prompt(ROUTER).text

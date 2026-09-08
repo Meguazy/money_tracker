@@ -28,10 +28,9 @@ from pathlib import Path
 from typing import cast
 from uuid import uuid4
 
-from pydantic import JsonValue
+from pydantic import BaseModel, JsonValue
 
 from money_tracker.domain import (
-    CategoryStatus,
     DomainError,
     Taxonomy,
     initial_taxonomy,
@@ -58,7 +57,6 @@ from money_tracker.evaluations.suites import (
 )
 from money_tracker.runtime.model import LocalStructuredOutputModel
 from money_tracker.workflows import (
-    CANDIDATE_CATEGORY_FIT_INSTRUCTIONS,
     CategoryFit,
     CategoryFitOutcome,
     StructuredOutputError,
@@ -66,8 +64,19 @@ from money_tracker.workflows import (
     UnresolvedExtractionError,
     build_category_proposal,
     parse_with_one_repair,
-    render_active_categories,
     resolve_existing_category,
+)
+from money_tracker.workflows.candidates import (
+    CATEGORY_FIT_CANDIDATES as CATEGORY_FIT_CANDIDATES,
+)
+from money_tracker.workflows.candidates import (
+    DEFAULT_CATEGORY_FIT_CANDIDATE as DEFAULT_CATEGORY_FIT_CANDIDATE,
+)
+from money_tracker.workflows.candidates import (
+    CategoryFitCandidate as CategoryFitCandidate,
+)
+from money_tracker.workflows.candidates import (
+    active_category_names as _active_names,
 )
 
 SUITE = "categorization/purpose-it"
@@ -87,16 +96,6 @@ def _fold(value: str) -> str:
     return "".join(
         char for char in decomposed if not unicodedata.combining(char)
     ).casefold()
-
-
-def _active_names(taxonomy: Taxonomy) -> tuple[str, ...]:
-    """Render the owner's active category names for the boundary."""
-
-    return tuple(
-        category.name
-        for category in taxonomy.categories
-        if category.status is CategoryStatus.ACTIVE
-    )
 
 
 def _outcome(
@@ -147,12 +146,17 @@ def _proposed_name(fit: CategoryFit) -> str | None:
 def _named_while_proposing(fit: CategoryFit, taxonomy: Taxonomy) -> bool:
     """Return whether a proposal also named a real existing category.
 
-    The boundary is a flat schema with conditional fields, chosen because no
-    local candidate is capability-screened for union output. That shape lets a
-    model fill every field and then select the wrong discriminator, so this
-    separates "could not find the category" from "found it and proposed anyway".
-    The two failures need different fixes, and only the second is measurable
-    without a better model.
+    This separates "could not find the category" from "found it and proposed
+    anyway". The two failures need different fixes, and on the flat schema the
+    second one was the dominant failure: half of all proposals also carried the
+    correct existing name.
+
+    It measures a property of the flat schema alone. A union boundary has no
+    field in which a proposal could name an existing category, so the question
+    is not merely unobserved there but unaskable, and the metric is emitted at
+    zero denominator rather than as a zero rate. A rate of zero would read as
+    the model never knowing the answer, which is the opposite of what the union
+    established.
     """
 
     if fit.outcome is not CategoryFitOutcome.PROPOSAL or fit.category_name is None:
@@ -166,6 +170,8 @@ def _metrics(
     proposed_names: Mapping[str, str | None],
     named_while_proposing: Mapping[str, bool],
     taxonomy: Taxonomy,
+    *,
+    both_halves_expressible: bool,
 ) -> list[MetricScore]:
     """Score every gate the evaluation matrix defines for categorization."""
 
@@ -258,11 +264,16 @@ def _metrics(
         ),
         MetricScore(
             name="existing_category_named_while_proposing",
-            value=rate(sum(named_while_proposing.values()), proposals_offered),
+            value=rate(
+                sum(named_while_proposing.values()) if both_halves_expressible else 0,
+                proposals_offered if both_halves_expressible else 0,
+            ),
             threshold=None,
             blocking=False,
-            numerator=sum(named_while_proposing.values()),
-            denominator=proposals_offered,
+            numerator=(
+                sum(named_while_proposing.values()) if both_halves_expressible else 0
+            ),
+            denominator=proposals_offered if both_halves_expressible else 0,
         ),
         MetricScore(
             name="proposals_offered",
@@ -282,7 +293,7 @@ def run_categorization_suite(
     output_root: Path,
     repository_root: Path,
     model: StructuredOutputModel | None = None,
-    instructions: str = CANDIDATE_CATEGORY_FIT_INSTRUCTIONS,
+    candidate: CategoryFitCandidate = DEFAULT_CATEGORY_FIT_CANDIDATE,
 ) -> SuiteReport:
     """Execute the categorization suite and always emit a deterministic report.
 
@@ -292,8 +303,9 @@ def run_categorization_suite(
         output_root: Ignored artifact root for raw run output.
         repository_root: Repository directory, for source metadata.
         model: Structured-output port. The local adapter is used when omitted.
-        instructions: Purpose-boundary instruction text under test. Unpromoted
-            by default, and recorded so a score is attributable to one text.
+        candidate: Boundary under test: its schema, instruction text, and
+            conversion. Unpromoted, and recorded so a score is attributable to
+            one boundary shape.
 
     Returns:
         The complete report, already written to its artifact directory.
@@ -305,20 +317,30 @@ def run_categorization_suite(
         suite=SUITE, path=dataset_path, cases=cases, content_hash=content_hash
     )
     taxonomy = initial_taxonomy()
-    rendered = instructions + render_active_categories(_active_names(taxonomy))
+    rendered = candidate.instructions + candidate.render_taxonomy(taxonomy)
+    schema = candidate.build_schema(taxonomy)
     port = model or LocalStructuredOutputModel()
 
     results: list[CaseResult] = []
     proposed_names: dict[str, str | None] = {}
     named_while_proposing: dict[str, bool] = {}
     for case in cases:
-        result, proposed, named = _execute(port, rendered, case, taxonomy)
+        result, proposed, named = _execute(
+            port, candidate, schema, rendered, case, taxonomy
+        )
         results.append(result)
         proposed_names[result.case_id] = proposed
         named_while_proposing[result.case_id] = named
 
-    metrics = _metrics(cases, results, proposed_names, named_while_proposing, taxonomy)
-    passed = blocking_gates_passed(metrics)
+    metrics = _metrics(
+        cases,
+        results,
+        proposed_names,
+        named_while_proposing,
+        taxonomy,
+        both_halves_expressible=schema is CategoryFit,
+    )
+    passed = blocking_gates_passed(metrics, results)
     meets_minimum = dataset.item_count >= DATASET_MINIMUM
     report = SuiteReport(
         run_id=new_run_id("CAT"),
@@ -330,7 +352,9 @@ def run_categorization_suite(
         model=model_metadata(settings),
         environment=collect_environment_metadata(),
         configuration={
-            "instructions_sha256": sha256_text(instructions),
+            "instructions_version": candidate.version,
+            "instructions_sha256": sha256_text(rendered),
+            "boundary_schema": schema.__name__,
             "taxonomy_active_categories": len(_active_names(taxonomy)),
             "dataset_minimum": DATASET_MINIMUM,
             "auto_post_policy_promoted": False,
@@ -350,7 +374,9 @@ def run_categorization_suite(
 
 def _execute(
     model: StructuredOutputModel,
-    instructions: str,
+    candidate: CategoryFitCandidate,
+    schema: type[BaseModel],
+    rendered_instructions: str,
     case: Mapping[str, JsonValue],
     taxonomy: Taxonomy,
 ) -> tuple[CaseResult, str | None, bool]:
@@ -361,11 +387,13 @@ def _execute(
     tags = [str(tag) for tag in cast(list[JsonValue], case.get("tags", []))]
     started = time.monotonic()
     try:
-        fit = parse_with_one_repair(
-            model,
-            schema=CategoryFit,
-            instructions=instructions,
-            message=str(case["message"]),
+        fit = candidate.convert(
+            parse_with_one_repair(
+                model,
+                schema=schema,
+                instructions=rendered_instructions,
+                message=str(case["message"]),
+            )
         )
     except StructuredOutputError:
         return (

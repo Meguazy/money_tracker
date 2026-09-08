@@ -51,16 +51,20 @@ from money_tracker.evaluations.suites import (
 from money_tracker.runtime import build_router_graph
 from money_tracker.runtime.model import LocalStructuredOutputModel
 from money_tracker.workflows import (
-    CANDIDATE_ROUTER_INSTRUCTIONS,
     MUTATING_INTENTS,
+    ROUTER,
     CallbackAction,
     ChannelMessage,
     RoutingContext,
     RoutingSource,
     WorkflowIntent,
+    default_prompt,
     initial_router_state,
     routing_decision_from_state,
 )
+
+DEFAULT_ROUTER_INSTRUCTIONS = default_prompt(ROUTER)
+"""The router instruction version a run uses when none is named."""
 
 SUITE = "routing/intent-it"
 """Suite name from the catalog in the experiment process."""
@@ -302,7 +306,8 @@ def run_routing_suite(
     output_root: Path,
     minimum_confidence: float,
     repository_root: Path,
-    instructions: str = CANDIDATE_ROUTER_INSTRUCTIONS,
+    instructions: str = DEFAULT_ROUTER_INSTRUCTIONS.text,
+    instructions_version: str = DEFAULT_ROUTER_INSTRUCTIONS.id,
 ) -> SuiteReport:
     """Execute the routing suite and always emit a deterministic report.
 
@@ -314,6 +319,8 @@ def run_routing_suite(
         repository_root: Repository directory, for source metadata.
         instructions: Router instruction text under test. Unpromoted by
             default, and recorded so a score is attributable to one text.
+        instructions_version: Identifier of that text, recorded beside its hash
+            so a published score names the candidate a reader can look up.
 
     Returns:
         The complete report, already written to its artifact directory.
@@ -339,7 +346,7 @@ def run_routing_suite(
     for index, case in enumerate(cases):
         results.append(_execute(graph, case, index))
     metrics = _metrics(cases, results)
-    passed = blocking_gates_passed(metrics)
+    passed = blocking_gates_passed(metrics, results)
     meets_minimum = dataset.item_count >= DATASET_MINIMUM
     report = SuiteReport(
         run_id=new_run_id("ROU"),
@@ -352,6 +359,7 @@ def run_routing_suite(
         environment=collect_environment_metadata(),
         configuration={
             "minimum_confidence": minimum_confidence,
+            "instructions_version": instructions_version,
             "instructions_sha256": sha256_text(instructions),
             "dataset_minimum": DATASET_MINIMUM,
         },

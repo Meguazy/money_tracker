@@ -25,8 +25,8 @@ from money_tracker.domain import (
 )
 from money_tracker.runtime import build_expense_graph
 from money_tracker.workflows import (
-    CANDIDATE_CATEGORY_FIT_INSTRUCTIONS,
-    CANDIDATE_EXTRACTION_INSTRUCTIONS,
+    CATEGORY_FIT,
+    EXTRACTION,
     CategoryFit,
     ChannelMessage,
     ExpenseExtraction,
@@ -34,6 +34,7 @@ from money_tracker.workflows import (
     ExpenseWorkflowState,
     ResolutionReason,
     WorkflowIntent,
+    default_prompt,
     initial_expense_state,
 )
 
@@ -204,8 +205,8 @@ def _run(
         finance=FinanceService(store, clock=SystemClock(), ids=ids),  # type: ignore[arg-type]
         proposals=CategoryProposalService(store, clock=SystemClock(), ids=ids),  # type: ignore[arg-type]
         ids=ids,
-        extraction_instructions=CANDIDATE_EXTRACTION_INSTRUCTIONS,
-        category_instructions=CANDIDATE_CATEGORY_FIT_INSTRUCTIONS,
+        extraction_instructions=default_prompt(EXTRACTION).text,
+        category_instructions=default_prompt(CATEGORY_FIT).text,
     )
     final = graph.invoke(
         initial_expense_state(

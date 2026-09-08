@@ -34,7 +34,7 @@ outlive many application restarts.
 
 from __future__ import annotations
 
-from typing import Protocol
+from typing import Protocol, cast
 from uuid import UUID
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -64,6 +64,7 @@ from money_tracker.workflows import (
     parse_with_one_repair,
     render_active_categories,
 )
+from money_tracker.workflows.candidates import CategoryFitCandidate
 
 ASK_NODE = "ask_owner"
 SETTLE_NODE = "settle_review"
@@ -90,6 +91,7 @@ def build_review_graph(
     configuration: ReviewConfigurationReader,
     review: CategoryReviewService,
     category_instructions: str,
+    category_candidate: CategoryFitCandidate | None = None,
     checkpointer: BaseCheckpointSaver[str] | None = None,
 ) -> CompiledStateGraph[
     ReviewWorkflowState, None, ReviewWorkflowState, ReviewWorkflowState
@@ -105,6 +107,8 @@ def build_review_graph(
         configuration: Trusted taxonomy, movement, and proposal reader.
         review: Application service owning every owner decision.
         category_instructions: Candidate text for the purpose boundary.
+        category_candidate: Schema, conversion and taxonomy rendering paired
+            with that text; None retains the explicit legacy flat boundary.
         checkpointer: Persistent checkpointer, required in practice because a
             paused review outlives the process that opened it.
 
@@ -112,6 +116,9 @@ def build_review_graph(
         A compiled graph that pauses on a candidate and ends when the owner
         approves, reuses, or cancels.
     """
+
+    if category_candidate and category_instructions != category_candidate.instructions:
+        raise ValueError("category instructions do not match their candidate")
 
     def _question(state: ReviewWorkflowState) -> ReviewQuestion:
         """Render what the owner is shown, from the authoritative proposal."""
@@ -242,11 +249,27 @@ def build_review_graph(
         )
         movement = configuration.get_expense(profile_id, expense_id)
         try:
-            fit = parse_with_one_repair(
+            parsed = parse_with_one_repair(
                 model,
-                schema=CategoryFit,
-                instructions=(category_instructions + render_active_categories(active)),
+                schema=(
+                    category_candidate.build_schema(taxonomy)
+                    if category_candidate
+                    else CategoryFit
+                ),
+                instructions=(
+                    category_instructions
+                    + (
+                        category_candidate.render_taxonomy(taxonomy)
+                        if category_candidate
+                        else render_active_categories(active)
+                    )
+                ),
                 message=movement.description,
+            )
+            fit = (
+                category_candidate.convert(parsed)
+                if category_candidate
+                else cast(CategoryFit, parsed)
             )
         except StructuredOutputError:
             return _pending(ReviewReason.INVALID_CANDIDATE)

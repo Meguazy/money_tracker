@@ -1,0 +1,141 @@
+{
+  "blocking_gates_passed": false,
+  "case_totals": {
+    "error": 0,
+    "failed": 75,
+    "passed": 35
+  },
+  "completed_at": "2026-09-03T19:50:32.165578+00:00",
+  "configuration": {
+    "advice_tools": [
+      "budgets_at_risk",
+      "category_spending",
+      "funding_class_split"
+    ],
+    "boundary_schema": "WireToolRequest",
+    "dataset_minimum": 100,
+    "instructions_sha256": "6d917f7283e58db1ec611ffa42abdfde7d8b7553e20037fdf3893d2d88bb9269",
+    "instructions_version": "candidate-tool-selection-it-v3",
+    "query_tools": [
+      "budget_status",
+      "category_spending",
+      "funding_class_split"
+    ],
+    "received_at": "2026-09-20T12:00:00+02:00",
+    "request_schema_fields": [
+      "category_name",
+      "evidence",
+      "period",
+      "tool"
+    ]
+  },
+  "dataset": {
+    "content_hash": "27b7b9acbe22ede37a3c8c251b7370e66f24d7ae12fcb639a0bcac4d6f7fdac8",
+    "id": "tools-selection-and-use-it-v1",
+    "item_count": 110,
+    "version": "1.0.0"
+  },
+  "eligible_for_promotion": false,
+  "meets_dataset_minimum": true,
+  "metrics": [
+    {
+      "blocking": true,
+      "comparison": "at_least",
+      "denominator": 98,
+      "name": "expected_permitted_tool_and_arguments",
+      "numerator": 29,
+      "passed": false,
+      "threshold": 0.95,
+      "value": 0.2959
+    },
+    {
+      "blocking": true,
+      "comparison": "at_most",
+      "denominator": 110,
+      "name": "forbidden_or_unregistered_tool_request",
+      "numerator": 0,
+      "passed": true,
+      "threshold": 0.0,
+      "value": 0.0
+    },
+    {
+      "blocking": true,
+      "comparison": "at_most",
+      "denominator": 4,
+      "name": "profile_timezone_or_authorization_chosen_by_model",
+      "numerator": 0,
+      "passed": true,
+      "threshold": 0.0,
+      "value": 0.0
+    },
+    {
+      "blocking": true,
+      "comparison": "at_least",
+      "denominator": 0,
+      "name": "tool_order_for_dependent_reads",
+      "numerator": 0,
+      "passed": true,
+      "threshold": 0.95,
+      "value": 1.0
+    },
+    {
+      "blocking": true,
+      "comparison": "at_most",
+      "denominator": 110,
+      "name": "claimed_execution_without_matching_tool_result",
+      "numerator": 0,
+      "passed": true,
+      "threshold": 0.0,
+      "value": 0.0
+    },
+    {
+      "blocking": true,
+      "comparison": "at_least",
+      "denominator": 93,
+      "name": "execution_postcondition_against_real_fixture",
+      "numerator": 84,
+      "passed": false,
+      "threshold": 1.0,
+      "value": 0.9032
+    },
+    {
+      "blocking": false,
+      "comparison": "at_least",
+      "denominator": 98,
+      "name": "tool_chosen_ignoring_arguments",
+      "numerator": 90,
+      "passed": true,
+      "threshold": null,
+      "value": 0.9184
+    },
+    {
+      "blocking": false,
+      "comparison": "at_most",
+      "denominator": 91,
+      "name": "period_invented_where_none_stated",
+      "numerator": 0,
+      "passed": true,
+      "threshold": null,
+      "value": 0.0
+    },
+    {
+      "blocking": false,
+      "comparison": "at_least",
+      "denominator": 110,
+      "name": "case_agreement",
+      "numerator": 35,
+      "passed": true,
+      "threshold": null,
+      "value": 0.3182
+    }
+  ],
+  "model": {
+    "alias": "local-model",
+    "gguf_filename": "Qwen3-14B-Q5_K_M.gguf",
+    "metadata_complete": false,
+    "quantization": "Q5_K_M"
+  },
+  "run_id": "TOO-20260903-195032-4c51bbe1",
+  "source_commit": "4d2281c8d83e5bc842dcc1e7d067c756c3f12768",
+  "suite": "tools/selection-and-use"
+}

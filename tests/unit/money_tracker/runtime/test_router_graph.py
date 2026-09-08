@@ -12,7 +12,7 @@ from pydantic import BaseModel
 
 from money_tracker.runtime import CLASSIFY_NODE, PRE_ROUTE_NODE, build_router_graph
 from money_tracker.workflows import (
-    CANDIDATE_ROUTER_INSTRUCTIONS,
+    ROUTER,
     CallbackAction,
     ChannelMessage,
     RepairRequest,
@@ -21,6 +21,7 @@ from money_tracker.workflows import (
     RoutingSource,
     SupportedCommand,
     WorkflowIntent,
+    default_prompt,
     initial_router_state,
     routing_decision_from_state,
 )
@@ -77,7 +78,7 @@ def _run(
 
     graph = build_router_graph(
         model=model,
-        instructions=CANDIDATE_ROUTER_INSTRUCTIONS,
+        instructions=default_prompt(ROUTER).text,
         minimum_confidence=minimum_confidence,
     )
     return dict(
@@ -230,7 +231,7 @@ def test_graph_requires_an_explicit_confidence_bar() -> None:
     with pytest.raises(TypeError):
         build_router_graph(  # type: ignore[call-arg]
             model=ScriptedModel(),
-            instructions=CANDIDATE_ROUTER_INSTRUCTIONS,
+            instructions=default_prompt(ROUTER).text,
         )
 
 

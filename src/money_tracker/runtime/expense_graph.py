@@ -35,7 +35,7 @@ successful runs.
 
 from __future__ import annotations
 
-from typing import Protocol
+from typing import Protocol, cast
 from uuid import UUID
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -61,6 +61,7 @@ from money_tracker.workflows import (
     prepare_expense_draft,
     render_active_categories,
 )
+from money_tracker.workflows.candidates import CategoryFitCandidate, ExtractionCandidate
 
 EXTRACT_NODE = "extract"
 CLASSIFY_CATEGORY_NODE = "classify_category"
@@ -91,6 +92,8 @@ def build_expense_graph(
     ids: IdGenerator,
     extraction_instructions: str,
     category_instructions: str,
+    extraction_candidate: ExtractionCandidate | None = None,
+    category_candidate: CategoryFitCandidate | None = None,
     checkpointer: BaseCheckpointSaver[str] | None = None,
 ) -> CompiledStateGraph[
     ExpenseWorkflowState, None, ExpenseWorkflowState, ExpenseWorkflowState
@@ -109,6 +112,10 @@ def build_expense_graph(
         ids: Stable identifier provider for the movement and any candidate.
         extraction_instructions: Candidate text for the extraction boundary.
         category_instructions: Candidate text for the purpose boundary.
+        extraction_candidate: Paired schema and conversion; None selects the
+            legacy flat contract for an explicit legacy caller.
+        category_candidate: Paired schema, conversion, and taxonomy rendering.
+            Its instruction text must match the supplied text.
         checkpointer: Persistent checkpointer for resumable threads.
 
     Returns:
@@ -116,16 +123,33 @@ def build_expense_graph(
         draft awaiting category approval, or a clarification.
     """
 
+    if (
+        extraction_candidate
+        and extraction_instructions != extraction_candidate.instructions
+    ):
+        raise ValueError("extraction instructions do not match their candidate")
+    if category_candidate and category_instructions != category_candidate.instructions:
+        raise ValueError("category instructions do not match their candidate")
+
     def run_extract(state: ExpenseWorkflowState) -> ExpenseWorkflowState:
         """Extract the movement, then cross-check its direction with routing."""
 
         message = expense_message_from_state(state)
         try:
-            extraction = parse_with_one_repair(
+            parsed = parse_with_one_repair(
                 model,
-                schema=ExpenseExtraction,
+                schema=(
+                    extraction_candidate.schema
+                    if extraction_candidate
+                    else ExpenseExtraction
+                ),
                 instructions=extraction_instructions,
                 message=message.normalized_text,
+            )
+            extraction = (
+                extraction_candidate.convert(parsed)
+                if extraction_candidate
+                else cast(ExpenseExtraction, parsed)
             )
         except StructuredOutputError:
             return _clarify(ResolutionReason.MODEL_OUTPUT_INVALID)
@@ -147,11 +171,27 @@ def build_expense_graph(
             if category.status is CategoryStatus.ACTIVE
         )
         try:
-            fit = parse_with_one_repair(
+            parsed = parse_with_one_repair(
                 model,
-                schema=CategoryFit,
-                instructions=(category_instructions + render_active_categories(active)),
+                schema=(
+                    category_candidate.build_schema(taxonomy)
+                    if category_candidate
+                    else CategoryFit
+                ),
+                instructions=(
+                    category_instructions
+                    + (
+                        category_candidate.render_taxonomy(taxonomy)
+                        if category_candidate
+                        else render_active_categories(active)
+                    )
+                ),
                 message=message.normalized_text,
+            )
+            fit = (
+                category_candidate.convert(parsed)
+                if category_candidate
+                else cast(CategoryFit, parsed)
             )
         except StructuredOutputError:
             return _clarify(ResolutionReason.MODEL_OUTPUT_INVALID)

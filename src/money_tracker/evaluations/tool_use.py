@@ -44,7 +44,13 @@ from typing import Any, cast
 from pydantic import JsonValue
 
 from money_tracker.application import ReportingService
-from money_tracker.domain import DomainError, YearMonth, initial_taxonomy
+from money_tracker.domain import (
+    CategoryStatus,
+    DomainError,
+    YearMonth,
+    initial_taxonomy,
+    normalize_category_name,
+)
 from money_tracker.evaluations.fixtures import (
     ROME,
     OwnerFixture,
@@ -78,16 +84,21 @@ from money_tracker.persistence.database import upgrade_database
 from money_tracker.persistence.finance import PostgresFinanceRepository
 from money_tracker.runtime import build_read_graph
 from money_tracker.runtime.model import LocalStructuredOutputModel
+from money_tracker.runtime.read_graph import DEFAULT_SELECTION, SelectionBoundary
 from money_tracker.workflows import (
-    CANDIDATE_TOOL_SELECTION_INSTRUCTIONS,
+    TOOL_SELECTION,
     ReadOutcome,
     StructuredOutputModel,
     ToolRequest,
     WorkflowIntent,
     accept_tool_request,
+    default_prompt,
     initial_read_state,
     registry_for,
 )
+
+DEFAULT_SELECTION_INSTRUCTIONS = default_prompt(TOOL_SELECTION).text
+"""The selection instruction text a run uses when none is named."""
 
 SUITE = "tools/selection-and-use"
 """Suite name from the catalog in the experiment process."""
@@ -188,6 +199,32 @@ def _subset(expected: Mapping[str, JsonValue], produced: Mapping[str, Any]) -> b
     return True
 
 
+def _same_category(produced: object, expected: object) -> bool:
+    """Compare two category names the way the taxonomy itself compares them.
+
+    Category resolution folds case and accents, so two spellings that resolve
+    to the same node are the same answer and scoring them apart measures
+    spelling rather than selection. This was a real defect rather than a
+    hypothetical one: once the boundary was shown the owner's categories, it
+    began answering with the taxonomy's own capitalisation while the labels
+    carry the lowercase form, and a run that had chosen the right category
+    scored it wrong.
+
+    Args:
+        produced: Category name the boundary asked for, if any.
+        expected: Category name the case labels, if any.
+
+    Returns:
+        Whether both are absent, or both name the same category.
+    """
+
+    if produced is None or expected is None:
+        return produced is expected
+    return normalize_category_name(str(produced)) == normalize_category_name(
+        str(expected)
+    )
+
+
 def _facets(
     case: Mapping[str, JsonValue],
     observed: Mapping[str, JsonValue],
@@ -217,7 +254,9 @@ def _facets(
         facets["tool_choice"] = observed.get("tool") == case.get("expected_tool")
         facets["selection"] = (
             facets["tool_choice"]
-            and observed.get("category_name") == case.get("expected_category_name")
+            and _same_category(
+                observed.get("category_name"), case.get("expected_category_name")
+            )
             and observed.get("period") == case.get("expected_period")
         )
     if case.get("expected_period") is None:
@@ -312,6 +351,8 @@ def _metrics(
             blocking=True,
             numerator=0,
             denominator=0,
+            applicable=False,
+            inapplicability_reason="The graph executes one independent read.",
         ),
         MetricScore(
             name="claimed_execution_without_matching_tool_result",
@@ -360,7 +401,8 @@ def run_tool_use_suite(
     repository_root: Path,
     database_url: str,
     model: StructuredOutputModel | None = None,
-    instructions: str = CANDIDATE_TOOL_SELECTION_INSTRUCTIONS,
+    instructions: str = DEFAULT_SELECTION_INSTRUCTIONS,
+    boundary: SelectionBoundary = DEFAULT_SELECTION,
 ) -> SuiteReport:
     """Execute the tool suite and always emit a deterministic report.
 
@@ -373,6 +415,9 @@ def run_tool_use_suite(
         model: Structured-output port. The local adapter is used when omitted.
         instructions: Selection instruction text under test, unpromoted by
             default and recorded so a score is attributable to one text.
+        boundary: Selection schema and conversion under test.
+            Defaults to the flat contract, and is recorded so a score
+            is attributable to one boundary shape.
 
     Returns:
         The complete report, already written to its artifact directory.
@@ -390,6 +435,12 @@ def run_tool_use_suite(
         model=model or LocalStructuredOutputModel(),
         reporting=ReportingService(repository),
         selection_instructions=instructions,
+        selection_boundary=boundary,
+        category_names=tuple(
+            category.name
+            for category in initial_taxonomy().categories
+            if category.status is CategoryStatus.ACTIVE
+        ),
     )
 
     results: list[CaseResult] = []
@@ -400,7 +451,7 @@ def run_tool_use_suite(
         observations[result.case_id] = observed
 
     metrics = _metrics(cases, results, observations)
-    passed = blocking_gates_passed(metrics)
+    passed = blocking_gates_passed(metrics, results)
     meets_minimum = dataset.item_count >= DATASET_MINIMUM
     report = SuiteReport(
         run_id=new_run_id("TOO"),
@@ -412,7 +463,9 @@ def run_tool_use_suite(
         model=model_metadata(settings),
         environment=collect_environment_metadata(),
         configuration={
+            "instructions_version": boundary.version,
             "instructions_sha256": sha256_text(instructions),
+            "boundary_schema": boundary.schema.__name__,
             "received_at": RECEIVED_AT.isoformat(),
             "query_tools": list(tool_names(WorkflowIntent.QUERY)),
             "advice_tools": list(tool_names(WorkflowIntent.ADVICE)),

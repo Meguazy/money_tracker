@@ -93,10 +93,11 @@ from money_tracker.persistence.database import (
 from money_tracker.persistence.finance import PostgresFinanceRepository
 from money_tracker.runtime import ASK_NODE, build_review_graph
 from money_tracker.workflows import (
-    CANDIDATE_CATEGORY_FIT_INSTRUCTIONS,
+    CATEGORY_FIT,
     CallbackAction,
     ReviewDecision,
     ReviewQuestion,
+    default_prompt,
     initial_review_state,
 )
 from money_tracker.workflows.resolution import PRODUCT_TIMEZONE
@@ -664,7 +665,7 @@ def run_category_review_suite(
     output_root: Path,
     repository_root: Path,
     database_url: str,
-    instructions: str = CANDIDATE_CATEGORY_FIT_INSTRUCTIONS,
+    instructions: str = default_prompt(CATEGORY_FIT).text,
 ) -> SuiteReport:
     """Execute the category review suite against real PostgreSQL.
 
@@ -704,7 +705,7 @@ def run_category_review_suite(
         observations[result.case_id] = observed
 
     metrics = _metrics(cases, results, observations)
-    passed = blocking_gates_passed(metrics)
+    passed = blocking_gates_passed(metrics, results)
     meets_minimum = dataset.item_count >= DATASET_MINIMUM
     report = SuiteReport(
         run_id=new_run_id("REV"),

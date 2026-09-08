@@ -29,12 +29,13 @@ from money_tracker.domain import (
 )
 from money_tracker.runtime import build_read_graph
 from money_tracker.workflows import (
-    CANDIDATE_TOOL_SELECTION_INSTRUCTIONS,
+    TOOL_SELECTION,
     ChannelMessage,
     ReadOutcome,
     ReadReason,
     ReadTool,
     WorkflowIntent,
+    default_prompt,
     initial_read_state,
 )
 
@@ -188,7 +189,7 @@ def _run(
     compiled = build_read_graph(
         model=model,
         reporting=ReportingService(InMemoryReporting(expenses, budgets)),
-        selection_instructions=CANDIDATE_TOOL_SELECTION_INSTRUCTIONS,
+        selection_instructions=default_prompt(TOOL_SELECTION).text,
     )
     state = compiled.invoke(
         initial_read_state(

@@ -198,7 +198,41 @@ Money Tracker workstation
 | `persistence.finance` | Bootstrap profile/taxonomy, persist complete expense and budget aggregates, append balance-safe wallet movements, validate/store pending proposals, and register/transition receipt metadata transactionally | psycopg and narrow application repository contracts | Finance tables, allocations, budgets/overrides, wallet ledger, proposals, versioned receipt metadata, audit, and idempotency records | Dedicated application PostgreSQL; no receipt bytes or paths; optimistic versions protect mutable aggregates |
 | `media.local` | Decode, validate, atomically retain, and integrity-check private receipt originals | Receipt-media port, Pillow, private filesystem | Original bytes under sharded SHA-256 keys; no database state | Host library outside web roots; `0700` directories, `0600` files, no-follow verified reads; root wired explicitly by admin CLI, API/worker planned |
 | `evaluations` | Probe real model protocols, capture exact runtime metadata, score deterministically, optionally publish aggregates | OpenAI-compatible HTTP, local files, optional Langfuse SDK | Ignored local run artifacts; no domain authority | Host CLI; secrets, image bytes and paths are excluded |
+| `workflows.wire` | Hold the union-shaped schemas a local model is asked to fill and convert them purely to the domain contracts | Pydantic and the `workflows` contracts; no model client or transport | No state; conversion only | Shared by every model boundary; an unstated field has an explicit variant, so a fabricated value has no shape and a split that does not reconcile is refused where it can still be repaired |
+| `workflows.prompts` | Load, validate, and version the instruction catalogs each boundary is given | JSON catalogs under `prompt_data/`, the intent taxonomy, and the tool registry | No state; catalogs are read-only data | Vocabularies are derived from the taxonomy and registry, so a stale catalog is refused at load time; nothing is promoted |
 | `development` | Validate canonical documentation and privacy-ignore invariants | Repository Markdown/YAML/filesystem | No persistent data | Service-independent development command |
+
+### Model-facing boundary shapes and instruction catalogs
+
+Two components inside `workflows` exist because of what the Step 1 capability
+screen measured about the local candidate, and they are worth naming as
+building blocks rather than as implementation detail.
+
+`workflows.wire` holds the schemas a model is actually asked to fill, and
+nothing else. `workflows.contracts` says what a boundary means; `wire` says how
+a local model is asked for it, and converts to the contract purely and totally.
+The two differ for one measured reason: the screened candidate cannot reliably
+leave an optional field alone, and it can answer a discriminated union cleanly.
+Every field a message may leave unstated is therefore a union whose "not
+stated" variant carries no payload, so inventing a merchant, a month, or a
+payment method is not a mistake the decoding grammar can express. Cross-field
+rules that a validator used to enforce after the fact are carried by the shapes
+too: a single payment method and a split are separate variants, so an
+unquantified split has no form, and a split whose parts do not add up to the
+stated total is refused while the boundary's one corrective retry is still
+available. The component owns no policy: what an absent value means is still
+decided by the deterministic resolvers.
+
+`workflows.prompts` reads versioned instruction catalogs from
+`workflows/prompt_data/<boundary>.json`, one file per boundary, each holding
+every version of that boundary's text with the note recording why the version
+exists and what its run measured. Prompts are data that changes far more often
+than the code reading them, and a boundary accumulates versions because an
+evaluation compares them. Two vocabularies stay derived rather than retyped:
+the routable intents come from the taxonomy and the read tools from the
+registry, and a catalog whose vocabulary no longer matches is refused at load
+time rather than quietly offering a route that does not exist. Nothing in a
+catalog is promoted; every identifier carries a `candidate-` prefix.
 
 ### Planned domain and application blocks
 

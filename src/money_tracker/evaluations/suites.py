@@ -30,10 +30,11 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from hashlib import sha256
 from pathlib import Path
-from typing import Literal
+from typing import Literal, cast
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue
+import httpx
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 from money_tracker.evaluations.metadata import (
     CapabilitySettings,
@@ -97,6 +98,8 @@ class MetricScore(BaseModel):
         blocking: Whether a failure blocks promotion.
         numerator: Cases counted in the numerator.
         denominator: Cases the metric applies to.
+        applicable: Whether the implemented capability has this obligation.
+        inapplicability_reason: Explanation required for a structural exemption.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -108,19 +111,34 @@ class MetricScore(BaseModel):
     blocking: bool
     numerator: int
     denominator: int
+    applicable: bool = True
+    inapplicability_reason: str | None = None
+
+    @model_validator(mode="after")
+    def _validate_applicability(self) -> MetricScore:
+        """Require an explicit reason for an unexercised structural exemption."""
+
+        if not self.applicable and (
+            self.denominator != 0 or not self.inapplicability_reason
+        ):
+            raise ValueError("inapplicable metrics need a reason and no observations")
+        if self.applicable and self.inapplicability_reason is not None:
+            raise ValueError("an applicable metric cannot claim an exemption")
+        return self
 
     @property
     def passed(self) -> bool:
         """Return whether this metric satisfies its gate.
 
-        A metric with no threshold is diagnostic and always passes; a metric
-        whose denominator is zero has nothing to measure and cannot fail,
-        because an absent case class is a dataset gap rather than a model
-        failure. The dataset-coverage gate is what reports that gap.
+        Diagnostics and explicitly inapplicable obligations do not block.
+        An applicable blocking metric with no observations is unmeasured and
+        cannot pass. Dataset size alone cannot establish coverage of a gate.
         """
 
-        if self.threshold is None or self.denominator == 0:
+        if self.threshold is None or not self.applicable:
             return True
+        if self.denominator == 0:
+            return not self.blocking
         if self.comparison == "at_most":
             return self.value <= self.threshold
         return self.value >= self.threshold
@@ -149,11 +167,13 @@ class SuiteReport(BaseModel):
             experiment process requires before promotion.
         eligible_for_promotion: Whether this run may support a promotion at all.
         local_artifact_path: Where the raw report was written.
+        promotion_blockers: Machine-readable missing prerequisites, independent
+            of the individual model quality scores.
     """
 
     model_config = ConfigDict(extra="forbid")
 
-    manifest_schema_version: Literal["1"] = "1"
+    manifest_schema_version: Literal["1", "2"] = "2"
     run_id: str
     suite: str
     started_at: str
@@ -169,6 +189,40 @@ class SuiteReport(BaseModel):
     meets_dataset_minimum: bool
     eligible_for_promotion: bool = False
     local_artifact_path: str
+    promotion_blockers: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _enforce_evidence_requirements(self) -> SuiteReport:
+        """Prevent callers from promoting missing, partial, or unpinned evidence.
+
+        A report may conservatively decline a promotion, but cannot claim one
+        by supplying booleans that contradict its observations or metadata.
+        Workflow-only and calibration runs explicitly have no promotion effect.
+        """
+
+        blockers: list[str] = []
+        if len(self.cases) != self.dataset.item_count or len(
+            {case.case_id for case in self.cases}
+        ) != len(self.cases):
+            blockers.append("incomplete_case_results")
+        if not self.cases or any(
+            case.status is CaseStatus.ERROR for case in self.cases
+        ):
+            blockers.append("case_execution_error")
+        if not blocking_gates_passed(self.metrics, self.cases):
+            blockers.append("blocking_gate_failed_or_unmeasured")
+        self.blocking_gates_passed = self.blocking_gates_passed and not blockers
+        if not self.meets_dataset_minimum:
+            blockers.append("dataset_below_minimum")
+        if not self.model.metadata_complete:
+            blockers.append("model_metadata_incomplete")
+        if self.configuration.get("promotion_effect") == "none":
+            blockers.append("non_promoting_suite")
+        self.promotion_blockers = blockers
+        self.eligible_for_promotion = (
+            self.eligible_for_promotion and self.blocking_gates_passed and not blockers
+        )
+        return self
 
 
 def model_metadata(settings: CapabilitySettings) -> ModelMetadata:
@@ -185,8 +239,24 @@ def model_metadata(settings: CapabilitySettings) -> ModelMetadata:
         Model identity, marked incomplete when the endpoint could not be read.
     """
 
+    properties = None
     try:
-        return collect_model_metadata(settings, None, vision_required=False)
+        with httpx.Client(
+            timeout=min(settings.timeout_seconds, 10.0), trust_env=False
+        ) as client:
+            response = client.get(
+                f"{settings.server_root_url}/props",
+                params={"model": settings.model_alias},
+                headers={"Authorization": f"Bearer {settings.api_key}"},
+            )
+            response.raise_for_status()
+            decoded = response.json()
+            if isinstance(decoded, dict):
+                properties = decoded
+    except (httpx.HTTPError, ValueError):
+        pass
+    try:
+        return collect_model_metadata(settings, properties, vision_required=False)
     except Exception:  # noqa: BLE001 - metadata gaps are reported, not raised
         return ModelMetadata(
             endpoint_kind="unknown",
@@ -296,17 +366,27 @@ def rate(numerator: int, denominator: int) -> float:
     return round(numerator / denominator, 4)
 
 
-def blocking_gates_passed(metrics: Iterable[MetricScore]) -> bool:
-    """Return whether every blocking metric satisfied its gate.
+def blocking_gates_passed(
+    metrics: Iterable[MetricScore], cases: Sequence[CaseResult]
+) -> bool:
+    """Require a complete execution and every applicable blocking measurement.
+
+    Execution errors cannot disappear from accuracy denominators. A run with
+    one answered case and 109 transport failures is incomplete evidence even
+    when the answered case satisfies every metric it exercised.
 
     Args:
         metrics: Scored metrics.
+        cases: Per-case outcomes from the same run.
 
     Returns:
-        Whether promotion is not blocked by a measured failure.
+        Whether every case executed and no blocking gate is failed or missing.
     """
 
-    return all(metric.passed for metric in metrics if metric.blocking)
+    executed = bool(cases) and all(
+        case.status is not CaseStatus.ERROR for case in cases
+    )
+    return executed and all(metric.passed for metric in metrics if metric.blocking)
 
 
 def write_report(report: SuiteReport, *, output_root: Path) -> Path:
@@ -337,9 +417,170 @@ def write_report(report: SuiteReport, *, output_root: Path) -> Path:
             "blocking_gates_passed": report.blocking_gates_passed,
             "meets_dataset_minimum": report.meets_dataset_minimum,
             "eligible_for_promotion": report.eligible_for_promotion,
+            "promotion_blockers": report.promotion_blockers,
         },
     )
     return directory
+
+
+def _repository_root() -> Path:
+    """Return the repository root holding the published score directory."""
+
+    return Path(__file__).resolve().parents[3]
+
+
+def _metric_rows(report: SuiteReport) -> list[dict[str, JsonValue]]:
+    """Render one run's metrics as plain rows carrying no owner text."""
+
+    return [
+        {
+            "name": metric.name,
+            "value": metric.value,
+            "threshold": metric.threshold,
+            "comparison": metric.comparison,
+            "blocking": metric.blocking,
+            "numerator": metric.numerator,
+            "denominator": metric.denominator,
+            "passed": metric.passed,
+            "applicable": metric.applicable,
+            "inapplicability_reason": metric.inapplicability_reason,
+        }
+        for metric in report.metrics
+    ]
+
+
+def publish_scores(report: SuiteReport, *, out_root: Path | None = None) -> Path | None:
+    """Publish one run's numbers to the committed `out/` tree.
+
+    The raw manifests under `artifacts/evals/` are ignored by Git, which makes
+    a score impossible to read without rerunning the suite. This writes the
+    same numbers to a tracked location so a result can be read, compared, and
+    reviewed as evidence. Only aggregate metrics, gate outcomes, and dataset
+    identity are published: per-case records stay in the raw manifest, because
+    they carry labels and tags that belong with the run rather than in a
+    summary.
+
+    A run in which every case errored is not published either. Such a run
+    measured nothing, and one was allowed to overwrite a real score before this
+    guard existed.
+
+    A run whose dataset is below the minimum the experiment process requires is
+    not published at all. Such a run cannot support a gate, and letting one
+    overwrite the published score of a full run would put a number in front of
+    a reader that no promotion could ever rest on.
+
+    This is deliberately not called by `write_report`. A test that runs a suite
+    against a scripted port writes a perfectly valid report to its own
+    temporary directory, and publishing from the writer would let that report
+    overwrite a real run's published score. Only the command-line entry point
+    publishes, because only it is a run someone meant to record.
+
+    Args:
+        report: Complete suite report.
+        out_root: Directory holding published scores. Defaults to
+            `out/evaluations` at the repository root.
+
+    Returns:
+        The directory this run's scores were written to, or None when the run
+        was too small to publish.
+    """
+
+    if not report.meets_dataset_minimum:
+        return None
+    if all(case.status is CaseStatus.ERROR for case in report.cases):
+        return None
+
+    root = out_root or (_repository_root() / "out" / "evaluations")
+    directory = root / report.suite
+    directory.mkdir(parents=True, exist_ok=True)
+    payload: dict[str, JsonValue] = {
+        "suite": report.suite,
+        "run_id": report.run_id,
+        "completed_at": report.completed_at,
+        "dataset": {
+            "id": report.dataset.dataset_id,
+            "version": report.dataset.version,
+            "content_hash": report.dataset.content_hash,
+            "item_count": report.dataset.item_count,
+        },
+        "model": {
+            "alias": report.model.model_alias,
+            "gguf_filename": report.model.gguf_filename,
+            "quantization": report.model.quantization,
+            "metadata_complete": report.model.metadata_complete,
+        },
+        "source_commit": report.source.git_commit,
+        "configuration": report.configuration,
+        "metrics": cast(JsonValue, _metric_rows(report)),
+        "blocking_gates_passed": report.blocking_gates_passed,
+        "meets_dataset_minimum": report.meets_dataset_minimum,
+        "eligible_for_promotion": report.eligible_for_promotion,
+        "promotion_blockers": cast(JsonValue, report.promotion_blockers),
+        "case_totals": {
+            status.value: sum(1 for case in report.cases if case.status is status)
+            for status in CaseStatus
+        },
+    }
+    _write_json(directory / f"{report.run_id}.json", payload)
+    _write_json(directory / "latest.json", payload)
+    write_scores_summary(root)
+    return directory
+
+
+def write_scores_summary(out_root: Path) -> Path:
+    """Rewrite the Markdown overview of every suite's most recent run.
+
+    Args:
+        out_root: Directory holding published scores.
+
+    Returns:
+        The summary file.
+    """
+
+    latest: list[dict[str, JsonValue]] = []
+    for path in sorted(out_root.rglob("latest.json")):
+        decoded = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(decoded, dict):
+            latest.append(decoded)
+    lines = [
+        "# Evaluation scores",
+        "",
+        "Generated by the suite runners. Every row is the most recent run of one",
+        "suite; per-run history sits beside it in the same directory, and the raw",
+        "manifests stay under the ignored `artifacts/evals/`.",
+        "",
+        "| Suite | Dataset | Cases | Blocking gates | Failing blocking metrics | Run |",
+        "| --- | --- | ---: | --- | --- | --- |",
+    ]
+    for entry in latest:
+        dataset = entry.get("dataset")
+        metrics = entry.get("metrics")
+        dataset_label = "unknown"
+        item_count: JsonValue = 0
+        if isinstance(dataset, dict):
+            dataset_label = f"{dataset.get('id')} {dataset.get('version')}"
+            item_count = dataset.get("item_count", 0)
+        failing = []
+        if isinstance(metrics, list):
+            failing = [
+                str(metric.get("name"))
+                for metric in metrics
+                if isinstance(metric, dict)
+                and metric.get("blocking")
+                and metric.get("passed") is False
+            ]
+        if not entry.get("blocking_gates_passed") and not failing:
+            failing = ["incomplete_execution"]
+        verdict = "pass" if entry.get("blocking_gates_passed") else "**fail**"
+        lines.append(
+            f"| `{entry.get('suite')}` | {dataset_label} | {item_count} | "
+            f"{verdict} | {', '.join(f'`{name}`' for name in failing) or 'none'} | "
+            f"`{entry.get('run_id')}` |"
+        )
+    lines.append("")
+    summary = out_root / "SUMMARY.md"
+    summary.write_text("\n".join(lines), encoding="utf-8")
+    return summary
 
 
 def new_run_id(prefix: str) -> str:
@@ -398,6 +639,8 @@ __all__ = [
     "blocking_gates_passed",
     "dataset_metadata",
     "load_cases",
+    "publish_scores",
+    "write_scores_summary",
     "model_metadata",
     "new_run_id",
     "rate",

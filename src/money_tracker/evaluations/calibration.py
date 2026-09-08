@@ -70,14 +70,15 @@ from money_tracker.evaluations.suites import (
 )
 from money_tracker.runtime.model import LocalStructuredOutputModel
 from money_tracker.workflows import (
-    CANDIDATE_ROUTER_INSTRUCTIONS,
     MUTATING_INTENTS,
+    ROUTER,
     RouteClassification,
     RoutingSource,
     StructuredOutputError,
     StructuredOutputModel,
     WorkflowIntent,
     accept_classification,
+    default_prompt,
     parse_with_one_repair,
     pre_route,
 )
@@ -236,7 +237,7 @@ def run_calibration(
     output_root: Path,
     repository_root: Path,
     model: StructuredOutputModel | None = None,
-    instructions: str = CANDIDATE_ROUTER_INSTRUCTIONS,
+    instructions: str = default_prompt(ROUTER).text,
 ) -> SuiteReport:
     """Sweep every candidate bar from one model pass and score the holdout once.
 
@@ -333,7 +334,7 @@ def run_calibration(
         },
         metrics=metrics,
         cases=results,
-        blocking_gates_passed=blocking_gates_passed(metrics),
+        blocking_gates_passed=blocking_gates_passed(metrics, results),
         meets_dataset_minimum=dataset.item_count >= DATASET_MINIMUM,
         # A calibration never promotes anything by itself. It selects a value
         # that a later experiment may promote through the decision log, and

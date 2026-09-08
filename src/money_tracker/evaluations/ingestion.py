@@ -76,7 +76,6 @@ from money_tracker.evaluations.suites import (
 )
 from money_tracker.runtime.model import LocalStructuredOutputModel
 from money_tracker.workflows import (
-    CANDIDATE_EXTRACTION_INSTRUCTIONS,
     PRODUCT_TIMEZONE,
     ExpenseExtraction,
     StructuredOutputError,
@@ -86,6 +85,15 @@ from money_tracker.workflows import (
     resolve_amount,
     resolve_occurrence_time,
     resolve_payment_allocations,
+)
+from money_tracker.workflows.candidates import (
+    DEFAULT_EXTRACTION_CANDIDATE as DEFAULT_EXTRACTION_CANDIDATE,
+)
+from money_tracker.workflows.candidates import (
+    EXTRACTION_CANDIDATES as EXTRACTION_CANDIDATES,
+)
+from money_tracker.workflows.candidates import (
+    ExtractionCandidate as ExtractionCandidate,
 )
 
 SUITE = "ingestion/expense-it"
@@ -491,7 +499,7 @@ def run_ingestion_suite(
     output_root: Path,
     repository_root: Path,
     model: StructuredOutputModel | None = None,
-    instructions: str = CANDIDATE_EXTRACTION_INSTRUCTIONS,
+    candidate: ExtractionCandidate = DEFAULT_EXTRACTION_CANDIDATE,
 ) -> SuiteReport:
     """Execute the ingestion suite and always emit a deterministic report.
 
@@ -501,8 +509,9 @@ def run_ingestion_suite(
         output_root: Ignored artifact root for raw run output.
         repository_root: Repository directory, for source metadata.
         model: Structured-output port. The local adapter is used when omitted.
-        instructions: Extraction instruction text under test. Unpromoted by
-            default, and recorded so a score is attributable to one text.
+        candidate: Boundary under test: its schema, instruction text, and
+            conversion. Unpromoted, and recorded so a score is
+            attributable to one boundary shape.
 
     Returns:
         The complete report, already written to its artifact directory.
@@ -519,12 +528,12 @@ def run_ingestion_suite(
     results: list[CaseResult] = []
     judgments: dict[str, _Judgment] = {}
     for case in cases:
-        result, judgment = _execute(port, instructions, case, sources)
+        result, judgment = _execute(port, candidate, case, sources)
         results.append(result)
         judgments[result.case_id] = judgment
 
     metrics = _metrics(cases, results, judgments)
-    passed = blocking_gates_passed(metrics)
+    passed = blocking_gates_passed(metrics, results)
     meets_minimum = dataset.item_count >= DATASET_MINIMUM
     report = SuiteReport(
         run_id=new_run_id("ING"),
@@ -536,11 +545,13 @@ def run_ingestion_suite(
         model=model_metadata(settings),
         environment=collect_environment_metadata(),
         configuration={
-            "instructions_sha256": sha256_text(instructions),
+            "instructions_version": candidate.version,
+            "instructions_sha256": sha256_text(candidate.instructions),
+            "boundary_schema": candidate.schema.__name__,
             "fixture_funding_sources": [name for name, _, _, _ in _FIXTURE_SOURCES],
             "default_received_at": _RECEIVED_AT.isoformat(),
             "dataset_minimum": DATASET_MINIMUM,
-            "boundary_exposes_currency": "currency" in ExpenseExtraction.model_fields,
+            "boundary_exposes_currency": "currency" in candidate.schema.model_fields,
             "auto_post_policy_promoted": False,
         },
         metrics=metrics,
@@ -558,7 +569,7 @@ def run_ingestion_suite(
 
 def _execute(
     model: StructuredOutputModel,
-    instructions: str,
+    candidate: ExtractionCandidate,
     case: Mapping[str, JsonValue],
     funding_sources: tuple[FundingSource, ...],
 ) -> tuple[CaseResult, _Judgment]:
@@ -574,11 +585,13 @@ def _execute(
     )
     started = time.monotonic()
     try:
-        extraction = parse_with_one_repair(
-            model,
-            schema=ExpenseExtraction,
-            instructions=instructions,
-            message=str(case["message"]),
+        extraction = candidate.convert(
+            parse_with_one_repair(
+                model,
+                schema=candidate.schema,
+                instructions=candidate.instructions,
+                message=str(case["message"]),
+            )
         )
     except StructuredOutputError:
         return (

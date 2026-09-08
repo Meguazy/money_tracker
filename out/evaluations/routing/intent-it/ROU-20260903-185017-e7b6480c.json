@@ -1,0 +1,93 @@
+{
+  "blocking_gates_passed": false,
+  "case_totals": {
+    "error": 0,
+    "failed": 19,
+    "passed": 182
+  },
+  "completed_at": "2026-09-03T18:50:17.068597+00:00",
+  "configuration": {
+    "dataset_minimum": 200,
+    "instructions_sha256": "5da41736bc5df8d00e737d17d6dbfc9b4bf463fb986f18a20fa52e4de5d20076",
+    "minimum_confidence": 0.5
+  },
+  "dataset": {
+    "content_hash": "b861b63d36bbf77f0a395d599076593658d6b84a19322166febc1fc0764eb800",
+    "id": "routing-intent-it-v1.1",
+    "item_count": 201,
+    "version": "1.1.0"
+  },
+  "eligible_for_promotion": false,
+  "meets_dataset_minimum": true,
+  "metrics": [
+    {
+      "blocking": true,
+      "comparison": "at_least",
+      "denominator": 201,
+      "name": "macro_f1",
+      "numerator": 182,
+      "passed": false,
+      "threshold": 0.95,
+      "value": 0.9038
+    },
+    {
+      "blocking": true,
+      "comparison": "at_most",
+      "denominator": 70,
+      "name": "read_only_input_routed_to_write",
+      "numerator": 10,
+      "passed": false,
+      "threshold": 0.0,
+      "value": 10.0
+    },
+    {
+      "blocking": true,
+      "comparison": "at_most",
+      "denominator": 67,
+      "name": "write_input_routed_as_read_only",
+      "numerator": 0,
+      "passed": true,
+      "threshold": 0.01,
+      "value": 0.0
+    },
+    {
+      "blocking": true,
+      "comparison": "at_least",
+      "denominator": 16,
+      "name": "deterministic_pre_routing_exact",
+      "numerator": 16,
+      "passed": true,
+      "threshold": 1.0,
+      "value": 1.0
+    },
+    {
+      "blocking": true,
+      "comparison": "at_least",
+      "denominator": 48,
+      "name": "ambiguous_safely_clarified",
+      "numerator": 35,
+      "passed": false,
+      "threshold": 0.98,
+      "value": 0.7292
+    },
+    {
+      "blocking": false,
+      "comparison": "at_least",
+      "denominator": 201,
+      "name": "exact_label_agreement",
+      "numerator": 182,
+      "passed": true,
+      "threshold": null,
+      "value": 0.9055
+    }
+  ],
+  "model": {
+    "alias": "local-model",
+    "gguf_filename": "Qwen3-14B-Q5_K_M.gguf",
+    "metadata_complete": false,
+    "quantization": "Q5_K_M"
+  },
+  "run_id": "ROU-20260903-185017-e7b6480c",
+  "source_commit": "4d2281c8d83e5bc842dcc1e7d067c756c3f12768",
+  "suite": "routing/intent-it"
+}

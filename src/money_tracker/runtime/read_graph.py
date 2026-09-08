@@ -22,12 +22,15 @@ rather than quietly answered from the other route's tools.
 from __future__ import annotations
 
 import json
-from typing import Any
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Any, cast
 from uuid import UUID
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
+from pydantic import BaseModel
 
 from money_tracker.application import ReportingService
 from money_tracker.application.reporting import (
@@ -45,6 +48,7 @@ from money_tracker.domain import (
     YearMonth,
 )
 from money_tracker.workflows import (
+    TOOL_SELECTION,
     ReadOutcome,
     ReadReason,
     ReadTool,
@@ -54,13 +58,88 @@ from money_tracker.workflows import (
     ToolRequest,
     WorkflowIntent,
     accept_tool_request,
+    default_prompt,
     parse_with_one_repair,
+    prompt_versions,
     read_message_from_state,
+    render_selection_categories,
     render_tool_vocabulary,
 )
+from money_tracker.workflows.wire import WireToolRequest
 
 SELECT_NODE = "select_tool"
 EXECUTE_NODE = "execute_tool"
+
+
+@dataclass(frozen=True, slots=True)
+class SelectionBoundary:
+    """One read-tool selection boundary: its schema and its conversion.
+
+    The graph asks a model for a tool and then validates the answer against
+    the same deterministic acceptance either way, so a boundary whose schema
+    differs from `ToolRequest` is admitted on exactly the same terms.
+
+    Attributes:
+        version: Identifier recorded by an evaluation run.
+        schema: Contract the completion must satisfy.
+        to_request: Pure conversion to the domain request. It receives the
+            month the runtime resolved from the message timestamp, which the
+            model is never shown, so a boundary may offer a relative period. It
+            returns None when the boundary declined to choose a tool, which the
+            graph answers with the same clarification as an unregistered one.
+    """
+
+    version: str
+    schema: type[BaseModel]
+    to_request: Callable[[BaseModel, YearMonth], ToolRequest | None]
+
+
+_SELECTION_SHAPES: dict[
+    str, tuple[type[BaseModel], Callable[[BaseModel, YearMonth], ToolRequest | None]]
+] = {
+    "v1": (ToolRequest, lambda parsed, _current: cast(ToolRequest, parsed)),
+    "v2": (
+        WireToolRequest,
+        lambda parsed, current: cast(WireToolRequest, parsed).to_domain(
+            current=current
+        ),
+    ),
+    "v3": (
+        WireToolRequest,
+        lambda parsed, current: cast(WireToolRequest, parsed).to_domain(
+            current=current
+        ),
+    ),
+    "v4": (
+        WireToolRequest,
+        lambda parsed, current: cast(WireToolRequest, parsed).to_domain(
+            current=current
+        ),
+    ),
+    "v5": (
+        WireToolRequest,
+        lambda parsed, current: cast(WireToolRequest, parsed).to_domain(
+            current=current
+        ),
+    ),
+}
+"""The schema each selection instruction version is paired with."""
+
+SELECTION_BOUNDARIES = {
+    version.short_name: SelectionBoundary(
+        version=version.id,
+        schema=_SELECTION_SHAPES[version.short_name][0],
+        to_request=_SELECTION_SHAPES[version.short_name][1],
+    )
+    for version in prompt_versions(TOOL_SELECTION)
+}
+"""Read-tool selection boundaries a run may select, by short candidate name."""
+
+FLAT_SELECTION = SELECTION_BOUNDARIES["v1"]
+"""The flat boundary, whose period is a string the model writes or omits."""
+
+DEFAULT_SELECTION = SELECTION_BOUNDARIES[default_prompt(TOOL_SELECTION).short_name]
+"""The boundary a run uses when none is named."""
 
 
 def build_read_graph(
@@ -69,6 +148,8 @@ def build_read_graph(
     reporting: ReportingService,
     selection_instructions: str,
     checkpointer: BaseCheckpointSaver[str] | None = None,
+    selection_boundary: SelectionBoundary = FLAT_SELECTION,
+    category_names: tuple[str, ...] = (),
 ) -> CompiledStateGraph[ReadWorkflowState, None, ReadWorkflowState, ReadWorkflowState]:
     """Compile the read-only question and advice workflow.
 
@@ -81,6 +162,11 @@ def build_read_graph(
         reporting: Read-only service executing the registered tools.
         selection_instructions: Candidate text for the selection boundary.
         checkpointer: Persistent checkpointer for resumable threads.
+        selection_boundary: Schema and conversion the selection node asks for.
+            Defaults to the flat contract, so an existing caller is unchanged.
+        category_names: Active category display names shown to the selection
+            boundary. Empty by default, which renders nothing and leaves the
+            boundary asking for a category it has not been shown.
 
     Returns:
         A compiled graph that maps one routed question to grounded figures or
@@ -93,14 +179,23 @@ def build_read_graph(
         message = read_message_from_state(state)
         intent = WorkflowIntent(state["routed_intent"])
         try:
-            request = parse_with_one_repair(
-                model,
-                schema=ToolRequest,
-                instructions=(selection_instructions + render_tool_vocabulary(intent)),
-                message=message.normalized_text,
+            request = selection_boundary.to_request(
+                parse_with_one_repair(
+                    model,
+                    schema=selection_boundary.schema,
+                    instructions=(
+                        selection_instructions
+                        + render_tool_vocabulary(intent)
+                        + render_selection_categories(category_names)
+                    ),
+                    message=message.normalized_text,
+                ),
+                YearMonth.from_datetime(message.received_at),
             )
         except StructuredOutputError:
             return _clarify(ReadReason.MODEL_OUTPUT_INVALID)
+        if request is None:
+            return _clarify(ReadReason.TOOL_NOT_REGISTERED)
         try:
             accept_tool_request(request, intent=intent)
         except DomainError:

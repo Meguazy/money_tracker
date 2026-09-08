@@ -10,14 +10,36 @@ from pathlib import Path
 from money_tracker.evaluations.advice import run_advice_suite
 from money_tracker.evaluations.calibration import run_calibration
 from money_tracker.evaluations.capabilities import run_capability_suite
-from money_tracker.evaluations.categorization import run_categorization_suite
+from money_tracker.evaluations.categorization import (
+    CATEGORY_FIT_CANDIDATES,
+    run_categorization_suite,
+)
 from money_tracker.evaluations.category_review import run_category_review_suite
-from money_tracker.evaluations.ingestion import run_ingestion_suite
+from money_tracker.evaluations.ingestion import (
+    EXTRACTION_CANDIDATES,
+    run_ingestion_suite,
+)
 from money_tracker.evaluations.metadata import CapabilitySettings
 from money_tracker.evaluations.routing import run_routing_suite
-from money_tracker.evaluations.suites import SuiteReport
+from money_tracker.evaluations.suites import SuiteReport, publish_scores
 from money_tracker.evaluations.tool_use import run_tool_use_suite
 from money_tracker.persistence.database import database_url_from_env
+from money_tracker.runtime.read_graph import SELECTION_BOUNDARIES
+from money_tracker.workflows.prompts import (
+    CATEGORY_FIT,
+    EXTRACTION,
+    ROUTER,
+    TOOL_SELECTION,
+    default_prompt,
+    prompt,
+    prompt_versions,
+)
+
+
+def _version_choices(boundary: str) -> list[str]:
+    """Return the version names a run may select for one boundary."""
+
+    return [version.short_name for version in prompt_versions(boundary)]
 
 
 def _repository_root() -> Path:
@@ -87,6 +109,12 @@ def _parser() -> argparse.ArgumentParser:
         required=True,
         help="confidence bar under test; no value is promoted, so it has no default",
     )
+    routing.add_argument(
+        "--instructions",
+        choices=_version_choices(ROUTER),
+        default=default_prompt(ROUTER).short_name,
+        help="router instruction candidate under test; recorded with the score",
+    )
     categorization = subparsers.add_parser(
         "categorization",
         help="score Italian purpose categorization through the real boundary",
@@ -100,6 +128,12 @@ def _parser() -> argparse.ArgumentParser:
             / "datasets"
             / "categorization-purpose-it-v1.jsonl"
         ),
+    )
+    categorization.add_argument(
+        "--instructions",
+        choices=_version_choices(CATEGORY_FIT),
+        default=default_prompt(CATEGORY_FIT).short_name,
+        help="category-fit boundary under test; recorded with the score",
     )
     categorization.add_argument(
         "--output-root",
@@ -116,6 +150,12 @@ def _parser() -> argparse.ArgumentParser:
         default=(
             repository_root / "evals" / "datasets" / "ingestion-expense-it-v1.jsonl"
         ),
+    )
+    ingestion.add_argument(
+        "--instructions",
+        choices=_version_choices(EXTRACTION),
+        default=default_prompt(EXTRACTION).short_name,
+        help="extraction boundary under test; recorded with the score",
     )
     ingestion.add_argument(
         "--output-root",
@@ -153,6 +193,12 @@ def _parser() -> argparse.ArgumentParser:
         ),
     )
     tools.add_argument(
+        "--instructions",
+        choices=_version_choices(TOOL_SELECTION),
+        default=default_prompt(TOOL_SELECTION).short_name,
+        help="read-tool selection boundary under test; recorded with the score",
+    )
+    tools.add_argument(
         "--output-root",
         type=Path,
         default=repository_root / "artifacts" / "evals",
@@ -167,6 +213,12 @@ def _parser() -> argparse.ArgumentParser:
         default=(
             repository_root / "evals" / "datasets" / "advice-grounding-it-v1.jsonl"
         ),
+    )
+    advice.add_argument(
+        "--instructions",
+        choices=_version_choices(TOOL_SELECTION),
+        default=default_prompt(TOOL_SELECTION).short_name,
+        help="read-tool selection boundary under test; recorded with the score",
     )
     advice.add_argument(
         "--output-root",
@@ -195,6 +247,10 @@ def _parser() -> argparse.ArgumentParser:
 def _print_and_exit(report: SuiteReport) -> None:
     """Print one suite summary and fail the process on a blocking gate.
 
+    Publishing the numbers happens here rather than in the report writer, so
+    that only a run someone asked for on the command line can overwrite a
+    published score.
+
     Args:
         report: Completed suite report.
 
@@ -202,6 +258,7 @@ def _print_and_exit(report: SuiteReport) -> None:
         SystemExit: With status one when a blocking gate failed.
     """
 
+    publish_scores(report)
     print(
         json.dumps(
             {
@@ -210,7 +267,10 @@ def _print_and_exit(report: SuiteReport) -> None:
                 "blocking_gates_passed": report.blocking_gates_passed,
                 "meets_dataset_minimum": report.meets_dataset_minimum,
                 "eligible_for_promotion": report.eligible_for_promotion,
-                "metrics": {m.name: m.value for m in report.metrics},
+                "promotion_blockers": report.promotion_blockers,
+                "metrics": {
+                    m.name: m.value if m.denominator else None for m in report.metrics
+                },
                 "artifact_directory": report.local_artifact_path,
             },
             sort_keys=True,
@@ -238,6 +298,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                 dataset_path=args.dataset,
                 output_root=args.output_root,
                 repository_root=_repository_root(),
+                candidate=CATEGORY_FIT_CANDIDATES[args.instructions],
             )
         )
         return
@@ -270,6 +331,8 @@ def main(argv: Sequence[str] | None = None) -> None:
                 output_root=args.output_root,
                 repository_root=_repository_root(),
                 database_url=database_url_from_env(test_database=True),
+                boundary=SELECTION_BOUNDARIES[args.instructions],
+                instructions=prompt(TOOL_SELECTION, args.instructions).text,
             )
         )
         return
@@ -281,6 +344,8 @@ def main(argv: Sequence[str] | None = None) -> None:
                 output_root=args.output_root,
                 repository_root=_repository_root(),
                 database_url=database_url_from_env(test_database=True),
+                boundary=SELECTION_BOUNDARIES[args.instructions],
+                instructions=prompt(TOOL_SELECTION, args.instructions).text,
             )
         )
         return
@@ -291,6 +356,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                 dataset_path=args.dataset,
                 output_root=args.output_root,
                 repository_root=_repository_root(),
+                candidate=EXTRACTION_CANDIDATES[args.instructions],
             )
         )
         return
@@ -302,6 +368,8 @@ def main(argv: Sequence[str] | None = None) -> None:
                 output_root=args.output_root,
                 minimum_confidence=args.minimum_confidence,
                 repository_root=_repository_root(),
+                instructions=prompt(ROUTER, args.instructions).text,
+                instructions_version=prompt(ROUTER, args.instructions).id,
             )
         )
         return

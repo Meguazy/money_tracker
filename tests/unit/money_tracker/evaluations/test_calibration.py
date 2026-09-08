@@ -159,7 +159,7 @@ def test_a_calibration_never_reports_itself_as_promotable() -> None:
     source = Path("src/money_tracker/evaluations/calibration.py").read_text()
 
     assert "eligible_for_promotion=False" in source
-    assert "blocking_gates_passed=blocking_gates_passed(metrics)" in source
+    assert "blocking_gates_passed=blocking_gates_passed(metrics, results)" in source
 
 
 def test_the_report_flags_are_derived_rather_than_asserted() -> None:

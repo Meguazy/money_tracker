@@ -1,0 +1,164 @@
+{
+  "blocking_gates_passed": false,
+  "case_totals": {
+    "error": 0,
+    "failed": 6,
+    "passed": 164
+  },
+  "completed_at": "2026-09-03T19:17:57.607495+00:00",
+  "configuration": {
+    "auto_post_policy_promoted": false,
+    "boundary_exposes_currency": false,
+    "boundary_schema": "WireExpenseExtraction",
+    "dataset_minimum": 150,
+    "default_received_at": "2026-09-15T12:00:00+02:00",
+    "fixture_funding_sources": [
+      "Carta",
+      "Contanti",
+      "Buoni pasto",
+      "Carta aziendale",
+      "Vecchia carta"
+    ],
+    "instructions_sha256": "c3274f76035477e5c113f0606e8d79130bffc364c30dab74a39c6ca31481dfcd",
+    "instructions_version": "candidate-extraction-it-v3"
+  },
+  "dataset": {
+    "content_hash": "8ac7249b198d65b86bbee3b098aa7ffa2602936a5feb0f098a250df129ca0453",
+    "id": "ingestion-expense-it-v1",
+    "item_count": 170,
+    "version": "1.0.0"
+  },
+  "eligible_for_promotion": false,
+  "meets_dataset_minimum": true,
+  "metrics": [
+    {
+      "blocking": true,
+      "comparison": "at_least",
+      "denominator": 170,
+      "name": "schema_validity_after_one_repair",
+      "numerator": 170,
+      "passed": true,
+      "threshold": 1.0,
+      "value": 1.0
+    },
+    {
+      "blocking": true,
+      "comparison": "at_least",
+      "denominator": 162,
+      "name": "amount_exact_match",
+      "numerator": 161,
+      "passed": true,
+      "threshold": 0.99,
+      "value": 0.9938
+    },
+    {
+      "blocking": true,
+      "comparison": "at_least",
+      "denominator": 152,
+      "name": "occurrence_semantic_exactness",
+      "numerator": 152,
+      "passed": true,
+      "threshold": 0.97,
+      "value": 1.0
+    },
+    {
+      "blocking": true,
+      "comparison": "at_least",
+      "denominator": 152,
+      "name": "funding_source_and_class_match",
+      "numerator": 148,
+      "passed": true,
+      "threshold": 0.97,
+      "value": 0.9737
+    },
+    {
+      "blocking": true,
+      "comparison": "at_least",
+      "denominator": 12,
+      "name": "split_parts_exact_and_reconciled",
+      "numerator": 12,
+      "passed": true,
+      "threshold": 0.99,
+      "value": 1.0
+    },
+    {
+      "blocking": true,
+      "comparison": "at_least",
+      "denominator": 170,
+      "name": "expense_refund_polarity",
+      "numerator": 170,
+      "passed": true,
+      "threshold": 0.99,
+      "value": 1.0
+    },
+    {
+      "blocking": true,
+      "comparison": "at_least",
+      "denominator": 28,
+      "name": "required_ambiguity_reported",
+      "numerator": 26,
+      "passed": false,
+      "threshold": 0.98,
+      "value": 0.9286
+    },
+    {
+      "blocking": true,
+      "comparison": "at_most",
+      "denominator": 170,
+      "name": "fabricated_merchant_date_or_payment_field",
+      "numerator": 0,
+      "passed": true,
+      "threshold": 0.01,
+      "value": 0.0
+    },
+    {
+      "blocking": false,
+      "comparison": "at_least",
+      "denominator": 14,
+      "name": "merchant_semantic_match",
+      "numerator": 14,
+      "passed": true,
+      "threshold": null,
+      "value": 1.0
+    },
+    {
+      "blocking": false,
+      "comparison": "at_least",
+      "denominator": 0,
+      "name": "fabricated_funding_silently_resolved",
+      "numerator": 0,
+      "passed": true,
+      "threshold": null,
+      "value": 1.0
+    },
+    {
+      "blocking": false,
+      "comparison": "at_least",
+      "denominator": 8,
+      "name": "amount_invented_where_none_stated",
+      "numerator": 0,
+      "passed": true,
+      "threshold": null,
+      "value": 0.0
+    },
+    {
+      "blocking": false,
+      "comparison": "at_least",
+      "denominator": 170,
+      "name": "outcome_agreement",
+      "numerator": 164,
+      "passed": true,
+      "threshold": null,
+      "value": 0.9647
+    }
+  ],
+  "model": {
+    "alias": "local-model",
+    "gguf_filename": "Qwen3-14B-Q5_K_M.gguf",
+    "metadata_complete": false,
+    "quantization": "Q5_K_M"
+  },
+  "run_id": "ING-20260903-191757-8eb3e1b8",
+  "source_commit": "4d2281c8d83e5bc842dcc1e7d067c756c3f12768",
+  "suite": "ingestion/expense-it"
+}

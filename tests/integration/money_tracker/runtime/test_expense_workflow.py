@@ -30,12 +30,13 @@ from money_tracker.persistence.database import (
 from money_tracker.persistence.finance import PostgresFinanceRepository
 from money_tracker.runtime import build_expense_graph
 from money_tracker.workflows import (
-    CANDIDATE_CATEGORY_FIT_INSTRUCTIONS,
-    CANDIDATE_EXTRACTION_INSTRUCTIONS,
+    CATEGORY_FIT,
+    EXTRACTION,
     ChannelMessage,
     ExpenseOutcome,
     ResolutionReason,
     WorkflowIntent,
+    default_prompt,
     initial_expense_state,
 )
 from money_tracker.workflows.resolution import PRODUCT_TIMEZONE
@@ -142,8 +143,8 @@ def _graph(
             repository, clock=SystemClock(), ids=UUID4Generator()
         ),
         ids=UUID4Generator(),
-        extraction_instructions=CANDIDATE_EXTRACTION_INSTRUCTIONS,
-        category_instructions=CANDIDATE_CATEGORY_FIT_INSTRUCTIONS,
+        extraction_instructions=default_prompt(EXTRACTION).text,
+        category_instructions=default_prompt(CATEGORY_FIT).text,
         checkpointer=checkpointer,
     )
 

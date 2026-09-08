@@ -21,7 +21,7 @@ from money_tracker.evaluations.ingestion import (
 )
 from money_tracker.evaluations.metadata import CapabilitySettings
 from money_tracker.evaluations.routing import run_routing_suite
-from money_tracker.evaluations.suites import SuiteReport, publish_scores
+from money_tracker.evaluations.suites import SuiteReport, model_row, publish_scores
 from money_tracker.evaluations.tool_use import run_tool_use_suite
 from money_tracker.persistence.database import database_url_from_env
 from money_tracker.runtime.read_graph import SELECTION_BOUNDARIES
@@ -244,6 +244,33 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _command_summary(report: SuiteReport) -> dict[str, object]:
+    """Render the summary one suite run prints when it finishes.
+
+    The model is part of the summary because the terminal is where a run is
+    read first, and a score without the model that produced it cannot be
+    compared with the run before it.
+
+    Args:
+        report: Completed suite report.
+
+    Returns:
+        A JSON-serializable summary carrying no owner text or per-case record.
+    """
+
+    return {
+        "run_id": report.run_id,
+        "suite": report.suite,
+        "model": model_row(report.model),
+        "blocking_gates_passed": report.blocking_gates_passed,
+        "meets_dataset_minimum": report.meets_dataset_minimum,
+        "eligible_for_promotion": report.eligible_for_promotion,
+        "promotion_blockers": report.promotion_blockers,
+        "metrics": {m.name: m.value if m.denominator else None for m in report.metrics},
+        "artifact_directory": report.local_artifact_path,
+    }
+
+
 def _print_and_exit(report: SuiteReport) -> None:
     """Print one suite summary and fail the process on a blocking gate.
 
@@ -259,23 +286,7 @@ def _print_and_exit(report: SuiteReport) -> None:
     """
 
     publish_scores(report)
-    print(
-        json.dumps(
-            {
-                "run_id": report.run_id,
-                "suite": report.suite,
-                "blocking_gates_passed": report.blocking_gates_passed,
-                "meets_dataset_minimum": report.meets_dataset_minimum,
-                "eligible_for_promotion": report.eligible_for_promotion,
-                "promotion_blockers": report.promotion_blockers,
-                "metrics": {
-                    m.name: m.value if m.denominator else None for m in report.metrics
-                },
-                "artifact_directory": report.local_artifact_path,
-            },
-            sort_keys=True,
-        )
-    )
+    print(json.dumps(_command_summary(report), sort_keys=True))
     if not report.blocking_gates_passed:
         raise SystemExit(1)
 
@@ -387,6 +398,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         json.dumps(
             {
                 "run_id": result.report.run_id,
+                "model": model_row(result.report.model),
                 "blocking_gates_passed": result.report.blocking_gates_passed,
                 "artifact_directory": str(result.artifact_directory),
             },

@@ -409,6 +409,7 @@ def write_report(report: SuiteReport, *, output_root: Path) -> Path:
         {
             "run_id": report.run_id,
             "suite": report.suite,
+            "model": model_row(report.model),
             "dataset_version": report.dataset.version,
             "dataset_content_hash": report.dataset.content_hash,
             "item_count": report.dataset.item_count,
@@ -447,6 +448,70 @@ def _metric_rows(report: SuiteReport) -> list[dict[str, JsonValue]]:
         }
         for metric in report.metrics
     ]
+
+
+def model_row(model: ModelMetadata) -> dict[str, JsonValue]:
+    """Render the model identity that every score surface must carry.
+
+    A score cannot be read without knowing which model produced it, and the
+    evaluation matrix requires a model slice on every report. One renderer
+    keeps the raw summary, the published score, and the command output from
+    drifting into three different answers about what was measured.
+
+    Args:
+        model: Exact model identity collected for the run.
+
+    Returns:
+        Public-safe identity fields. The GGUF hash is included because a
+        filename and a quantization do not distinguish two revisions of the
+        same weights.
+    """
+
+    return {
+        "alias": model.model_alias,
+        "gguf_filename": model.gguf_filename,
+        "gguf_sha256": model.gguf_sha256,
+        "quantization": model.quantization,
+        "metadata_complete": model.metadata_complete,
+    }
+
+
+def _model_name(row: object) -> str:
+    """Name the model behind one published score.
+
+    Args:
+        row: Model block of a published score, or anything else when a score
+            predates the block.
+
+    Returns:
+        The weights filename without its extension, falling back to the server
+        alias. This is identity alone: two runs of the same weights share a
+        name whether or not either pinned its full metadata.
+    """
+
+    if not isinstance(row, Mapping):
+        return "unknown"
+    filename = row.get("gguf_filename")
+    if filename:
+        return Path(str(filename)).stem
+    return str(row.get("alias") or "unknown")
+
+
+def _model_cell(row: object) -> str:
+    """Render one published score's model for a summary table cell.
+
+    Args:
+        row: Model block of a published score.
+
+    Returns:
+        The model name, marked when the run could not record the exact weights,
+        template, and server it spoke to. Such a run is reproducible only by
+        description, which the table states rather than hides.
+    """
+
+    name = _model_name(row)
+    complete = isinstance(row, Mapping) and row.get("metadata_complete")
+    return name if complete else f"{name} (metadata incomplete)"
 
 
 def publish_scores(report: SuiteReport, *, out_root: Path | None = None) -> Path | None:
@@ -503,12 +568,7 @@ def publish_scores(report: SuiteReport, *, out_root: Path | None = None) -> Path
             "content_hash": report.dataset.content_hash,
             "item_count": report.dataset.item_count,
         },
-        "model": {
-            "alias": report.model.model_alias,
-            "gguf_filename": report.model.gguf_filename,
-            "quantization": report.model.quantization,
-            "metadata_complete": report.model.metadata_complete,
-        },
+        "model": model_row(report.model),
         "source_commit": report.source.git_commit,
         "configuration": report.configuration,
         "metrics": cast(JsonValue, _metric_rows(report)),
@@ -530,6 +590,11 @@ def publish_scores(report: SuiteReport, *, out_root: Path | None = None) -> Path
 def write_scores_summary(out_root: Path) -> Path:
     """Rewrite the Markdown overview of every suite's most recent run.
 
+    Each row names the model that produced it. A published score is keyed by
+    suite alone, so changing the configured model and rerunning one suite
+    leaves the table holding rows from different models; the note under the
+    table states that rather than letting the rows read as a comparison.
+
     Args:
         out_root: Directory holding published scores.
 
@@ -549,8 +614,9 @@ def write_scores_summary(out_root: Path) -> Path:
         "suite; per-run history sits beside it in the same directory, and the raw",
         "manifests stay under the ignored `artifacts/evals/`.",
         "",
-        "| Suite | Dataset | Cases | Blocking gates | Failing blocking metrics | Run |",
-        "| --- | --- | ---: | --- | --- | --- |",
+        "| Suite | Model | Dataset | Cases | Blocking gates | "
+        "Failing blocking metrics | Run |",
+        "| --- | --- | --- | ---: | --- | --- | --- |",
     ]
     for entry in latest:
         dataset = entry.get("dataset")
@@ -573,10 +639,20 @@ def write_scores_summary(out_root: Path) -> Path:
             failing = ["incomplete_execution"]
         verdict = "pass" if entry.get("blocking_gates_passed") else "**fail**"
         lines.append(
-            f"| `{entry.get('suite')}` | {dataset_label} | {item_count} | "
+            f"| `{entry.get('suite')}` | {_model_cell(entry.get('model'))} | "
+            f"{dataset_label} | {item_count} | "
             f"{verdict} | {', '.join(f'`{name}`' for name in failing) or 'none'} | "
             f"`{entry.get('run_id')}` |"
         )
+    measured_by = sorted({_model_name(entry.get("model")) for entry in latest})
+    if len(measured_by) > 1:
+        lines += [
+            "",
+            "Rows were produced by more than one model: "
+            + ", ".join(measured_by)
+            + ". Every row is its own suite's most recent run, so this table "
+            "reports what was measured last, not a comparison between models.",
+        ]
     lines.append("")
     summary = out_root / "SUMMARY.md"
     summary.write_text("\n".join(lines), encoding="utf-8")
@@ -639,6 +715,7 @@ __all__ = [
     "blocking_gates_passed",
     "dataset_metadata",
     "load_cases",
+    "model_row",
     "publish_scores",
     "write_scores_summary",
     "model_metadata",

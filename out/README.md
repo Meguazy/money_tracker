@@ -5,12 +5,16 @@ tracked by Git, unlike the raw run manifests under `artifacts/evals/`, so a
 score can be read and compared without rerunning a suite.
 
 - `evaluations/SUMMARY.md` is regenerated on every published run: one row per
-  suite, showing which blocking gates failed.
+  suite, naming the model that produced it and which blocking gates failed. A
+  row is its own suite's most recent run, so rows can come from different
+  models; when they do, the summary says so rather than letting the table read
+  as a comparison.
 - `evaluations/<suite>/latest.json` is that suite's most recent published run.
 - `evaluations/<suite>/<run id>.json` is the history beside it, so a boundary
   change can be read as a before and after.
 
-Each file carries the dataset identity and content hash, the exact model, the
+Each file carries the dataset identity and content hash, the exact model down
+to its weights hash and whether that identity could be pinned at all, the
 instruction candidate under test, every metric with its gate and its
 numerator over denominator, and whether the run met the dataset minimum. It
 carries no per-case record: those stay in the raw manifest, because they hold

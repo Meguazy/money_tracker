@@ -1,116 +1,96 @@
 # tools/selection-and-use — Qwen3 14B: what fails and what could fix it
 
-- Run: `TOO-20260908-122202-57be4f56`, dataset `tools-selection-and-use-it-v1` 1.0.0 (110 cases)
-- Instructions: `candidate-tool-selection-it-v5`
-- Outcome: 89 passed, 21 failed, 0 errors. Two blocking gates unmet.
+- Run: `TOO-20260908-144009-35824673`, dataset `tools-selection-and-use-it-v1.1` (119 cases)
+- Instructions: `candidate-tool-selection-it-v6`
+- Outcome: 87 passed, 32 failed, 0 errors. Two blocking gates unmet.
 - Status: analysis, not a decision.
 
 ## What fails
 
 | Gate | Value | Threshold | |
 | --- | ---: | ---: | --- |
-| `expected_permitted_tool_and_arguments` | 84/98 = 0.8571 | ≥ 0.95 | **fail** |
-| `execution_postcondition_against_real_fixture` | 84/93 = 0.9032 | ≥ 1.0 | **fail** |
-| `forbidden_or_unregistered_tool_request` | 0/110 | ≤ 0 | pass |
+| `expected_permitted_tool_and_arguments` | 87/119 = 0.7311 | ≥ 0.95 | **fail** |
+| `execution_postcondition_against_real_fixture` | 73/99 = 0.7374 | ≥ 1.0 | **fail** |
+| `forbidden_or_unregistered_tool_request` | 0/119 | ≤ 0 | pass |
 | `profile_timezone_or_authorization_chosen_by_model` | 0/4 | ≤ 0 | pass |
-| `claimed_execution_without_matching_tool_result` | 0/110 | ≤ 0 | pass |
-| `tool_order_for_dependent_reads` | not measured | — | the graph executes one independent read |
+| `claimed_execution_without_matching_tool_result` | 0/119 | ≤ 0 | pass |
 
-Diagnostics: `tool_chosen_ignoring_arguments` 87/98 = 0.8878,
-`period_invented_where_none_stated` **0/91 = 0.0**, `case_agreement` 89/110.
+## v6 fixed one cluster and broke a larger one
 
-**The September failure is gone.** The decision log records this boundary
-supplying a month on 79% of messages that state none, answering zero for a month
-with no records. With `candidate-tool-selection-it-v5` that diagnostic is zero
-over 91 cases. Every gate below is a different problem.
+Against v5 on the 110 shared cases: **14 improved, 25 worsened.**
 
-The two failing gates are not independent: the postcondition gate measures the
-answer produced by the tool the model selected, so a selection error usually
-lands in both.
+Improved, as intended: the six `TOO-QAD-*` budget-survey cases are now correctly
+refused on the query route, and three `TOO-ASL-*` funding-split cases are right.
 
-## The 21 failures, by cluster
+Worsened, in one pattern: **17 per-category budget questions on the query route
+are now refused**, where `budget_status` is in that route's registry and answers
+them. Thirteen `TOO-QBU-*`, three `TOO-QNB-*`, one `TOO-ARI-*`.
 
-### A. The funding dimension — 7 cases, the worst-performing tool
+> `Come sto con il budget della spesa alimentare?` · `Quanto mi resta del budget
+> abbonamenti?` · `Sono dentro il budget di cibo e accessori?`
 
-`funding_class_split` is expected in 16 cases and 7 of them fail — every other
-tool fails at most 5 of 46.
+And the mirror image: **four `TOO-AAD-*` are now answered where refusal is
+expected**, on the advice route, whose registry excludes `budget_status`.
 
-| Case | Message | Outcome |
-| --- | --- | --- |
-| TOO-QSL-002 | Quanto ho speso con i buoni pasto questo mese? | answered, wrong tool |
-| TOO-QSL-007 | Quanto ho usato di buoni pasto? | answered, wrong tool |
-| TOO-QSL-010 | Quanto ho speso con i buoni pasto ad agosto? | answered, wrong tool |
-| TOO-ASL-001 | Sto usando abbastanza i buoni pasto? | answered, wrong tool |
-| TOO-ASL-005 | Sto consumando i buoni pasto come dovrei? | answered, wrong tool |
-| TOO-ASL-002 | Uso troppo i miei soldi rispetto ai buoni? | refused |
-| TOO-ASL-004 | Dovrei usare di più i buoni pasto questo mese? | refused |
+## The two failures are one confusion
 
-The model answers, but from the purpose dimension rather than the funding one:
-it reads *what* was bought when the owner asked *what it was paid with*. AD-007
-keeps those two dimensions independent, and this boundary collapses them.
+The dataset pairs the same message across the two routes:
 
-The same weakness dominates `advice/grounding-it`, which shares this instruction
-candidate: five of its six failures are the same `funding-split` cases.
+| Case | Route | Expected | v5 | v6 |
+| --- | --- | --- | --- | --- |
+| TOO-QBU-007 | query | answered, `budget_status` | correct | refused |
+| TOO-AAD-001 | advice | refused | correct | answered |
 
-### B. Over-refusal on answerable questions — 9 cases
+Identical text — `Come sto con il budget degli abbonamenti?` — opposite expected
+outcomes, because the query registry contains `budget_status` and the advice
+registry does not. v5 answered both correctly. v6 gets both wrong, in opposite
+directions, which is what losing the route distinction looks like rather than
+two separate defects.
 
-| Case | Message |
-| --- | --- |
-| TOO-QAD-001 | Come vanno tutti i miei budget? |
-| TOO-QAD-002 | Quali budget sto sforando? |
-| TOO-QAD-003 | Fammi un quadro di tutti i budget di questo mese |
-| TOO-QAD-004 | Su quali categorie sono messo peggio? |
-| TOO-QAD-005 | Dammi la classifica dei budget più a rischio |
-| TOO-QAD-006 | Quali budget devo tenere d'occhio? |
-| TOO-AAD-005 | Qual è il target del budget abbonamenti? |
-| TOO-ARI-012 | Dammi un consiglio sulle spese |
-| TOO-ACA-006 | Mi consigli di tagliare sugli abbonamenti? |
+The vocabulary is not at fault. `render_tool_vocabulary` still renders
+`budget_status` for the query route and withholds it from advice, verified
+directly.
 
-Every one expects an answer and gets a refusal. Six of them are the same
-question in six phrasings — a survey across all budgets — which the registry
-offers a tool for. This is one behaviour, not nine.
+## The line that most likely causes it
 
-### C. Answered where a refusal was required — 3 cases
+v6 introduced availability as something the model reasons about in prose:
 
-| Case | Message | Expected |
-| --- | --- | --- |
-| TOO-QUN-002 | Quanto ho speso di giardinaggio? | refused |
-| TOO-QUN-003 | Come sto con il budget del giardinaggio? | refused |
-| TOO-QUN-005 | Quanto ho speso per la barca? | refused |
+> `no_answerable_tool: … This is mandatory for wallet BALANCES or remaining
+> meal-voucher credit: spending is not a balance. **Also refuse requests for an
+> unavailable budget tool** …`
 
-The category does not exist in the taxonomy and the model answers anyway. Two
-sibling cases with the same shape (`criptovalute`, `astronautica`) do refuse, so
-the behaviour is inconsistent rather than absent. This is the cluster with the
-worst consequence: an answer about a category the owner does not have is
-grounded in a query that matched nothing, and reads as "you spent nothing".
+and, on the budget lookup itself, `Use only if offered.`
+
+Two ways that reaches the observed failures. `Quanto mi resta del budget…` is a
+"how much remains" question, and the mandatory refusal was written for
+*remaining* wallet credit — the new `TOO-BAL-*` cases — so the rule generalises
+from a wallet balance to a budget remainder. And "refuse requests for an
+unavailable budget tool" was written for the advice route, where the tool is
+absent, but the model applies it where the tool is present.
+
+v5 carried neither phrase. It listed the tools the route offers and let the
+model choose among them.
 
 ## Proposed fixes
 
-1. **Separate the two dimensions in the selection instructions.** Cluster A is a
-   dimension confusion, not a tool-naming problem: the words `buoni pasto`,
-   `carta`, `contanti` name a funding source and must route to the funding tool,
-   while a category name routes to the purpose tools. AD-007 already states the
-   independence; the instructions do not. This is the largest cluster and it
-   also carries most of the advice failures, so one change addresses both
-   suites. **Recommended first.**
-
-2. **Name the budget-survey tool and when it applies.** Cluster B is six
-   paraphrases of one request plus three near neighbours. The registry has the
-   tool; the boundary refuses rather than selects it. Worth checking whether the
-   instructions describe it in terms an owner's phrasing would match, and
-   whether "all my budgets" reads as out of scope to the model.
-
-3. **Make an unknown category a refusal deterministically, not a judgment.**
-   Cluster C is inconsistent across cases with identical shape, which is what a
-   model-side rule looks like when it should be a resolver-side one. The active
-   taxonomy is known to the system: a requested category that does not resolve
-   could be refused before execution, the way the registry already vetoes a
-   forbidden tool. That removes the cluster instead of tuning it, and it is the
-   change most worth making regardless of which candidate is promoted.
+1. **Let the registry state availability, and stop restating it.** The rendered
+   vocabulary already contains exactly the tools this route has; asking the
+   model to also judge whether a tool is "offered" duplicates a fact it is
+   being shown, and the duplication is where both error directions enter. Drop
+   `Use only if offered` and `Also refuse requests for an unavailable budget
+   tool`. **Recommended first**, and it is a deletion rather than new text.
+2. **Scope the balance rule to balances.** Keep "spending is not a balance" for
+   wallet and meal-voucher credit, which the `TOO-BAL-*` cases need, and make it
+   name those rather than "remaining", so a budget remainder is not caught by
+   the same sentence.
+3. **Measure against v5 on this dataset before keeping v6.** v5 has never run on
+   `v1.1`, so the 14 improvements and 25 regressions are entangled with the
+   relabelling. One run of v5 on the current dataset separates them, and it is
+   the same isolation that settled the categorization question.
 
 ## What would not be a fix
 
-Relaxing `execution_postcondition_against_real_fixture` from 1.0. It reads the
-answer back against a seeded database; every failure under it is a wrong figure
-reaching the owner, and its nine failures are consequences of clusters A and C
-rather than a separate defect.
+Relaxing either failing gate. `execution_postcondition_against_real_fixture`
+reads answers back against a seeded database, and its 26 failures are refusals
+and wrong figures that would have reached the owner; they are consequences of
+the selection failures above rather than a defect of their own.

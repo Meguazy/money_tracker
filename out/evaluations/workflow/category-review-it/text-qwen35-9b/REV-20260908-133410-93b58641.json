@@ -1,0 +1,158 @@
+{
+  "blocking_gates_passed": true,
+  "case_totals": {
+    "error": 0,
+    "failed": 0,
+    "passed": 37
+  },
+  "completed_at": "2026-09-08T13:34:10.023497+00:00",
+  "configuration": {
+    "aliases_written_outside_bootstrap": true,
+    "auto_post_policy_promoted": false,
+    "dataset_minimum": 30,
+    "fixture_taxonomy_nodes": 26,
+    "instructions_sha256": "68c859abc9f8017ac7458aa1406fadbed8f027495f9ad6f81619f98257291762",
+    "model_port": "scripted"
+  },
+  "dataset": {
+    "content_hash": "bfdac9fc57fe2da3b2e1231dbbb9e0ae967fdca7a6fdef7ea44baaa5cd4b732c",
+    "id": "category-review-it-v1",
+    "item_count": 37,
+    "version": "1.0.0"
+  },
+  "eligible_for_promotion": true,
+  "meets_dataset_minimum": true,
+  "metrics": [
+    {
+      "applicable": true,
+      "blocking": true,
+      "comparison": "at_least",
+      "denominator": 5,
+      "inapplicability_reason": null,
+      "name": "approve_new_category_postcondition",
+      "numerator": 5,
+      "passed": true,
+      "threshold": 1.0,
+      "value": 1.0
+    },
+    {
+      "applicable": true,
+      "blocking": true,
+      "comparison": "at_least",
+      "denominator": 5,
+      "inapplicability_reason": null,
+      "name": "use_best_existing_postcondition",
+      "numerator": 5,
+      "passed": true,
+      "threshold": 1.0,
+      "value": 1.0
+    },
+    {
+      "applicable": true,
+      "blocking": true,
+      "comparison": "at_least",
+      "denominator": 8,
+      "inapplicability_reason": null,
+      "name": "named_existing_resolution",
+      "numerator": 8,
+      "passed": true,
+      "threshold": 1.0,
+      "value": 1.0
+    },
+    {
+      "applicable": true,
+      "blocking": true,
+      "comparison": "at_least",
+      "denominator": 7,
+      "inapplicability_reason": null,
+      "name": "repropose_excludes_rejected",
+      "numerator": 7,
+      "passed": true,
+      "threshold": 1.0,
+      "value": 1.0
+    },
+    {
+      "applicable": true,
+      "blocking": true,
+      "comparison": "at_least",
+      "denominator": 4,
+      "inapplicability_reason": null,
+      "name": "exhausted_transition_to_manual",
+      "numerator": 4,
+      "passed": true,
+      "threshold": 1.0,
+      "value": 1.0
+    },
+    {
+      "applicable": true,
+      "blocking": true,
+      "comparison": "at_least",
+      "denominator": 4,
+      "inapplicability_reason": null,
+      "name": "cancel_mutates_nothing",
+      "numerator": 4,
+      "passed": true,
+      "threshold": 1.0,
+      "value": 1.0
+    },
+    {
+      "applicable": true,
+      "blocking": true,
+      "comparison": "at_least",
+      "denominator": 4,
+      "inapplicability_reason": null,
+      "name": "unrelated_input_preserves_pending",
+      "numerator": 4,
+      "passed": true,
+      "threshold": 1.0,
+      "value": 1.0
+    },
+    {
+      "applicable": true,
+      "blocking": true,
+      "comparison": "at_most",
+      "denominator": 5,
+      "inapplicability_reason": null,
+      "name": "duplicate_writes_under_replay",
+      "numerator": 0,
+      "passed": true,
+      "threshold": 0.0,
+      "value": 0.0
+    },
+    {
+      "applicable": true,
+      "blocking": false,
+      "comparison": "at_least",
+      "denominator": 4,
+      "inapplicability_reason": null,
+      "name": "pause_payload_survives_restart",
+      "numerator": 4,
+      "passed": true,
+      "threshold": null,
+      "value": 1.0
+    },
+    {
+      "applicable": true,
+      "blocking": false,
+      "comparison": "at_least",
+      "denominator": 37,
+      "inapplicability_reason": null,
+      "name": "scenario_agreement",
+      "numerator": 37,
+      "passed": true,
+      "threshold": null,
+      "value": 1.0
+    }
+  ],
+  "model": {
+    "alias": "local-model",
+    "gguf_filename": "Qwen3.5-9B-UD-Q5_K_XL.gguf",
+    "gguf_sha256": "sha256:96cf42ddb97f9572410a72b9ed6f2299b1e887ee08da4c2a6c01e897cfa9f673",
+    "metadata_complete": true,
+    "quantization": "Q5_K_XL"
+  },
+  "promotion_blockers": [],
+  "run_id": "REV-20260908-133410-93b58641",
+  "source_commit": "570bf707955f7d12eb770125a5faa935249e9a92",
+  "suite": "workflow/category-review-it"
+}

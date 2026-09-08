@@ -1,0 +1,136 @@
+{
+  "blocking_gates_passed": true,
+  "completed_at": "2026-09-08T13:20:27.519473+00:00",
+  "dataset": {
+    "content_hash": "sha256:419f6596b04d0e49aa695007b5e3c25ff48b744a86781e4516fc81b446f83300",
+    "id": "capabilities-local-model",
+    "item_count": 46,
+    "version": "1.2.0"
+  },
+  "modality": "text",
+  "model": {
+    "alias": "local-model",
+    "gguf_filename": "Qwen3.5-9B-UD-Q5_K_XL.gguf",
+    "gguf_sha256": "sha256:96cf42ddb97f9572410a72b9ed6f2299b1e887ee08da4c2a6c01e897cfa9f673",
+    "metadata_complete": true,
+    "quantization": "Q5_K_XL"
+  },
+  "probe_totals": {
+    "error": 0,
+    "failed": 0,
+    "not_applicable": 1,
+    "passed": 6
+  },
+  "probes": [
+    {
+      "details": {
+        "has_chat_template": true,
+        "modalities": []
+      },
+      "name": "server_metadata",
+      "status": "passed"
+    },
+    {
+      "details": {
+        "schema": "strict_nested_v1"
+      },
+      "name": "strict_structured_output",
+      "status": "passed"
+    },
+    {
+      "details": {
+        "argument_keys": [
+          "category_id"
+        ],
+        "tool_name": "get_budget_remaining"
+      },
+      "name": "tool_calling",
+      "status": "passed"
+    },
+    {
+      "details": {
+        "answer_contains_expected_amount": true,
+        "answer_contains_unconverted_minor_units": false,
+        "answer_produced": true,
+        "gate_passed": true,
+        "tool_result_minor": 3700
+      },
+      "name": "tool_result_sequencing",
+      "status": "passed"
+    },
+    {
+      "details": {
+        "cases": 26,
+        "gate_passed": true,
+        "shapes": {
+          "optional_absent": {
+            "answers_not_produced": 0,
+            "schema_invalid_responses": 0,
+            "silent_slots": 68,
+            "silent_slots_fabricated": 1,
+            "silent_slots_given_empty_text": 42,
+            "silent_slots_given_placeholder_word": 0,
+            "silent_slots_left_empty": 0.3676,
+            "stated_slots": 36,
+            "stated_slots_captured": 0.5833
+          },
+          "required_nullable": {
+            "answers_not_produced": 0,
+            "schema_invalid_responses": 0,
+            "silent_slots": 68,
+            "silent_slots_fabricated": 2,
+            "silent_slots_given_empty_text": 0,
+            "silent_slots_given_placeholder_word": 0,
+            "silent_slots_left_empty": 0.9706,
+            "stated_slots": 36,
+            "stated_slots_captured": 1.0
+          }
+        },
+        "silent_slot_threshold": 0.95,
+        "stated_slot_threshold": 0.95
+      },
+      "name": "optional_field_omission",
+      "status": "passed"
+    },
+    {
+      "details": {
+        "cases": 16,
+        "gate_passed": true,
+        "shapes": {
+          "nested_union": {
+            "answers_carrying_a_foreign_field": 0,
+            "answers_not_produced": 0,
+            "both_variants_reachable": true,
+            "existing_names_from_supplied_list": 1.0,
+            "schema_accepted": true,
+            "schema_invalid_responses": 0,
+            "scored_answers": 16,
+            "variant_selected_correctly": 1.0
+          },
+          "root_union": {
+            "answers_carrying_a_foreign_field": 0,
+            "answers_not_produced": 0,
+            "both_variants_reachable": true,
+            "existing_names_from_supplied_list": 1.0,
+            "schema_accepted": true,
+            "schema_invalid_responses": 0,
+            "scored_answers": 16,
+            "variant_selected_correctly": 0.9375
+          }
+        }
+      },
+      "name": "union_output",
+      "status": "passed"
+    },
+    {
+      "details": {
+        "reason": "no_image_fixture_supplied"
+      },
+      "name": "image_input",
+      "status": "not_applicable"
+    }
+  ],
+  "run_id": "CAP-20260908-131914-9cde6793",
+  "source_commit": "570bf707955f7d12eb770125a5faa935249e9a92",
+  "suite": "capabilities/local-model"
+}

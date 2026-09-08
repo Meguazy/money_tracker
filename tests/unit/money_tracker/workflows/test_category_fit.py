@@ -430,3 +430,30 @@ def test_outcome_enum_values_are_closed() -> None:
         CategoryFit.model_validate_json(
             json.dumps({"outcome": "auto_create", "evidence": "x"})
         )
+
+
+def test_every_category_a_prompt_demonstrates_exists_in_the_taxonomy() -> None:
+    """Refuse an instruction that shows the model a name it cannot answer.
+
+    A worked answer teaches the exact string it prints. `candidate-category-fit-
+    it-v6` exists because this candidate answered `Curare personale` when asked
+    to copy `Cura personale`, so a demonstration carrying a name the taxonomy
+    does not have would teach the defect the bound schema was added to prevent.
+    """
+
+    import re
+
+    from money_tracker.domain.taxonomy_seed import initial_taxonomy
+    from money_tracker.workflows.prompts import CATEGORY_FIT, prompt_versions
+
+    active = {category.name for category in initial_taxonomy().categories}
+    demonstrated: dict[str, set[str]] = {}
+    for version in prompt_versions(CATEGORY_FIT):
+        shown = set(re.findall(r'"category_name": "([^"]+)"', version.text))
+        shown |= set(re.findall(r'"parent_name": "([^"]+)"', version.text))
+        if shown:
+            demonstrated[version.short_name] = shown
+
+    assert demonstrated, "no version demonstrates an answer"
+    for short_name, shown in demonstrated.items():
+        assert shown <= active, f"{short_name} demonstrates unknown: {shown - active}"

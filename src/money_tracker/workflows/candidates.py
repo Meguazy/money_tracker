@@ -228,6 +228,11 @@ _CATEGORY_FIT_SHAPES: dict[
         category_fit_to_domain,
         _tree_taxonomy,
     ),
+    "v8": (
+        lambda taxonomy: build_category_fit_schema(active_category_names(taxonomy)),
+        category_fit_to_domain,
+        _tree_taxonomy,
+    ),
     "v7": (
         lambda taxonomy: build_category_fit_schema(active_category_names(taxonomy)),
         category_fit_to_domain,

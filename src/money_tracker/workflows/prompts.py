@@ -316,7 +316,9 @@ def render_selection_categories(names: tuple[str, ...]) -> str:
     return f"\nCategories you may name:\n{listed}\n"
 
 
-def render_tool_vocabulary(intent: WorkflowIntent) -> str:
+def render_tool_vocabulary(
+    intent: WorkflowIntent, *, version: str | None = None
+) -> str:
     """Render the tools one route may call, for its instruction text.
 
     Derived from the registry rather than retyped, so a model is never offered
@@ -324,6 +326,7 @@ def render_tool_vocabulary(intent: WorkflowIntent) -> str:
 
     Args:
         intent: Route whose registry is being offered.
+        version: Instruction identity selecting versioned tool descriptions.
 
     Returns:
         A newline-separated list to append to the instructions.
@@ -333,7 +336,15 @@ def render_tool_vocabulary(intent: WorkflowIntent) -> str:
         PromptCatalogError: If the catalog does not describe every read tool.
     """
 
-    guidance = _catalog(TOOL_SELECTION).get("tool_guidance")
+    catalog = _catalog(TOOL_SELECTION)
+    guidance = catalog.get("tool_guidance")
+    entries = catalog["versions"]
+    if not isinstance(entries, list):
+        raise PromptCatalogError("tool catalog has no versions")
+    for entry in entries:
+        if isinstance(entry, dict) and entry["id"] == version:
+            guidance = entry.get("tool_guidance", guidance)
+            break
     if not isinstance(guidance, dict) or set(guidance) != {
         tool.value for tool in ReadTool
     }:

@@ -36,7 +36,7 @@ from money_tracker.workflows.contracts import (
 )
 from money_tracker.workflows.intents import WorkflowIntent
 
-TOOL_CONTRACT_VERSION = "v1"
+TOOL_CONTRACT_VERSION = "v2"
 """Version of the read-tool selection boundary.
 
 Versioned independently of the router, extraction, and category-fit boundaries

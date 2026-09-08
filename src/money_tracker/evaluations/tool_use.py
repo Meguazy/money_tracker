@@ -259,6 +259,8 @@ def _facets(
             )
             and observed.get("period") == case.get("expected_period")
         )
+    elif case.get("expected_outcome") == LabelledOutcome.REFUSED:
+        facets["selection"] = facets["outcome"]
     if case.get("expected_period") is None:
         facets["period_omitted"] = observed.get("period") is None
     expected_answer = _expected_answer(case)

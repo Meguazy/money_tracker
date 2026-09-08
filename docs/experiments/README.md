@@ -20,6 +20,11 @@ Experiments determine whether a nondeterministic component is suitable for an
 approved role. They do not replace software tests and they do not grant a model
 authority over financial invariants.
 
+Current corrective work and the authoritative interpretation of the September 8
+failures: [Step 3 contract corrections](text-workflow-fixes-2026-09-08.md).
+Historical claims below about missing union schemas, prompts, or invented
+periods describe earlier candidates, not the current repository.
+
 ## Tests versus evaluations
 
 | Mechanism | Question | Examples |

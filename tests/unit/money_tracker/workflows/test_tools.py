@@ -55,7 +55,7 @@ def _parse(**overrides: Any) -> ToolRequest:
 def test_contract_version_is_pinned_independently() -> None:
     """Let the tool vocabulary grow without invalidating other threads."""
 
-    assert TOOL_CONTRACT_VERSION == "v1"
+    assert TOOL_CONTRACT_VERSION == "v2"
 
 
 def test_every_registry_belongs_to_a_read_only_route() -> None:

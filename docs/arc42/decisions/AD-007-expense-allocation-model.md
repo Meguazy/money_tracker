@@ -45,3 +45,11 @@ separate personal funds from benefits.
 - Full accounting remains possible later but will require an explicit migration
   rather than being prematurely embedded in the V1 domain.
 - Corrections and voids require an audit trail instead of destructive deletion.
+
+## Step 3 reporting clarification (2026-09-08)
+
+The existing monthly payment report exposes both funding-class totals and
+individual source totals, computed from posted payment allocations with signed
+refunds. Aggregating meal vouchers and welfare into one benefit total cannot
+answer a question about one of those sources. These totals measure consumption,
+not wallet balance; unsupported balance questions must be clarified.

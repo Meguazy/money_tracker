@@ -153,3 +153,12 @@ The router is not wired to a channel or worker process.
 - Workflow schemas and node names require versioning and migration care for
   interrupted threads.
 - Routing, extraction, tool selection, and execution are evaluated separately.
+
+## Step 3 evaluation contract audit (2026-09-08)
+
+Query deliberately excludes the budget survey and advice excludes the direct
+single-budget lookup. Forced-route forbidden-tool cases must expect refusal;
+separate reachable-route cases measure successful reporting. Selection v6
+retains those registries and describes source consumption and missing budgets
+accurately. External market-price lookups route to unsupported. Prior evidence
+in this record mentioning absent datasets describes historical implementation.

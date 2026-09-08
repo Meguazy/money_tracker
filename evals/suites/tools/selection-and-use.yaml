@@ -1,7 +1,7 @@
 suite_schema_version: "1"
 suite: tools/selection-and-use
-version: "1.0.0"
-dataset: ../../datasets/tools-selection-and-use-it-v1.jsonl
+version: "1.1.0"
+dataset: ../../datasets/tools-selection-and-use-it-v1.1.jsonl
 runner: money-tracker-eval tools
 private_data: false
 unit_under_test: >-

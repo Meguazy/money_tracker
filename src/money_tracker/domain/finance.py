@@ -378,6 +378,30 @@ def posted_funding_class_split(
     )
 
 
+def posted_funding_source_spend(
+    expenses: tuple[Expense, ...], *, funding_source_id: UUID
+) -> Money:
+    """Sum one source's posted payment portions, including signed refunds.
+
+    Args:
+        expenses: Candidate expenses already scoped to a profile and period.
+        funding_source_id: Stable source whose payment portions are counted.
+
+    Returns:
+        Net consumption paid by this source, never its wallet balance.
+    """
+
+    return sum_money(
+        tuple(
+            allocation.amount
+            for expense in expenses
+            if expense.status is ExpenseStatus.POSTED
+            for allocation in expense.payment_allocations
+            if allocation.funding_source_id == funding_source_id
+        )
+    )
+
+
 def posted_category_spend(
     expenses: tuple[Expense, ...],
     *,

@@ -26,6 +26,7 @@ from money_tracker.domain import (
     BudgetStatus,
     Category,
     FundingClassSplit,
+    FundingSource,
     Money,
     TaxonomyError,
     YearMonth,
@@ -33,6 +34,7 @@ from money_tracker.domain import (
     posted_category_spend,
     posted_funding_class_split,
 )
+from money_tracker.domain.finance import posted_funding_source_spend
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,10 +78,13 @@ class PeriodSplit:
     Attributes:
         period: Calendar month reported.
         split: Personal-fund, benefit, and other posted totals.
+        sources: Configured sources and their net posted payment totals,
+            including zero consumption. These amounts are not wallet balances.
     """
 
     period: YearMonth
     split: FundingClassSplit
+    sources: tuple[tuple[FundingSource, Money], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -210,11 +215,19 @@ class ReportingService:
             The personal-fund, benefit, and other posted totals.
         """
 
+        expenses = self._repository.get_posted_expenses(profile_id, period=period)
+        sources = self._repository.get_funding_sources(profile_id)
         return PeriodSplit(
             period=period,
-            split=posted_funding_class_split(
-                self._repository.get_posted_expenses(profile_id, period=period),
-                funding_sources=self._repository.get_funding_sources(profile_id),
+            split=posted_funding_class_split(expenses, funding_sources=sources),
+            sources=tuple(
+                (
+                    source,
+                    posted_funding_source_spend(expenses, funding_source_id=source.id),
+                )
+                for source in sorted(
+                    sources, key=lambda item: (item.name, str(item.id))
+                )
             ),
         )
 

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
@@ -56,6 +56,7 @@ class InMemoryReporting:
     budgets: tuple[MonthlyBudget, ...] = ()
     taxonomy: Taxonomy = TAXONOMY
     reads: list[str] = field(default_factory=list)
+    sources: tuple[FundingSource, ...] = (CARD, VOUCHERS)
 
     def get_taxonomy(self, profile_id: UUID) -> Taxonomy:
         """Return the seeded taxonomy."""
@@ -67,7 +68,7 @@ class InMemoryReporting:
         """Return both configured sources."""
 
         self.reads.append("funding_sources")
-        return (CARD, VOUCHERS)
+        return self.sources
 
     def get_posted_expenses(
         self, profile_id: UUID, *, period: YearMonth
@@ -398,3 +399,50 @@ def test_a_survey_without_budgets_reports_nothing_to_compare() -> None:
 
     assert result.statuses == ()
     assert result.unbudgeted_category_names == ("Abbonamenti",)
+
+
+def test_source_consumption_keeps_benefits_distinct_and_counts_only_portions() -> None:
+    """Keep split payments, refunds and two benefit sources analytically distinct."""
+
+    welfare = replace(VOUCHERS, id=uuid4(), name="Welfare")
+    split_purchase = replace(
+        _posted("Spesa alimentare", 5000),
+        payment_allocations=(
+            PaymentAllocation(funding_source_id=CARD.id, amount=Money(2000)),
+            PaymentAllocation(funding_source_id=VOUCHERS.id, amount=Money(3000)),
+        ),
+    )
+    repository = InMemoryReporting(
+        expenses=(
+            split_purchase,
+            _posted("Abbonamenti", 1800, source=welfare),
+            _posted("Spesa alimentare", -500, source=VOUCHERS),
+            _posted("Spesa alimentare", 9000, source=VOUCHERS, month=8),
+            replace(
+                _posted("Abbonamenti", 10000, source=welfare),
+                status=ExpenseStatus.DRAFT,
+            ),
+        ),
+        sources=(CARD, VOUCHERS, welfare),
+    )
+    result = ReportingService(repository).period_split(
+        profile_id=PROFILE, period=PERIOD
+    )
+    assert {source.name: amount.minor_units for source, amount in result.sources} == {
+        "Carta": 2000,
+        "Buoni pasto": 2500,
+        "Welfare": 1800,
+    }
+    assert result.split.benefit == Money(4300)
+
+
+def test_zero_source_consumption_remains_visible() -> None:
+    """A configured unused source is distinct from an unknown source."""
+
+    result = ReportingService(InMemoryReporting()).period_split(
+        profile_id=PROFILE, period=PERIOD
+    )
+    assert {source.name: amount for source, amount in result.sources} == {
+        "Carta": Money(0),
+        "Buoni pasto": Money(0),
+    }

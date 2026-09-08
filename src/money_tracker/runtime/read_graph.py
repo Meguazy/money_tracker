@@ -122,6 +122,12 @@ _SELECTION_SHAPES: dict[
             current=current
         ),
     ),
+    "v6": (
+        WireToolRequest,
+        lambda parsed, current: cast(WireToolRequest, parsed).to_domain(
+            current=current
+        ),
+    ),
 }
 """The schema each selection instruction version is paired with."""
 
@@ -185,7 +191,9 @@ def build_read_graph(
                     schema=selection_boundary.schema,
                     instructions=(
                         selection_instructions
-                        + render_tool_vocabulary(intent)
+                        + render_tool_vocabulary(
+                            intent, version=selection_boundary.version
+                        )
                         + render_selection_categories(category_names)
                     ),
                     message=message.normalized_text,
@@ -359,7 +367,18 @@ def _budget_facts(result: CategoryBudget) -> dict[str, Any]:
 def _split_facts(result: PeriodSplit) -> dict[str, Any]:
     """Render the whole-month split answer."""
 
-    return {"period": _period(result.period), "split": _split(result.split)}
+    return {
+        "period": _period(result.period),
+        "split": _split(result.split),
+        "sources": [
+            {
+                "name": source.name,
+                "funding_class": source.funding_class.value,
+                "posted_spend": _money(amount),
+            }
+            for source, amount in result.sources
+        ],
+    }
 
 
 def _risk_facts(result: BudgetsAtRisk) -> dict[str, Any]:

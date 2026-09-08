@@ -247,3 +247,18 @@ transaction, funding-source, allocation, and audit boundaries reduce migration
 risk, but future income, assets, liabilities, transfers, and reconciliation will
 require a dedicated product decision and migration rather than reinterpretation
 of V1 data.
+
+## Step 3 label clarification (2026-09-08)
+
+Insurance premiums use `Finanza e obblighi` regardless of the insured asset.
+Clothing and footwear use `Acquisti personali`, including sports shoes.
+Learning materials use `Formazione`; recreational reading uses
+`Sport, hobby e cultura`. Parking uses `Mobilità / Auto e moto`, including
+recurring workplace parking. These conventions clarify the existing seed;
+they create no nodes and rewrite no stored allocations. Unstated reading
+purpose and the remaining disputed proposal labels still need owner review.
+
+General market-price lookups and shopping comparisons are understandable but
+unsupported V1 requests. Questions about the owner's recorded purchases remain
+read-only queries. Monthly payment consumption is distinct from wallet balance;
+a consumption report must not answer how much credit remains.

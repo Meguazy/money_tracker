@@ -2,16 +2,16 @@
   "blocking_gates_passed": false,
   "case_totals": {
     "error": 0,
-    "failed": 6,
-    "passed": 46
+    "failed": 9,
+    "passed": 43
   },
-  "completed_at": "2026-09-08T12:23:32.386467+00:00",
+  "completed_at": "2026-09-08T14:41:16.803860+00:00",
   "configuration": {
     "boundary_schema": "WireToolRequest",
     "dataset_minimum": 50,
     "human_usefulness_reviewed": false,
-    "instructions_sha256": "50431521575b25fd4e3fc6bdb8269f7212b56e2608ee38ab8b2b3d37f9080a22",
-    "instructions_version": "candidate-tool-selection-it-v5",
+    "instructions_sha256": "30e84910f4292226a1f7bd9151697946bf72a47d41b4d71ecc2bf3952b03942a",
+    "instructions_version": "candidate-tool-selection-it-v6",
     "received_at": "2026-09-20T12:00:00+02:00"
   },
   "dataset": {
@@ -27,10 +27,10 @@
       "applicable": true,
       "blocking": true,
       "comparison": "at_least",
-      "denominator": 48,
+      "denominator": 50,
       "inapplicability_reason": null,
       "name": "budget_and_spending_arithmetic_exactness",
-      "numerator": 48,
+      "numerator": 50,
       "passed": true,
       "threshold": 1.0,
       "value": 1.0
@@ -54,10 +54,10 @@
       "denominator": 52,
       "inapplicability_reason": null,
       "name": "period_category_funding_interpretation",
-      "numerator": 46,
+      "numerator": 43,
       "passed": false,
       "threshold": 0.98,
-      "value": 0.8846
+      "value": 0.8269
     },
     {
       "applicable": true,
@@ -66,10 +66,10 @@
       "denominator": 9,
       "inapplicability_reason": null,
       "name": "missing_data_avoids_invented_conclusion",
-      "numerator": 8,
+      "numerator": 6,
       "passed": false,
       "threshold": 1.0,
-      "value": 0.8889
+      "value": 0.6667
     },
     {
       "applicable": true,
@@ -78,10 +78,10 @@
       "denominator": 10,
       "inapplicability_reason": null,
       "name": "too_much_uses_budget_then_history",
-      "numerator": 10,
-      "passed": true,
+      "numerator": 9,
+      "passed": false,
       "threshold": 1.0,
-      "value": 1.0
+      "value": 0.9
     },
     {
       "applicable": true,
@@ -102,10 +102,10 @@
       "denominator": 52,
       "inapplicability_reason": null,
       "name": "figures_match_the_month_the_owner_meant",
-      "numerator": 46,
+      "numerator": 43,
       "passed": true,
       "threshold": null,
-      "value": 0.8846
+      "value": 0.8269
     },
     {
       "applicable": true,
@@ -114,10 +114,10 @@
       "denominator": 52,
       "inapplicability_reason": null,
       "name": "case_agreement",
-      "numerator": 46,
+      "numerator": 43,
       "passed": true,
       "threshold": null,
-      "value": 0.8846
+      "value": 0.8269
     }
   ],
   "model": {
@@ -130,7 +130,7 @@
   "promotion_blockers": [
     "blocking_gate_failed_or_unmeasured"
   ],
-  "run_id": "ADV-20260908-122332-8c2db89f",
-  "source_commit": "71a0f61fa4baad1b3012b407b09ebc61c3b3eb49",
+  "run_id": "ADV-20260908-144116-28a24514",
+  "source_commit": "c046e6cef9ec8703204577e266a8f72215c3072b",
   "suite": "advice/grounding-it"
 }

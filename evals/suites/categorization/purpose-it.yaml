@@ -1,7 +1,7 @@
 suite_schema_version: "1"
 suite: categorization/purpose-it
-version: "1.0.0"
-dataset: ../../datasets/categorization-purpose-it-v1.jsonl
+version: "1.1.0"
+dataset: ../../datasets/categorization-purpose-it-v1.1.jsonl
 runner: money-tracker-eval categorization
 private_data: false
 unit_under_test: >-

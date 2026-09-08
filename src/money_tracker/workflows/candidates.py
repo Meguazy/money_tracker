@@ -170,6 +170,26 @@ def _tree_taxonomy(taxonomy: Taxonomy) -> str:
     return render_active_category_tree(_active_nodes(taxonomy))
 
 
+def _path_taxonomy(taxonomy: Taxonomy) -> str:
+    """Render explicit ancestor paths independent of repository row order.
+
+    Args:
+        taxonomy: Active owner taxonomy read by the workflow or evaluation.
+
+    Returns:
+        Named paths with inclusion guidance; leaf names remain the wire values.
+    """
+
+    return (
+        "\nActive categories (select the final name in a path):\n"
+        + "\n".join(
+            f"- {parent + ' / ' if parent else ''}{name}: {description}"
+            for name, description, parent in _active_nodes(taxonomy)
+        )
+        + "\n"
+    )
+
+
 _CATEGORY_FIT_SHAPES: dict[
     str,
     tuple[
@@ -207,6 +227,11 @@ _CATEGORY_FIT_SHAPES: dict[
         lambda taxonomy: build_category_fit_schema(active_category_names(taxonomy)),
         category_fit_to_domain,
         _tree_taxonomy,
+    ),
+    "v7": (
+        lambda taxonomy: build_category_fit_schema(active_category_names(taxonomy)),
+        category_fit_to_domain,
+        _path_taxonomy,
     ),
 }
 """The schema and taxonomy rendering each instruction version is paired with."""

@@ -157,3 +157,20 @@ Every future row must identify:
 - reason for promotion, rejection, rollback, or experimental status;
 - effective application commit and prior rollback target;
 - private artifact references by safe local hash/path only.
+
+## EVD-003 — Correct development labels and read-result semantics (2026-09-08)
+
+- Decision: retain experimental status; no promotion or gate relaxation.
+- Authorization: owner requested fixes and Qwen3 14B as the test candidate.
+- Versions: tools dataset 1.1.0, routing dataset 1.2.0, purpose dataset 1.1.0;
+  selection v6, router v6, category v7; read-result contract v2.
+- Reasons: forced-route tool exclusions, permitted explicit refusals, baseline
+  insurance/footwear/parking precedence, and external-price scope. Changed cases
+  carry a revision reason and contract-audit provenance, not claimed owner labels.
+- Alternatives rejected: allowing forbidden tools to satisfy contradictory
+  labels; treating benefit totals as source balances; adjusting historical files
+  or lowering accuracy thresholds. Existing taxonomy IDs and stored data stay
+  stable. Remaining disputed labels are unreviewed.
+- Evidence: [corrective experiment](text-workflow-fixes-2026-09-08.md).
+- Promotion prerequisites remain: complete measured gates, human usefulness,
+  auto-post calibration, untouched reviewed holdout and runtime validation.

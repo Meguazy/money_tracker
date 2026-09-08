@@ -295,3 +295,34 @@ def test_the_survey_names_posted_spend_with_no_budget(postgres_url: str) -> None
 
     assert result.statuses == ()
     assert result.unbudgeted_category_names == ("Cibo e accessori",)
+
+
+@pytest.mark.postgres
+def test_two_benefit_sources_have_separate_net_posted_consumption(
+    postgres_url: str,
+) -> None:
+    """Read real source allocations without turning benefit totals into balances."""
+
+    repository, profile, card, vouchers = _bootstrap(postgres_url)
+    welfare = FundingSource(
+        id=uuid4(),
+        profile_id=profile.id,
+        name="Welfare",
+        funding_class=FundingClass.BENEFIT,
+        balance_mode=BalanceMode.UNTRACKED,
+    )
+    repository.create_funding_source(welfare, occurred_at=SystemClock().now())
+    _post(repository, profile, vouchers, "Spesa alimentare", 3000)
+    _post(repository, profile, vouchers, "Spesa alimentare", -500)
+    _post(repository, profile, welfare, "Abbonamenti", 1800)
+    _post(repository, profile, card, "Abbonamenti", 9000, month=8)
+    _draft(repository, profile, welfare, "Abbonamenti", 12000)
+    result = ReportingService(repository).period_split(
+        profile_id=profile.id, period=PERIOD
+    )
+    assert {source.name: amount.minor_units for source, amount in result.sources} == {
+        "Carta": 0,
+        "Buoni pasto": 2500,
+        "Welfare": 1800,
+    }
+    assert result.split.benefit == Money(4300)

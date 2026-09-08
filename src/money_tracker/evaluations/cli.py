@@ -191,7 +191,7 @@ def _parser() -> argparse.ArgumentParser:
         "--dataset",
         type=Path,
         default=(
-            repository_root / "evals" / "datasets" / "routing-intent-it-v1.1.jsonl"
+            repository_root / "evals" / "datasets" / "routing-intent-it-v1.2.jsonl"
         ),
     )
     routing.add_argument(
@@ -222,7 +222,7 @@ def _parser() -> argparse.ArgumentParser:
             repository_root
             / "evals"
             / "datasets"
-            / "categorization-purpose-it-v1.jsonl"
+            / "categorization-purpose-it-v1.1.jsonl"
         ),
     )
     categorization.add_argument(
@@ -285,7 +285,7 @@ def _parser() -> argparse.ArgumentParser:
             repository_root
             / "evals"
             / "datasets"
-            / "tools-selection-and-use-it-v1.jsonl"
+            / "tools-selection-and-use-it-v1.1.jsonl"
         ),
     )
     tools.add_argument(
@@ -329,7 +329,7 @@ def _parser() -> argparse.ArgumentParser:
         "--dataset",
         type=Path,
         default=(
-            repository_root / "evals" / "datasets" / "routing-intent-it-v1.1.jsonl"
+            repository_root / "evals" / "datasets" / "routing-intent-it-v1.2.jsonl"
         ),
     )
     calibration.add_argument(

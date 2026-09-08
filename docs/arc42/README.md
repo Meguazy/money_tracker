@@ -263,6 +263,26 @@ catalog is promoted; every identifier carries a `candidate-` prefix.
 Detailed finance concepts and the initial taxonomy live in
 [Domain and Taxonomy](../product/domain-and-taxonomy.md).
 
+### Step 3 evaluation corrections (2026-09-08)
+
+The current corrective experiment is recorded in
+[contract corrections](../experiments/text-workflow-fixes-2026-09-08.md).
+The read-only reporting service now returns per-source net posted payment
+consumption beside funding-class totals (read-result contract v2). It calls the
+pure domain `posted_funding_source_spend` operation over profile/period-scoped
+repository records. Refunds reduce consumption; unposted records are excluded.
+Sources with zero consumption remain visible, including historical archived
+sources. No identifier is exposed in the answer and no ledger balance is inferred.
+This extends existing domain/application/runtime components, owns no new data,
+and runs in the existing host process against application PostgreSQL.
+
+Selection v6 uses versioned descriptions of those outputs, the existing budget
+survey's missing-budget data, and explicit refusal of balance requests. Query
+still excludes the survey; advice still excludes the single-budget lookup.
+Category v7 renders explicit parent paths, independent of repository row order.
+The administrative expense path and evaluations share candidate definitions.
+All candidates remain experimental and all movements remain drafts.
+
 ## 6. Runtime View
 
 ### Current CLI turn

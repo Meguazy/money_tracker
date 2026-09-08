@@ -25,6 +25,14 @@ alone in any boundary shape, and it can answer with a discriminated union. No
 channel wiring exists yet, and no confidence bar, prompt, or model is
 promoted.
 
+## Current corrective increment — 2026-09-08
+
+The owner authorized the [contract and evaluation corrections](../experiments/text-workflow-fixes-2026-09-08.md)
+using Qwen3 14B. That document supersedes historical diagnostic claims below
+about missing specificity/funding instructions and query-accessible surveys.
+Development datasets are versioned separately from their historical baselines.
+Step 3 remains in progress; no model, confidence or auto-post policy is promoted.
+
 ## Prerequisites
 
 Step 2 complete. A capability-screened local candidate exists from Step 1, but

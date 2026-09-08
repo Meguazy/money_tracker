@@ -17,6 +17,7 @@ directory, and the raw manifests stay under the ignored
 | `routing/intent-it` | text-qwen3-14b | `candidate-router-it-v5` | routing-intent-it-v1.1 1.1.0 | 201 | **fail** | `ambiguous_safely_clarified` | `ROU-20260908-120805-dfd44365` |
 | `tools/selection-and-use` | text-ministral3-14b | `candidate-tool-selection-it-v5` | tools-selection-and-use-it-v1 1.0.0 | 110 | **fail** | `expected_permitted_tool_and_arguments`, `execution_postcondition_against_real_fixture` | `TOO-20260908-124051-ca218e7b` |
 | `tools/selection-and-use` | text-qwen3-14b | `candidate-tool-selection-it-v5` | tools-selection-and-use-it-v1 1.0.0 | 110 | **fail** | `expected_permitted_tool_and_arguments`, `execution_postcondition_against_real_fixture` | `TOO-20260908-122202-57be4f56` |
+| `workflow/category-review-it` | text-ministral3-14b | — | category-review-it-v1 1.0.0 | 37 | pass | none | `REV-20260908-124231-b6ff67c6` |
 | `workflow/category-review-it` | text-qwen3-14b | — | category-review-it-v1 1.0.0 | 37 | pass | none | `REV-20260908-122346-38bfb2d4` |
 
 More than one candidate appears above: text-ministral3-14b, text-qwen3-14b. Two rows are comparable only where they share a dataset and an instruction candidate; a row measured on different instructions reports a different experiment, not a worse model.

@@ -46,9 +46,25 @@ evals/
 ├── private/              local-only manifests/data, ignored by Git
 └── suites/               executable suite configurations
 
-artifacts/evals/          generated raw results, ignored by Git
-docs/experiments/         protocols, templates, reports, and decisions
+artifacts/evals/<candidate>/   generated raw results, ignored by Git
+artifacts/sweeps/<run>/       per-candidate sweep logs, ignored by Git
+docs/experiments/             protocols, templates, reports, and decisions
 ```
+
+Raw runs are kept under the candidate that produced them, as published scores
+are. Runs written before that separation existed stay where they were written:
+each manifest records the path it was written to, and rewriting a historical
+manifest to match a newer layout would change a claim the run made.
+
+List the declared candidates, and see which weights are downloaded, with:
+
+    uv run money-tracker-eval catalog
+
+Any suite accepts `--model-profile <id>`, which refuses to run unless the
+configured weights and the running inference server both agree with the
+candidate named. Switching candidates otherwise means editing `MODEL_PATH` and
+restarting llama.cpp by hand, and forgetting the restart produces a complete,
+plausible run measuring the previous model.
 
 Run the local-model capability suite with:
 
@@ -75,6 +91,19 @@ with:
       uv run --env-file .env money-tracker-eval tools
     RUN_POSTGRES_INTEGRATION_TESTS=1 \
       uv run --env-file .env money-tracker-eval advice
+
+Measure several candidates in one go, one at a time, with:
+
+    ./scripts/sweep_models.sh --minimum-confidence 0.5 \
+      text-qwen3-14b text-ministral3-14b
+
+The sweep resolves each candidate's weights from the catalog, restarts the
+inference server for it, runs every suite with `--model-profile`, and writes one
+directory per candidate under `artifacts/sweeps/<run>/`. A failing blocking gate
+is a measurement, so the sweep records it and continues; only a run that could
+not execute counts as a failure. It never stops a server it did not start: one
+already serving the requested candidate is reused, and one serving a different
+candidate stops the sweep with the fix rather than being killed.
 
 These write real rows, so they refuse any database but local
 `money_tracker_test` on port 5433 and reset it once at the start of a run. The

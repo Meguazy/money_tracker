@@ -35,7 +35,7 @@ Langfuse instance; local JSON remains authoritative.
 Every run emits:
 
 ```text
-artifacts/evals/CAP-.../
+artifacts/evals/<candidate>/CAP-.../
 ├── manifest.json
 └── scores.json
 ```

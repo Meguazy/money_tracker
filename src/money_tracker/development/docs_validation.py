@@ -94,6 +94,7 @@ def validate_repository(repository_root: Path) -> list[str]:
     gitignore = (repository_root / ".gitignore").read_text(encoding="utf-8")
     for required_rule in (
         "/artifacts/evals/",
+        "/artifacts/sweeps/",
         "/evals/private/*",
         "!/evals/private/README.md",
     ):

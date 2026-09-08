@@ -28,6 +28,7 @@ def test_missing_relative_link_has_an_actionable_diagnostic(tmp_path: Path) -> N
         "\n".join(
             (
                 "/artifacts/evals/",
+                "/artifacts/sweeps/",
                 "/evals/private/*",
                 "!/evals/private/README.md",
             )
@@ -49,7 +50,8 @@ def test_unbalanced_fence_is_rejected(tmp_path: Path) -> None:
     docs.mkdir()
     (docs / "guide.md").write_text("# Guide\n\n```text\nopen\n", encoding="utf-8")
     (tmp_path / ".gitignore").write_text(
-        "/artifacts/evals/\n/evals/private/*\n!/evals/private/README.md\n",
+        "/artifacts/evals/\n/artifacts/sweeps/\n"
+        "/evals/private/*\n!/evals/private/README.md\n",
         encoding="utf-8",
     )
 
@@ -66,7 +68,8 @@ def test_invalid_model_catalog_yaml_is_rejected(tmp_path: Path) -> None:
     models.mkdir(parents=True)
     (models / "candidates.yaml").write_text("profiles: [broken\n", encoding="utf-8")
     (tmp_path / ".gitignore").write_text(
-        "/artifacts/evals/\n/evals/private/*\n!/evals/private/README.md\n",
+        "/artifacts/evals/\n/artifacts/sweeps/\n"
+        "/evals/private/*\n!/evals/private/README.md\n",
         encoding="utf-8",
     )
 

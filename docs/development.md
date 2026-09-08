@@ -260,6 +260,12 @@ runs. Start the server:
     set +a
     ./scripts/run_llama_server.sh
 
+To measure several candidates rather than run one, `scripts/sweep_models.sh`
+owns the whole cycle instead: it resolves each candidate's weights from the
+catalog, starts and stops the server around each one, and runs the suites with
+`--model-profile` so that a forgotten restart cannot go unnoticed. See
+[Experiments](experiments/README.md).
+
 The launcher reads the shell environment rather than `.env`, because it starts
 outside the UV entry points that load `.env` themselves. It validates its
 inputs before exec and names the exact fix for each failure, since an unset

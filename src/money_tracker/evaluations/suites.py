@@ -428,6 +428,10 @@ def blocking_gates_passed(
 def write_report(report: SuiteReport, *, output_root: Path) -> Path:
     """Write one run's manifest and scores under a fresh artifact directory.
 
+    Runs are kept under the model that produced them, so a sweep across several
+    candidates leaves one directory per candidate rather than interleaving every
+    run in one.
+
     Args:
         report: Complete suite report.
         output_root: Ignored artifact root holding raw run output.
@@ -436,7 +440,9 @@ def write_report(report: SuiteReport, *, output_root: Path) -> Path:
         The directory the run was written to.
     """
 
-    directory = output_root / report.run_id
+    directory = (
+        output_root / model_key(report.model, candidate_catalog()) / report.run_id
+    )
     directory.mkdir(parents=True, exist_ok=True)
     payload = report.model_dump(mode="json")
     _write_json(directory / "manifest.json", payload)
@@ -527,25 +533,32 @@ def candidate_catalog() -> ModelCatalog | None:
         return None
 
 
-def model_key(model: ModelMetadata, catalog: ModelCatalog | None) -> str:
-    """Return the directory segment one run's scores are published under.
+def model_key(
+    model: ModelMetadata, catalog: ModelCatalog | None, *, modality: str = "text"
+) -> str:
+    """Return the directory segment one run's artifacts and scores are kept in.
 
-    Published scores were keyed by suite alone, so measuring a second candidate
-    overwrote the first and the two could never be compared. Keying by model as
-    well keeps every candidate's scores.
+    Artifacts and scores were keyed by suite alone, so every candidate's output
+    landed in one place: raw runs interleaved in a single directory, and a
+    second candidate's published score overwriting the first. Keying by model
+    separates them.
 
     Args:
         model: Exact model identity recorded by the run.
         catalog: Declared candidates, or None when the catalog is unreadable.
+        modality: Modality the run exercised, which decides between two profiles
+            declared over the same weights.
 
     Returns:
         The name :func:`model_name` gives these weights.
     """
 
-    return model_name(model_row(model), catalog)
+    return model_name(model_row(model), catalog, modality=modality)
 
 
-def model_name(row: object, catalog: ModelCatalog | None) -> str:
+def model_name(
+    row: object, catalog: ModelCatalog | None, *, modality: str = "text"
+) -> str:
     """Name the model behind one score, preferring its catalogued identity.
 
     The name is derived from what a run recorded rather than from what its
@@ -556,6 +569,9 @@ def model_name(row: object, catalog: ModelCatalog | None) -> str:
     Args:
         row: Model block of a score, or anything else when a score predates it.
         catalog: Declared candidates, or None when the catalog is unreadable.
+        modality: Modality the run exercised. The same multimodal weights are
+            declared once for text and once for vision, and a run is named for
+            the way it used them.
 
     Returns:
         The catalog profile identifier when the weights are declared, matched
@@ -571,8 +587,8 @@ def model_name(row: object, catalog: ModelCatalog | None) -> str:
     filename = row.get("gguf_filename")
     if catalog is not None:
         profile = catalog.by_sha256(
-            _text(row.get("gguf_sha256")), modality="text"
-        ) or catalog.by_filename(_text(filename), modality="text")
+            _text(row.get("gguf_sha256")), modality=modality
+        ) or catalog.by_filename(_text(filename), modality=modality)
         if profile is not None:
             return profile.id
     if filename:

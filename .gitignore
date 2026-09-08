@@ -53,6 +53,7 @@ cover/
 
 # Evaluation outputs and private local datasets
 /artifacts/evals/
+/artifacts/sweeps/
 /evals/private/*
 !/evals/private/README.md
 

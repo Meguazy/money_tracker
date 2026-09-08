@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
 
-from money_tracker.evaluations.cli import _command_summary, _require_declared_model
+from money_tracker.evaluations.cli import (
+    _command_summary,
+    _require_declared_model,
+    _run_catalog,
+)
 from money_tracker.evaluations.metadata import CapabilitySettings
 
 from .test_suites import _qwen, _report
@@ -69,3 +74,41 @@ def test_an_undeclared_candidate_is_refused_before_the_endpoint_is_touched() -> 
 
     with pytest.raises(SystemExit, match="unknown model profile 'text-qwen3-14'"):
         _require_declared_model("text-qwen3-14", _settings())
+
+
+def test_the_catalog_command_reports_every_declared_candidate(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Answer which candidates exist and which are downloaded already."""
+
+    _run_catalog(None, None)
+
+    reported = json.loads(capsys.readouterr().out)
+    identifiers = [entry["id"] for entry in reported]
+    assert "text-qwen3-14b" in identifiers
+    for entry in reported:
+        assert entry["path"].endswith(entry["filename"])
+        assert isinstance(entry["present"], bool)
+        assert len(entry["sha256"]) == 64
+
+
+def test_one_catalog_field_is_printed_bare_for_a_shell(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Let the sweep resolve a weights path without parsing JSON."""
+
+    _run_catalog("text-qwen3-14b", "path")
+
+    printed = capsys.readouterr().out.strip()
+    assert printed.endswith("/Qwen3-14B-Q5_K_M.gguf")
+    assert "\n" not in printed
+
+
+def test_a_bare_field_needs_a_candidate_and_must_exist() -> None:
+    """Refuse to print one value for many candidates, or an absent one."""
+
+    with pytest.raises(SystemExit, match="--field needs --profile"):
+        _run_catalog(None, "path")
+
+    with pytest.raises(SystemExit, match="declares no projector"):
+        _run_catalog("text-qwen3-14b", "projector")

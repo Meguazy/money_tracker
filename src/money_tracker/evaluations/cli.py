@@ -13,6 +13,7 @@ from money_tracker.evaluations.capabilities import run_capability_suite
 from money_tracker.evaluations.catalog import (
     CATALOG_RELATIVE_PATH,
     CatalogError,
+    ModelProfile,
     load_catalog,
     profile_mismatches,
 )
@@ -335,6 +336,23 @@ def _parser() -> argparse.ArgumentParser:
         type=Path,
         default=repository_root / "artifacts" / "evals",
     )
+    catalog = subparsers.add_parser(
+        "catalog",
+        help="show the declared local model candidates and where they are",
+    )
+    catalog.add_argument(
+        "--profile",
+        choices=profiles,
+        help="report only this candidate",
+    )
+    catalog.add_argument(
+        "--field",
+        choices=("id", "modality", "filename", "path", "projector", "sha256"),
+        help=(
+            "print one bare field of the selected candidate instead of JSON, "
+            "so a shell can resolve a path without parsing"
+        ),
+    )
     for suite in (
         capabilities,
         routing,
@@ -347,6 +365,68 @@ def _parser() -> argparse.ArgumentParser:
     ):
         _add_model_profile(suite, profiles)
     return parser
+
+
+def _catalog_entry(profile: ModelProfile) -> dict[str, object]:
+    """Describe one declared candidate, including whether it is downloaded.
+
+    Args:
+        profile: Declared candidate.
+
+    Returns:
+        Its declared identity plus whether the weights are present locally,
+        which is what separates a candidate that can be measured now from one
+        the catalog only describes.
+    """
+
+    return {
+        "id": profile.id,
+        "modality": profile.modality,
+        "filename": profile.filename,
+        "path": str(profile.path),
+        "projector": str(profile.projector_path) if profile.projector_path else None,
+        "sha256": profile.sha256,
+        "quantization": profile.quantization,
+        "present": profile.path.is_file(),
+    }
+
+
+def _run_catalog(profile_id: str | None, field: str | None) -> None:
+    """Report the declared candidates, or one field of one candidate.
+
+    Args:
+        profile_id: Candidate to report, or None for every declared candidate.
+        field: Single field to print bare, for a shell to consume.
+
+    Raises:
+        SystemExit: When the catalog cannot be read, the candidate is unknown,
+            or a field is requested without naming a candidate.
+    """
+
+    try:
+        catalog = load_catalog(_repository_root() / CATALOG_RELATIVE_PATH)
+        selected = (
+            [catalog.profile(profile_id)]
+            if profile_id
+            else list(catalog.profiles.values())
+        )
+    except CatalogError as error:
+        raise SystemExit(str(error)) from error
+    if field is not None:
+        if profile_id is None:
+            raise SystemExit("--field needs --profile, because it prints one value")
+        value = _catalog_entry(selected[0])[field]
+        if value is None:
+            raise SystemExit(f"{profile_id} declares no {field}")
+        print(value)
+        return
+    print(
+        json.dumps(
+            [_catalog_entry(profile) for profile in selected],
+            indent=2,
+            sort_keys=True,
+        )
+    )
 
 
 def _command_summary(report: SuiteReport) -> dict[str, object]:
@@ -407,6 +487,9 @@ def main(argv: Sequence[str] | None = None) -> None:
     """
 
     args = _parser().parse_args(argv)
+    if args.suite == "catalog":
+        _run_catalog(args.profile, args.field)
+        return
     settings = CapabilitySettings.from_env()
     _require_declared_model(args.model_profile, settings)
     if args.suite == "categorization":

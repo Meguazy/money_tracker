@@ -30,6 +30,7 @@ from money_tracker.evaluations.models import (
     ProbeResult,
     ProbeStatus,
 )
+from money_tracker.evaluations.suites import candidate_catalog, model_key
 
 
 class _LineItem(BaseModel):
@@ -1276,7 +1277,15 @@ def run_capability_suite(
         probe.status is ProbeStatus.PASSED for probe in probes if probe.name in required
     )
 
-    artifact_directory = output_root / run_id
+    artifact_directory = (
+        output_root
+        / model_key(
+            model_metadata,
+            candidate_catalog(),
+            modality="vision" if image_path is not None else "text",
+        )
+        / run_id
+    )
     artifact_directory.mkdir(parents=True, exist_ok=False)
     try:
         artifact_reference = str(artifact_directory.relative_to(repository_root))

@@ -622,3 +622,38 @@ def test_declared_weights_are_named_by_catalog_and_others_by_filename(
     assert model_key(uncatalogued, catalog) == "something-else"
     assert model_key(nameless, catalog) == "local-model"
     assert model_key(by_hash, None) == "renamed-by-hand"
+
+
+def test_raw_runs_are_separated_by_the_model_that_produced_them(
+    tmp_path: Path,
+) -> None:
+    """Keep a sweep's raw output one directory per candidate, not one heap."""
+
+    root = tmp_path / "raw"
+    qwen = write_report(_report(tmp_path, model=_qwen()), output_root=root)
+    ministral = write_report(
+        _report(
+            tmp_path,
+            run_id="ROU-20260909-000000-abcdef12",
+            model=_qwen(gguf_filename="Ministral-3-14B-Instruct-2512-Q5_K_M.gguf"),
+        ),
+        output_root=root,
+    )
+
+    assert qwen.parent.name == "text-qwen3-14b"
+    assert ministral.parent.name == "text-ministral3-14b"
+    assert qwen.name == "ROU-20260903-000000-abcdef12"
+    assert (qwen / "manifest.json").is_file()
+    assert (ministral / "manifest.json").is_file()
+
+
+def test_shared_weights_are_named_for_the_way_a_run_used_them(
+    tmp_path: Path,
+) -> None:
+    """Tell a vision screen apart from a text run of the same weights."""
+
+    catalog = candidate_catalog()
+    shared = _qwen(gguf_filename="Ministral-3-14B-Instruct-2512-Q5_K_M.gguf")
+
+    assert model_key(shared, catalog) == "text-ministral3-14b"
+    assert model_key(shared, catalog, modality="vision") == "vision-ministral3-14b"

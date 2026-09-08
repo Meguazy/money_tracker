@@ -45,10 +45,12 @@ Roadmap Step 3 makes the candidate catalog executable rather than descriptive.
 A run may declare the profile it is measuring and is refused when either the
 configured weights or the running inference server disagrees with it, which is
 the failure that would otherwise attribute one candidate's answers to another
-without any downstream signal. Published scores are keyed by suite and by the
-model that produced them, so measuring a second candidate no longer overwrites
-the first and the two can be compared. The model is named on every surface a
-score is read on.
+without any downstream signal. Raw runs and published scores are keyed by
+the model that produced them, so measuring a second candidate no longer
+overwrites or interleaves with the first and the two can be compared. The model
+is named on every surface a score is read on. A sweep script owns the candidate
+switch end to end, because the switch is two steps that must agree and only one
+of them is visible from the runner.
 
 ## Consequences
 

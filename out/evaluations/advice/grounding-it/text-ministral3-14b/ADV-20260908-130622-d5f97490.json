@@ -1,0 +1,136 @@
+{
+  "blocking_gates_passed": false,
+  "case_totals": {
+    "error": 0,
+    "failed": 7,
+    "passed": 45
+  },
+  "completed_at": "2026-09-08T13:06:22.366120+00:00",
+  "configuration": {
+    "boundary_schema": "WireToolRequest",
+    "dataset_minimum": 50,
+    "human_usefulness_reviewed": false,
+    "instructions_sha256": "50431521575b25fd4e3fc6bdb8269f7212b56e2608ee38ab8b2b3d37f9080a22",
+    "instructions_version": "candidate-tool-selection-it-v5",
+    "received_at": "2026-09-20T12:00:00+02:00"
+  },
+  "dataset": {
+    "content_hash": "24147f1979efd98276dbdd5d591b5316b272df1baacaff18ffd4a83af271d2c9",
+    "id": "advice-grounding-it-v1",
+    "item_count": 52,
+    "version": "1.0.0"
+  },
+  "eligible_for_promotion": false,
+  "meets_dataset_minimum": true,
+  "metrics": [
+    {
+      "applicable": true,
+      "blocking": true,
+      "comparison": "at_least",
+      "denominator": 46,
+      "inapplicability_reason": null,
+      "name": "budget_and_spending_arithmetic_exactness",
+      "numerator": 46,
+      "passed": true,
+      "threshold": 1.0,
+      "value": 1.0
+    },
+    {
+      "applicable": true,
+      "blocking": true,
+      "comparison": "at_least",
+      "denominator": 52,
+      "inapplicability_reason": null,
+      "name": "numeric_statements_traceable_to_tool_output",
+      "numerator": 52,
+      "passed": true,
+      "threshold": 1.0,
+      "value": 1.0
+    },
+    {
+      "applicable": true,
+      "blocking": true,
+      "comparison": "at_least",
+      "denominator": 52,
+      "inapplicability_reason": null,
+      "name": "period_category_funding_interpretation",
+      "numerator": 45,
+      "passed": false,
+      "threshold": 0.98,
+      "value": 0.8654
+    },
+    {
+      "applicable": true,
+      "blocking": true,
+      "comparison": "at_least",
+      "denominator": 9,
+      "inapplicability_reason": null,
+      "name": "missing_data_avoids_invented_conclusion",
+      "numerator": 6,
+      "passed": false,
+      "threshold": 1.0,
+      "value": 0.6667
+    },
+    {
+      "applicable": true,
+      "blocking": true,
+      "comparison": "at_least",
+      "denominator": 10,
+      "inapplicability_reason": null,
+      "name": "too_much_uses_budget_then_history",
+      "numerator": 10,
+      "passed": true,
+      "threshold": 1.0,
+      "value": 1.0
+    },
+    {
+      "applicable": true,
+      "blocking": true,
+      "comparison": "at_least",
+      "denominator": 0,
+      "inapplicability_reason": null,
+      "name": "human_usefulness_median",
+      "numerator": 0,
+      "passed": false,
+      "threshold": 4.0,
+      "value": 0.0
+    },
+    {
+      "applicable": true,
+      "blocking": false,
+      "comparison": "at_least",
+      "denominator": 52,
+      "inapplicability_reason": null,
+      "name": "figures_match_the_month_the_owner_meant",
+      "numerator": 46,
+      "passed": true,
+      "threshold": null,
+      "value": 0.8846
+    },
+    {
+      "applicable": true,
+      "blocking": false,
+      "comparison": "at_least",
+      "denominator": 52,
+      "inapplicability_reason": null,
+      "name": "case_agreement",
+      "numerator": 45,
+      "passed": true,
+      "threshold": null,
+      "value": 0.8654
+    }
+  ],
+  "model": {
+    "alias": "local-model",
+    "gguf_filename": "Ministral-3-14B-Instruct-2512-Q5_K_M.gguf",
+    "gguf_sha256": "sha256:f16fef77021df0d4c22e69140a2038478370492f51867b6237699918ae711000",
+    "metadata_complete": true,
+    "quantization": "Q5_K_M"
+  },
+  "promotion_blockers": [
+    "blocking_gate_failed_or_unmeasured"
+  ],
+  "run_id": "ADV-20260908-130622-d5f97490",
+  "source_commit": "3a727b0697b7671c7a7ce5f444ac2c95377342af",
+  "suite": "advice/grounding-it"
+}

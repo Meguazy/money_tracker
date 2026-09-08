@@ -5,7 +5,7 @@
     "failed": 0,
     "passed": 37
   },
-  "completed_at": "2026-09-08T12:42:31.981537+00:00",
+  "completed_at": "2026-09-08T13:06:34.808485+00:00",
   "configuration": {
     "aliases_written_outside_bootstrap": true,
     "auto_post_policy_promoted": false,
@@ -152,7 +152,7 @@
     "quantization": "Q5_K_M"
   },
   "promotion_blockers": [],
-  "run_id": "REV-20260908-124231-b6ff67c6",
-  "source_commit": "ab9a47e6d39771e195b554bf11cf22492b8f32fc",
+  "run_id": "REV-20260908-130634-948fc0cd",
+  "source_commit": "3a727b0697b7671c7a7ce5f444ac2c95377342af",
   "suite": "workflow/category-review-it"
 }

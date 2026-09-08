@@ -7,17 +7,17 @@ directory, and the raw manifests stay under the ignored
 
 | Suite | Model | Instructions | Dataset | Cases | Blocking gates | Failing blocking metrics | Run |
 | --- | --- | --- | --- | ---: | --- | --- | --- |
-| `advice/grounding-it` | text-ministral3-14b | `candidate-tool-selection-it-v5` | advice-grounding-it-v1 1.0.0 | 52 | **fail** | `period_category_funding_interpretation`, `missing_data_avoids_invented_conclusion`, `human_usefulness_median` | `ADV-20260908-124216-7b78edc5` |
+| `advice/grounding-it` | text-ministral3-14b | `candidate-tool-selection-it-v5` | advice-grounding-it-v1 1.0.0 | 52 | **fail** | `period_category_funding_interpretation`, `missing_data_avoids_invented_conclusion`, `human_usefulness_median` | `ADV-20260908-130622-d5f97490` |
 | `advice/grounding-it` | text-qwen3-14b | `candidate-tool-selection-it-v5` | advice-grounding-it-v1 1.0.0 | 52 | **fail** | `period_category_funding_interpretation`, `missing_data_avoids_invented_conclusion`, `human_usefulness_median` | `ADV-20260908-122332-8c2db89f` |
-| `categorization/purpose-it` | text-ministral3-14b | `candidate-category-fit-it-v6` | categorization-purpose-it-v1 1.0.0 | 153 | **fail** | `purpose_label_agreement`, `duplicate_or_alias_equivalent_proposal`, `auto_post_subset_category_precision`, `auto_post_subset_invariant_validity` | `CAT-20260908-123811-516ab4b3` |
+| `categorization/purpose-it` | text-ministral3-14b | `candidate-category-fit-it-v6` | categorization-purpose-it-v1 1.0.0 | 153 | **fail** | `purpose_label_agreement`, `duplicate_or_alias_equivalent_proposal`, `auto_post_subset_category_precision`, `auto_post_subset_invariant_validity` | `CAT-20260908-130212-e930bef4` |
 | `categorization/purpose-it` | text-qwen3-14b | `candidate-category-fit-it-v6` | categorization-purpose-it-v1 1.0.0 | 153 | **fail** | `purpose_label_agreement`, `auto_post_subset_category_precision`, `auto_post_subset_invariant_validity` | `CAT-20260908-121857-94182b39` |
-| `ingestion/expense-it` | text-ministral3-14b | `candidate-extraction-it-v6` | ingestion-expense-it-v1 1.0.0 | 170 | **fail** | `amount_exact_match`, `expense_refund_polarity`, `required_ambiguity_reported`, `fabricated_merchant_date_or_payment_field` | `ING-20260908-123525-3c9108a6` |
+| `ingestion/expense-it` | text-ministral3-14b | `candidate-extraction-it-v6` | ingestion-expense-it-v1 1.0.0 | 170 | **fail** | `required_ambiguity_reported` | `ING-20260908-125933-7cfb43b5` |
 | `ingestion/expense-it` | text-qwen3-14b | `candidate-extraction-it-v6` | ingestion-expense-it-v1 1.0.0 | 170 | pass | none | `ING-20260908-121548-fa27c123` |
 | `routing/intent-it` | text-ministral3-14b | `candidate-router-it-v5` | routing-intent-it-v1.1 1.1.0 | 201 | pass | none | `ROU-20260908-125148-f1cf707f` |
 | `routing/intent-it` | text-qwen3-14b | `candidate-router-it-v5` | routing-intent-it-v1.1 1.1.0 | 201 | **fail** | `ambiguous_safely_clarified` | `ROU-20260908-120805-dfd44365` |
-| `tools/selection-and-use` | text-ministral3-14b | `candidate-tool-selection-it-v5` | tools-selection-and-use-it-v1 1.0.0 | 110 | **fail** | `expected_permitted_tool_and_arguments`, `execution_postcondition_against_real_fixture` | `TOO-20260908-124051-ca218e7b` |
+| `tools/selection-and-use` | text-ministral3-14b | `candidate-tool-selection-it-v5` | tools-selection-and-use-it-v1 1.0.0 | 110 | **fail** | `expected_permitted_tool_and_arguments`, `execution_postcondition_against_real_fixture` | `TOO-20260908-130502-fe948001` |
 | `tools/selection-and-use` | text-qwen3-14b | `candidate-tool-selection-it-v5` | tools-selection-and-use-it-v1 1.0.0 | 110 | **fail** | `expected_permitted_tool_and_arguments`, `execution_postcondition_against_real_fixture` | `TOO-20260908-122202-57be4f56` |
-| `workflow/category-review-it` | text-ministral3-14b | — | category-review-it-v1 1.0.0 | 37 | pass | none | `REV-20260908-124231-b6ff67c6` |
+| `workflow/category-review-it` | text-ministral3-14b | — | category-review-it-v1 1.0.0 | 37 | pass | none | `REV-20260908-130634-948fc0cd` |
 | `workflow/category-review-it` | text-qwen3-14b | — | category-review-it-v1 1.0.0 | 37 | pass | none | `REV-20260908-122346-38bfb2d4` |
 
 More than one candidate appears above: text-ministral3-14b, text-qwen3-14b. Two rows are comparable only where they share a dataset and an instruction candidate; a row measured on different instructions reports a different experiment, not a worse model.

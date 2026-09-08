@@ -5,7 +5,7 @@
     "failed": 7,
     "passed": 45
   },
-  "completed_at": "2026-09-08T12:42:16.527772+00:00",
+  "completed_at": "2026-09-08T13:06:22.366120+00:00",
   "configuration": {
     "boundary_schema": "WireToolRequest",
     "dataset_minimum": 50,
@@ -130,7 +130,7 @@
   "promotion_blockers": [
     "blocking_gate_failed_or_unmeasured"
   ],
-  "run_id": "ADV-20260908-124216-7b78edc5",
-  "source_commit": "ab9a47e6d39771e195b554bf11cf22492b8f32fc",
+  "run_id": "ADV-20260908-130622-d5f97490",
+  "source_commit": "3a727b0697b7671c7a7ce5f444ac2c95377342af",
   "suite": "advice/grounding-it"
 }

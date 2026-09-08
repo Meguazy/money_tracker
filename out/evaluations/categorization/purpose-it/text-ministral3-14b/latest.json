@@ -2,10 +2,10 @@
   "blocking_gates_passed": false,
   "case_totals": {
     "error": 0,
-    "failed": 37,
-    "passed": 116
+    "failed": 39,
+    "passed": 114
   },
-  "completed_at": "2026-09-08T12:38:11.236164+00:00",
+  "completed_at": "2026-09-08T13:02:12.300761+00:00",
   "configuration": {
     "auto_post_policy_promoted": false,
     "boundary_schema": "BoundWireCategoryFit",
@@ -30,10 +30,10 @@
       "denominator": 153,
       "inapplicability_reason": null,
       "name": "purpose_label_agreement",
-      "numerator": 116,
+      "numerator": 114,
       "passed": false,
       "threshold": 0.85,
-      "value": 0.7582
+      "value": 0.7451
     },
     {
       "applicable": true,
@@ -130,7 +130,7 @@
   "promotion_blockers": [
     "blocking_gate_failed_or_unmeasured"
   ],
-  "run_id": "CAT-20260908-123811-516ab4b3",
-  "source_commit": "ab9a47e6d39771e195b554bf11cf22492b8f32fc",
+  "run_id": "CAT-20260908-130212-e930bef4",
+  "source_commit": "3a727b0697b7671c7a7ce5f444ac2c95377342af",
   "suite": "categorization/purpose-it"
 }

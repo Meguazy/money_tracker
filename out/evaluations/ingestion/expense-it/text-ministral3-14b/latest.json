@@ -2,10 +2,10 @@
   "blocking_gates_passed": false,
   "case_totals": {
     "error": 0,
-    "failed": 4,
-    "passed": 166
+    "failed": 3,
+    "passed": 167
   },
-  "completed_at": "2026-09-08T12:35:25.123471+00:00",
+  "completed_at": "2026-09-08T12:59:33.080764+00:00",
   "configuration": {
     "auto_post_policy_promoted": false,
     "boundary_exposes_currency": false,
@@ -50,10 +50,10 @@
       "denominator": 162,
       "inapplicability_reason": null,
       "name": "amount_exact_match",
-      "numerator": 159,
-      "passed": false,
+      "numerator": 161,
+      "passed": true,
       "threshold": 0.99,
-      "value": 0.9815
+      "value": 0.9938
     },
     {
       "applicable": true,
@@ -74,10 +74,10 @@
       "denominator": 152,
       "inapplicability_reason": null,
       "name": "funding_source_and_class_match",
-      "numerator": 151,
+      "numerator": 152,
       "passed": true,
       "threshold": 0.97,
-      "value": 0.9934
+      "value": 1.0
     },
     {
       "applicable": true,
@@ -98,10 +98,10 @@
       "denominator": 170,
       "inapplicability_reason": null,
       "name": "expense_refund_polarity",
-      "numerator": 167,
-      "passed": false,
+      "numerator": 169,
+      "passed": true,
       "threshold": 0.99,
-      "value": 0.9824
+      "value": 0.9941
     },
     {
       "applicable": true,
@@ -122,10 +122,10 @@
       "denominator": 170,
       "inapplicability_reason": null,
       "name": "fabricated_merchant_date_or_payment_field",
-      "numerator": 2,
-      "passed": false,
+      "numerator": 1,
+      "passed": true,
       "threshold": 0.01,
-      "value": 0.0118
+      "value": 0.0059
     },
     {
       "applicable": true,
@@ -143,13 +143,13 @@
       "applicable": true,
       "blocking": false,
       "comparison": "at_least",
-      "denominator": 1,
+      "denominator": 0,
       "inapplicability_reason": null,
       "name": "fabricated_funding_silently_resolved",
       "numerator": 0,
       "passed": true,
       "threshold": null,
-      "value": 0.0
+      "value": 1.0
     },
     {
       "applicable": true,
@@ -170,10 +170,10 @@
       "denominator": 170,
       "inapplicability_reason": null,
       "name": "outcome_agreement",
-      "numerator": 166,
+      "numerator": 167,
       "passed": true,
       "threshold": null,
-      "value": 0.9765
+      "value": 0.9824
     }
   ],
   "model": {
@@ -186,7 +186,7 @@
   "promotion_blockers": [
     "blocking_gate_failed_or_unmeasured"
   ],
-  "run_id": "ING-20260908-123525-3c9108a6",
-  "source_commit": "ab9a47e6d39771e195b554bf11cf22492b8f32fc",
+  "run_id": "ING-20260908-125933-7cfb43b5",
+  "source_commit": "3a727b0697b7671c7a7ce5f444ac2c95377342af",
   "suite": "ingestion/expense-it"
 }

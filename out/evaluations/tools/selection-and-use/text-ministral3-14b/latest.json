@@ -2,10 +2,10 @@
   "blocking_gates_passed": false,
   "case_totals": {
     "error": 0,
-    "failed": 21,
-    "passed": 89
+    "failed": 20,
+    "passed": 90
   },
-  "completed_at": "2026-09-08T12:40:51.933548+00:00",
+  "completed_at": "2026-09-08T13:05:02.228450+00:00",
   "configuration": {
     "advice_tools": [
       "budgets_at_risk",
@@ -141,10 +141,10 @@
       "denominator": 110,
       "inapplicability_reason": null,
       "name": "case_agreement",
-      "numerator": 89,
+      "numerator": 90,
       "passed": true,
       "threshold": null,
-      "value": 0.8091
+      "value": 0.8182
     }
   ],
   "model": {
@@ -157,7 +157,7 @@
   "promotion_blockers": [
     "blocking_gate_failed_or_unmeasured"
   ],
-  "run_id": "TOO-20260908-124051-ca218e7b",
-  "source_commit": "ab9a47e6d39771e195b554bf11cf22492b8f32fc",
+  "run_id": "TOO-20260908-130502-fe948001",
+  "source_commit": "3a727b0697b7671c7a7ce5f444ac2c95377342af",
   "suite": "tools/selection-and-use"
 }

@@ -62,6 +62,7 @@ class _FakeRepository:
     expenses: dict[UUID, Expense] = field(default_factory=dict)
     audits: list[AuditEvent] = field(default_factory=list)
     idempotency: dict[str, tuple[str, UUID]] = field(default_factory=dict)
+    mutation_commands: dict[str, tuple[str, str, UUID]] = field(default_factory=dict)
 
     def get_expense(self, profile_id: UUID, expense_id: UUID) -> Expense:
         """Load one aggregate only when it belongs to the requested profile."""
@@ -116,6 +117,57 @@ class _FakeRepository:
             raise OptimisticConcurrencyError("stale version")
         self.expenses[expense.id] = expense
         self.audits.append(audit_event)
+
+    def get_idempotent_expense_command(
+        self,
+        *,
+        profile_id: UUID,
+        idempotency_key: str,
+        command_type: str,
+        request_hash: str,
+        expense_id: UUID,
+    ) -> Expense | None:
+        """Return a prior identical mutation from the in-memory command store."""
+
+        prior = self.mutation_commands.get(idempotency_key)
+        if prior is None:
+            return None
+        if prior != (command_type, request_hash, expense_id):
+            raise IdempotencyConflictError("different mutation")
+        return self.get_expense(profile_id, expense_id)
+
+    def replace_expense_idempotently(
+        self,
+        expense: Expense,
+        *,
+        expected_version: int,
+        idempotency_key: str,
+        command_type: str,
+        request_hash: str,
+        audit_event: AuditEvent,
+    ) -> Expense:
+        """Claim and apply one replacement in memory."""
+
+        replayed = self.get_idempotent_expense_command(
+            profile_id=expense.profile_id,
+            idempotency_key=idempotency_key,
+            command_type=command_type,
+            request_hash=request_hash,
+            expense_id=expense.id,
+        )
+        if replayed is not None:
+            return replayed
+        self.replace_expense(
+            expense,
+            expected_version=expected_version,
+            audit_event=audit_event,
+        )
+        self.mutation_commands[idempotency_key] = (
+            command_type,
+            request_hash,
+            expense.id,
+        )
+        return expense
 
     def bootstrap_profile(
         self,
@@ -245,6 +297,8 @@ def test_correction_replaces_both_dimensions_and_preserves_identity() -> None:
             ),
         ),
         payment_allocations=(PaymentAllocation(source.id, Money(1500)),),
+        idempotency_key="correct:unit",
+        request_hash="b" * 64,
         actor="owner",
         reason="fixed total",
     )
@@ -271,6 +325,8 @@ def test_void_retains_aggregate_and_appends_audit() -> None:
         profile_id=expense.profile_id,
         expense_id=expense.id,
         expected_version=posted.version,
+        idempotency_key="undo:unit",
+        request_hash="c" * 64,
         actor="owner",
         reason="undo",
     )

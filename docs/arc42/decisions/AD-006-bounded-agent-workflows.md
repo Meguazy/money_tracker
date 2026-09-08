@@ -4,8 +4,9 @@
 - Implementation: checkpoint foundation, deterministic root routing, the typed
   router, extraction, category-fit, and tool-selection model boundaries,
   deterministic occurrence-time, sign, and both allocation dimensions, the
-  expense and refund specialist graph, the persistent owner-approval interrupt,
-  and the scoped read-only query and advice routes implemented; promoted
+  expense/refund and correction/undo specialist graphs, the persistent
+  owner-approval interrupt, and the scoped read-only query and advice routes
+  implemented; promoted
   prompts and threshold calibration planned
 - Date: 2026-09-01
 
@@ -133,6 +134,17 @@ replays an interrupted node from its start, so a single node holding both would
 replay its settlement the second time around the loop. Idempotency is not left
 to the topology either, because settlement independently refuses a review that
 is no longer pending.
+
+The correction and undo specialists are implemented. Correction reuses the
+evaluated extraction and category-fit boundaries, then a framework-independent
+function prepares the complete replacement against repository-owned current
+state. Undo has no model node. Both application mutations claim a namespaced
+command key in the same PostgreSQL transaction as the replacement and audit,
+so replaying a completed invocation returns the first result even when the
+domain transition is no longer valid to apply a second time. A category
+proposal during correction clarifies rather than bypassing the owner-only
+authority in AD-008. State contains only message text, boundary JSON, reason
+codes, and stable profile/movement references.
 
 The read-only query and advice routes are implemented as one bounded loop with
 a single model decision. Each route owns a scoped registry of named tools whose

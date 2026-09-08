@@ -2,8 +2,9 @@
 
 - Status: accepted
 - Implementation: foundation, finance schema, expense/wallet/budget repository
-  operations, pending-proposal persistence, and receipt registration/review
-  transitions implemented; remaining adapters and messaging persistence planned
+  operations, replay-safe correction/undo command claims, pending-proposal
+  persistence, and receipt registration/review transitions implemented;
+  remaining adapters and messaging persistence planned
 - Date: 2026-09-01
 
 ## Context
@@ -44,6 +45,9 @@ repository operations, taxonomy-scoped pending proposal submission, and
 content-idempotent receipt metadata registration, plus versioned mandatory
 review and owner-approval transitions. Expense/budget optimistic concurrency,
 idempotency, and source-row locking for balance-safe wallet debits are enforced.
+Correction and undo now use the general command-claim table as well: the claim,
+complete aggregate replacement, allocation replacement, and audit event commit
+in one transaction, while an identical replay returns the stored result.
 Real PostgreSQL tests cover migration, constraints, rollback, restart
 persistence, identical retry, stale versions, and concurrent expense and wallet
 writers, including concurrent receipt review transitions. Proposal resolution,

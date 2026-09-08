@@ -704,6 +704,150 @@ class PostgresFinanceRepository:
                 audit_event=audit_event,
             )
 
+    def get_idempotent_expense_command(
+        self,
+        *,
+        profile_id: UUID,
+        idempotency_key: str,
+        command_type: str,
+        request_hash: str,
+        expense_id: UUID,
+    ) -> Expense | None:
+        """Return an identical prior mutation result before domain transition.
+
+        This read lets a replay return a movement that is already terminal,
+        such as a voided expense, without asking the domain to apply the
+        transition twice. The transactional claim below remains authoritative
+        for concurrent first attempts.
+
+        Args:
+            profile_id: Trusted owner scope.
+            idempotency_key: Stable command key derived from inbound work.
+            command_type: Mutation kind expected for the claimed key.
+            request_hash: Canonical request semantics.
+            expense_id: Stable movement the command targets.
+
+        Returns:
+            The prior result, or None when this key has not been claimed.
+
+        Raises:
+            IdempotencyConflictError: If the key names different semantics.
+        """
+
+        self._validate_command_identity(idempotency_key, command_type, request_hash)
+        with connect(self._database_url) as connection:
+            prior = connection.execute(
+                "SELECT command_type, request_hash, aggregate_id "
+                "FROM finance.idempotency_records "
+                "WHERE profile_id = %s AND idempotency_key = %s",
+                (profile_id, idempotency_key),
+            ).fetchone()
+            if prior is None:
+                return None
+            self._require_identical_command(
+                prior,
+                command_type=command_type,
+                request_hash=request_hash,
+                expense_id=expense_id,
+            )
+            return self._load_expense(connection, profile_id, expense_id)
+
+    def replace_expense_idempotently(
+        self,
+        expense: Expense,
+        *,
+        expected_version: int,
+        idempotency_key: str,
+        command_type: str,
+        request_hash: str,
+        audit_event: AuditEvent,
+    ) -> Expense:
+        """Claim a replacement command and apply it exactly once.
+
+        Args:
+            expense: Complete replacement aggregate.
+            expected_version: Version observed by the caller.
+            idempotency_key: Stable command key derived from inbound work.
+            command_type: Bounded mutation kind stored with the claim.
+            request_hash: Canonical request semantics.
+            audit_event: Immutable matching mutation record.
+
+        Returns:
+            The new aggregate or the result of an identical prior command.
+
+        Raises:
+            IdempotencyConflictError: If the key names different semantics.
+            OptimisticConcurrencyError: If another distinct mutation won.
+        """
+
+        self._validate_command_identity(idempotency_key, command_type, request_hash)
+        with connect(self._database_url) as connection:
+            claimed = connection.execute(
+                "INSERT INTO finance.idempotency_records "
+                "(profile_id, idempotency_key, command_type, request_hash, "
+                "aggregate_id, created_at) VALUES (%s, %s, %s, %s, %s, %s) "
+                "ON CONFLICT DO NOTHING RETURNING aggregate_id",
+                (
+                    expense.profile_id,
+                    idempotency_key,
+                    command_type,
+                    request_hash,
+                    expense.id,
+                    audit_event.occurred_at,
+                ),
+            ).fetchone()
+            if claimed is None:
+                prior = connection.execute(
+                    "SELECT command_type, request_hash, aggregate_id "
+                    "FROM finance.idempotency_records "
+                    "WHERE profile_id = %s AND idempotency_key = %s",
+                    (expense.profile_id, idempotency_key),
+                ).fetchone()
+                if prior is None:
+                    raise IdempotencyConflictError("idempotency claim disappeared")
+                self._require_identical_command(
+                    prior,
+                    command_type=command_type,
+                    request_hash=request_hash,
+                    expense_id=expense.id,
+                )
+                return self._load_expense(connection, expense.profile_id, expense.id)
+            self._replace_expense_within(
+                connection,
+                expense,
+                expected_version=expected_version,
+                audit_event=audit_event,
+            )
+        return expense
+
+    @staticmethod
+    def _validate_command_identity(
+        idempotency_key: str,
+        command_type: str,
+        request_hash: str,
+    ) -> None:
+        """Validate bounded command metadata before opening a transaction."""
+
+        if not idempotency_key.strip() or not command_type.strip():
+            raise ValueError("idempotent replacement requires command identity")
+        if _SHA256.fullmatch(request_hash) is None:
+            raise ValueError("request_hash must be lowercase SHA-256")
+
+    @staticmethod
+    def _require_identical_command(
+        prior: tuple[object, ...],
+        *,
+        command_type: str,
+        request_hash: str,
+        expense_id: UUID,
+    ) -> None:
+        """Refuse reuse of a command key for another mutation or target."""
+
+        if prior != (command_type, request_hash, expense_id):
+            raise IdempotencyConflictError(
+                "idempotency key was used for different request content"
+            )
+
     def _replace_expense_within(
         self,
         connection: Connection[Any],

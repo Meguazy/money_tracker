@@ -122,6 +122,8 @@ class FinanceService:
         merchant: str | None,
         category_allocations: tuple[CategoryAllocation, ...],
         payment_allocations: tuple[PaymentAllocation, ...],
+        idempotency_key: str,
+        request_hash: str,
         actor: str,
         reason: str,
     ) -> Expense:
@@ -137,6 +139,8 @@ class FinanceService:
             merchant: Replacement merchant metadata.
             category_allocations: Complete replacement purpose dimension.
             payment_allocations: Complete replacement funding dimension.
+            idempotency_key: Stable external command key for replay safety.
+            request_hash: Canonical lowercase SHA-256 of replacement semantics.
             actor: Trusted application or owner actor label.
             reason: Non-sensitive audit explanation.
 
@@ -144,6 +148,15 @@ class FinanceService:
             Corrected aggregate with incremented version.
         """
 
+        replayed = self._repository.get_idempotent_expense_command(
+            profile_id=profile_id,
+            idempotency_key=idempotency_key,
+            command_type="correct_expense",
+            request_hash=request_hash,
+            expense_id=expense_id,
+        )
+        if replayed is not None:
+            return replayed
         current = self._repository.get_expense(profile_id, expense_id)
         corrected = current.corrected(
             amount=amount,
@@ -153,15 +166,17 @@ class FinanceService:
             category_allocations=category_allocations,
             payment_allocations=payment_allocations,
         )
-        self._replace(
+        return self._replace_idempotently(
             corrected,
             expected_version=expected_version,
             prior_version=current.version,
             action="correct",
+            idempotency_key=idempotency_key,
+            command_type="correct_expense",
+            request_hash=request_hash,
             actor=actor,
             reason=reason,
         )
-        return corrected
 
     def void_expense(
         self,
@@ -169,6 +184,8 @@ class FinanceService:
         profile_id: UUID,
         expense_id: UUID,
         expected_version: int,
+        idempotency_key: str,
+        request_hash: str,
         actor: str,
         reason: str,
     ) -> Expense:
@@ -178,6 +195,8 @@ class FinanceService:
             profile_id: Trusted owner scope.
             expense_id: Stable aggregate identifier.
             expected_version: Version shown to the caller.
+            idempotency_key: Stable external command key for replay safety.
+            request_hash: Canonical lowercase SHA-256 of the target semantics.
             actor: Trusted application or owner actor label.
             reason: Non-sensitive audit explanation.
 
@@ -185,17 +204,59 @@ class FinanceService:
             Voided aggregate with incremented version.
         """
 
+        replayed = self._repository.get_idempotent_expense_command(
+            profile_id=profile_id,
+            idempotency_key=idempotency_key,
+            command_type="void_expense",
+            request_hash=request_hash,
+            expense_id=expense_id,
+        )
+        if replayed is not None:
+            return replayed
         current = self._repository.get_expense(profile_id, expense_id)
         voided = current.void()
-        self._replace(
+        return self._replace_idempotently(
             voided,
             expected_version=expected_version,
             prior_version=current.version,
             action="void",
+            idempotency_key=idempotency_key,
+            command_type="void_expense",
+            request_hash=request_hash,
             actor=actor,
             reason=reason,
         )
-        return voided
+
+    def _replace_idempotently(
+        self,
+        expense: Expense,
+        *,
+        expected_version: int,
+        prior_version: int,
+        action: str,
+        idempotency_key: str,
+        command_type: str,
+        request_hash: str,
+        actor: str,
+        reason: str,
+    ) -> Expense:
+        """Persist one replay-safe replacement and its audit atomically."""
+
+        audit = self._audit_event(
+            expense=expense,
+            action=action,
+            actor=actor,
+            reason=reason,
+            prior_version=prior_version,
+        )
+        return self._repository.replace_expense_idempotently(
+            expense,
+            expected_version=expected_version,
+            idempotency_key=idempotency_key,
+            command_type=command_type,
+            request_hash=request_hash,
+            audit_event=audit,
+        )
 
     def _replace(
         self,

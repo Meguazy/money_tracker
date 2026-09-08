@@ -65,6 +65,29 @@ class FinanceRepository(Protocol):
     ) -> None:
         """Replace a complete aggregate only at the expected current version."""
 
+    def get_idempotent_expense_command(
+        self,
+        *,
+        profile_id: UUID,
+        idempotency_key: str,
+        command_type: str,
+        request_hash: str,
+        expense_id: UUID,
+    ) -> Expense | None:
+        """Return an identical prior mutation result, or None when unclaimed."""
+
+    def replace_expense_idempotently(
+        self,
+        expense: Expense,
+        *,
+        expected_version: int,
+        idempotency_key: str,
+        command_type: str,
+        request_hash: str,
+        audit_event: AuditEvent,
+    ) -> Expense:
+        """Claim a command and replace once in the same transaction."""
+
     def bootstrap_profile(
         self,
         profile: Profile,

@@ -14,6 +14,13 @@ from money_tracker.runtime.expense_graph import (
     build_expense_graph,
 )
 from money_tracker.runtime.model import LocalStructuredOutputModel
+from money_tracker.runtime.movement_graph import (
+    APPLY_CORRECTION_NODE,
+    APPLY_UNDO_NODE,
+    CLASSIFY_CORRECTION_CATEGORY_NODE,
+    EXTRACT_CORRECTION_NODE,
+    build_movement_change_graph,
+)
 from money_tracker.runtime.read_graph import (
     EXECUTE_NODE,
     SELECT_NODE,
@@ -33,10 +40,14 @@ from money_tracker.runtime.router_graph import (
 
 __all__ = [
     "ASK_NODE",
+    "APPLY_CORRECTION_NODE",
+    "APPLY_UNDO_NODE",
     "CLASSIFY_CATEGORY_NODE",
+    "CLASSIFY_CORRECTION_CATEGORY_NODE",
     "CLASSIFY_NODE",
     "EXECUTE_NODE",
     "EXTRACT_NODE",
+    "EXTRACT_CORRECTION_NODE",
     "PERSIST_NODE",
     "PRE_ROUTE_NODE",
     "SELECT_NODE",
@@ -45,6 +56,7 @@ __all__ = [
     "ProfileConfigurationReader",
     "ReviewConfigurationReader",
     "build_expense_graph",
+    "build_movement_change_graph",
     "build_read_graph",
     "build_review_graph",
     "build_router_graph",

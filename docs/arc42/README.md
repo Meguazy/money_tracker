@@ -190,8 +190,8 @@ Money Tracker workstation
 | `persistence` | Apply versioned migrations and bootstrap persistent LangGraph checkpoints | Alembic, psycopg, PostgreSQL checkpointer | Foundation schemas and workflow checkpoints | Host administration CLI; least-privilege loopback database role |
 | `domain` | Enforce exact money, expense/refund, dual-allocation, taxonomy, wallet, budget, receipt-metadata, and audit contracts | Pure Python value objects and policies; no framework or infrastructure import | No infrastructure state | Shared host-process library; deterministic validation of untrusted inputs |
 | `application` | Coordinate idempotent expense lifecycle and receipt registration/review, audited wallet/budget mutations, pending proposal submission, owner category decisions, and read-only reporting through narrow ports | Finance, administration, proposal, review, reporting, and receipt-metadata repository ports plus clock and ID contracts | Command, concurrency, review-boundary, and audit semantics, not stored state | Shared by future CLI/API/worker; profile scope comes from trusted caller context; node creation is reachable only through an owner decision, and receipt deletion is not exposed |
-| `workflows` | Own the bounded intent taxonomy, the normalized channel work unit, deterministic pre-routing, the strict versioned router and extraction model boundaries with their policy vetoes, and deterministic resolution of occurrence time, amount sign, and both reconciled allocation dimensions, draft assembly with its stable command key, and the strict-schema retry boundary behind a narrow model port | Pydantic, `zoneinfo`, and pure domain values; no LangGraph, model client, repository, or transport import | Routing destinations, authority classes, stable routing and resolution reason codes, and the product calendar; no persistent state | Shared by the planned worker; a model can select no deterministic route and supply no profile/timezone/authorization field, no resolved instant, no amount sign, and no funding-source identifier; reason codes carry no owner text |
-| `runtime` | Assemble the compiled root-router and movement graphs and adapt the local endpoint to the structured-output port | LangGraph, LangChain, the persistent checkpointer, and the `workflows` contracts | No state of its own; checkpoint contents are owned by the state contract | Host worker process; holds no routing policy, so the framework cannot change how a decision is made |
+| `workflows` | Own the bounded intent taxonomy, normalized channel work unit, deterministic pre-routing, strict versioned model boundaries and policy vetoes, deterministic allocation resolution, draft and correction preparation, stable creation/correction/undo command identities, and the strict-schema retry boundary behind a narrow model port | Pydantic, `zoneinfo`, and pure domain values; no LangGraph, model client, repository, or transport import | Routing destinations, authority classes, stable routing and resolution reason codes, and the product calendar; no persistent state | Shared by the planned worker; a model can select no deterministic route and supply no profile/timezone/authorization field, no resolved instant, no amount sign, and no funding-source identifier; reason codes carry no owner text |
+| `runtime` | Assemble the compiled root-router, expense/refund, correction/undo, category-review, and read graphs and adapt the local endpoint to the structured-output port | LangGraph, LangChain, the persistent checkpointer, and the `workflows` contracts | No state of its own; checkpoint contents are owned by the state contract | Host worker process; holds no routing policy, so the framework cannot change how a decision is made |
 | `api.contracts` | Define strict, versioned finance request/response, mutation-header, and problem wire shapes | Pydantic and domain response values; no web framework | No state; stable JSON field semantics only | Shared by future FastAPI adapter; no endpoint, network listener, credentials, or private media fields |
 | `backup` | Create verified encrypted authoritative snapshots, report their freshness, and restore only into explicitly empty isolated targets | Restic and PostgreSQL client executables, psycopg identity/receipt queries, private archive and configuration paths | Snapshot contents and the versioned integrity manifest in the owner repository; no finance state of its own | Host CLI under an exclusive lock; absolute-path and owner-only input checks, recovery secret passed only by file path, failures name no argument or environment |
 | `administration` | Expose bounded local profile bootstrap, funding-source configuration, receipt storage/registration, and one-shot routing and movement processing for development and bootstrap | Database URL, absolute archive setting, media and metadata services, the compiled router and its local adapter | No independent state; emits safe identifiers/facts only | Host CLI; active-profile preflight for storage, no-follow bounded input, explicit routing context, no private paths or message content in JSON |
@@ -633,6 +633,36 @@ message naming an unresolvable funding source still costs one purpose call. That
 a deliberate trade: every write-deciding rule stays inside one atomic function,
 and the latency target applies to successful runs.
 
+### Current correction and undo specialists
+
+1. Both routes receive the exact movement identifier resolved by trusted
+   runtime context. A missing or foreign target returns
+   `no_correctable_movement` before a model call or financial write.
+2. Correction reuses the evaluated extraction and category-fit boundaries. A
+   pure workflow function resolves their output into a complete replacement;
+   omitted occurrence, merchant, and funding values preserve stored data. A
+   changed total scales a single existing payment allocation, while a
+   multi-source payment must be restated rather than guessed.
+3. A replacement category must resolve to an active stable identifier. A
+   proposed category stops with `category_approval_required`; correction
+   cannot bypass AD-008's owner-only taxonomy authority.
+4. Undo has no model node. It loads the trusted target and calls the application
+   void operation, preserving the aggregate and audit history.
+5. The `apply_correction` and `apply_undo` nodes derive distinct command keys
+   from the durable source reference. PostgreSQL claims each command in the
+   same transaction as the aggregate replacement and audit event. A replay,
+   including a fresh graph invocation after a void reached terminal state,
+   returns the first result and creates no second write.
+6. Checkpoints contain only the normalized message, profile and movement
+   identifiers, boundary JSON, outcome, and reason codes. Authoritative
+   movement data is reread from the repository.
+
+The specialists run in the host workflow process and own no data. They depend
+on `FinanceService`, the narrow profile configuration reader, the structured
+model port for correction only, and application PostgreSQL. Real PostgreSQL
+integration tests cover a completed correction, missing-target clarification,
+void, and a fresh replay with one resulting audit mutation.
+
 ### Current compiled root router
 
 1. A caller builds the initial state from one normalized channel message and
@@ -866,10 +896,10 @@ network, and inference readiness through health checks and retry policies.
   that classified it.
 - Version-one HTTP mutation contracts carry that key only in the required
   `Idempotency-Key` header; request bodies cannot shadow it.
-- Every external update and financial command has a stable idempotency key. A
-  movement's key is derived from the durable inbound record rather than
-  generated, so a redelivery claims the same key and the repository returns the
-  first result. The accompanying request digest covers what the owner asked for
+- Every external update and financial command has a stable idempotency key.
+  Movement creation, correction, and undo derive separate namespaced keys from
+  the durable inbound record, so a redelivery claims the same key and the
+  repository returns the first result. The accompanying request digest covers what the owner asked for
   and excludes lifecycle status, version, and generated identifiers, and
   normalizes the occurrence instant to UTC so the same moment expressed with a
   different offset matches. A redelivery must therefore replay the stored

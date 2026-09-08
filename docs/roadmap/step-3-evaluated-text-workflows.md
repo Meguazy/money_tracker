@@ -94,8 +94,8 @@ own tests and documentation, and none may ship a later step's behavior.
   and specialist routes for expense, refund, queries, advice, category follow-up,
   correction/undo, and clarification.
 - Versioned structured extraction and category-fit contracts with evidence.
-- Deterministic expense/refund mutation paths that call application services;
-  query/advice agents remain read-only. Implemented.
+- Deterministic expense/refund and correction/undo mutation paths that call
+  application services; query/advice agents remain read-only. Implemented.
 - Persistent human-in-the-loop category review covering approve, best existing,
   named existing, re-propose, cancel, and unrelated input.
 - Auto-post eligibility policy calibrated on the evaluation set; all other
@@ -232,6 +232,17 @@ own tests and documentation, and none may ship a later step's behavior.
   The purpose boundary receives the owner's own active category names rendered
   from their taxonomy at call time. Every node either advances or records a
   clarification, so a run stores a complete draft or stores nothing.
+- Correction and undo now have a compiled specialist graph. Correction reuses
+  the evaluated extraction and category-fit boundaries, then pure preparation
+  resolves a complete replacement from repository-owned current state. Undo
+  reaches no model. Both mutations claim a namespaced command key in the same
+  PostgreSQL transaction as the replacement and audit, so a fresh replay
+  returns the first result rather than applying the transition again. Real
+  PostgreSQL tests cover a resolved correction, missing-target clarification,
+  a void, and two fresh invocations producing one movement and one void audit.
+- Graph state for both routes contains only primitive boundary JSON, outcomes,
+  reason codes, and stable profile/movement references; the target aggregate
+  remains in the repository.
 - Real PostgreSQL tests store a reconciled draft and the split-funding journey
   against a seeded profile, submit a pending candidate without extending the
   taxonomy, leave the database untouched on every clarification path, store

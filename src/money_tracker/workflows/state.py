@@ -400,6 +400,105 @@ def expense_message_from_state(state: ExpenseWorkflowState) -> ChannelMessage:
     )
 
 
+class MovementChangeOutcome(StrEnum):
+    """How one correction or undo specialist run ended."""
+
+    CORRECTED = "corrected"
+    VOIDED = "voided"
+    CLARIFICATION = "clarification"
+
+
+class MovementChangeReason(StrEnum):
+    """Why a correction or undo stopped without mutating finance data."""
+
+    NO_CORRECTABLE_MOVEMENT = "no_correctable_movement"
+    CORRECTION_DETAILS_REQUIRED = "correction_details_required"
+    MOVEMENT_NOT_CORRECTABLE = "movement_not_correctable"
+
+
+class MovementChangeState(TypedDict, total=False):
+    """Correction or undo state containing only primitives and stable references.
+
+    Attributes:
+        state_version: Shape version this thread was created under.
+        profile_id: Trusted owner scope injected by the runtime.
+        source_reference: Stable inbound work reference used for idempotency.
+        received_at: ISO channel timestamp anchoring relative dates.
+        text: Owner correction text, or empty text for an explicit undo action.
+        routed_intent: Correction or undo.
+        target_movement_id: Runtime-resolved movement reference, when available.
+        extraction_json: Correction extraction carried across resume.
+        category_fit_json: Correction purpose judgment carried across resume.
+        outcome: Terminal specialist result.
+        expense_id: Corrected or voided movement reference.
+        clarification_reason: Stable reason selecting the next question.
+    """
+
+    state_version: str
+    profile_id: str
+    source_reference: str
+    received_at: str
+    text: str
+    routed_intent: str
+    target_movement_id: str | None
+    extraction_json: str | None
+    category_fit_json: str | None
+    outcome: str | None
+    expense_id: str | None
+    clarification_reason: str | None
+
+
+def initial_movement_change_state(
+    message: ChannelMessage,
+    *,
+    profile_id: UUID,
+    routed_intent: WorkflowIntent,
+    target_movement_id: UUID | None,
+) -> MovementChangeState:
+    """Build initial state for a routed correction or undo.
+
+    Args:
+        message: Normalized inbound work unit.
+        profile_id: Trusted owner scope.
+        routed_intent: Correction or undo route selected by the router.
+        target_movement_id: Movement resolved by trusted runtime context.
+
+    Returns:
+        A complete primitive state. A missing target is retained so the graph
+        can return a typed clarification without touching a repository.
+
+    Raises:
+        ValueError: If another route is supplied.
+    """
+
+    if routed_intent not in {WorkflowIntent.CORRECTION, WorkflowIntent.UNDO}:
+        raise ValueError("movement change workflow accepts correction or undo")
+    return MovementChangeState(
+        state_version=WORKFLOW_STATE_VERSION,
+        profile_id=str(profile_id),
+        source_reference=message.source_reference,
+        received_at=message.received_at.isoformat(),
+        text=message.normalized_text,
+        routed_intent=routed_intent.value,
+        target_movement_id=_optional_str(target_movement_id),
+        extraction_json=None,
+        category_fit_json=None,
+        outcome=None,
+        expense_id=None,
+        clarification_reason=None,
+    )
+
+
+def movement_change_message_from_state(state: MovementChangeState) -> ChannelMessage:
+    """Reconstruct the normalized work unit for a resumed change thread."""
+
+    return ChannelMessage(
+        source_reference=state["source_reference"],
+        received_at=datetime.fromisoformat(state["received_at"]),
+        text=state["text"],
+    )
+
+
 class ReviewOutcome(StrEnum):
     """How one owner category review ended, once it has ended.
 

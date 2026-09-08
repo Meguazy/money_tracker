@@ -44,7 +44,7 @@ from langgraph.graph.state import CompiledStateGraph
 
 from money_tracker.application import CategoryProposalService, FinanceService
 from money_tracker.application.ports import IdGenerator
-from money_tracker.domain import CategoryStatus, FundingSource, Taxonomy
+from money_tracker.domain import CategoryStatus, Expense, FundingSource, Taxonomy
 from money_tracker.workflows import (
     CategoryFit,
     ExpenseExtraction,
@@ -74,7 +74,10 @@ _EXPECTED_POLARITY = {
 
 
 class ProfileConfigurationReader(Protocol):
-    """Read the trusted profile configuration the boundaries resolve against."""
+    """Read trusted movement and profile data used by specialist workflows."""
+
+    def get_expense(self, profile_id: UUID, expense_id: UUID) -> Expense:
+        """Return one movement within trusted profile scope."""
 
     def get_taxonomy(self, profile_id: UUID) -> Taxonomy:
         """Return the profile's complete category view."""

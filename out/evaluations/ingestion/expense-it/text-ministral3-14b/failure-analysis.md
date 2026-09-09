@@ -97,3 +97,13 @@ field` 0.0118. Only the ambiguity gate is common to both runs. The direction is
 consistent across five metrics, which is more than run-to-run drift would
 explain, but one re-run cannot separate the two, and this candidate has not been
 shown to reproduce a run the way Qwen3 14B has.
+
+## Final Step 3 measurement — 2026-09-09
+
+Run `ING-20260909-103320-7ba9d870` has 165/170 passing cases and five residual
+failures: `ING-AMT-018`, `ING-REL-023`, `ING-REF-015`, `ING-UNF-007`, and
+`ING-UNF-008`. Four blocking gates fail: amount exactness 160/162 = 0.9877
+against 0.99, polarity 168/170 = 0.9882 against 0.99, required ambiguity 26/28 =
+0.9286 against 0.98, and fabricated optional fields 2/170 = 0.0118 against the
+0.01 maximum. Schema validity and split reconciliation remain perfect. Warm
+per-case suite p95 is 3,427 ms over 169 measured cases.

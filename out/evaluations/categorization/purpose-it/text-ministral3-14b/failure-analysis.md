@@ -119,3 +119,14 @@ groceries against restaurant delivery is a real ambiguity in the message.
 Lowering `purpose_label_agreement`. At 0.7451 the boundary disagrees with the
 labels on one case in four, and the largest cluster is a rule it is not being
 told rather than a judgment it is getting wrong.
+
+## Final Step 3 measurement — 2026-09-09
+
+Run `CAT-20260909-103551-23b7246d` scores 121/153 = 0.7908 against the 0.85
+agreement gate, with 32 case disagreements. It offers no proposals, so the
+proposal-specific duplicate/alias metric has an applicable empty denominator
+and remains failed; this is a model behavior, separate from the two automatic-
+post metrics that are explicitly inapplicable under the V1 no-auto-post policy.
+Warm per-case suite p95 is 1,062 ms over 152 measured cases. Ministral remains
+below Qwen on the primary category agreement gate and is not a promotion
+candidate.

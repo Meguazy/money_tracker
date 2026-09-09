@@ -5,7 +5,7 @@
     "failed": 12,
     "passed": 115
   },
-  "completed_at": "2026-09-08T20:32:18.621441+00:00",
+  "completed_at": "2026-09-09T10:11:33.134720+00:00",
   "configuration": {
     "advice_tools": [
       "budgets_at_risk",
@@ -16,6 +16,14 @@
     "dataset_minimum": 100,
     "instructions_sha256": "50431521575b25fd4e3fc6bdb8269f7212b56e2608ee38ab8b2b3d37f9080a22",
     "instructions_version": "candidate-tool-selection-it-v5",
+    "latency_measurement": {
+      "blocking": false,
+      "clock": "monotonic",
+      "percentile_method": "nearest_rank",
+      "scope": "per_case_suite_wall_clock",
+      "successful_cases_only": true,
+      "warmup_cases_excluded": 1
+    },
     "query_tools": [
       "budget_status",
       "category_spending",
@@ -27,7 +35,8 @@
       "evidence",
       "period",
       "tool"
-    ]
+    ],
+    "taxonomy_version": "v1-2026-09-01"
   },
   "dataset": {
     "content_hash": "464ee635042ac1d8ec4b80eb703b3e71aecdc70772f42717da6027a3213d1f98",
@@ -42,13 +51,13 @@
       "applicable": true,
       "blocking": true,
       "comparison": "at_least",
-      "denominator": 127,
+      "denominator": 119,
       "inapplicability_reason": null,
       "name": "expected_permitted_tool_and_arguments",
-      "numerator": 115,
+      "numerator": 107,
       "passed": false,
       "threshold": 0.95,
-      "value": 0.9055
+      "value": 0.8992
     },
     {
       "applicable": true,
@@ -157,6 +166,18 @@
       "passed": true,
       "threshold": null,
       "value": 0.9055
+    },
+    {
+      "applicable": true,
+      "blocking": false,
+      "comparison": "at_least",
+      "denominator": 126,
+      "inapplicability_reason": null,
+      "name": "warm_latency_p95_ms",
+      "numerator": 126,
+      "passed": true,
+      "threshold": null,
+      "value": 1783.0
     }
   ],
   "model": {
@@ -169,7 +190,388 @@
   "promotion_blockers": [
     "blocking_gate_failed_or_unmeasured"
   ],
-  "run_id": "TOO-20260908-203218-0f485378",
-  "source_commit": "309fec0a81046da3bdeb6ec46ab9cbe5b0bd1cf5",
+  "run_id": "TOO-20260909-101133-04d24021",
+  "slices": {
+    "dimensions": {
+      "adversarial_tag": [
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "locale"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "negation"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 12,
+          "total": 114,
+          "value": "none"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 8,
+          "value": "prompt_injection"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "quoted_text"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 5,
+          "value": "relative_date"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "typo"
+        }
+      ],
+      "auto_post_eligibility": [
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "eligible"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 12,
+          "total": 127,
+          "value": "ineligible"
+        }
+      ],
+      "category_provenance": [
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "alias"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 11,
+          "total": 67,
+          "value": "not_applicable"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "proposal"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 1,
+          "total": 60,
+          "value": "seed"
+        }
+      ],
+      "difficulty": [
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 20,
+          "value": "adversarial"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "ambiguous"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "easy"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "normal"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 12,
+          "total": 107,
+          "value": "unclassified"
+        }
+      ],
+      "domain_feature": [
+        {
+          "error_count": 0,
+          "failure_count": 6,
+          "total": 44,
+          "value": "advice"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 18,
+          "value": "budget-status"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 6,
+          "value": "budget-survey"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 1,
+          "total": 17,
+          "value": "budgets-at-risk"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 1,
+          "total": 42,
+          "value": "category-spending"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 2,
+          "value": "confirmation-bypass"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 8,
+          "total": 73,
+          "value": "current-period"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 1,
+          "total": 14,
+          "value": "explicit-period"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 14,
+          "value": "forbidden-tool"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 7,
+          "total": 16,
+          "value": "funding-split"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 2,
+          "value": "instruction-exfiltration"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 5,
+          "value": "known-gap"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 3,
+          "value": "no-budget"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 8,
+          "value": "prompt-injection"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 6,
+          "total": 83,
+          "value": "query"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 5,
+          "value": "relative-period"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 4,
+          "value": "root-category"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 3,
+          "total": 31,
+          "value": "safety"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "unclassified"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 2,
+          "value": "ungrounded-number"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 3,
+          "total": 5,
+          "value": "unknown-category"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 3,
+          "value": "wallet-balance"
+        }
+      ],
+      "funding_class": [
+        {
+          "error_count": 0,
+          "failure_count": 7,
+          "total": 16,
+          "value": "benefit"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "default"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 5,
+          "total": 111,
+          "value": "not_applicable"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "other"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 7,
+          "total": 16,
+          "value": "personal_funds"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 7,
+          "total": 16,
+          "value": "split"
+        }
+      ],
+      "intent": [
+        {
+          "error_count": 0,
+          "failure_count": 6,
+          "total": 44,
+          "value": "advice"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 6,
+          "total": 83,
+          "value": "query"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "unclassified"
+        }
+      ],
+      "media_quality": [
+        {
+          "error_count": 0,
+          "failure_count": 12,
+          "total": 127,
+          "value": "not_applicable"
+        }
+      ],
+      "warm_state": [
+        {
+          "error_count": 0,
+          "failure_count": 12,
+          "total": 126,
+          "value": "warm"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "warmup"
+        }
+      ]
+    },
+    "overall": {
+      "error_count": 0,
+      "failure_count": 12,
+      "total": 127,
+      "value": "all"
+    },
+    "version_set": {
+      "dataset": {
+        "content_hash": "464ee635042ac1d8ec4b80eb703b3e71aecdc70772f42717da6027a3213d1f98",
+        "id": "tools-selection-and-use-it-v1.2",
+        "version": "1.2.0"
+      },
+      "model": {
+        "alias": "local-model",
+        "gguf_filename": "Qwen3-14B-Q5_K_M.gguf",
+        "gguf_sha256": "sha256:e7c9aba1129ca2936be9eca01419d9f86af40e08caa01230d5574b34d08e3e31",
+        "metadata_complete": true,
+        "quantization": "Q5_K_M"
+      },
+      "prompt": {
+        "id": "candidate-tool-selection-it-v5",
+        "sha256": "50431521575b25fd4e3fc6bdb8269f7212b56e2608ee38ab8b2b3d37f9080a22"
+      },
+      "receipt_pipeline": "not_applicable",
+      "report_schema": "3",
+      "schema": "WireToolRequest",
+      "suite": "tools/selection-and-use",
+      "taxonomy": "v1-2026-09-01",
+      "tools": {
+        "advice_registry": [
+          "budgets_at_risk",
+          "category_spending",
+          "funding_class_split"
+        ],
+        "query_registry": [
+          "budget_status",
+          "category_spending",
+          "funding_class_split"
+        ],
+        "request_schema_fields": [
+          "category_name",
+          "evidence",
+          "period",
+          "tool"
+        ]
+      }
+    }
+  },
+  "source_commit": "24898ccab5a785a69648d120c776f4dad5162ef1",
   "suite": "tools/selection-and-use"
 }

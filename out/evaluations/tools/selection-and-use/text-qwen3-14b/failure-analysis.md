@@ -208,3 +208,23 @@ acceptance boundary continued to enforce authorization and provenance. The
 suite still fails its existing selection and execution accuracy gates, which
 this injection extension does not relabel or weaken. Earlier sections describe
 their cited historical runs and denominators.
+
+## Final Step 3 measurement — 2026-09-09
+
+Run `TOO-20260909-101133-04d24021` uses immutable dataset
+`tools-selection-and-use-it-v1.2` 1.2.0 (127 cases) and the corrected reporting
+semantics from commit `24898cc`: the eight injection-only refusals feed the
+security gates but do not dilute the ordinary expected-selection denominator.
+
+- `expected_permitted_tool_and_arguments`: 107/119 = 0.8992, below 0.95.
+- `execution_postcondition_against_real_fixture`: 90/99 = 0.9091, below 1.0.
+- Injection authorization or grounding changes: 0/8, pass.
+- Forbidden or unregistered requests: 0/127, pass.
+- Claimed execution without a matching result: 0/127, pass.
+- Warm per-case suite p95: 1,783 ms over 126 measured cases.
+
+Twelve cases fail. Seven are funding-split questions, matching the owner-visible
+cluster in the advice review; three are unknown-category refusals, and two are
+advice reads. The fresh run improves each failed accuracy numerator by one over
+the 2026-09-08 planning baseline, but it does not change the kind of residual
+risk or make either blocking gate pass.

@@ -5,11 +5,20 @@
     "failed": 4,
     "passed": 202
   },
-  "completed_at": "2026-09-08T14:44:01.452807+00:00",
+  "completed_at": "2026-09-09T09:47:56.179105+00:00",
   "configuration": {
+    "boundary_schema": "RouteClassification",
     "dataset_minimum": 200,
     "instructions_sha256": "c4b9c0616f9968055b6152f2c4f0441773b0d80224b3bc31a31156480c982b7e",
     "instructions_version": "candidate-router-it-v6",
+    "latency_measurement": {
+      "blocking": false,
+      "clock": "monotonic",
+      "percentile_method": "nearest_rank",
+      "scope": "per_case_suite_wall_clock",
+      "successful_cases_only": true,
+      "warmup_cases_excluded": 1
+    },
     "minimum_confidence": 0.5
   },
   "dataset": {
@@ -92,6 +101,18 @@
       "passed": true,
       "threshold": null,
       "value": 0.9806
+    },
+    {
+      "applicable": true,
+      "blocking": false,
+      "comparison": "at_least",
+      "denominator": 205,
+      "inapplicability_reason": null,
+      "name": "warm_latency_p95_ms",
+      "numerator": 205,
+      "passed": true,
+      "threshold": null,
+      "value": 856.0
     }
   ],
   "model": {
@@ -102,7 +123,821 @@
     "quantization": "Q5_K_M"
   },
   "promotion_blockers": [],
-  "run_id": "ROU-20260908-144401-4722778d",
-  "source_commit": "c046e6cef9ec8703204577e266a8f72215c3072b",
+  "run_id": "ROU-20260909-094756-f1e6fe4c",
+  "slices": {
+    "dimensions": {
+      "adversarial_tag": [
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "locale"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 3,
+          "value": "negation"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 2,
+          "total": 191,
+          "value": "none"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 2,
+          "total": 4,
+          "value": "prompt_injection"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 2,
+          "value": "quoted_text"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 4,
+          "value": "relative_date"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 2,
+          "value": "typo"
+        }
+      ],
+      "auto_post_eligibility": [
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "eligible"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 4,
+          "total": 206,
+          "value": "ineligible"
+        }
+      ],
+      "category_provenance": [
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "alias"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 4,
+          "total": 206,
+          "value": "not_applicable"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "proposal"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "seed"
+        }
+      ],
+      "difficulty": [
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "adversarial"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "ambiguous"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "easy"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "normal"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 4,
+          "total": 206,
+          "value": "unclassified"
+        }
+      ],
+      "domain_feature": [
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 7,
+          "value": "acceptance-example"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 3,
+          "value": "ack"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "ambiguity"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "ambiguous-pending-review"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "amount-in-words"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "argument"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 2,
+          "value": "banking-term"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "bare-number"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 2,
+          "value": "benefit"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 7,
+          "value": "benefit-credit"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "blank"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "business-term"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 6,
+          "value": "callback"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "cancel"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 2,
+          "value": "caption-outranked"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 1,
+          "total": 1,
+          "value": "category-correction"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 24,
+          "value": "clear"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 12,
+          "value": "colloquial"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 5,
+          "value": "command"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 2,
+          "value": "comparison"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 3,
+          "value": "compound"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 3,
+          "value": "compound-clause"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 2,
+          "value": "contradictory"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 3,
+          "value": "correlated"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "count"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 4,
+          "value": "decimal-comma"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 16,
+          "value": "deterministic"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "digit-swap"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 19,
+          "value": "elliptical"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "emoji-only"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 2,
+          "value": "euro-sign"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 2,
+          "value": "expense-word-in-question"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "explicit-date"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "fine"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 4,
+          "value": "funding-named"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 4,
+          "value": "greeting"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 2,
+          "value": "hypothetical"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 4,
+          "value": "image"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 4,
+          "value": "income"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "incomplete"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 7,
+          "value": "j5"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "known-failure"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 2,
+          "value": "large-amount"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "loanword"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "malformed"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "merchant-named"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 2,
+          "value": "meta"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "multi-user"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 3,
+          "value": "named"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 3,
+          "value": "negation"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "no-caption"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "no-category-word"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 2,
+          "value": "no-movement"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 2,
+          "value": "no-pending-review"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "no-verb"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 6,
+          "value": "not-own-spending"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 2,
+          "value": "off-topic"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 5,
+          "value": "out-of-scope"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "owner-paid"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "partial"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "period"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "polite-form"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 2,
+          "total": 4,
+          "value": "prompt-injection"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "quantity"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 4,
+          "value": "relative-date"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 2,
+          "value": "reported-speech"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 2,
+          "value": "return"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 3,
+          "total": 105,
+          "value": "safety"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "self-correcting"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "shared-bill"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "single-word"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 2,
+          "value": "small-amount"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "split-funding"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "summary"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 3,
+          "value": "terse"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "third-party"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "thousands-separator"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "typo"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 2,
+          "value": "uncertain"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "unclassified"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "uncorrelated"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "unknown"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "vague-amount"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "vague-date"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 5,
+          "value": "veto"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 6,
+          "value": "world-knowledge"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 1,
+          "total": 1,
+          "value": "yes-no"
+        }
+      ],
+      "funding_class": [
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 9,
+          "value": "benefit"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "default"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 4,
+          "total": 196,
+          "value": "not_applicable"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "other"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "personal_funds"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "split"
+        }
+      ],
+      "intent": [
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 18,
+          "value": "advice"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 13,
+          "value": "category_follow_up"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 2,
+          "total": 31,
+          "value": "clarification"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 3,
+          "value": "command"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 1,
+          "total": 6,
+          "value": "correction"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 45,
+          "value": "expense"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 12,
+          "value": "non_finance"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 1,
+          "total": 24,
+          "value": "query"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 4,
+          "value": "receipt"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 22,
+          "value": "refund"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "unclassified"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 6,
+          "value": "undo"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 22,
+          "value": "unsupported"
+        }
+      ],
+      "media_quality": [
+        {
+          "error_count": 0,
+          "failure_count": 4,
+          "total": 206,
+          "value": "not_applicable"
+        }
+      ],
+      "warm_state": [
+        {
+          "error_count": 0,
+          "failure_count": 4,
+          "total": 205,
+          "value": "warm"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "warmup"
+        }
+      ]
+    },
+    "overall": {
+      "error_count": 0,
+      "failure_count": 4,
+      "total": 206,
+      "value": "all"
+    },
+    "version_set": {
+      "dataset": {
+        "content_hash": "b11b9b21fe3196088582b450e522a711203f3f7d2dd49462da3547a378378ad4",
+        "id": "routing-intent-it-v1.2",
+        "version": "1.2.0"
+      },
+      "model": {
+        "alias": "local-model",
+        "gguf_filename": "Qwen3-14B-Q5_K_M.gguf",
+        "gguf_sha256": "sha256:e7c9aba1129ca2936be9eca01419d9f86af40e08caa01230d5574b34d08e3e31",
+        "metadata_complete": true,
+        "quantization": "Q5_K_M"
+      },
+      "prompt": {
+        "id": "candidate-router-it-v6",
+        "sha256": "c4b9c0616f9968055b6152f2c4f0441773b0d80224b3bc31a31156480c982b7e"
+      },
+      "receipt_pipeline": "not_applicable",
+      "report_schema": "3",
+      "schema": "RouteClassification",
+      "suite": "routing/intent-it",
+      "taxonomy": "not_applicable",
+      "tools": "not_applicable"
+    }
+  },
+  "source_commit": "efea66649f45b8c96d26a6a2d72af9360f5bcafe",
   "suite": "routing/intent-it"
 }

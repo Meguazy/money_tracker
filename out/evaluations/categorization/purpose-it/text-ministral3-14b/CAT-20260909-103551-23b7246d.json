@@ -1,0 +1,480 @@
+{
+  "blocking_gates_passed": false,
+  "case_totals": {
+    "error": 0,
+    "failed": 32,
+    "passed": 121
+  },
+  "completed_at": "2026-09-09T10:35:51.335020+00:00",
+  "configuration": {
+    "auto_post_policy_promoted": false,
+    "boundary_schema": "BoundWireCategoryFit",
+    "dataset_minimum": 150,
+    "instructions_sha256": "ebf3bd697ccda207ab05f3cec878103386482e86076c1e74fdcb20e97f5f111f",
+    "instructions_version": "candidate-category-fit-it-v6",
+    "latency_measurement": {
+      "blocking": false,
+      "clock": "monotonic",
+      "percentile_method": "nearest_rank",
+      "scope": "per_case_suite_wall_clock",
+      "successful_cases_only": true,
+      "warmup_cases_excluded": 1
+    },
+    "model_calls_per_case": 1,
+    "taxonomy_active_categories": 24,
+    "taxonomy_version": "v1-2026-09-01"
+  },
+  "dataset": {
+    "content_hash": "94dd54ceb3622cae1a03de804a7df5c1e7f44cb7f3de689dc0b696de98b7467a",
+    "id": "categorization-purpose-it-v1.1",
+    "item_count": 153,
+    "version": "1.1.0"
+  },
+  "eligible_for_promotion": false,
+  "meets_dataset_minimum": true,
+  "metrics": [
+    {
+      "applicable": true,
+      "blocking": true,
+      "comparison": "at_least",
+      "denominator": 153,
+      "inapplicability_reason": null,
+      "name": "purpose_label_agreement",
+      "numerator": 121,
+      "passed": false,
+      "threshold": 0.85,
+      "value": 0.7908
+    },
+    {
+      "applicable": true,
+      "blocking": true,
+      "comparison": "at_most",
+      "denominator": 142,
+      "inapplicability_reason": null,
+      "name": "false_new_category_proposal",
+      "numerator": 0,
+      "passed": true,
+      "threshold": 0.05,
+      "value": 0.0
+    },
+    {
+      "applicable": true,
+      "blocking": true,
+      "comparison": "at_most",
+      "denominator": 18,
+      "inapplicability_reason": null,
+      "name": "merchant_or_payment_method_proposed_as_category",
+      "numerator": 0,
+      "passed": true,
+      "threshold": 0.0,
+      "value": 0.0
+    },
+    {
+      "applicable": true,
+      "blocking": true,
+      "comparison": "at_most",
+      "denominator": 0,
+      "inapplicability_reason": null,
+      "name": "duplicate_or_alias_equivalent_proposal",
+      "numerator": 0,
+      "passed": false,
+      "threshold": 0.02,
+      "value": 1.0
+    },
+    {
+      "applicable": false,
+      "blocking": true,
+      "comparison": "at_least",
+      "denominator": 0,
+      "inapplicability_reason": "No V1 auto-post policy exists: the broadest existing-answer policy measured 131/150 (0.8733) against 0.98, and CategoryFit exposes no confidence for held-out calibration.",
+      "name": "auto_post_subset_category_precision",
+      "numerator": 0,
+      "passed": true,
+      "threshold": 0.98,
+      "value": 1.0
+    },
+    {
+      "applicable": false,
+      "blocking": true,
+      "comparison": "at_least",
+      "denominator": 0,
+      "inapplicability_reason": "No V1 auto-post policy exists: the broadest existing-answer policy measured 131/150 (0.8733) against 0.98, and CategoryFit exposes no confidence for held-out calibration.",
+      "name": "auto_post_subset_invariant_validity",
+      "numerator": 0,
+      "passed": true,
+      "threshold": 1.0,
+      "value": 1.0
+    },
+    {
+      "applicable": true,
+      "blocking": false,
+      "comparison": "at_least",
+      "denominator": 0,
+      "inapplicability_reason": null,
+      "name": "existing_category_named_while_proposing",
+      "numerator": 0,
+      "passed": true,
+      "threshold": null,
+      "value": 1.0
+    },
+    {
+      "applicable": true,
+      "blocking": false,
+      "comparison": "at_least",
+      "denominator": 153,
+      "inapplicability_reason": null,
+      "name": "proposals_offered",
+      "numerator": 0,
+      "passed": true,
+      "threshold": null,
+      "value": 0.0
+    },
+    {
+      "applicable": true,
+      "blocking": false,
+      "comparison": "at_least",
+      "denominator": 152,
+      "inapplicability_reason": null,
+      "name": "warm_latency_p95_ms",
+      "numerator": 152,
+      "passed": true,
+      "threshold": null,
+      "value": 1062.0
+    }
+  ],
+  "model": {
+    "alias": "local-model",
+    "gguf_filename": "Ministral-3-14B-Instruct-2512-Q5_K_M.gguf",
+    "gguf_sha256": "sha256:f16fef77021df0d4c22e69140a2038478370492f51867b6237699918ae711000",
+    "metadata_complete": true,
+    "quantization": "Q5_K_M"
+  },
+  "promotion_blockers": [
+    "blocking_gate_failed_or_unmeasured"
+  ],
+  "run_id": "CAT-20260909-103551-23b7246d",
+  "slices": {
+    "dimensions": {
+      "adversarial_tag": [
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "locale"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "negation"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 32,
+          "total": 153,
+          "value": "none"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "prompt_injection"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "quoted_text"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "relative_date"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "typo"
+        }
+      ],
+      "auto_post_eligibility": [
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "eligible"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 32,
+          "total": 153,
+          "value": "ineligible"
+        }
+      ],
+      "category_provenance": [
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 8,
+          "value": "alias"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "not_applicable"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 11,
+          "total": 11,
+          "value": "proposal"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 21,
+          "total": 134,
+          "value": "seed"
+        }
+      ],
+      "difficulty": [
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "adversarial"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "ambiguous"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "easy"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "normal"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 32,
+          "total": 153,
+          "value": "unclassified"
+        }
+      ],
+      "domain_feature": [
+        {
+          "error_count": 0,
+          "failure_count": 1,
+          "total": 1,
+          "value": "accounting"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 8,
+          "value": "alias"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 3,
+          "total": 3,
+          "value": "childcare"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "commuting"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 2,
+          "total": 2,
+          "value": "debatable"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 1,
+          "total": 1,
+          "value": "domestic-help"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 19,
+          "total": 124,
+          "value": "existing"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 1,
+          "total": 1,
+          "value": "gardening"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 2,
+          "total": 2,
+          "value": "legal"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 2,
+          "total": 18,
+          "value": "merchant-or-payment-method"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 1,
+          "total": 1,
+          "value": "moving"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 1,
+          "total": 1,
+          "value": "pet-grooming"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 11,
+          "total": 11,
+          "value": "proposal"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 2,
+          "total": 18,
+          "value": "safety"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 1,
+          "total": 1,
+          "value": "tobacco"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "unclassified"
+        }
+      ],
+      "funding_class": [
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "benefit"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "default"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 32,
+          "total": 153,
+          "value": "not_applicable"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "other"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "personal_funds"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "split"
+        }
+      ],
+      "intent": [
+        {
+          "error_count": 0,
+          "failure_count": 32,
+          "total": 153,
+          "value": "category_fit"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "unclassified"
+        }
+      ],
+      "media_quality": [
+        {
+          "error_count": 0,
+          "failure_count": 32,
+          "total": 153,
+          "value": "not_applicable"
+        }
+      ],
+      "warm_state": [
+        {
+          "error_count": 0,
+          "failure_count": 32,
+          "total": 152,
+          "value": "warm"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "warmup"
+        }
+      ]
+    },
+    "overall": {
+      "error_count": 0,
+      "failure_count": 32,
+      "total": 153,
+      "value": "all"
+    },
+    "version_set": {
+      "dataset": {
+        "content_hash": "94dd54ceb3622cae1a03de804a7df5c1e7f44cb7f3de689dc0b696de98b7467a",
+        "id": "categorization-purpose-it-v1.1",
+        "version": "1.1.0"
+      },
+      "model": {
+        "alias": "local-model",
+        "gguf_filename": "Ministral-3-14B-Instruct-2512-Q5_K_M.gguf",
+        "gguf_sha256": "sha256:f16fef77021df0d4c22e69140a2038478370492f51867b6237699918ae711000",
+        "metadata_complete": true,
+        "quantization": "Q5_K_M"
+      },
+      "prompt": {
+        "id": "candidate-category-fit-it-v6",
+        "sha256": "ebf3bd697ccda207ab05f3cec878103386482e86076c1e74fdcb20e97f5f111f"
+      },
+      "receipt_pipeline": "not_applicable",
+      "report_schema": "3",
+      "schema": "BoundWireCategoryFit",
+      "suite": "categorization/purpose-it",
+      "taxonomy": "v1-2026-09-01",
+      "tools": "not_applicable"
+    }
+  },
+  "source_commit": "24898ccab5a785a69648d120c776f4dad5162ef1",
+  "suite": "categorization/purpose-it"
+}

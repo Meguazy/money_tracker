@@ -5,14 +5,23 @@
     "failed": 0,
     "passed": 37
   },
-  "completed_at": "2026-09-08T13:06:34.808485+00:00",
+  "completed_at": "2026-09-09T10:40:24.271531+00:00",
   "configuration": {
     "aliases_written_outside_bootstrap": true,
     "auto_post_policy_promoted": false,
     "dataset_minimum": 30,
     "fixture_taxonomy_nodes": 26,
     "instructions_sha256": "68c859abc9f8017ac7458aa1406fadbed8f027495f9ad6f81619f98257291762",
-    "model_port": "scripted"
+    "latency_measurement": {
+      "blocking": false,
+      "clock": "monotonic",
+      "percentile_method": "nearest_rank",
+      "scope": "per_case_suite_wall_clock",
+      "successful_cases_only": true,
+      "warmup_cases_excluded": 1
+    },
+    "model_port": "scripted",
+    "taxonomy_version": "v1-2026-09-01"
   },
   "dataset": {
     "content_hash": "bfdac9fc57fe2da3b2e1231dbbb9e0ae967fdca7a6fdef7ea44baaa5cd4b732c",
@@ -142,6 +151,18 @@
       "passed": true,
       "threshold": null,
       "value": 1.0
+    },
+    {
+      "applicable": true,
+      "blocking": false,
+      "comparison": "at_least",
+      "denominator": 36,
+      "inapplicability_reason": null,
+      "name": "warm_latency_p95_ms",
+      "numerator": 36,
+      "passed": true,
+      "threshold": null,
+      "value": 265.0
     }
   ],
   "model": {
@@ -152,7 +173,485 @@
     "quantization": "Q5_K_M"
   },
   "promotion_blockers": [],
-  "run_id": "REV-20260908-130634-948fc0cd",
-  "source_commit": "3a727b0697b7671c7a7ce5f444ac2c95377342af",
+  "run_id": "REV-20260909-104024-d887311c",
+  "slices": {
+    "dimensions": {
+      "adversarial_tag": [
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "locale"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "negation"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 37,
+          "value": "none"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "prompt_injection"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "quoted_text"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "relative_date"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "typo"
+        }
+      ],
+      "auto_post_eligibility": [
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "eligible"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 37,
+          "value": "ineligible"
+        }
+      ],
+      "category_provenance": [
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 2,
+          "value": "alias"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "not_applicable"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 35,
+          "value": "proposal"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "seed"
+        }
+      ],
+      "difficulty": [
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "adversarial"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "ambiguous"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "easy"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "normal"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 37,
+          "value": "unclassified"
+        }
+      ],
+      "domain_feature": [
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "accents"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "accumulates"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "after-repropose"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 2,
+          "value": "alias"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 2,
+          "value": "alternatives-present"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 5,
+          "value": "approve"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "archived"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "best-existing"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 5,
+          "value": "best_existing"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 6,
+          "value": "cancel"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 4,
+          "value": "cap"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "case-folding"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 2,
+          "value": "child"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "clarification"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 4,
+          "value": "concurrent"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "disambiguation"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "duplicates-active"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "exact-name"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 2,
+          "value": "exclusion"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 4,
+          "value": "exhausted"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "first-alternative"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 37,
+          "value": "hitl"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 4,
+          "value": "idempotency"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "immediate"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "manual-resolution"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "named"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 8,
+          "value": "named_existing"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "no-alternative"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "repeats-rejected"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 5,
+          "value": "replay"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 8,
+          "value": "repropose"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 4,
+          "value": "restart"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "root"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "root-alternative"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 3,
+          "value": "safety"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "single-alternative"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "successor-approved"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "successor-reused"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "unclassified"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "unknown"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 4,
+          "value": "unrelated"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "wrong-outcome"
+        }
+      ],
+      "funding_class": [
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "benefit"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "default"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 37,
+          "value": "not_applicable"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "other"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "personal_funds"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "split"
+        }
+      ],
+      "intent": [
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 37,
+          "value": "category_follow_up"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "unclassified"
+        }
+      ],
+      "media_quality": [
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 37,
+          "value": "not_applicable"
+        }
+      ],
+      "warm_state": [
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 36,
+          "value": "warm"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "warmup"
+        }
+      ]
+    },
+    "overall": {
+      "error_count": 0,
+      "failure_count": 0,
+      "total": 37,
+      "value": "all"
+    },
+    "version_set": {
+      "dataset": {
+        "content_hash": "bfdac9fc57fe2da3b2e1231dbbb9e0ae967fdca7a6fdef7ea44baaa5cd4b732c",
+        "id": "category-review-it-v1",
+        "version": "1.0.0"
+      },
+      "model": {
+        "alias": "local-model",
+        "gguf_filename": "Ministral-3-14B-Instruct-2512-Q5_K_M.gguf",
+        "gguf_sha256": "sha256:f16fef77021df0d4c22e69140a2038478370492f51867b6237699918ae711000",
+        "metadata_complete": true,
+        "quantization": "Q5_K_M"
+      },
+      "prompt": {
+        "id": "not_recorded",
+        "sha256": "68c859abc9f8017ac7458aa1406fadbed8f027495f9ad6f81619f98257291762"
+      },
+      "receipt_pipeline": "not_applicable",
+      "report_schema": "3",
+      "schema": "not_applicable",
+      "suite": "workflow/category-review-it",
+      "taxonomy": "v1-2026-09-01",
+      "tools": "not_applicable"
+    }
+  },
+  "source_commit": "24898ccab5a785a69648d120c776f4dad5162ef1",
   "suite": "workflow/category-review-it"
 }

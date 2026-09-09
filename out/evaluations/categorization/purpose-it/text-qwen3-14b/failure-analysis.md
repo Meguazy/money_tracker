@@ -79,3 +79,13 @@ The most recent published run for this pair is the rejected two-stage
 experiment, because it ran last. `latest.json` shows 0.7712; the configuration
 this document describes is `CAT-20260908-153538-8281a737` in the history beside
 it, and the next run of the default candidate will restore the row.
+
+## Final Step 3 measurement — 2026-09-09
+
+Run `CAT-20260909-095728-c48b5b5c` scores 133/153 = 0.8693 against the unchanged
+0.85 agreement gate. Twenty case labels disagree, while false proposals remain
+1/142, merchant or payment-method proposals remain 0/18, and duplicate or
+alias-equivalent proposals remain 0/3. Both automatic-post metrics are
+inapplicable because V1 has no calibrated automatic-post subset; this is the
+recorded no-auto-post policy, not an empty passing sample. Warm per-case suite
+p95 is 1,071 ms over 152 measured cases.

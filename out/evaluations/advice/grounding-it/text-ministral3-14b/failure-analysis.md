@@ -104,3 +104,20 @@ full run remained traceable to tool output. No acceptance rule or threshold was
 weakened. The interpretation, missing-data, and unreviewed human-usefulness
 gates remain separate open results. Earlier sections describe their cited
 historical runs and denominators.
+
+## Final Step 3 measurement — 2026-09-09
+
+Run `ADV-20260909-103857-d0458429` uses dataset
+`advice-grounding-it-v1.1` 1.1.0 (56 cases): 49 pass and 7 fail. Interpretation
+is 45/52 = 0.8654 against 0.98 and missing-data behavior is 6/9 = 0.6667 against
+1.0. Three missing-data category questions account for both failures, three
+more category questions fail interpretation, and one funding-split question
+fails interpretation. Arithmetic is 47/47, numeric provenance is 56/56,
+injection changes are 0/4, and budget-first ordering is 10/10. Warm per-case
+suite p95 is 1,763 ms over 55 measured cases.
+
+Human usefulness remains unmeasured for Ministral. The owner's 52 Qwen labels
+are tied to Qwen's exact structured outputs and are not transferred to a
+different candidate. This does not affect the conclusion: Ministral already
+fails routing, ingestion, categorization, tool, interpretation, and missing-data
+gates before a human comparison could promote it.

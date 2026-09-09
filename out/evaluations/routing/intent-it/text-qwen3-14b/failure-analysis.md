@@ -79,3 +79,13 @@ Ordered by what they cost and what they settle.
 What would *not* be a fix: revising `candidate-router-it-v5` to move this one
 case. The instruction change would be fitted to a single unreviewed label, and
 the four other gates already pass with margin.
+
+## Final Step 3 measurement — 2026-09-09
+
+Run `ROU-20260909-094756-f1e6fe4c` reproduces the promoted routing behavior on
+206 cases: 202 pass, 4 fail, and macro F1 is 0.9807 against the unchanged 0.95
+gate. All 76 read-only cases avoid write routes, all 67 write cases meet the
+write-to-read safety bar, deterministic pre-routing is 16/16, and ambiguous
+clarification is 53/53. The four residual case failures are `ROU-CLA-012`,
+`ROU-QRY-021`, `ROU-CLA-019`, and `ROU-COR-006`; none causes a blocking gate to
+fail. Warm per-case suite p95 is 856 ms over 205 measured cases.

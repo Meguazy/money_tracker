@@ -36,6 +36,7 @@ from money_tracker.messaging import (
     BotEnvironment,
     InboxClaim,
     NormalizedTelegramUpdate,
+    OutboxMessageDraft,
 )
 from money_tracker.persistence.database import upgrade_database
 from money_tracker.persistence.finance import PostgresFinanceRepository
@@ -160,13 +161,31 @@ def _pair(
     )
     binding = messaging.pair_owner(
         bot_key=bot_key,
-        profile_id=profile_id,
         code_hash=code_hash,
         telegram_user_id=1001,
         telegram_chat_id=1001,
+        confirmation=OutboxMessageDraft(
+            id=uuid4(),
+            bot_key=bot_key,
+            telegram_chat_id=1001,
+            logical_key="pairing:owner",
+            response_kind="paired",
+            text="Fatto: sei il proprietario del bot.",
+            content_hash=sha256(b"pairing").hexdigest(),
+        ),
         now=_NOW,
     )
     assert binding is not None
+    # Pairing queues its own confirmation. Deliver it here so each test starts
+    # from an outbox holding only what the worker put there.
+    claim = messaging.claim_next_outbox(
+        bot_key,
+        now=_NOW,
+        lease=timedelta(minutes=1),
+        claim_token=uuid4(),
+    )
+    assert claim is not None
+    messaging.complete_outbox(claim, telegram_message_id=1, now=_NOW)
 
 
 def _movement(

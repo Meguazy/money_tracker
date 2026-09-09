@@ -1,5 +1,10 @@
 """Durable transport-neutral messaging contracts and policies."""
 
+from money_tracker.messaging.administration import (
+    DEFAULT_PAIRING_LIFETIME,
+    MessagingAdministration,
+    PairingCode,
+)
 from money_tracker.messaging.contracts import (
     MAX_TELEGRAM_FILE_BYTES,
     BotEnvironment,
@@ -24,10 +29,12 @@ from money_tracker.messaging.ports import MessagingRepository
 from money_tracker.messaging.retry import RetryPolicy
 
 __all__ = [
+    "DEFAULT_PAIRING_LIFETIME",
     "MAX_TELEGRAM_FILE_BYTES",
     "BotEnvironment",
     "InboxClaim",
     "InboxStatus",
+    "MessagingAdministration",
     "MessagingHealth",
     "MessagingRepository",
     "NormalizedTelegramUpdate",
@@ -39,6 +46,7 @@ __all__ = [
     "PendingAction",
     "PendingActionDraft",
     "PendingActionStatus",
+    "PairingCode",
     "PendingActionTarget",
     "RetryPolicy",
     "WorkflowResult",

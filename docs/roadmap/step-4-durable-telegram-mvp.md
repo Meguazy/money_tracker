@@ -2,12 +2,13 @@
 
 Part of the [delivery roadmap](../roadmap.md).
 
-Status: **In progress — durable persistence, Telegram gateway, response
-rendering, and the sequential worker implemented.** Step 3 and its EVD-004
-baseline remain unchanged. Pairing administration, messaging health, systemd
-units, and real test-bot evidence do not exist yet and are not claimed by this
-status. Without pairing there is still no supported way to create the owner
-binding, so the pipeline cannot yet be exercised end to end by the owner.
+Status: **In progress — the complete Telegram path is implemented and
+unaccepted.** Durable persistence, the gateway, response rendering, the
+sequential worker, and one-use owner pairing are in the repository, so an owner
+can now pair a bot and exercise the pipeline. Step 3 and its EVD-004 baseline
+remain unchanged. Messaging health reporting, systemd units, and every exit
+criterion below are still outstanding: nothing here has been run against a real
+Telegram bot.
 
 ## Repository-truth inventory
 
@@ -26,12 +27,11 @@ binding, so the pipeline cannot yet be exercised end to end by the owner.
   HTTPS methods, private-owner filtering, durable long polling, callback
   acknowledgement, and an independent outbox loop. No workflow worker or
   response renderer exists yet.
-- `money-tracker-telegram` is the production gateway entry point with `validate`,
-  `poll-once`, and `run`. `money-tracker-worker` is the separate processing
-  entry point with `process-once` and `run`. Administration still has no
-  owner-pairing, replay, or messaging-health command, so an owner binding
-  cannot yet be created through a supported operator path. That is now the only
-  thing between this repository and a usable bot.
+- `money-tracker-telegram` is the production gateway entry point with
+  `validate`, `pair`, `poll-once`, and `run`. `money-tracker-worker` is the
+  separate processing entry point with `process-once` and `run`. Administration
+  still has no replay or messaging-health command, so a dead letter is visible
+  only through the database.
 - Compose provides application PostgreSQL and optional Langfuse. No systemd
   unit is checked in. FastAPI is neither installed nor required by the Step 4
   runtime.
@@ -49,6 +49,9 @@ binding, so the pipeline cannot yet be exercised end to end by the owner.
 - `SequentialWorker` claims the oldest eligible row, resolves its correlation,
   dispatches once, and commits result, response, mapping, and completion in one
   messaging transaction. It holds no Bot API credential.
+- `MessagingAdministration` and gateway ingestion implement one-use owner
+  pairing. The clear code is shown once to the operator and never stored; the
+  message carrying it is never retained.
 
 ## Reconciled design
 
@@ -120,6 +123,24 @@ printing private content or identifiers.
 - Twenty-four unit tests passed, including a contract test that drives the real
   ingestion callback grammar with the rendered buttons, and one that fails if a
   new reason code reaches the owner as generic prose.
+
+## Pairing implementation evidence
+
+- `money-tracker-telegram pair` resolves the sole active profile, revokes any
+  earlier live code, and prints one short-lived code with the exact message the
+  owner must send. Persistence keeps only its SHA-256.
+- Ingestion recognizes a private `/pair` before authorization and drops it
+  whether the code was right, wrong, or absent, so a typed secret never reaches
+  a durable row. A successful pairing counts as an authorized observation that
+  produced no work; a failed one counts as rejected.
+- Consuming the code, creating the binding, and queueing the owner's
+  confirmation commit together, so a paired owner is told that it worked
+  without an operator reading the database.
+- Two real-PostgreSQL tests take a generated code through the production
+  ingestor: one proves the binding, the consumed code, and the deliverable
+  confirmation appear while the inbox holds only the owner's ordinary message;
+  the other proves a second holder of the same code binds nothing. Thirteen
+  unit tests cover code generation, expiry, and every pairing disposition.
 
 ## Worker implementation evidence
 

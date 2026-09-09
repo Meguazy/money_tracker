@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -17,6 +18,8 @@ from money_tracker.telegram import (
 )
 
 _NOW = datetime(2026, 9, 9, 8, tzinfo=UTC)
+_CODE = "one-use-synthetic-code"
+_CODE_HASH = hashlib.sha256(_CODE.encode()).hexdigest()
 
 
 class _Clock:
@@ -38,6 +41,8 @@ class _Repository:
         self.binding = (
             OwnerBinding("telegram-test", uuid4(), 1001, 1001, _NOW) if paired else None
         )
+        self.confirmations: list[Any] = []
+        self.counters: tuple[int, int] = (0, 0)
 
     def ensure_bot(self, *_: object, **__: object) -> None:
         """Record gateway initialization."""
@@ -65,7 +70,30 @@ class _Repository:
         self.events.append("commit")
         self.rows = tuple(values["accepted_updates"])
         self.offset = max(values["observed_update_ids"]) + 1
+        self.counters = (values["rejected_count"], values["unsupported_count"])
         return self.offset
+
+    def pair_owner(self, **values: Any) -> OwnerBinding | None:
+        """Bind the owner only for the one live synthetic code."""
+
+        self.events.append("pair")
+        self.confirmations.append(values["confirmation"])
+        if self.binding is not None:
+            matches = (
+                self.binding.telegram_user_id,
+                self.binding.telegram_chat_id,
+            ) == (values["telegram_user_id"], values["telegram_chat_id"])
+            return self.binding if matches else None
+        if values["code_hash"] != _CODE_HASH:
+            return None
+        self.binding = OwnerBinding(
+            "telegram-test",
+            uuid4(),
+            values["telegram_user_id"],
+            values["telegram_chat_id"],
+            _NOW,
+        )
+        return self.binding
 
 
 class _Transport:
@@ -289,3 +317,172 @@ def test_outbox_delivery_commits_only_after_bot_api_success() -> None:
 
     assert gateway.deliver_outbox_once()
     assert events == ["claim-outbox", "send", "complete-outbox"]
+
+
+def _pair_message(
+    *,
+    update_id: int = 0,
+    code: str | None = _CODE,
+    user_id: int = 1001,
+    chat_id: int = 1001,
+    chat_type: str = "private",
+) -> TelegramInboundUpdate:
+    """Build one synthetic pairing attempt."""
+
+    return TelegramInboundUpdate(
+        update_id=update_id,
+        kind="message",
+        telegram_user_id=user_id,
+        telegram_chat_id=chat_id,
+        chat_type=chat_type,
+        received_at=_NOW,
+        telegram_message_id=update_id + 1,
+        text="/pair" if code is None else f"/pair {code}",
+    )
+
+
+def test_pairing_binds_the_owner_without_storing_the_code() -> None:
+    """Create the binding and leave no trace of the secret that made it."""
+
+    repository = _Repository(paired=False)
+    ingestor = TelegramUpdateIngestor(repository)  # type: ignore[arg-type]
+
+    report = ingestor.ingest(
+        bot_key="telegram-test",
+        expected_offset=0,
+        updates=(_pair_message(),),
+        now=_NOW,
+    )
+
+    assert repository.binding is not None
+    assert repository.binding.telegram_user_id == 1001
+    assert report.accepted == ()
+    assert repository.rows == ()
+    assert report.unsupported_count == 1
+    assert report.rejected_count == 0
+
+
+def test_the_pairing_confirmation_is_queued_for_the_owner_chat() -> None:
+    """Tell the newly bound owner that pairing worked, in their own chat."""
+
+    repository = _Repository(paired=False)
+    ingestor = TelegramUpdateIngestor(repository)  # type: ignore[arg-type]
+
+    ingestor.ingest(
+        bot_key="telegram-test",
+        expected_offset=0,
+        updates=(_pair_message(),),
+        now=_NOW,
+    )
+
+    confirmation = repository.confirmations[0]
+    assert confirmation.telegram_chat_id == 1001
+    assert confirmation.bot_key == "telegram-test"
+    assert confirmation.inbox_id is None
+    assert confirmation.buttons == ()
+    assert _CODE not in confirmation.text
+
+
+def test_a_wrong_pairing_code_binds_nothing_and_stores_nothing() -> None:
+    """Refuse the attempt without retaining the code that failed."""
+
+    repository = _Repository(paired=False)
+    ingestor = TelegramUpdateIngestor(repository)  # type: ignore[arg-type]
+
+    report = ingestor.ingest(
+        bot_key="telegram-test",
+        expected_offset=0,
+        updates=(_pair_message(code="wrong-code"),),
+        now=_NOW,
+    )
+
+    assert repository.binding is None
+    assert repository.rows == ()
+    assert report.rejected_count == 1
+
+
+def test_a_pairing_command_without_a_code_is_never_retained() -> None:
+    """Drop a bare /pair rather than storing it as ordinary owner text."""
+
+    repository = _Repository()
+    ingestor = TelegramUpdateIngestor(repository)  # type: ignore[arg-type]
+
+    report = ingestor.ingest(
+        bot_key="telegram-test",
+        expected_offset=0,
+        updates=(_pair_message(code=None),),
+        now=_NOW,
+    )
+
+    assert repository.rows == ()
+    assert report.accepted == ()
+
+
+def test_a_paired_owner_never_stores_a_later_pairing_attempt() -> None:
+    """Keep a resent code out of storage even once the binding exists."""
+
+    repository = _Repository()
+    ingestor = TelegramUpdateIngestor(repository)  # type: ignore[arg-type]
+
+    ingestor.ingest(
+        bot_key="telegram-test",
+        expected_offset=0,
+        updates=(_pair_message(),),
+        now=_NOW,
+    )
+
+    assert repository.rows == ()
+    assert all(_CODE not in str(row) for row in repository.rows)
+
+
+def test_a_stranger_cannot_pair_a_bot_that_already_has_an_owner() -> None:
+    """Refuse a second owner instead of rebinding the bot."""
+
+    repository = _Repository()
+    original = repository.binding
+    ingestor = TelegramUpdateIngestor(repository)  # type: ignore[arg-type]
+
+    report = ingestor.ingest(
+        bot_key="telegram-test",
+        expected_offset=0,
+        updates=(_pair_message(user_id=2002, chat_id=2002),),
+        now=_NOW,
+    )
+
+    assert repository.binding is original
+    assert report.rejected_count == 1
+
+
+def test_a_group_pairing_attempt_is_not_treated_as_pairing() -> None:
+    """Never create the sole private owner binding from a group message."""
+
+    repository = _Repository(paired=False)
+    ingestor = TelegramUpdateIngestor(repository)  # type: ignore[arg-type]
+
+    report = ingestor.ingest(
+        bot_key="telegram-test",
+        expected_offset=0,
+        updates=(_pair_message(chat_id=-1002, chat_type="group"),),
+        now=_NOW,
+    )
+
+    assert repository.binding is None
+    assert "pair" not in repository.events
+    assert report.rejected_count == 1
+
+
+def test_work_after_a_successful_pairing_is_accepted_in_the_same_batch() -> None:
+    """Let the owner's first real message land without waiting for a poll."""
+
+    repository = _Repository(paired=False)
+    ingestor = TelegramUpdateIngestor(repository)  # type: ignore[arg-type]
+
+    report = ingestor.ingest(
+        bot_key="telegram-test",
+        expected_offset=0,
+        updates=(_pair_message(update_id=0), _message(update_id=1)),
+        now=_NOW,
+    )
+
+    assert len(report.accepted) == 1
+    assert report.accepted[0].text == "Synthetic message"

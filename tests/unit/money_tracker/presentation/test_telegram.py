@@ -402,12 +402,6 @@ def test_an_answered_outcome_without_facts_is_refused() -> None:
             ResponseKind.STATUS,
             "un messaggio alla volta",
         ),
-        (
-            SupportedCommand.PAIR,
-            WorkflowIntent.COMMAND,
-            ResponseKind.STATUS,
-            "già associato",
-        ),
         (None, WorkflowIntent.RECEIPT, ResponseKind.UNSUPPORTED, "ricevute"),
         (
             None,

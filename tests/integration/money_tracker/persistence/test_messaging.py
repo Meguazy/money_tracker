@@ -407,6 +407,21 @@ def test_completion_creates_one_outbox_and_restart_safe_action(
     )
 
 
+def _confirmation(bot_key: str, chat_id: int = 1001) -> OutboxMessageDraft:
+    """Build the confirmation the pairing transaction queues for the owner."""
+
+    text = "Fatto: questo account è ora l'unico proprietario del bot."
+    return OutboxMessageDraft(
+        id=uuid4(),
+        bot_key=bot_key,
+        telegram_chat_id=chat_id,
+        logical_key="pairing:owner",
+        response_kind="paired",
+        text=text,
+        content_hash=hashlib.sha256(text.encode()).hexdigest(),
+    )
+
+
 def test_pairing_code_is_hashed_one_use_and_scoped_per_bot(
     postgres_url: str,
 ) -> None:
@@ -436,10 +451,10 @@ def test_pairing_code_is_hashed_one_use_and_scoped_per_bot(
         )
         binding = test_repository.pair_owner(
             bot_key=bot_key,
-            profile_id=profile_id,
             code_hash=code_hash,
             telegram_user_id=1001,
             telegram_chat_id=1001,
+            confirmation=_confirmation(bot_key),
             now=_NOW + timedelta(seconds=1),
         )
         assert binding is not None and binding.profile_id == profile_id
@@ -447,10 +462,10 @@ def test_pairing_code_is_hashed_one_use_and_scoped_per_bot(
     assert (
         test_repository.pair_owner(
             bot_key=test_bot,
-            profile_id=profile_id,
             code_hash=code_hash,
             telegram_user_id=2002,
             telegram_chat_id=2002,
+            confirmation=_confirmation(test_bot, 2002),
             now=_NOW + timedelta(seconds=2),
         )
         is None

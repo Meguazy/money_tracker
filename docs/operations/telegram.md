@@ -1,8 +1,8 @@
 # Telegram Operations
 
 - Status: Bot API adapter, secure configuration, durable polling, private-owner
-  filtering, outbox delivery, Italian response rendering, and the sequential
-  workflow worker are implemented; pairing administration, messaging health,
+  filtering, outbox delivery, Italian response rendering, the sequential
+  workflow worker, and one-use owner pairing are implemented; messaging health,
   systemd, and real test-bot acceptance remain pending
 - Bot created: no
 - Production token configured: no
@@ -21,16 +21,15 @@ Authoritative references:
 
 ## Current implementation boundary
 
-`money-tracker-telegram` can validate, poll, durably ingest, acknowledge
-callbacks, and deliver existing outbox rows. `money-tracker-worker` processes
-that inbox in order and commits owner-facing responses. Run both: the gateway
-owns the Telegram connection, the worker owns finance processing, and neither
-can stand in for the other.
+`money-tracker-telegram` can validate, pair, poll, durably ingest, acknowledge
+callbacks, and deliver outbox rows. `money-tracker-worker` processes that inbox
+in order and commits owner-facing responses. Run both: the gateway owns the
+Telegram connection, the worker owns finance processing, and neither can stand
+in for the other.
 
-One thing is still missing, and it blocks everything else: no supported command
-creates the owner binding. The gateway rejects every update until that binding
-exists, so a freshly created bot cannot yet be used, and the real test-bot
-acceptance remains pending.
+The path is complete end to end, but nothing in it has been run against a real
+Telegram bot yet. Treat the first pairing as the start of acceptance testing,
+not as a routine setup step, and use the test bot for it.
 
 Use a separate bot for integration/E2E tests so experiments cannot consume or
 reply to production updates.
@@ -50,9 +49,9 @@ These are Telegram operations, not Money Tracker commands:
 7. Optionally set description/about text and a profile image that reveal no
    personal finance information.
 
-Do not send a finance message until the local adapter and owner pairing are
-implemented. Sending `/start` early is harmless from Telegram's perspective but
-Money Tracker cannot process it.
+Sending `/start` is harmless from Telegram's perspective, but Money Tracker
+answers nothing until the bot is paired: an unbound bot rejects every update
+without retaining content.
 
 ## Implemented gateway configuration
 
@@ -83,11 +82,10 @@ is opt-in and currently unexecuted:
     RUN_TELEGRAM_INTEGRATION_TESTS=1 uv run --env-file .env pytest -q \
       tests/integration/money_tracker/telegram/test_real_bot_api.py
 
-Do not run `poll-once` or `run` before the pairing command is implemented;
-unpaired observations are deliberately acknowledged as rejected and retain no
-content. Pairing and BotFather command registration remain planned. Italian
-owner responses and their inline controls are implemented and are produced by
-the worker.
+An unpaired bot deliberately acknowledges every observation as rejected and
+retains no content, so run `pair` before `poll-once` or `run`. BotFather
+command registration remains planned. Italian owner responses and their inline
+controls are implemented and produced by the worker.
 
 Candidate UI commands such as `/start`, `/help`, `/status`, and `/cancel` are
 product design targets, not current executable entry points. Their final list
@@ -109,6 +107,34 @@ API in Step 4.
 Never use the Telegram chat ID as a LangGraph workflow/thread ID. Each workflow
 has its own stable identifier; pending actions map callbacks/replies to that
 exact workflow.
+
+## Pairing the owner
+
+The bot has exactly one owner. Until that binding exists the gateway discards
+everything it sees, which is what keeps a bot username that anyone can find
+from becoming a way into your finances.
+
+1. Make sure the profile exists (`money-tracker-admin` creates it) and the
+   database is migrated.
+2. Generate a code. It is printed once and stored only as a SHA-256, so if you
+   lose it, generate another rather than looking for it:
+
+       uv run --env-file .env money-tracker-telegram pair
+
+3. Start the gateway so it can observe the reply.
+4. In the private chat with the bot, send the `send_in_private_chat` line
+   exactly as printed, for example `/pair xY3...`.
+5. The bot answers that the account is now the owner. That reply comes from the
+   outbox, so it also confirms that delivery works.
+
+The code is one-use and short-lived, and generating a new one revokes the
+previous. A wrong or expired code binds nothing and is not retained; neither is
+a correct one. A bot that already has an owner refuses every other sender, so
+recovering from a mistaken binding means deleting the binding row deliberately,
+not sending another code.
+
+Never paste a pairing code into a shared channel, an issue, or a log. It is a
+short-lived credential for your own finance data.
 
 ## Running the two processes
 

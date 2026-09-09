@@ -29,9 +29,9 @@ specialist checkpoints, finance repositories, private receipt-media adapter,
 and verified encrypted backup are implemented. Step 4 design is reconciled in
 AD-018; its normalized messaging schema, contracts, retry policy, PostgreSQL
 repository, Bot API transport, authorized ingestion, gateway process, Italian
-response renderer, and sequential workflow worker are implemented. The
-repository does not yet contain pairing administration or systemd units, so no
-supported path creates the owner binding every accepted update needs.
+response renderer, sequential workflow worker, and one-use owner pairing are
+implemented. The repository does not yet contain messaging health reporting or
+systemd units.
 The web application and receipt extraction pipeline remain assigned to later
 roadmap steps.
 
@@ -289,18 +289,18 @@ catalog is promoted; every identifier carries a `candidate-` prefix.
 
 AD-018 divides the Step 4 runtime into seven replaceable blocks. The contracts,
 retry policy, PostgreSQL repository, ingestion service, Bot API transport,
-gateway process, response renderer, and sequential worker are all implemented;
-pairing administration and health remain planned:
+gateway process, response renderer, sequential worker, and pairing
+administration are implemented; health and replay reporting remain planned:
 
 | Component | Responsibility | Interface/dependencies | Data ownership | Deployment/security |
 | --- | --- | --- | --- | --- |
 | `messaging.contracts` | Define normalized inbox, outbox, pairing, pending-action, retry, dead-letter, and health values | Pure Python contracts and time/identifier values | No infrastructure state | Shared host library; contains no Bot API token or raw update |
-| `messaging.service` | Authorize/normalize ingestion and coordinate claim, dispatch completion, retry, replay, and delivery transitions | Messaging repository port, response renderer, and dispatcher port | Application policy only | Gateway/worker/admin host processes; owner scope comes only from binding records |
+| `messaging.service` (ingestion, pairing, and worker implemented) | Authorize/normalize ingestion, consume one-use pairing, and coordinate claim, dispatch completion, retry, replay, and delivery transitions | Messaging repository port, response renderer, and dispatch port | Application policy only | Gateway/worker/admin host processes; owner scope comes only from binding records, and a pairing code is never retained in clear |
 | `persistence.messaging` | Implement the AD-018 transactions and uniqueness/lease rules | psycopg and the dedicated application PostgreSQL | Entire `messaging` schema | Least-privilege application role; content is private and included in authoritative backup |
 | `telegram.transport` | Implement the official HTTPS Bot API methods with bounded timeouts and redacted failures | `httpx` and configured Bot API base URL/token | No durable state | Gateway only; production/test configuration is mutually exclusive |
 | `telegram.gateway` | Run independent ingress and outbox loops | Bot API transport and messaging service | No in-memory correctness state | systemd host service; no model or finance repository dependency |
 | `worker` (implemented) | Translate one claimed row to `ChannelMessage`, construct `DispatchContext`, call the Step 3 dispatcher, and finalize messaging state | Messaging/finance read ports and a narrow dispatch port | No authoritative state; derives outbox and pending-action identity from the inbox row so a recovery reproduces them | systemd host service; no token or Telegram client |
-| `presentation.telegram` (implemented) | Render typed workflow outcomes and controls in Italian | Dispatch outcome plus bounded display projections | No state | Worker library; never exposes tool names, raw evaluation JSON, or internal IDs; content depends only on committed state so a replayed render is identical |
+| `presentation.telegram` (implemented) | Render typed workflow outcomes, controls, and the pairing confirmation in Italian | Dispatch outcome plus bounded display projections | No state | Worker and gateway library; never exposes tool names, raw evaluation JSON, or internal IDs; content depends only on committed state so a replayed render is identical |
 
 The gateway and worker have separate failure domains. The gateway remains able to
 commit updates when llama.cpp or any workflow specialist is unavailable. The
@@ -860,13 +860,16 @@ manual acceptance check.
 5. The owner reviews the complete draft through Telegram or the dashboard.
 6. Only an approved, reconciled draft is posted; otherwise it remains in review.
 
-### Telegram recovery and processing (implemented except pairing)
+### Telegram recovery and processing (implemented, not yet accepted)
 
-The migration/repository, production gateway, response renderer, and sequential
-worker implement every step below. What is missing is the supported way to
-create the owner binding the gateway authorizes against, so the sequence has no
-real test-bot acceptance yet.
+The migration/repository, production gateway, response renderer, sequential
+worker, and pairing implement every step below. What is missing is evidence: no
+real test bot has been through it, and no systemd unit starts the processes.
 
+0. An operator generates one short-lived code and the owner sends it as a
+   private `/pair`. The code is consumed, the sole owner binding is created,
+   and a confirmation is queued in the same transaction; the message carrying
+   the code is never retained.
 1. The gateway requests the environment's persisted next offset through long
    polling and filters authorization and supported update types before work.
 2. One PostgreSQL transaction inserts minimum normalized accepted updates under
@@ -1228,15 +1231,15 @@ environment file.
   V0 remains the direct configuration rollback.
 - [AD-018: Telegram processing transactions and ordering](decisions/AD-018-telegram-processing-transactions.md):
   reconciled Step 4 persistence, Bot API transport, authorized ingestion,
-  persisted-offset runtime, outbox delivery, Italian response rendering, and
-  the sequential worker are implemented; pairing administration, health
+  persisted-offset runtime, outbox delivery, Italian response rendering, the
+  sequential worker, and one-use owner pairing are implemented; health
   reporting, operational wiring, and real-bot acceptance remain planned.
 
 ### Partially implemented Telegram decisions
 
-AD-004 and AD-010 now have persistence, gateway, worker, and presentation
-implementation evidence. They remain incomplete until pairing, operations, and
-real test-bot acceptance are complete.
+AD-004 and AD-010 now have persistence, gateway, pairing, worker, and
+presentation implementation evidence. They remain incomplete until health
+reporting, systemd operations, and real test-bot acceptance are complete.
 
 ## 10. Quality Requirements
 

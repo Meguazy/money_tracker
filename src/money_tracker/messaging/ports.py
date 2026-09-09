@@ -134,13 +134,21 @@ class MessagingRepository(Protocol):
         self,
         *,
         bot_key: str,
-        profile_id: UUID,
         code_hash: str,
         telegram_user_id: int,
         telegram_chat_id: int,
+        confirmation: OutboxMessageDraft,
         now: datetime,
     ) -> OwnerBinding | None:
-        """Consume a valid code and create the sole owner binding atomically."""
+        """Consume a valid code and create the sole owner binding atomically.
+
+        The code carries the profile it was generated for, so the caller does
+        not supply one: a channel-side caller has no trustworthy way to know
+        it, and letting it name a profile would be an authority it should not
+        have. Consuming the code, creating the binding, and queueing the
+        owner's confirmation commit together, so a paired owner is always told
+        that they are paired.
+        """
 
     def owner_binding(self, bot_key: str) -> OwnerBinding | None:
         """Return the trusted owner binding without exposing it to diagnostics."""

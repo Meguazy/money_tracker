@@ -9,7 +9,10 @@ import sys
 from collections.abc import Sequence
 from datetime import UTC, datetime
 
+from money_tracker.application.runtime import UUID4Generator
+from money_tracker.messaging import MessagingAdministration
 from money_tracker.persistence.database import database_url_from_env
+from money_tracker.persistence.finance import PostgresFinanceRepository
 from money_tracker.persistence.messaging import PostgresMessagingRepository
 from money_tracker.telegram.config import TelegramSettings
 from money_tracker.telegram.gateway import TelegramGateway
@@ -36,10 +39,55 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run the durable Telegram gateway")
     parser.add_argument(
         "command",
-        choices=("run", "poll-once", "validate"),
-        help="validate configuration, process one batch, or run continuously",
+        choices=("run", "poll-once", "pair", "validate"),
+        help=(
+            "validate configuration, create an owner pairing code, process one "
+            "batch, or run continuously"
+        ),
     )
     return parser
+
+
+def _pair(
+    settings: TelegramSettings,
+    repository: PostgresMessagingRepository,
+    database_url: str,
+) -> dict[str, object]:
+    """Create one owner pairing code and the instructions for using it.
+
+    The clear code is printed once and never stored, so the operator has to
+    use it now or generate another. It is deliberately not written to the log,
+    which is why this returns it instead of logging it.
+
+    Args:
+        settings: Selected bot environment.
+        repository: Durable messaging state owner.
+        database_url: Application database holding the sole active profile.
+
+    Returns:
+        The code, its expiry, and what the owner must send.
+
+    Raises:
+        SystemExit: If no single active profile exists to own the binding.
+    """
+
+    profiles = PostgresFinanceRepository(database_url).list_profiles()
+    if len(profiles) != 1:
+        raise SystemExit(
+            "pairing needs exactly one active profile; create it with "
+            "money-tracker-admin before pairing"
+        )
+    pairing = MessagingAdministration(
+        repository,
+        clock=_SystemClock(),
+        ids=UUID4Generator(),
+    ).create_pairing_code(bot_key=settings.bot_key, profile_id=profiles[0])
+    return {
+        "environment": settings.environment.value,
+        "expires_at": pairing.expires_at.isoformat(),
+        "send_in_private_chat": f"/pair {pairing.code}",
+        "status": "created",
+    }
 
 
 def main(argv: Sequence[str] | None = None) -> None:
@@ -59,7 +107,11 @@ def main(argv: Sequence[str] | None = None) -> None:
     )
     try:
         settings = TelegramSettings.from_env()
-        repository = PostgresMessagingRepository(database_url_from_env())
+        database_url = database_url_from_env()
+        repository = PostgresMessagingRepository(database_url)
+        if args.command == "pair":
+            print(json.dumps(_pair(settings, repository, database_url), indent=2))
+            return
         token = settings.read_token()
         with BotApiClient(token, settings) as transport:
             if args.command == "validate":

@@ -3,8 +3,8 @@
 - Status: accepted
 - Implementation: messaging contracts/repository, category-review replay, Bot
   API transport, authorized ingress, gateway/outbox loops, Italian response
-  rendering, and the sequential worker implemented; pairing administration,
-  health reporting, operations, and real-bot acceptance pending
+  rendering, the sequential worker, and one-use owner pairing implemented;
+  health reporting, systemd operations, and real-bot acceptance pending
 - Date: 2026-09-09
 - Supersedes: the raw-update retention detail in
   [AD-010](AD-010-telegram-durable-messaging.md); all other AD-010 choices remain
@@ -77,6 +77,15 @@ is absorbed by the inbox uniqueness constraint. Pairing is a special authorized
 administrative transition: only a private `/pair` message bearing a valid,
 unexpired, one-use code may create the sole owner binding. The code is stored as
 a hash; its clear value exists only at generation and owner entry.
+
+Pairing is recognized before authorization and its message is never retained,
+whether the code was right, wrong, or absent, so a typed secret cannot survive
+in an inbox row, a backup, or an operator dump. The profile the binding will own
+comes from the code record rather than from the caller: the gateway has no
+trustworthy way to know it, and letting a channel-side caller name a profile
+would grant an authority it must not have. Consuming the code, creating the
+binding, and queueing the owner's confirmation commit together, so a paired
+owner is always told that pairing worked.
 
 Inbox order is ascending Telegram `update_id` within a bot environment. The
 single worker may claim only the first non-terminal row. If that row has an
@@ -179,6 +188,14 @@ contract test drives the real ingestion grammar with the rendered buttons, and
 another proves every stable reason code has an owner-facing question.
 Twenty-four unit tests cover rendering, digest stability, and refusal of
 missing display data.
+
+`MessagingAdministration` generates one short-lived code per bot, revoking any
+earlier live one, and returns the clear value exactly once for operator
+display. `money-tracker-telegram pair` prints it with the message the owner must
+send. Real PostgreSQL tests take a generated code through the production
+ingestor and prove that the binding, the consumed code, and the queued
+confirmation appear while the inbox retains only the owner's ordinary message;
+a second holder of the same code binds nothing.
 
 `SequentialWorker` implements the two-phase protocol. It leases the head row,
 resolves a callback or reply against its active mapping before that

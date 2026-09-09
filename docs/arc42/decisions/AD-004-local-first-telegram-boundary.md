@@ -1,9 +1,9 @@
 # AD-004: Local-First Privacy with a Telegram Boundary
 
 - Status: accepted
-- Implementation: Bot API transport, separate token-file configuration, private-owner
-  authorization, normalized durable ingestion, and outbox delivery implemented;
-  pairing administration and real test-bot acceptance pending
+- Implementation: Bot API transport, separate token-file configuration,
+  private-owner authorization, one-use owner pairing, normalized durable
+  ingestion, and outbox delivery implemented; real test-bot acceptance pending
 - Date: 2026-09-01
 
 ## Context

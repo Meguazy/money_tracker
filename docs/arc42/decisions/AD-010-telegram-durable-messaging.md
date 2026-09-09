@@ -2,8 +2,9 @@
 
 - Status: accepted; raw-update retention detail superseded by AD-018
 - Implementation: PostgreSQL messaging state/repository, Bot API adapter,
-  authorized ingress, concurrent gateway loops, and outbox delivery implemented;
-  pairing administration, workflow worker, and real test-bot acceptance pending
+  authorized ingress, one-use owner pairing, concurrent gateway loops, outbox
+  delivery, and the sequential workflow worker implemented; messaging health
+  reporting and real test-bot acceptance pending
 - Date: 2026-09-01
 
 ## Context

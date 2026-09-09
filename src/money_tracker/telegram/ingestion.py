@@ -1,7 +1,14 @@
-"""Authorization and normalization before durable Telegram ingestion."""
+"""Authorization, pairing, and normalization before durable ingestion.
+
+Pairing lives here rather than in the worker for one reason: the message that
+carries the code must never be stored. It is recognized, consumed, and dropped
+before anything reaches the inbox, so a secret the owner typed cannot survive
+in a durable row, a backup, or an operator dump.
+"""
 
 from __future__ import annotations
 
+import hashlib
 import re
 from datetime import datetime
 from uuid import UUID, uuid4
@@ -10,8 +17,12 @@ from money_tracker.messaging import (
     MAX_TELEGRAM_FILE_BYTES,
     MessagingRepository,
     NormalizedTelegramUpdate,
+    OutboxMessageDraft,
+    OwnerBinding,
 )
+from money_tracker.presentation import pairing_confirmation
 from money_tracker.telegram.contracts import IngestReport, TelegramInboundUpdate
+from money_tracker.workflows import SupportedCommand, parse_command
 
 _CALLBACK = re.compile(
     r"^a:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-"
@@ -53,6 +64,11 @@ class TelegramUpdateIngestor:
         Unauthorized users and non-private chats contribute only a counter. No
         message content, identity, or file metadata from them reaches storage.
 
+        A private pairing attempt is consumed here and never retained. A
+        successful one counts as an authorized observation that produced no
+        work; a failed one counts as rejected, exactly like any other message
+        from someone this bot does not recognize.
+
         Args:
             bot_key: Stable non-secret bot persistence scope.
             expected_offset: Offset used for the Bot API request.
@@ -81,6 +97,15 @@ class TelegramUpdateIngestor:
         rejected = 0
         unsupported = 0
         for update in updates:
+            code = _pairing_code(update)
+            if code is not None:
+                paired = self._pair(bot_key, update, code, now=now)
+                if paired is None:
+                    rejected += 1
+                else:
+                    binding = paired
+                    unsupported += 1
+                continue
             if (
                 binding is None
                 or update.chat_type != "private"
@@ -112,6 +137,81 @@ class TelegramUpdateIngestor:
             unsupported_count=unsupported,
             callback_query_ids=tuple(callbacks),
         )
+
+    def _pair(
+        self,
+        bot_key: str,
+        update: TelegramInboundUpdate,
+        code: str,
+        *,
+        now: datetime,
+    ) -> OwnerBinding | None:
+        """Consume one pairing attempt without retaining what it carried.
+
+        Args:
+            bot_key: Bot and environment persistence scope.
+            update: Private message naming the pairing command.
+            code: Untrusted code the owner typed, possibly empty.
+            now: Aware local instant.
+
+        Returns:
+            The resulting binding, or None when the attempt establishes none.
+        """
+
+        if (
+            not code
+            or update.telegram_user_id is None
+            or update.telegram_chat_id is None
+        ):
+            return None
+        chat_id = update.telegram_chat_id
+        return self._repository.pair_owner(
+            bot_key=bot_key,
+            code_hash=hashlib.sha256(code.encode("utf-8")).hexdigest(),
+            telegram_user_id=update.telegram_user_id,
+            telegram_chat_id=chat_id,
+            confirmation=_confirmation(bot_key, chat_id),
+            now=now,
+        )
+
+
+def _confirmation(bot_key: str, telegram_chat_id: int) -> OutboxMessageDraft:
+    """Build the response queued with a newly created owner binding."""
+
+    response = pairing_confirmation()
+    return OutboxMessageDraft(
+        id=uuid4(),
+        bot_key=bot_key,
+        telegram_chat_id=telegram_chat_id,
+        logical_key="pairing:owner",
+        response_kind=response.kind.value,
+        text=response.text,
+        content_hash=response.content_hash,
+    )
+
+
+def _pairing_code(update: TelegramInboundUpdate) -> str | None:
+    """Return the code a private pairing attempt carries, if it is one.
+
+    Recognition deliberately precedes authorization and succeeds even when the
+    code is missing or wrong. Every private `/pair` is then dropped rather than
+    stored, so a mistyped code cannot end up retained as ordinary text.
+
+    Args:
+        update: Parsed transport update, still untrusted.
+
+    Returns:
+        The remainder of the command, possibly empty, or None when the update
+        is not a private pairing attempt.
+    """
+
+    if update.kind != "message" or update.chat_type != "private":
+        return None
+    text = (update.text or "").strip()
+    if parse_command(text) is not SupportedCommand.PAIR:
+        return None
+    parts = text.split(maxsplit=1)
+    return parts[1].strip() if len(parts) == 2 else ""
 
 
 def _normalize(

@@ -219,6 +219,7 @@ class ResponseKind(StrEnum):
         CATEGORY_REVIEW: Paused candidate question with its owner branches.
         REVIEW_CANCELLED: Confirmation that a review ended with no write.
         ANSWER: Read-only query or advice answer built from tool facts.
+        PAIRED: Confirmation that the owner binding was created.
         HELP: Answer to the help command.
         STATUS: Answer to the status command.
         UNSUPPORTED: Acknowledgement of a route V1 does not serve yet.
@@ -230,10 +231,34 @@ class ResponseKind(StrEnum):
     CATEGORY_REVIEW = "category_review"
     REVIEW_CANCELLED = "review_cancelled"
     ANSWER = "answer"
+    PAIRED = "paired"
     HELP = "help"
     STATUS = "status"
     UNSUPPORTED = "unsupported"
     CLARIFICATION = "clarification"
+
+
+def pairing_confirmation() -> OwnerResponse:
+    """Return what a newly bound owner is told, in their own chat.
+
+    Pairing happens during ingestion rather than during dispatch: the message
+    carrying the code is never retained, so no work unit exists to answer it.
+    The confirmation is queued with the binding instead, which also makes a
+    successful pairing visible without an operator reading the database.
+
+    Returns:
+        One control-free response naming what the owner can do next.
+    """
+
+    return OwnerResponse(
+        kind=ResponseKind.PAIRED,
+        text="\n".join(
+            (
+                "Fatto: questo account è ora l'unico proprietario del bot.",
+                "Scrivimi una spesa a parole, oppure /help per l'elenco completo.",
+            )
+        ),
+    )
 
 
 def action_code(action: CallbackAction) -> str:
@@ -512,8 +537,9 @@ def _required(movement: MovementView | None) -> MovementView:
 def _routed(outcome: DispatchOutcome) -> OwnerResponse:
     """Answer a route that reached no specialist, including channel commands.
 
-    Pairing is a gateway transition rather than a workflow, so a `/pair`
-    reaching this point can only come from an owner who is already bound.
+    `/pair` is deliberately absent. Ingestion consumes every pairing attempt
+    so the code never reaches storage, which means no work unit for it can
+    exist; if one somehow did, the generic answer below is the safe one.
     """
 
     command = outcome.routing.command
@@ -521,11 +547,6 @@ def _routed(outcome: DispatchOutcome) -> OwnerResponse:
         return OwnerResponse(kind=ResponseKind.HELP, text=_HELP_TEXT)
     if command is SupportedCommand.STATUS:
         return OwnerResponse(kind=ResponseKind.STATUS, text=_STATUS_TEXT)
-    if command is SupportedCommand.PAIR:
-        return OwnerResponse(
-            kind=ResponseKind.STATUS,
-            text="Questo account è già associato al bot.",
-        )
     return OwnerResponse(
         kind=ResponseKind.UNSUPPORTED,
         text=_ROUTED_TEXTS.get(outcome.routing.intent, _UNSUPPORTED_TEXT),
@@ -663,4 +684,5 @@ __all__ = [
     "TelegramResponseRenderer",
     "action_code",
     "action_for_code",
+    "pairing_confirmation",
 ]

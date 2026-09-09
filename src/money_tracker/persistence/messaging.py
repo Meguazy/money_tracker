@@ -654,13 +654,35 @@ class PostgresMessagingRepository:
         self,
         *,
         bot_key: str,
-        profile_id: UUID,
         code_hash: str,
         telegram_user_id: int,
         telegram_chat_id: int,
+        confirmation: OutboxMessageDraft,
         now: datetime,
     ) -> OwnerBinding | None:
-        """Consume a valid code and bind the sole authorized private owner."""
+        """Consume a valid code and bind the sole authorized private owner.
+
+        The profile comes from the code rather than from the caller, because
+        the only party that can present the code is the owner the operator
+        generated it for.
+
+        Args:
+            bot_key: Bot and environment persistence scope.
+            code_hash: Lowercase SHA-256 of the code the sender typed.
+            telegram_user_id: Sender to bind as the sole owner.
+            telegram_chat_id: Private chat to bind as the sole owner chat.
+            confirmation: Response queued in the same transaction so a paired
+                owner learns that pairing worked.
+            now: Aware pairing instant.
+
+        Returns:
+            The binding this call created, the identical existing binding when
+            the same owner repeats a delivered `/pair`, or None when no live
+            code matches and the sender is not the bound owner.
+
+        Raises:
+            ValueError: If identities, hash, or confirmation scope are invalid.
+        """
 
         validate_bot_key(bot_key)
         require_aware(now, field="now")
@@ -668,6 +690,12 @@ class PostgresMessagingRepository:
             raise ValueError("owner pairing requires positive private identities")
         if _SHA256.fullmatch(code_hash) is None:
             raise ValueError("pairing code hash must be lowercase SHA-256")
+        if (
+            confirmation.bot_key != bot_key
+            or confirmation.telegram_chat_id != telegram_chat_id
+            or confirmation.inbox_id is not None
+        ):
+            raise ValueError("pairing confirmation crosses the owner scope")
         with self._connect() as connection:
             self._lock_offset(connection, bot_key)
             existing = connection.execute(
@@ -676,22 +704,22 @@ class PostgresMessagingRepository:
             ).fetchone()
             if existing is not None:
                 binding = self._owner_binding(existing)
-                expected = (profile_id, telegram_user_id, telegram_chat_id)
-                actual = (
-                    binding.profile_id,
-                    binding.telegram_user_id,
-                    binding.telegram_chat_id,
+                return (
+                    binding
+                    if (binding.telegram_user_id, binding.telegram_chat_id)
+                    == (telegram_user_id, telegram_chat_id)
+                    else None
                 )
-                return binding if actual == expected else None
             code = connection.execute(
-                "SELECT id FROM messaging.telegram_pairing_codes "
-                "WHERE bot_key = %s AND profile_id = %s AND code_hash = %s "
+                "SELECT id, profile_id FROM messaging.telegram_pairing_codes "
+                "WHERE bot_key = %s AND code_hash = %s "
                 "AND used_at IS NULL AND revoked_at IS NULL AND expires_at > %s "
                 "FOR UPDATE",
-                (bot_key, profile_id, code_hash, now),
+                (bot_key, code_hash, now),
             ).fetchone()
             if code is None:
                 return None
+            profile_id = cast(UUID, code["profile_id"])
             connection.execute(
                 "UPDATE messaging.telegram_pairing_codes SET used_at = %s "
                 "WHERE id = %s",
@@ -703,6 +731,7 @@ class PostgresMessagingRepository:
                 "VALUES (%s, %s, %s, %s, %s)",
                 (bot_key, profile_id, telegram_user_id, telegram_chat_id, now),
             )
+            self._insert_or_verify_outbox(connection, confirmation, now)
         return OwnerBinding(
             bot_key=bot_key,
             profile_id=profile_id,

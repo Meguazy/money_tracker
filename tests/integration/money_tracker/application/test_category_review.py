@@ -12,6 +12,7 @@ from psycopg import connect
 from money_tracker.application import (
     CategoryProposalService,
     CategoryReviewService,
+    IdempotencyConflictError,
 )
 from money_tracker.application.runtime import SystemClock, UUID4Generator
 from money_tracker.domain import (
@@ -332,7 +333,7 @@ def test_a_replayed_decision_settles_the_review_only_once(
     proposals, review = _services(repository)
     draft = _draft(repository, profile, card)
     proposal = _propose(proposals, profile, draft)
-    review.approve(
+    first = review.approve(
         profile_id=profile.id,
         proposal_id=proposal.id,
         expense_id=draft.id,
@@ -341,17 +342,101 @@ def test_a_replayed_decision_settles_the_review_only_once(
     )
     after = _category_count(postgres_url, profile.id)
 
-    with pytest.raises(ValueError, match="no longer pending"):
-        review.approve(
+    replayed = review.approve(
+        profile_id=profile.id,
+        proposal_id=proposal.id,
+        expense_id=draft.id,
+        actor="owner",
+        reason="retry after finance commit",
+    )
+
+    assert replayed == first
+    assert _category_count(postgres_url, profile.id) == after
+    assert repository.get_pending_category_proposals(profile.id) == ()
+    with connect(postgres_url) as connection:
+        counts = connection.execute(
+            "SELECT "
+            "(SELECT count(*) FROM finance.audit_events "
+            " WHERE profile_id = %s AND aggregate_id IN (%s, %s)), "
+            "(SELECT count(*) FROM finance.idempotency_records "
+            " WHERE profile_id = %s AND idempotency_key = %s)",
+            (
+                profile.id,
+                proposal.id,
+                draft.id,
+                profile.id,
+                f"category-review:{proposal.id}",
+            ),
+        ).fetchone()
+    assert counts == (4, 1)
+
+
+@pytest.mark.postgres
+def test_competing_review_decision_conflicts_after_commit(
+    postgres_url: str,
+) -> None:
+    """Reject a late competing callback without another finance mutation."""
+
+    repository, profile, card = _bootstrap(postgres_url)
+    proposals, review = _services(repository)
+    draft = _draft(repository, profile, card)
+    proposal = _propose(proposals, profile, draft)
+    review.approve(
+        profile_id=profile.id,
+        proposal_id=proposal.id,
+        expense_id=draft.id,
+        actor="owner",
+        reason="owner approved the candidate",
+    )
+
+    with pytest.raises(IdempotencyConflictError):
+        review.cancel(
             profile_id=profile.id,
             proposal_id=proposal.id,
             expense_id=draft.id,
             actor="owner",
-            reason="owner approved the candidate",
+            reason="late competing callback",
         )
 
-    assert _category_count(postgres_url, profile.id) == after
-    assert repository.get_pending_category_proposals(profile.id) == ()
+    assert repository.get_expense(profile.id, draft.id).status is ExpenseStatus.POSTED
+
+
+@pytest.mark.postgres
+def test_reproposal_replay_returns_the_first_persisted_candidate(
+    postgres_url: str,
+) -> None:
+    """Keep the first candidate when a retry receives another model output."""
+
+    repository, profile, card = _bootstrap(postgres_url)
+    proposals, review = _services(repository)
+    draft = _draft(repository, profile, card)
+    proposal = _propose(proposals, profile, draft)
+    first = review.repropose(
+        profile_id=profile.id,
+        proposal_id=proposal.id,
+        proposed_name="Piante e fiori",
+        description="Piante, fiori e terriccio.",
+        parent_name="Casa e utenze",
+        rationale="Il candidato precedente era troppo generico.",
+        actor="owner",
+        reason="owner asked for another candidate",
+    )
+
+    replayed = review.repropose(
+        profile_id=profile.id,
+        proposal_id=proposal.id,
+        proposed_name="Terriccio",
+        description="A different model completion.",
+        parent_name=None,
+        rationale="A different rationale.",
+        actor="owner",
+        reason="retry after finance commit",
+    )
+
+    assert replayed == first
+    assert tuple(
+        item.id for item in repository.get_pending_category_proposals(profile.id)
+    ) == (first.id,)
 
 
 @pytest.mark.postgres

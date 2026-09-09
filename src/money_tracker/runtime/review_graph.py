@@ -11,9 +11,13 @@ runs exactly once per resume. Putting both in one node would look simpler and
 would replay a settlement the second time around the loop, because a re-proposal
 pauses again and the cached first interrupt would return immediately.
 
-Replay safety does not rest on that alone. The settlement itself refuses a
-review that is no longer pending, so even a mis-driven resume cannot decide the
-same review twice.
+Replay safety does not rest on that alone. The application service checks the
+durable command record of the proposal before any mutable review state, so an
+identical resumed decision returns its first result instead of deciding twice.
+A second branch on the same proposal is refused, and the settling handler
+answers it with the same already-settled question a review settled elsewhere
+receives: from the owner's side the proposal already has its decision either
+way.
 
 The re-proposal branch re-invokes the purpose boundary with every candidate the
 owner has already refused. It classifies the stored movement's own description
@@ -42,7 +46,10 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import interrupt
 
-from money_tracker.application import CategoryReviewService
+from money_tracker.application import (
+    CategoryReviewService,
+    IdempotencyConflictError,
+)
 from money_tracker.domain import (
     CategoryProposal,
     CategoryStatus,
@@ -209,7 +216,11 @@ def build_review_graph(
             return _settled(ReviewOutcome.REUSED, posted)
         except TaxonomyError:
             return _pending(ReviewReason.UNKNOWN_CATEGORY)
-        except ValueError:
+        except (IdempotencyConflictError, ValueError):
+            # A conflicting command key and a review that is no longer pending
+            # are the same event seen from two sides: the proposal already has
+            # its decision. The owner is owed one answer, not two, and neither
+            # case may reach a second finance write.
             return ReviewWorkflowState(
                 outcome=ReviewOutcome.CLARIFICATION.value,
                 clarification_reason=ReviewReason.ALREADY_SETTLED.value,

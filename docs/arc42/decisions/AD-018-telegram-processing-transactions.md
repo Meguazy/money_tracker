@@ -1,9 +1,10 @@
 # AD-018: Telegram Processing Transactions and Ordering
 
 - Status: accepted
-- Implementation: messaging contracts/repository, Bot API transport, authorized
-  ingress, and independent gateway/outbox loops implemented; worker, rendering,
-  pairing administration, operations, and real-bot acceptance pending
+- Implementation: messaging contracts/repository, category-review replay, Bot
+  API transport, authorized ingress, and gateway/outbox loops implemented;
+  worker, rendering, pairing administration, operations, and real-bot
+  acceptance pending
 - Date: 2026-09-09
 - Supersedes: the raw-update retention detail in
   [AD-010](AD-010-telegram-durable-messaging.md); all other AD-010 choices remain
@@ -19,13 +20,11 @@ offset, what ordering means while the head item is waiting for retry, or how a
 finance mutation remains recoverable when the process dies before recording its
 outbound response.
 
-The existing Step 3 dispatcher is deliberately transport-neutral. Expense
-creation, correction, and undo already derive stable command identities from a
-channel source reference. Category-review settlement is transactional inside
-the finance schema, but a replay currently reports that an already settled
-review cannot be settled again instead of necessarily returning its prior
-typed result. A Step 4 worker cannot claim crash-safe response recovery until
-every mutating specialist has an idempotent or reconstructible terminal result.
+The existing Step 3 dispatcher is deliberately transport-neutral. Every
+mutating specialist needs an idempotent or reconstructible terminal result:
+expense creation, correction, and undo derive stable command identities from a
+channel source reference, while each category-review proposal needs one key
+shared by its mutually exclusive owner decisions.
 
 Telegram does not offer an idempotency key for `sendMessage`. A process can
 therefore lose the response after Telegram accepted a send but before the local
@@ -163,6 +162,14 @@ Unit tests cover the contracts and deterministic retry schedule. Nine
 `@pytest.mark.postgres` tests exercise the production adapter over the real
 PostgreSQL protocol, including a concurrent two-connection claim.
 
+Category-review approval, reuse, cancellation, and re-proposal use one
+proposal-wide command key. The claim commits in the same finance transaction as
+the selected transition and returns the first stored result on identical
+replay. The settling handler answers a conflicting key and an already decided
+review with the same already-settled question. Forty-seven focused unit tests
+and nine real-PostgreSQL application tests cover reconstruction,
+competing-decision conflict, and stable re-proposal.
+
 The production `BotApiClient` uses explicit allowed update types, bounded
 connect/read/write timeouts, backlog-preserving webhook removal, plain-text
 sending, and safe reason codes that omit API bodies and token-bearing URLs.
@@ -177,8 +184,6 @@ still awaits external credentials and owner interaction.
 
 - Messaging migrations need explicit constraints for environment/update,
   source reference, logical outbox key, pairing, and pending-action scope.
-- Category-review replay must be strengthened before the worker can pass its
-  crash-window acceptance tests.
 - Slow inference never blocks gateway ingestion, but strict head-of-line order
   intentionally delays later work until retry or dead-letter transition.
 - Operations can inspect counts, ages, safe identifiers, error codes, and

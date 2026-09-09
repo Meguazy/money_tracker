@@ -280,6 +280,46 @@ class PostgresFinanceRepository:
             ).fetchall()
         return tuple(self._category_proposal_from_row(row) for row in rows)
 
+    def get_idempotent_category_review_command(
+        self,
+        *,
+        profile_id: UUID,
+        idempotency_key: str,
+        command_type: str,
+        request_hash: str,
+    ) -> UUID | None:
+        """Return the result identifier of an identical owner decision.
+
+        Args:
+            profile_id: Trusted owner scope.
+            idempotency_key: Stable one-decision key for the proposal.
+            command_type: Exact review branch chosen by the owner.
+            request_hash: Canonical proposal, movement, action, and name digest.
+
+        Returns:
+            Stored movement or successor-proposal identifier, or None.
+
+        Raises:
+            IdempotencyConflictError: If the key names different semantics.
+        """
+
+        self._validate_command_identity(idempotency_key, command_type, request_hash)
+        with connect(self._database_url) as connection:
+            prior = connection.execute(
+                "SELECT command_type, request_hash, aggregate_id "
+                "FROM finance.idempotency_records "
+                "WHERE profile_id = %s AND idempotency_key = %s",
+                (profile_id, idempotency_key),
+            ).fetchone()
+        if prior is None:
+            return None
+        self._require_identical_review_command(
+            prior,
+            command_type=command_type,
+            request_hash=request_hash,
+        )
+        return cast(UUID, prior[2])
+
     def settle_category_review(
         self,
         proposal: CategoryProposal,
@@ -287,33 +327,32 @@ class PostgresFinanceRepository:
         expense: Expense,
         expected_version: int,
         category: Category | None,
+        idempotency_key: str,
+        command_type: str,
+        request_hash: str,
         proposal_audit: AuditEvent,
         expense_audit: AuditEvent,
-    ) -> None:
-        """Settle one owner decision, its optional new node, and the movement.
-
-        This is the single transaction J3 requires: approving a candidate
-        creates the node and completes the movement together, so no state
-        exists in which a category was created for a movement that never
-        received it, or a movement claims a category that was never created.
-
-        The proposal row is updated only while it is still pending, which makes
-        a replayed owner decision a no-op detectable by the caller rather than
-        a second settlement.
+    ) -> Expense:
+        """Settle or return one owner decision and its movement atomically.
 
         Args:
             proposal: Decided proposal carrying its terminal status.
             expense: Full replacement state for the reviewed movement.
             expected_version: Movement version observed by the caller.
-            category: Node to create when the owner approved the candidate,
-                otherwise None.
+            category: Node created only for approved candidate settlement.
+            idempotency_key: Stable one-decision key for the proposal.
+            command_type: Exact owner decision branch.
+            request_hash: Canonical decision semantics.
             proposal_audit: Immutable record of the owner decision.
             expense_audit: Immutable record of the movement mutation.
 
+        Returns:
+            Newly settled movement or the stored result of an identical replay.
+
         Raises:
-            ValueError: If the decision is not terminal, the node does not
-                belong to the profile, or the review was already settled.
-            OptimisticConcurrencyError: If another mutation already won.
+            IdempotencyConflictError: If another decision used the same key.
+            ValueError: If status or category authority is invalid.
+            OptimisticConcurrencyError: If another distinct mutation won.
         """
 
         if proposal.status is CategoryProposalStatus.PENDING:
@@ -322,7 +361,42 @@ class PostgresFinanceRepository:
             CategoryProposalStatus.APPROVED
         ):
             raise ValueError("only an approved candidate may create a category")
+        self._validate_command_identity(idempotency_key, command_type, request_hash)
         with connect(self._database_url) as connection:
+            claimed = connection.execute(
+                "INSERT INTO finance.idempotency_records "
+                "(profile_id, idempotency_key, command_type, request_hash, "
+                "aggregate_id, created_at) VALUES (%s, %s, %s, %s, %s, %s) "
+                "ON CONFLICT DO NOTHING RETURNING aggregate_id",
+                (
+                    proposal.profile_id,
+                    idempotency_key,
+                    command_type,
+                    request_hash,
+                    expense.id,
+                    proposal_audit.occurred_at,
+                ),
+            ).fetchone()
+            if claimed is None:
+                prior = connection.execute(
+                    "SELECT command_type, request_hash, aggregate_id "
+                    "FROM finance.idempotency_records "
+                    "WHERE profile_id = %s AND idempotency_key = %s",
+                    (proposal.profile_id, idempotency_key),
+                ).fetchone()
+                if prior is None:
+                    raise IdempotencyConflictError("idempotency claim disappeared")
+                self._require_identical_review_command(
+                    prior,
+                    command_type=command_type,
+                    request_hash=request_hash,
+                    result_id=expense.id,
+                )
+                return self._load_expense(
+                    connection,
+                    proposal.profile_id,
+                    expense.id,
+                )
             if category is not None:
                 self._insert_reviewed_category(
                     connection,
@@ -338,30 +412,36 @@ class PostgresFinanceRepository:
                 audit_event=expense_audit,
             )
             self._insert_audit(connection, proposal_audit)
+        return expense
 
     def repropose_category(
         self,
         rejected: CategoryProposal,
         successor: CategoryProposal,
         *,
+        idempotency_key: str,
+        command_type: str,
+        request_hash: str,
         rejected_audit: AuditEvent,
         successor_audit: AuditEvent,
-    ) -> None:
-        """Refuse one candidate and open its replacement atomically.
-
-        The movement is untouched: the owner asked for a different name, not
-        for a different movement, and its draft keeps waiting.
+    ) -> CategoryProposal:
+        """Open or return a replacement proposal atomically.
 
         Args:
             rejected: Refused proposal carrying its rejected status.
             successor: New pending proposal excluding every refused candidate.
+            idempotency_key: Stable one-decision key for the predecessor.
+            command_type: Exact owner re-proposal branch.
+            request_hash: Canonical decision semantics.
             rejected_audit: Immutable record of the refusal.
             successor_audit: Immutable record of the replacement.
 
+        Returns:
+            New successor or the stored successor from an identical replay.
+
         Raises:
-            ValueError: If the statuses are not rejected and pending, the
-                successor reuses a refused candidate, or the review was already
-                settled.
+            IdempotencyConflictError: If another decision used the same key.
+            ValueError: If statuses, exclusions, or review state are invalid.
         """
 
         if rejected.status is not CategoryProposalStatus.REJECTED:
@@ -375,11 +455,46 @@ class PostgresFinanceRepository:
             {normalize_category_name(name) for name in successor.excluded_names}
         ):
             raise ValueError("a replacement must exclude every refused candidate")
+        self._validate_command_identity(idempotency_key, command_type, request_hash)
         with connect(self._database_url) as connection:
+            claimed = connection.execute(
+                "INSERT INTO finance.idempotency_records "
+                "(profile_id, idempotency_key, command_type, request_hash, "
+                "aggregate_id, created_at) VALUES (%s, %s, %s, %s, %s, %s) "
+                "ON CONFLICT DO NOTHING RETURNING aggregate_id",
+                (
+                    rejected.profile_id,
+                    idempotency_key,
+                    command_type,
+                    request_hash,
+                    successor.id,
+                    rejected_audit.occurred_at,
+                ),
+            ).fetchone()
+            if claimed is None:
+                prior = connection.execute(
+                    "SELECT command_type, request_hash, aggregate_id "
+                    "FROM finance.idempotency_records "
+                    "WHERE profile_id = %s AND idempotency_key = %s",
+                    (rejected.profile_id, idempotency_key),
+                ).fetchone()
+                if prior is None:
+                    raise IdempotencyConflictError("idempotency claim disappeared")
+                self._require_identical_review_command(
+                    prior,
+                    command_type=command_type,
+                    request_hash=request_hash,
+                )
+                return self._load_category_proposal(
+                    connection,
+                    rejected.profile_id,
+                    cast(UUID, prior[2]),
+                )
             self._settle_proposal_row(connection, rejected, rejected_audit)
             self._insert_audit(connection, rejected_audit)
             self._insert_category_proposal_row(connection, successor, successor_audit)
             self._insert_audit(connection, successor_audit)
+        return successor
 
     def create_category_proposal(
         self,
@@ -848,6 +963,23 @@ class PostgresFinanceRepository:
                 "idempotency key was used for different request content"
             )
 
+    @staticmethod
+    def _require_identical_review_command(
+        prior: tuple[object, ...],
+        *,
+        command_type: str,
+        request_hash: str,
+        result_id: UUID | None = None,
+    ) -> None:
+        """Refuse a review key reused for another action or result."""
+
+        if prior[:2] != (command_type, request_hash) or (
+            result_id is not None and prior[2] != result_id
+        ):
+            raise IdempotencyConflictError(
+                "idempotency key was used for different review content"
+            )
+
     def _replace_expense_within(
         self,
         connection: Connection[Any],
@@ -1189,6 +1321,25 @@ class PostgresFinanceRepository:
             self._insert_audit(connection, audit_event)
 
     @staticmethod
+    def _load_category_proposal(
+        connection: Connection[Any],
+        profile_id: UUID,
+        proposal_id: UUID,
+    ) -> CategoryProposal:
+        """Load one proposal inside a caller-owned transaction."""
+
+        row = connection.execute(
+            "SELECT id, profile_id, proposed_name, description, parent_id, "
+            "rationale, alternative_category_ids, excluded_names, "
+            "source_reference, status FROM finance.category_proposals "
+            "WHERE id = %s AND profile_id = %s",
+            (proposal_id, profile_id),
+        ).fetchone()
+        if row is None:
+            raise AggregateNotFoundError("category proposal does not exist in profile")
+        return PostgresFinanceRepository._category_proposal_from_row(row)
+
+    @staticmethod
     def _category_proposal_from_row(row: tuple[Any, ...]) -> CategoryProposal:
         """Reconstruct one proposal from its selected column order."""
 
@@ -1213,9 +1364,11 @@ class PostgresFinanceRepository:
     ) -> None:
         """Move one still-pending proposal to its decided status.
 
-        The `status = 'pending'` predicate is the idempotency guard: a replayed
-        decision matches no row and is refused here rather than settling the
-        review a second time.
+        The proposal-wide command claim is the idempotency guard, so this
+        predicate no longer carries replay safety on its own. It stays because
+        it is the narrower check: a decision that claimed its key but reaches a
+        review some other path already settled matches no row and is refused
+        instead of overwriting a terminal status.
 
         Raises:
             ValueError: If the review was already settled.

@@ -13,7 +13,10 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command
 from pydantic import BaseModel
 
-from money_tracker.application import CategoryReviewService
+from money_tracker.application import (
+    CategoryReviewService,
+    IdempotencyConflictError,
+)
 from money_tracker.application.runtime import SystemClock
 from money_tracker.domain import (
     AuditEvent,
@@ -83,6 +86,7 @@ class InMemoryStore:
     proposals: dict[UUID, CategoryProposal] = field(default_factory=dict)
     audits: list[AuditEvent] = field(default_factory=list)
     settlements: int = 0
+    commands: dict[str, tuple[str, str, UUID]] = field(default_factory=dict)
 
     def get_taxonomy(self, profile_id: UUID) -> Taxonomy:
         """Return the current taxonomy view."""
@@ -117,6 +121,25 @@ class InMemoryStore:
             if item.status is CategoryProposalStatus.PENDING
         )
 
+    def get_idempotent_category_review_command(
+        self,
+        *,
+        profile_id: UUID,
+        idempotency_key: str,
+        command_type: str,
+        request_hash: str,
+    ) -> UUID | None:
+        """Return an identical result and reject competing command semantics."""
+
+        prior = self.commands.get(idempotency_key)
+        if prior is None:
+            return None
+        if prior[:2] != (command_type, request_hash):
+            raise IdempotencyConflictError(
+                "idempotency key was used for different review content"
+            )
+        return prior[2]
+
     def settle_category_review(
         self,
         proposal: CategoryProposal,
@@ -124,11 +147,22 @@ class InMemoryStore:
         expense: Expense,
         expected_version: int,
         category: Category | None,
+        idempotency_key: str,
+        command_type: str,
+        request_hash: str,
         proposal_audit: AuditEvent,
         expense_audit: AuditEvent,
-    ) -> None:
+    ) -> Expense:
         """Apply the whole settlement or none of it."""
 
+        prior = self.get_idempotent_category_review_command(
+            profile_id=proposal.profile_id,
+            idempotency_key=idempotency_key,
+            command_type=command_type,
+            request_hash=request_hash,
+        )
+        if prior is not None:
+            return self.expenses[prior]
         if self.proposals[proposal.id].status is not CategoryProposalStatus.PENDING:
             raise ValueError("category review is no longer pending")
         if category is not None:
@@ -137,23 +171,38 @@ class InMemoryStore:
         self.expenses[expense.id] = expense
         self.audits.extend((proposal_audit, expense_audit))
         self.settlements += 1
+        self.commands[idempotency_key] = (command_type, request_hash, expense.id)
+        return expense
 
     def repropose_category(
         self,
         rejected: CategoryProposal,
         successor: CategoryProposal,
         *,
+        idempotency_key: str,
+        command_type: str,
+        request_hash: str,
         rejected_audit: AuditEvent,
         successor_audit: AuditEvent,
-    ) -> None:
+    ) -> CategoryProposal:
         """Refuse one candidate and open its replacement together."""
 
+        prior = self.get_idempotent_category_review_command(
+            profile_id=rejected.profile_id,
+            idempotency_key=idempotency_key,
+            command_type=command_type,
+            request_hash=request_hash,
+        )
+        if prior is not None:
+            return self.proposals[prior]
         if self.proposals[rejected.id].status is not CategoryProposalStatus.PENDING:
             raise ValueError("category review is no longer pending")
         self.proposals[rejected.id] = rejected
         self.proposals[successor.id] = successor
         self.audits.extend((rejected_audit, successor_audit))
         self.settlements += 1
+        self.commands[idempotency_key] = (command_type, request_hash, successor.id)
+        return successor
 
 
 class SequentialIds:
@@ -582,6 +631,30 @@ def test_a_review_settled_elsewhere_ends_without_deciding_twice() -> None:
     assert final["clarification_reason"] == ReviewReason.ALREADY_SETTLED.value
     assert store.settlements == 0
     assert store.expenses[draft.id].status is ExpenseStatus.DRAFT
+
+
+def test_a_competing_branch_ends_without_a_second_finance_write() -> None:
+    """End a late second button on a proposal whose decision already committed."""
+
+    store, compiled, config, draft, proposal, _ = _fixture()
+    CategoryReviewService(
+        store, store, clock=SystemClock(), ids=SequentialIds()
+    ).approve(
+        profile_id=PROFILE_ID,
+        proposal_id=proposal.id,
+        expense_id=draft.id,
+        actor="owner",
+        reason="an earlier delivered callback approved the candidate",
+    )
+
+    final = compiled.invoke(
+        Command(resume=ReviewDecision(CallbackAction.CANCEL_REVIEW)), config
+    )
+
+    assert final["outcome"] == ReviewOutcome.CLARIFICATION.value
+    assert final["clarification_reason"] == ReviewReason.ALREADY_SETTLED.value
+    assert store.settlements == 1
+    assert store.expenses[draft.id].status is ExpenseStatus.POSTED
 
 
 def test_a_decision_may_arrive_as_its_primitive_parts() -> None:

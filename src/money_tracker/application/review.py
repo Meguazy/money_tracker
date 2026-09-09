@@ -13,13 +13,15 @@ Posting here is not the auto-post policy AD-012 gates. That policy decides
 whether to post *without asking*; this path posts only what the owner
 explicitly authorized, after asking.
 
-Replay safety is a property of the repository predicate rather than of a check
-here: settling updates a row only while it is still pending, so a resumed
-thread that already settled its review is refused instead of deciding twice.
+Replay safety uses a stable command record for each proposal decision. An
+identical resumed decision returns the first movement or successor proposal;
+another branch reusing the proposal key conflicts without applying twice.
 """
 
 from __future__ import annotations
 
+import hashlib
+import json
 from uuid import UUID
 
 from money_tracker.application.ports import (
@@ -38,6 +40,7 @@ from money_tracker.domain import (
     Expense,
     Taxonomy,
     TaxonomyError,
+    normalize_category_name,
 )
 
 OWNER_REVIEW_PROVENANCE = "owner-category-review"
@@ -103,6 +106,14 @@ class CategoryReviewService:
             ValueError: If the review is not pending.
         """
 
+        identity = _review_identity(
+            proposal_id,
+            expense_id,
+            action="approve",
+        )
+        replayed = self._replayed_expense(profile_id, expense_id, identity)
+        if replayed is not None:
+            return replayed
         proposal = self._pending(profile_id, proposal_id)
         expense = self._finance.get_expense(profile_id, expense_id)
         taxonomy = self._finance.get_taxonomy(profile_id)
@@ -121,11 +132,14 @@ class CategoryReviewService:
             evidence=proposal.rationale,
             owner_override=False,
         )
-        self._repository.settle_category_review(
+        return self._repository.settle_category_review(
             approved,
             expense=posted,
             expected_version=expense.version,
             category=category,
+            idempotency_key=identity[0],
+            command_type=identity[1],
+            request_hash=identity[2],
             proposal_audit=self._proposal_audit(
                 approved, action="approve", actor=actor, reason=reason
             ),
@@ -133,7 +147,6 @@ class CategoryReviewService:
                 posted, action="post", actor=actor, reason=reason
             ),
         )
-        return posted
 
     def use_existing(
         self,
@@ -169,6 +182,15 @@ class CategoryReviewService:
             ValueError: If the review is not pending.
         """
 
+        identity = _review_identity(
+            proposal_id,
+            expense_id,
+            action="use_existing",
+            category_name=category_name,
+        )
+        replayed = self._replayed_expense(profile_id, expense_id, identity)
+        if replayed is not None:
+            return replayed
         proposal = self._pending(profile_id, proposal_id)
         expense = self._finance.get_expense(profile_id, expense_id)
         taxonomy = self._finance.get_taxonomy(profile_id)
@@ -181,11 +203,14 @@ class CategoryReviewService:
             owner_override=True,
         )
         rejected = proposal.reject()
-        self._repository.settle_category_review(
+        return self._repository.settle_category_review(
             rejected,
             expense=posted,
             expected_version=expense.version,
             category=None,
+            idempotency_key=identity[0],
+            command_type=identity[1],
+            request_hash=identity[2],
             proposal_audit=self._proposal_audit(
                 rejected, action="use_existing", actor=actor, reason=reason
             ),
@@ -193,7 +218,6 @@ class CategoryReviewService:
                 posted, action="post", actor=actor, reason=reason
             ),
         )
-        return posted
 
     def cancel(
         self,
@@ -220,15 +244,26 @@ class CategoryReviewService:
             ValueError: If the review is not pending.
         """
 
+        identity = _review_identity(
+            proposal_id,
+            expense_id,
+            action="cancel",
+        )
+        replayed = self._replayed_expense(profile_id, expense_id, identity)
+        if replayed is not None:
+            return replayed
         proposal = self._pending(profile_id, proposal_id)
         expense = self._finance.get_expense(profile_id, expense_id)
         discarded = expense.discard()
         cancelled = proposal.cancel()
-        self._repository.settle_category_review(
+        return self._repository.settle_category_review(
             cancelled,
             expense=discarded,
             expected_version=expense.version,
             category=None,
+            idempotency_key=identity[0],
+            command_type=identity[1],
+            request_hash=identity[2],
             proposal_audit=self._proposal_audit(
                 cancelled, action="cancel", actor=actor, reason=reason
             ),
@@ -236,7 +271,6 @@ class CategoryReviewService:
                 discarded, action="discard", actor=actor, reason=reason
             ),
         )
-        return discarded
 
     def repropose(
         self,
@@ -276,6 +310,19 @@ class CategoryReviewService:
             ValueError: If the review is not pending.
         """
 
+        identity = _review_identity(
+            proposal_id,
+            None,
+            action="repropose",
+        )
+        replayed_id = self._repository.get_idempotent_category_review_command(
+            profile_id=profile_id,
+            idempotency_key=identity[0],
+            command_type=identity[1],
+            request_hash=identity[2],
+        )
+        if replayed_id is not None:
+            return self._repository.get_category_proposal(profile_id, replayed_id)
         proposal = self._pending(profile_id, proposal_id)
         exclusions = proposal.exclusions_for_next()
         if len(exclusions) >= MAX_REVIEW_PROPOSALS:
@@ -294,9 +341,12 @@ class CategoryReviewService:
         )
         self._reject_duplicate(taxonomy, proposed_name)
         rejected = proposal.reject()
-        self._repository.repropose_category(
+        return self._repository.repropose_category(
             rejected,
             successor,
+            idempotency_key=identity[0],
+            command_type=identity[1],
+            request_hash=identity[2],
             rejected_audit=self._proposal_audit(
                 rejected, action="repropose", actor=actor, reason=reason
             ),
@@ -304,7 +354,6 @@ class CategoryReviewService:
                 successor, action="propose", actor=actor, reason=reason
             ),
         )
-        return successor
 
     def exhausted(self, *, profile_id: UUID, proposal_id: UUID) -> bool:
         """Return whether this review may still offer another candidate.
@@ -330,6 +379,26 @@ class CategoryReviewService:
         if proposal.status is not CategoryProposalStatus.PENDING:
             raise ValueError("category review is no longer pending")
         return proposal
+
+    def _replayed_expense(
+        self,
+        profile_id: UUID,
+        expense_id: UUID,
+        identity: tuple[str, str, str],
+    ) -> Expense | None:
+        """Return an identical review result before reading mutable state."""
+
+        result_id = self._repository.get_idempotent_category_review_command(
+            profile_id=profile_id,
+            idempotency_key=identity[0],
+            command_type=identity[1],
+            request_hash=identity[2],
+        )
+        if result_id is None:
+            return None
+        if result_id != expense_id:
+            raise ValueError("category review replay result target changed")
+        return self._finance.get_expense(profile_id, result_id)
 
     @staticmethod
     def _active_root(taxonomy: Taxonomy, parent_name: str | None) -> UUID | None:
@@ -438,6 +507,37 @@ class CategoryReviewService:
             current_version=expense.version,
             reason=reason,
         )
+
+
+def _review_identity(
+    proposal_id: UUID,
+    expense_id: UUID | None,
+    *,
+    action: str,
+    category_name: str | None = None,
+) -> tuple[str, str, str]:
+    """Build one stable identity shared by every replay of an owner decision.
+
+    The key is proposal-wide so competing buttons conflict. The hash omits a
+    re-proposal model candidate deliberately: the owner's command means "offer
+    another candidate", and a retry must return the candidate first committed
+    even if a later model completion differs.
+    """
+
+    payload: dict[str, str] = {
+        "action": action,
+        "proposal_id": str(proposal_id),
+    }
+    if expense_id is not None:
+        payload["expense_id"] = str(expense_id)
+    if category_name is not None:
+        payload["category_name"] = normalize_category_name(category_name)
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return (
+        f"category-review:{proposal_id}",
+        f"category_review_{action}",
+        hashlib.sha256(canonical.encode("utf-8")).hexdigest(),
+    )
 
 
 __all__ = ["OWNER_REVIEW_PROVENANCE", "CategoryReviewService"]

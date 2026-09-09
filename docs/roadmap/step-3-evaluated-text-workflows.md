@@ -348,9 +348,11 @@ product suites passed.
   rather than by restating its rules. Both reuse branches resolve through
   active names and aliases and record the owner override; a re-proposal
   inherits every refused candidate and the loop is capped; cancelling discards
-  the draft. Settling updates the proposal row only while it is still pending,
-  so a replayed decision is refused rather than applied twice, which is what
-  makes the branch safe for a resumed thread.
+  the draft. Settling updated the proposal row only while it was still pending,
+  so a replayed decision was refused rather than applied twice, which made the
+  branch safe for a resumed thread. Step 4 replaced that guard with one
+  proposal-wide command key, because AD-018 needs the first result returned
+  rather than a refusal.
 - Cancelling a review exposed a missing domain state. `voided` requires
   reconciliation, because voiding reverses a movement that already counted,
   while a cancelled draft never counted and has no purpose dimension. Migration
@@ -361,17 +363,18 @@ product suites passed.
   reconciled movement, prove the settlement atomic by making a second review
   claiming the same name fail whole after the first won, post through reuse
   without extending the taxonomy, discard a cancelled draft, open a successor
-  that carries the refused candidate, refuse a replayed decision, and list the
-  open reviews routing correlates against.
+  that carries the refused candidate, settle a replayed decision exactly once,
+  and list the open reviews routing correlates against.
 - The paused owner category review is a LangGraph two-node loop over the same
   checkpointer. The asking node renders the question from the authoritative
   stored proposal and pauses; the settling node applies the branch and decides
   whether the review is over. Only reads precede the pause and every write
   follows it, because LangGraph replays an interrupted node from its start: one
   node holding both would replay its settlement the second time around the
-  loop, when the cached first interrupt returns immediately. Replay safety does
-  not rest on the topology alone, since settlement independently refuses a
-  review that is no longer pending.
+  loop, when the cached first interrupt returns immediately. Replay safety did
+  not rest on the topology alone, since settlement independently refused a
+  review that was no longer pending; Step 4 turned that refusal into the
+  durable command check AD-018 requires.
 - A review decision that cannot be applied keeps the review open and pauses
   again with a stable reason and no write: an unresolvable name, an empty reuse
   shortlist, a capped loop, or a replacement the taxonomy refused. A

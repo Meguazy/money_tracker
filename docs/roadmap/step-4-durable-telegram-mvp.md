@@ -36,9 +36,10 @@ evidence do not exist yet and are not claimed by this status.
   One additional real-PostgreSQL test proves that foreign users and groups
   create no inbox rows. An opt-in real test-bot integration test is checked in
   but remains unexecuted until the owner configures its credential.
-- A concrete replay gap remains: category-review settlement rejects an already
-  settled proposal but does not yet guarantee reconstruction of the original
-  typed terminal result after a crash before outbox creation.
+- Category-review decisions now claim one proposal-wide finance idempotency
+  key in the settlement transaction. Identical approval, reuse, cancellation,
+  and re-proposal commands return the first stored result; competing branches
+  conflict without another finance write.
 
 ## Reconciled design
 
@@ -85,6 +86,17 @@ printing private content or identifiers.
 - Thirteen unit tests and nine `@pytest.mark.postgres` tests passed. The
   PostgreSQL suite uses the real service and protocol; a two-connection race
   proved that only one worker receives the oldest item.
+
+## Workflow replay prerequisite evidence
+
+- Category-review settlement and re-proposal now commit their command claim,
+  proposal transition, movement/category changes, and audits atomically.
+- The settling handler turns a conflicting command key and a review that is no
+  longer pending into the same already-settled question, so a late second
+  button ends the thread instead of failing the work unit.
+- Forty-seven focused unit tests passed across the review service and graph.
+  Nine real-PostgreSQL application tests passed, including identical replay,
+  competing-decision conflict, and stable re-proposal reconstruction.
 
 ## Gateway implementation evidence
 

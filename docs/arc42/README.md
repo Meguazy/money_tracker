@@ -388,10 +388,11 @@ actually seen and always reaches one terminal state.
    is distinct from voiding: voiding reverses a movement that already counted
    and stays reconciled, while a cancelled draft never counted and has no
    purpose dimension.
-5. Every settlement updates the proposal row only while it is still pending, so
-   a replayed owner decision is refused instead of applied twice. Posting here
-   is not the gated auto-post policy, which decides whether to post *without*
-   asking; this path posts only what the owner explicitly authorized.
+5. Every branch shares one proposal-wide idempotency key. Its claim commits
+   with settlement, movement/category changes, and audits; an identical replay
+   returns the first stored result while a competing branch conflicts. Posting
+   here is not the gated auto-post policy, which decides whether to post
+   *without* asking; this path posts only what the owner explicitly authorized.
 6. Allocations created here carry an owner provenance distinct from the
    category-fit boundary's versioned one, so stored history says whether a
    human or a prompt chose the purpose.
@@ -413,9 +414,10 @@ two-node loop over the persistent checkpointer.
    node. LangGraph replays an interrupted node from its start, so a single node
    holding both would replay its settlement the second time around the loop,
    when the cached first interrupt returns immediately.
-4. Replay safety does not rest on the topology alone. Settlement refuses a
-   review that is no longer pending, so a mis-driven resume ends the thread
-   with a stable reason instead of deciding twice.
+4. Replay safety does not rest on the topology alone. The application service
+   checks the durable proposal command before mutable review state: identical
+   approval, reuse, cancellation, or re-proposal reconstructs its first result,
+   and another branch cannot reuse that command identity.
 5. A decision that cannot be applied keeps the review open and pauses again
    carrying a stable reason: an unresolvable name, an empty reuse shortlist, a
    capped loop, or a replacement the taxonomy refused. Nothing is written on
@@ -1003,6 +1005,11 @@ does not install an API unit because no implemented Step 4 runtime requires it.
   normalizes the occurrence instant to UTC so the same moment expressed with a
   different offset matches. A redelivery must therefore replay the stored
   record unchanged, its channel timestamp included.
+- An owner category decision keys on the proposal rather than on the inbound
+  record, because approval, reuse, cancellation, and re-proposal are mutually
+  exclusive answers to one question. The identical branch replays into its
+  first movement or successor proposal, while a competing branch conflicts
+  without a second finance write.
 - Callback and free-text follow-up map to explicit pending actions and workflow
   IDs instead of assuming one global chat thread.
 
@@ -1249,9 +1256,6 @@ Quantitative evaluation gates are maintained in
   ingestion, gateway entry point, and independent outbox loop are implemented.
   The workflow worker, response renderer, pairing/health administration,
   systemd units, and real-bot evidence do not yet exist.
-- Category-review settlement is safe against a duplicate mutation but does not
-  yet reconstruct its original typed result across the dispatch-to-outbox crash
-  window. AD-018 makes closing that gap a worker prerequisite.
 - EVD-004 promotes the Qwen3 14B text configuration, but no automatic-post
   subset qualifies. Ordinary existing-category movements remain drafts until a
   later explicit owner or dashboard action posts them.

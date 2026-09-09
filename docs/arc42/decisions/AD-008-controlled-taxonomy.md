@@ -3,8 +3,8 @@
 - Status: accepted
 - Implementation: domain policy, stable 10-root/14-child seed, schema,
   PostgreSQL bootstrap, pending-proposal submission, the deterministic
-  category-fit boundary, the owner decision service that creates a node, and
-  the persistent review that pauses for the owner implemented
+  category-fit boundary, the replay-safe owner decision service that creates a
+  node, and the persistent review that pauses for the owner implemented
 - Date: 2026-09-01
 
 ## Context
@@ -62,8 +62,10 @@ classification. A re-proposal inherits every candidate already refused in the
 same review and is capped at `MAX_REVIEW_PROPOSALS`, after which the review
 offers existing categories and manual entry instead of another candidate.
 
-Settlement updates the proposal row only while it is still pending, so a
-replayed owner decision is refused rather than applied twice. Cancelling ends a
+Every branch of one review shares a single proposal-wide command key claimed
+in the settlement transaction, so an identical replayed decision returns its
+first result and a competing branch is refused rather than applied twice.
+Cancelling ends a
 review with no node and discards the draft: `voided` could not express that,
 because voiding reverses a movement that already counted and stays reconciled,
 while a cancelled draft never counted and has no purpose dimension. Migration

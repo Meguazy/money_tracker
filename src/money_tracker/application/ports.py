@@ -137,11 +137,10 @@ class CategoryProposalRepository(Protocol):
 class CategoryReviewRepository(Protocol):
     """Settle owner category decisions, the only path that creates a node.
 
-    Kept separate from `CategoryProposalRepository` because the authority
+    Kept separate from CategoryProposalRepository because the authority
     differs: submitting a candidate is a workflow act that changes nothing the
     owner has not seen, while settling one can extend the taxonomy and complete
-    a movement. AD-008 reserves that authority for an explicit owner decision,
-    so it lives behind its own narrow port.
+    a movement. AD-008 reserves that authority for an explicit owner decision.
     """
 
     def get_category_proposal(
@@ -157,6 +156,16 @@ class CategoryReviewRepository(Protocol):
     ) -> tuple[CategoryProposal, ...]:
         """Load every open review in one profile scope, oldest first."""
 
+    def get_idempotent_category_review_command(
+        self,
+        *,
+        profile_id: UUID,
+        idempotency_key: str,
+        command_type: str,
+        request_hash: str,
+    ) -> UUID | None:
+        """Return the result identifier of an identical prior decision."""
+
     def settle_category_review(
         self,
         proposal: CategoryProposal,
@@ -164,20 +173,26 @@ class CategoryReviewRepository(Protocol):
         expense: Expense,
         expected_version: int,
         category: Category | None,
+        idempotency_key: str,
+        command_type: str,
+        request_hash: str,
         proposal_audit: AuditEvent,
         expense_audit: AuditEvent,
-    ) -> None:
-        """Settle one decision, its optional new node, and the movement."""
+    ) -> Expense:
+        """Settle or return the movement from an identical prior decision."""
 
     def repropose_category(
         self,
         rejected: CategoryProposal,
         successor: CategoryProposal,
         *,
+        idempotency_key: str,
+        command_type: str,
+        request_hash: str,
         rejected_audit: AuditEvent,
         successor_audit: AuditEvent,
-    ) -> None:
-        """Refuse one candidate and open its replacement atomically."""
+    ) -> CategoryProposal:
+        """Open or return the replacement from an identical prior decision."""
 
 
 class ReportingRepository(Protocol):

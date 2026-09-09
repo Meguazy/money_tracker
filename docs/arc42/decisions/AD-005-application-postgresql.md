@@ -2,8 +2,8 @@
 
 - Status: accepted
 - Implementation: foundation, finance schema, expense/wallet/budget repository
-  operations, replay-safe correction/undo command claims, pending-proposal
-  persistence, receipt registration/review transitions, and durable messaging
+  operations, replay-safe correction/undo/category-review command claims,
+  pending-proposal persistence, receipt review, and durable messaging
   persistence implemented; remaining adapters planned
 - Date: 2026-09-01
 
@@ -48,6 +48,10 @@ idempotency, and source-row locking for balance-safe wallet debits are enforced.
 Correction and undo now use the general command-claim table as well: the claim,
 complete aggregate replacement, allocation replacement, and audit event commit
 in one transaction, while an identical replay returns the stored result.
+Category-review decisions use the same table with one proposal-wide key: the
+claim and the selected terminal transition commit together, an identical replay
+returns the first movement or successor proposal, and a competing branch
+conflicts without a second finance write.
 Roadmap Step 4 migration `20260909_0005` adds environment-scoped offsets,
 minimum normalized inbox rows, bounded claim/retry/dead-letter state, unique
 logical outbox messages, hashed one-use pairing, owner bindings, and scoped

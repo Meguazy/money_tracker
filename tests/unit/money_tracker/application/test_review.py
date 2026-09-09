@@ -12,6 +12,7 @@ import pytest
 from money_tracker.application import (
     OWNER_REVIEW_PROVENANCE,
     CategoryReviewService,
+    IdempotencyConflictError,
 )
 from money_tracker.domain import (
     AuditEvent,
@@ -50,6 +51,7 @@ class _Repository:
     funding_sources: tuple[FundingSource, ...] = ()
     audits: list[AuditEvent] = field(default_factory=list)
     settlements: int = 0
+    commands: dict[str, tuple[str, str, UUID]] = field(default_factory=dict)
 
     def get_expense(self, profile_id: UUID, expense_id: UUID) -> Expense:
         """Return the stored movement in its profile scope."""
@@ -84,6 +86,25 @@ class _Repository:
             if proposal.status is CategoryProposalStatus.PENDING
         )
 
+    def get_idempotent_category_review_command(
+        self,
+        *,
+        profile_id: UUID,
+        idempotency_key: str,
+        command_type: str,
+        request_hash: str,
+    ) -> UUID | None:
+        """Return an identical result and reject competing command semantics."""
+
+        prior = self.commands.get(idempotency_key)
+        if prior is None:
+            return None
+        if prior[:2] != (command_type, request_hash):
+            raise IdempotencyConflictError(
+                "idempotency key was used for different review content"
+            )
+        return prior[2]
+
     def settle_category_review(
         self,
         proposal: CategoryProposal,
@@ -91,11 +112,22 @@ class _Repository:
         expense: Expense,
         expected_version: int,
         category: Category | None,
+        idempotency_key: str,
+        command_type: str,
+        request_hash: str,
         proposal_audit: AuditEvent,
         expense_audit: AuditEvent,
-    ) -> None:
+    ) -> Expense:
         """Apply the whole settlement or none of it, as one transaction does."""
 
+        prior = self.get_idempotent_category_review_command(
+            profile_id=proposal.profile_id,
+            idempotency_key=idempotency_key,
+            command_type=command_type,
+            request_hash=request_hash,
+        )
+        if prior is not None:
+            return self.expenses[prior]
         stored = self.proposals[proposal.id]
         if stored.status is not CategoryProposalStatus.PENDING:
             raise ValueError("category review is no longer pending")
@@ -107,17 +139,30 @@ class _Repository:
         self.expenses[expense.id] = expense
         self.audits.extend((proposal_audit, expense_audit))
         self.settlements += 1
+        self.commands[idempotency_key] = (command_type, request_hash, expense.id)
+        return expense
 
     def repropose_category(
         self,
         rejected: CategoryProposal,
         successor: CategoryProposal,
         *,
+        idempotency_key: str,
+        command_type: str,
+        request_hash: str,
         rejected_audit: AuditEvent,
         successor_audit: AuditEvent,
-    ) -> None:
+    ) -> CategoryProposal:
         """Refuse one candidate and open its replacement together."""
 
+        prior = self.get_idempotent_category_review_command(
+            profile_id=rejected.profile_id,
+            idempotency_key=idempotency_key,
+            command_type=command_type,
+            request_hash=request_hash,
+        )
+        if prior is not None:
+            return self.proposals[prior]
         stored = self.proposals[rejected.id]
         if stored.status is not CategoryProposalStatus.PENDING:
             raise ValueError("category review is no longer pending")
@@ -125,6 +170,8 @@ class _Repository:
         self.proposals[successor.id] = successor
         self.audits.extend((rejected_audit, successor_audit))
         self.settlements += 1
+        self.commands[idempotency_key] = (command_type, request_hash, successor.id)
+        return successor
 
 
 @dataclass
@@ -251,6 +298,86 @@ def test_approval_creates_the_node_and_posts_the_movement() -> None:
     assert posted.category_allocations[0].owner_override is False
     assert repository.proposals[proposal.id].status is CategoryProposalStatus.APPROVED
     assert repository.settlements == 1
+
+
+def test_identical_approval_replay_returns_the_first_result() -> None:
+    """Recover after a committed decision without writing it again."""
+
+    repository, service, draft, proposal = _fixture()
+    first = service.approve(
+        profile_id=PROFILE,
+        proposal_id=proposal.id,
+        expense_id=draft.id,
+        actor="owner",
+        reason="owner approved the candidate",
+    )
+
+    replayed = service.approve(
+        profile_id=PROFILE,
+        proposal_id=proposal.id,
+        expense_id=draft.id,
+        actor="owner",
+        reason="retry after crash",
+    )
+
+    assert replayed == first
+    assert repository.settlements == 1
+    assert len(repository.audits) == 2
+
+
+def test_competing_review_decision_conflicts_after_commit() -> None:
+    """Never reinterpret a proposal key as another owner action."""
+
+    repository, service, draft, proposal = _fixture()
+    service.approve(
+        profile_id=PROFILE,
+        proposal_id=proposal.id,
+        expense_id=draft.id,
+        actor="owner",
+        reason="owner approved the candidate",
+    )
+
+    with pytest.raises(IdempotencyConflictError):
+        service.cancel(
+            profile_id=PROFILE,
+            proposal_id=proposal.id,
+            expense_id=draft.id,
+            actor="owner",
+            reason="late competing callback",
+        )
+
+    assert repository.settlements == 1
+
+
+def test_identical_reproposal_replay_returns_the_first_candidate() -> None:
+    """Ignore a changed model completion when replaying the owner command."""
+
+    repository, service, _, proposal = _fixture()
+    first = service.repropose(
+        profile_id=PROFILE,
+        proposal_id=proposal.id,
+        proposed_name="Piante e fiori",
+        description="Piante, fiori e terriccio.",
+        parent_name="Casa e utenze",
+        rationale="Il candidato precedente era troppo generico.",
+        actor="owner",
+        reason="owner asked for another candidate",
+    )
+
+    replayed = service.repropose(
+        profile_id=PROFILE,
+        proposal_id=proposal.id,
+        proposed_name="Terriccio",
+        description="A different model completion.",
+        parent_name=None,
+        rationale="A different rationale.",
+        actor="owner",
+        reason="retry after crash",
+    )
+
+    assert replayed == first
+    assert repository.settlements == 1
+    assert len(repository.proposals) == 2
 
 
 def test_approved_node_hangs_under_the_proposed_active_root() -> None:

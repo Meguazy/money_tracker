@@ -132,8 +132,10 @@ reads before pausing and whose settling node holds every write, which is this
 decision's "place side effects after interrupts" rule made executable: LangGraph
 replays an interrupted node from its start, so a single node holding both would
 replay its settlement the second time around the loop. Idempotency is not left
-to the topology either, because settlement independently refuses a review that
-is no longer pending.
+to the topology either, because every owner decision claims one proposal-wide
+command key: an identical replay returns its first result, a competing branch
+conflicts, and the settling handler turns both into the same already-settled
+question.
 
 The correction and undo specialists are implemented. Correction reuses the
 evaluated extraction and category-fit boundaries, then a framework-independent

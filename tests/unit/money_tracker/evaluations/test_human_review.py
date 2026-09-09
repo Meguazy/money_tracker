@@ -95,6 +95,8 @@ def test_loopback_page_accepts_one_authenticated_complete_submission() -> None:
         assert status == 200
         assert isinstance(html, str)
         assert "How useful is this answer?" in html
+        assert "Categories without a budget:" in html
+        assert "Funding split:" in html
         assert "Sto spendendo troppo?" not in html
         assert "frame-ancestors 'none'" in headers["Content-Security-Policy"]
 

@@ -1,8 +1,9 @@
 # Telegram Operations
 
 - Status: Bot API adapter, secure configuration, durable polling, private-owner
-  filtering, and outbox delivery are implemented; pairing administration,
-  worker/presentation, systemd, and real test-bot acceptance remain pending
+  filtering, outbox delivery, and Italian response rendering are implemented;
+  pairing administration, the workflow worker, systemd, and real test-bot
+  acceptance remain pending
 - Bot created: no
 - Production token configured: no
 - Test bot configured: no
@@ -23,8 +24,10 @@ Authoritative references:
 `money-tracker-telegram` can validate, poll, durably ingest, acknowledge
 callbacks, and deliver existing outbox rows. It requires a previously persisted
 owner binding; the supported pairing administration path and workflow worker do
-not exist yet. Therefore no finance workflow is usable through Telegram and the
-real test-bot acceptance remains pending.
+not exist yet. Owner-facing text and controls are implemented but have no
+caller until the worker exists, so nothing yet creates an outbox row. Therefore
+no finance workflow is usable through Telegram and the real test-bot acceptance
+remains pending.
 
 Use a separate bot for integration/E2E tests so experiments cannot consume or
 reply to production updates.

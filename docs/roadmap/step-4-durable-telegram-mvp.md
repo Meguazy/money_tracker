@@ -40,6 +40,9 @@ evidence do not exist yet and are not claimed by this status.
   key in the settlement transaction. Identical approval, reuse, cancellation,
   and re-proposal commands return the first stored result; competing branches
   conflict without another finance write.
+- `presentation.telegram` renders every dispatch status in Italian and owns the
+  bounded callback vocabulary. It is a library with no caller yet: without the
+  worker, nothing turns a dispatch outcome into an outbox row.
 
 ## Reconciled design
 
@@ -97,6 +100,20 @@ printing private content or identifiers.
 - Forty-seven focused unit tests passed across the review service and graph.
   Nine real-PostgreSQL application tests passed, including identical replay,
   competing-decision conflict, and stable re-proposal reconstruction.
+
+## Response rendering evidence
+
+- Every dispatch status is rendered: movement summaries carrying amount, date,
+  purpose, and funding source with `Modifica`/`Annulla`; the paused review with
+  only the branches AD-008 still allows; all four read tools; both channel
+  commands; and one owner question for every stable clarification code.
+- Response content depends only on the outcome and committed state. Live queue
+  figures are excluded by design, because a replayed render must reproduce the
+  logical response its outbox key already names. Operational status stays with
+  the pending administration and health path.
+- Twenty-four unit tests passed, including a contract test that drives the real
+  ingestion callback grammar with the rendered buttons, and one that fails if a
+  new reason code reaches the owner as generic prose.
 
 ## Gateway implementation evidence
 

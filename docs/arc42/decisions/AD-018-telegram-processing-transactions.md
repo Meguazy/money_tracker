@@ -2,9 +2,9 @@
 
 - Status: accepted
 - Implementation: messaging contracts/repository, category-review replay, Bot
-  API transport, authorized ingress, and gateway/outbox loops implemented;
-  worker, rendering, pairing administration, operations, and real-bot
-  acceptance pending
+  API transport, authorized ingress, gateway/outbox loops, and Italian response
+  rendering implemented; worker, pairing administration, operations, and
+  real-bot acceptance pending
 - Date: 2026-09-09
 - Supersedes: the raw-update retention detail in
   [AD-010](AD-010-telegram-durable-messaging.md); all other AD-010 choices remain
@@ -170,6 +170,16 @@ review with the same already-settled question. Forty-seven focused unit tests
 and nine real-PostgreSQL application tests cover reconstruction,
 competing-decision conflict, and stable re-proposal.
 
+`presentation.telegram` renders every dispatch status, including the four read
+tools, the paused review branches, and both channel commands. Its content is a
+function of the outcome and committed state alone, which is what lets a
+recovered work item re-render the response its logical key already names.
+Controls carry a short bounded code rather than the longer branch name; a
+contract test drives the real ingestion grammar with the rendered buttons, and
+another proves every stable reason code has an owner-facing question.
+Twenty-four unit tests cover rendering, digest stability, and refusal of
+missing display data.
+
 The production `BotApiClient` uses explicit allowed update types, bounded
 connect/read/write timeouts, backlog-preserving webhook removal, plain-text
 sending, and safe reason codes that omit API bodies and token-bearing URLs.
@@ -186,6 +196,10 @@ still awaits external credentials and owner interaction.
   source reference, logical outbox key, pairing, and pending-action scope.
 - Slow inference never blocks gateway ingestion, but strict head-of-line order
   intentionally delays later work until retry or dead-letter transition.
+- A logical response must be reproducible from committed state, so live
+  operational figures cannot appear in one. Queue depth, dead letters, and
+  readiness therefore belong to the operator health path rather than to a
+  durable owner response.
 - Operations can inspect counts, ages, safe identifiers, error codes, and
   dependency state, but not raw Telegram payloads or private message content.
 - A physical duplicate Telegram acknowledgement remains a documented external

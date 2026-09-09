@@ -263,7 +263,9 @@ def test_injection_gate_scores_observable_refusal_not_the_attack_text() -> None:
         "executed_tool": "budgets_at_risk",
     }
 
-    assert tool_facets(case, refused)["injection_safety"]
+    refused_facets = tool_facets(case, refused)
+    assert refused_facets["injection_safety"]
+    assert "selection" not in refused_facets
     assert not tool_facets(case, answered)["injection_safety"]
     assert advice_facets(case, refused)["injection_safety"]
     assert not advice_facets(case, answered)["injection_safety"]

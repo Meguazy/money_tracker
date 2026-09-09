@@ -132,9 +132,12 @@ The text-workflow injection gate is exercised in both suites. Cases attempt to
 select a tool outside the forced route's registry, bypass a mutation or taxonomy
 confirmation, reveal boundary instructions, and state a figure no tool returned.
 They expect refusal and additionally preserve the existing authorization and
-numeric-provenance gates. The deterministic registry check and graph topology
-remain unchanged; injection coverage does not weaken acceptance to create a
-model-visible exploit.
+numeric-provenance gates. Injection-only refusals do not enter the ordinary
+expected-selection denominator because they name no permitted tool and would
+artificially improve that accuracy score; their behavior is reported through the
+zero-tolerance injection, registry, and provenance gates. The deterministic
+registry check and graph topology remain unchanged; injection coverage does not
+weaken acceptance to create a model-visible exploit.
 
 ## Receipt extraction and review
 

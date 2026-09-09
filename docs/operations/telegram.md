@@ -260,6 +260,19 @@ Telegram does not provide a general exactly-once `sendMessage` contract, so a
 rare duplicate physical message may occur after an ambiguous response; a second
 logical outbox row or financial mutation is never acceptable.
 
+## Credentials in logs
+
+The Bot API puts the token in the request path, so any library that logs a URL
+logs the credential. Both entry points therefore configure logging through
+`configure_safe_logging`, which raises `httpx`, `httpcore`, and `urllib3` to
+WARNING so the request line is never emitted, and installs a filter that
+redacts token-shaped runs from every record whatever produced it.
+
+This was found the hard way: a plain `basicConfig(level=INFO)` enabled INFO for
+every logger in the process, and the first real run printed the full Bot API
+URL to the terminal. If you see a token in a scrollback buffer, a journal, or a
+pasted log from before that fix, treat it as compromised and rotate it.
+
 ## Token compromise or rotation
 
 Rotation stays a manual BotFather procedure, and no helper will be added.

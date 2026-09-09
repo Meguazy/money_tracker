@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import logging
 import sys
 from collections.abc import Sequence
 from datetime import UTC, datetime
@@ -13,6 +12,7 @@ from uuid import UUID
 from psycopg import OperationalError
 
 from money_tracker.application.runtime import UUID4Generator
+from money_tracker.logging_safety import configure_safe_logging
 from money_tracker.messaging import (
     TELEGRAM_UPDATE_RETENTION,
     MessagingAdministration,
@@ -224,10 +224,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     """
 
     args = _parser().parse_args(argv)
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s %(message)s",
-    )
+    configure_safe_logging()
     try:
         settings = TelegramSettings.from_env()
         database_url = database_url_from_env()

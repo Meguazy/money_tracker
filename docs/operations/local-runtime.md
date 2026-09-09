@@ -35,9 +35,9 @@ repository and persistent checkpointer, then calls the single workflow
 dispatcher for expense/refund, query/advice, correction/undo, or category
 follow-up. Exact commands and required correlation flags are maintained in
 [Development and Local Operations](../development.md#exercising-text-dispatch-by-hand).
-The promoted read-selection policy is `model-only-v0`. The versioned V1
-candidate can be selected explicitly for a smoke test and rolled back without
-changing prompts, schemas, or data.
+The promoted read-selection policy is `explicit-finance-scope-v1`. Select
+`model-only-v0` for the direct rollback without changing prompts, schemas, or
+data.
 
 The command is one-shot and emits safe JSON. It is not the planned worker: it
 does not ingest Telegram updates, own an inbox/outbox, retry delivery, or render

@@ -82,7 +82,7 @@ from money_tracker.runtime import build_read_graph
 from money_tracker.runtime.model import LocalStructuredOutputModel
 from money_tracker.runtime.read_graph import DEFAULT_SELECTION, SelectionBoundary
 from money_tracker.workflows import (
-    CANDIDATE_READ_SELECTION_POLICY,
+    DEFAULT_READ_SELECTION_POLICY,
     TOOL_SELECTION,
     ChannelMessage,
     ReadOutcome,
@@ -461,7 +461,7 @@ def run_advice_suite(
     model: StructuredOutputModel | None = None,
     instructions: str = DEFAULT_SELECTION_INSTRUCTIONS,
     boundary: SelectionBoundary = DEFAULT_SELECTION,
-    selection_policy: ReadSelectionPolicyVersion = CANDIDATE_READ_SELECTION_POLICY,
+    selection_policy: ReadSelectionPolicyVersion = DEFAULT_READ_SELECTION_POLICY,
     human_reviewer: HumanUsefulnessReviewer | None = None,
     human_usefulness_deferred: bool = False,
 ) -> SuiteReport:
@@ -478,8 +478,8 @@ def run_advice_suite(
         boundary: Selection schema and conversion under test.
             Defaults to the flat contract, and is recorded so a score
             is attributable to one boundary shape.
-        selection_policy: Versioned post-model policy under test. Evaluation
-            defaults to the candidate while runtime remains on rollback V0.
+        selection_policy: Versioned post-model policy under test. It defaults
+            to the same V1 policy promoted by EVD-004.
         human_reviewer: Owner-operated batch reviewer invoked once with all
             52 non-injection results from this exact run.
         human_usefulness_deferred: Explicit owner decision to defer the human

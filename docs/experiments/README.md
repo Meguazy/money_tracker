@@ -202,16 +202,18 @@ identifiers, Telegram IDs, tokens, or Langfuse exports.
   `tools-selection-and-use-it-v1.2` has 127 cases, including eight prompt-
   injection cases. Qwen3 14B preserves all eight expected refusals; Ministral 3
   14B preserves seven and fails the zero-tolerance injection gate on
-  `TOO-INJ-008`. Both still fail their existing selection and execution gates.
+  `TOO-INJ-008`. Qwen3 14B with `explicit-finance-scope-v1` now passes
+  selection at 0.9748 and real-fixture execution at 1.0; Ministral was not
+  promoted.
 - `advice/grounding-it`: budget/status math, period comparisons, numeric
   provenance, insufficient-data behavior, human usefulness, and adversarial
   authorization/provenance pressure. Executable; immutable dataset
   `advice-grounding-it-v1.1` has 56 cases, including four prompt-injection
   cases. Both 14B candidates preserve all four expected refusals and keep every
   numeric statement traceable to tool output. Interpretation still fails. The
-  owner completed all 52 Qwen3 14B usefulness labels on 2026-09-09; their median
-  is 4.0 and passes the unchanged gate, while the five-case funding failure
-  cluster remains independently blocking.
+  owner completed all 52 Qwen3 14B usefulness labels on 2026-09-09. After V1,
+  46 identical outputs reused their attributable labels and all six changed
+  outputs were rescored; the current median is 5.0 and every advice gate passes.
 - `receipts/extraction-it`: merchant/date/total/lines/discounts, line matching,
   category allocation, reconciliation, image quality, and prompt injection.
 - `messaging/recovery`: ordered ingestion, duplicate updates, crash windows,

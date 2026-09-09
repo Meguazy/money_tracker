@@ -419,9 +419,9 @@ makes exactly one decision, and everything after it is deterministic.
    profile, identifier, amount, funding source, or free-form query. There is
    deliberately no generic SQL tool in the vocabulary at all.
 4. A versioned pure policy may repair only an enumerated semantic scope from
-   normalized text and trusted active display names. `model-only-v0` preserves
-   the request and remains the runtime default; `explicit-finance-scope-v1` is
-   an evaluation candidate with V0 as its direct rollback.
+   normalized text and trusted active display names. EVD-004 promotes
+   `explicit-finance-scope-v1`; `model-only-v0` preserves the model request and
+   remains the direct rollback.
 5. Deterministic acceptance admits the resulting tool against the registry of
    the *routed* intent, taken from trusted context rather than from the model,
    so neither model nor policy can widen the route scope.
@@ -537,9 +537,10 @@ is a nondeterministic suggestion that deterministic policy then re-checks.
    identifier references, plus a machine-readable justification code that
    contains no owner text.
 
-No LangGraph node, prompt, model call, specialist workflow, or persistent
-interrupt is implemented yet, and no confidence bar is promoted. The router
-imports no model client, repository, or transport module.
+The compiled LangGraph router, specialists, persistent review interrupt, and
+explicit dispatcher are implemented. EVD-004 promotes Qwen3 14B, router v6,
+and confidence 0.5. The framework-independent router policy still imports no
+model client, repository, or transport module.
 
 ### Current extraction boundary and deterministic resolution
 
@@ -1106,11 +1107,11 @@ environment file.
   boundary, the extraction and category-fit boundaries, deterministic
   dual-allocation resolution, the expense and refund specialist graph, and the
   persistent owner category review interrupt, scoped read-only query/advice
-  routes, correction/undo specialists, and explicit dispatcher implemented;
-  promoted prompts and threshold calibration planned.
+  routes, correction/undo specialists, explicit dispatcher, and EVD-004 prompt,
+  model, policy, and confidence promotion implemented.
 - [AD-012: Evaluation-driven model and prompt promotion](decisions/AD-012-evaluation-driven-promotion.md):
-  capability runner, artifact contract, and passing technical candidates
-  implemented; product-role promotion remains experiment-gated.
+  capability runner, artifact contract, immutable suite evidence, and the
+  EVD-004 Step 3 text-role promotion implemented; later roles remain gated.
 - [AD-013: Host runtime and encrypted backup](decisions/AD-013-local-runtime-and-backup.md):
   Compose topology, encrypted Restic backup, verification, retention, and the
   isolated restore drill implemented; systemd units, scheduling, and the
@@ -1130,8 +1131,8 @@ environment file.
   trusted action correlation, and administration CLI wiring implemented;
   durable worker and channel presentation planned.
 - [AD-017: Versioned deterministic read-selection policy](decisions/AD-017-versioned-read-selection-policy.md):
-  pure V0 rollback and narrowly scoped V1 candidate implemented between model
-  parsing and registry acceptance; V1 promotion remains evaluation-gated.
+  promoted V1 policy implemented between model parsing and registry acceptance;
+  V0 remains the direct configuration rollback.
 
 ### Planned accepted decisions
 

@@ -46,7 +46,7 @@ from money_tracker.evaluations.tool_use import run_tool_use_suite
 from money_tracker.persistence.database import database_url_from_env
 from money_tracker.runtime.read_graph import SELECTION_BOUNDARIES
 from money_tracker.workflows import (
-    CANDIDATE_READ_SELECTION_POLICY,
+    DEFAULT_READ_SELECTION_POLICY,
     ReadSelectionPolicyVersion,
 )
 from money_tracker.workflows.prompts import (
@@ -319,7 +319,7 @@ def _parser() -> argparse.ArgumentParser:
     tools.add_argument(
         "--selection-policy",
         choices=[version.value for version in ReadSelectionPolicyVersion],
-        default=CANDIDATE_READ_SELECTION_POLICY.value,
+        default=DEFAULT_READ_SELECTION_POLICY.value,
         help="versioned post-model selection policy under test",
     )
     tools.add_argument(
@@ -347,7 +347,7 @@ def _parser() -> argparse.ArgumentParser:
     advice.add_argument(
         "--selection-policy",
         choices=[version.value for version in ReadSelectionPolicyVersion],
-        default=CANDIDATE_READ_SELECTION_POLICY.value,
+        default=DEFAULT_READ_SELECTION_POLICY.value,
         help="versioned post-model selection policy under test",
     )
     advice.add_argument(

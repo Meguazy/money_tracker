@@ -183,14 +183,11 @@ promoted auto-post subset. The result reports any movement/proposal/category
 references, admitted read tool and grounded facts, or the stable clarification
 reason.
 
-The runtime default remains the promoted identity policy `model-only-v0`. To
-exercise the rollbackable candidate on query or advice, add:
+The runtime default is the EVD-004 policy `explicit-finance-scope-v1`, which
+acts after model parsing and before the same route registry and safety vetoes.
+Return immediately to previous model-only behavior with:
 
-    --read-selection-policy explicit-finance-scope-v1
-
-The candidate acts after model parsing and before the same route registry and
-safety vetoes. Return immediately to previous behavior with
-`--read-selection-policy model-only-v0`.
+    --read-selection-policy model-only-v0
 
 ## Authoritative backup
 

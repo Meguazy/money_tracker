@@ -472,3 +472,17 @@ def test_candidate_policy_never_repairs_instruction_attack_text() -> None:
         )
         is forbidden
     )
+
+
+def test_evd_004_promotes_the_v1_policy_with_v0_rollback() -> None:
+    """Make the selected production policy visible in executable configuration."""
+
+    from money_tracker.workflows import (
+        DEFAULT_READ_SELECTION_POLICY,
+        ReadSelectionPolicyVersion,
+    )
+
+    assert DEFAULT_READ_SELECTION_POLICY is (
+        ReadSelectionPolicyVersion.EXPLICIT_FINANCE_SCOPE_V1
+    )
+    assert ReadSelectionPolicyVersion.MODEL_ONLY_V0.value == "model-only-v0"

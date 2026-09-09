@@ -373,7 +373,8 @@ def build_workflow_dispatcher(
         category_names: Active names visible to read selection.
         funding_source_names: Active source display names visible to the
             deterministic read-selection policy.
-        selection_policy: Versioned post-model policy; defaults to promoted V0.
+        selection_policy: Versioned post-model policy; defaults to the V1
+            policy promoted by EVD-004.
         checkpointer: Persistent serializer-safe graph checkpoint adapter.
 
     Returns:

@@ -34,10 +34,9 @@ is parsed and before registry acceptance. The runtime order is:
 4. apply the existing unavailable-budget veto;
 5. execute the admitted read-only tool.
 
-`model-only-v0` returns the parsed request unchanged and remains the promoted
-runtime default. `explicit-finance-scope-v1` is an evaluation candidate. Callers
-must select it explicitly until its pinned tool and advice gates pass and the
-experiment decision log promotes it.
+`model-only-v0` returns the parsed request unchanged and is the direct rollback.
+EVD-004 promotes `explicit-finance-scope-v1` after its pinned tool and advice
+gates passed without a threshold change.
 
 V1 may use only normalized message text plus active category and funding-source
 display names supplied by trusted configuration. It repairs:
@@ -48,7 +47,10 @@ display names supplied by trusted configuration. It repairs:
 - advice asking which categories lack budgets to the all-budget survey;
 - a model abstention on the exact broad advice phrase to the all-budget survey.
 
-Text that explicitly asks to ignore instructions or registries, skip confirmation, reveal prompts, or avoid tools is never repaired; the original request reaches the existing refusal checks. A repaired model request preserves its parsed period. If the model abstains and
+Text that explicitly asks to ignore instructions or registries, skip
+confirmation, reveal prompts, or avoid tools is never repaired; the original
+request reaches the existing refusal checks. A repaired model request preserves
+its parsed period. If the model abstains and
 the message names another month, the policy also abstains instead of defaulting
 to the current month. The resulting request still passes the same closed
 registry and strict schema checks as any model request. The policy never emits a
@@ -84,7 +86,7 @@ shown to the owner again.
 - The policy is independently attributable in every relevant run.
 - Active display-name changes can change candidate matching, so callers must
   supply names from the same profile configuration used for execution.
-- V1 remains unpromoted until complete measurements satisfy AD-012. No threshold
-  or dataset label changes as part of this decision.
+- EVD-004 records the complete passing measurements and promotes V1. No
+  threshold or dataset label changed.
 - Adding another repair requires a new policy version and evidence; silently
   widening V1 is not permitted.

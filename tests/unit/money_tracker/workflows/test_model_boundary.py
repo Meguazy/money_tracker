@@ -9,10 +9,13 @@ import pytest
 from pydantic import BaseModel
 
 from money_tracker.workflows import (
+    CATEGORY_FIT,
     DETERMINISTIC_ONLY_INTENTS,
+    EXTRACTION,
     MODEL_BOUNDARY_ATTEMPTS,
     MODEL_ROUTABLE_INTENTS,
     ROUTER,
+    TOOL_SELECTION,
     RepairRequest,
     RouteClassification,
     StructuredOutputError,
@@ -20,6 +23,7 @@ from money_tracker.workflows import (
     default_prompt,
     parse_with_one_repair,
 )
+from money_tracker.workflows.prompts import CATEGORY_LEAF, CATEGORY_SUBTREE
 
 VALID = json.dumps(
     {
@@ -201,10 +205,23 @@ def test_unparsable_output_is_treated_as_a_schema_failure() -> None:
     assert classification.intent is WorkflowIntent.EXPENSE
 
 
-def test_candidate_instructions_are_labelled_unpromoted() -> None:
-    """Keep an unevaluated prompt impossible to mistake for production."""
+@pytest.mark.parametrize("boundary", [ROUTER, EXTRACTION, CATEGORY_FIT, TOOL_SELECTION])
+def test_promoted_instructions_keep_their_attribution_identifier(
+    boundary: str,
+) -> None:
+    """Promote lifecycle status without breaking historical run attribution."""
 
-    assert default_prompt(ROUTER).id.startswith("candidate-")
+    assert default_prompt(boundary).id.startswith("candidate-")
+    assert default_prompt(boundary).status == "promoted"
+
+
+@pytest.mark.parametrize("boundary", [CATEGORY_SUBTREE, CATEGORY_LEAF])
+def test_rejected_two_stage_instructions_have_no_candidate_status(
+    boundary: str,
+) -> None:
+    """Keep AD-015's rejected boundaries out of the promoted candidate set."""
+
+    assert default_prompt(boundary).status == "rejected"
 
 
 def test_candidate_instructions_list_every_routable_intent() -> None:

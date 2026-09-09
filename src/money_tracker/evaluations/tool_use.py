@@ -90,7 +90,7 @@ from money_tracker.runtime import build_read_graph
 from money_tracker.runtime.model import LocalStructuredOutputModel
 from money_tracker.runtime.read_graph import DEFAULT_SELECTION, SelectionBoundary
 from money_tracker.workflows import (
-    CANDIDATE_READ_SELECTION_POLICY,
+    DEFAULT_READ_SELECTION_POLICY,
     TOOL_SELECTION,
     ReadOutcome,
     ReadSelectionPolicyVersion,
@@ -454,7 +454,7 @@ def run_tool_use_suite(
     model: StructuredOutputModel | None = None,
     instructions: str = DEFAULT_SELECTION_INSTRUCTIONS,
     boundary: SelectionBoundary = DEFAULT_SELECTION,
-    selection_policy: ReadSelectionPolicyVersion = CANDIDATE_READ_SELECTION_POLICY,
+    selection_policy: ReadSelectionPolicyVersion = DEFAULT_READ_SELECTION_POLICY,
 ) -> SuiteReport:
     """Execute the tool suite and always emit a deterministic report.
 
@@ -470,8 +470,8 @@ def run_tool_use_suite(
         boundary: Selection schema and conversion under test.
             Defaults to the flat contract, and is recorded so a score
             is attributable to one boundary shape.
-        selection_policy: Versioned post-model policy under test. Evaluation
-            defaults to the candidate while runtime remains on rollback V0.
+        selection_policy: Versioned post-model policy under test. It defaults
+            to the same V1 policy promoted by EVD-004.
 
     Returns:
         The complete report, already written to its artifact directory.

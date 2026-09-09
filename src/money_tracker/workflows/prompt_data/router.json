@@ -95,7 +95,7 @@
     },
     {
       "id": "candidate-router-it-v6",
-      "status": "candidate",
+      "status": "promoted",
       "note": "Define external price lookups as unsupported while preserving personal-spending queries.",
       "intent_guidance": {
         "advice": "the owner asks how they are doing, whether they are on track, or what they should do, so an assessment rather than a single figure would answer it",

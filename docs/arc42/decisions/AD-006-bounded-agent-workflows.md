@@ -6,8 +6,8 @@
   deterministic occurrence-time, sign, and both allocation dimensions, the
   expense/refund and correction/undo specialist graphs, the persistent
   owner-approval interrupt, scoped read-only query and advice routes, and the
-  explicit router-to-specialist dispatcher implemented; promoted prompts and
-  threshold calibration planned
+  explicit router-to-specialist dispatcher and EVD-004 text configuration
+  promotion implemented
 - Date: 2026-09-01
 
 ## Context
@@ -159,9 +159,9 @@ only reads, so a mutation is absent from the object graph those nodes reach.
 
 [AD-017](AD-017-versioned-read-selection-policy.md) inserts an independently
 versioned pure policy between parsing and acceptance. Its promoted
-`model-only-v0` path is identity behavior; its V1 candidate repairs only
-explicit scopes from normalized text and trusted active display names, then
-faces the same registry and safety vetoes.
+`model-only-v0` path is identity behavior and remains the rollback. EVD-004
+promotes V1, which repairs only explicit scopes from normalized text and trusted
+active display names, then faces the same registry and safety vetoes.
 
 [AD-016](AD-016-explicit-workflow-dispatcher.md) composes the router and all
 Step 3 specialists behind one transport-neutral call. It keeps the graphs and

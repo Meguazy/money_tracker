@@ -1,9 +1,10 @@
 """Versioned instruction catalogs for the workflow model boundaries.
 
-Nothing here is promoted. AD-012 and the experiment process require a prompt to
-pass its evaluation gates and be recorded in the decision log before a runtime
-adopts it, so every version identifier carries a `candidate-` prefix and the
-decision log states that no V1 production prompt exists.
+Version identifiers retain their historical `candidate-` prefix because changing an
+identifier would break attribution for published runs. Their separate status records
+promotion: EVD-004 promotes the default router v6, extraction v6, category-fit v6,
+and tool-selection v5 texts after their applicable gates passed. AD-015's subtree
+and leaf texts remain rejected and have no runtime path.
 
 The texts live in `prompt_data/<boundary>.json` rather than in Python, one file
 per boundary, each holding every version of that boundary's instructions with
@@ -67,8 +68,8 @@ class PromptVersion:
         id: Version identifier recorded by an evaluation run.
         short_name: Trailing `vN` of the identifier, which is how a run selects
             a version on the command line.
-        status: Either `candidate` for the boundary's current default or
-            `superseded` for one kept so its recorded runs stay readable.
+        status: Lifecycle disposition: `promoted`, `candidate`, `superseded`,
+            or `rejected`.
         note: Why this version exists and what its run measured.
         text: The rendered instruction text, vocabularies already substituted.
     """

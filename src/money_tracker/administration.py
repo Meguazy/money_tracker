@@ -159,7 +159,10 @@ def _parser() -> argparse.ArgumentParser:
         "--read-selection-policy",
         choices=[version.value for version in ReadSelectionPolicyVersion],
         default=DEFAULT_READ_SELECTION_POLICY.value,
-        help="versioned read-selection policy (default: promoted model-only-v0)",
+        help=(
+            "versioned read-selection policy "
+            "(default: promoted explicit-finance-scope-v1)"
+        ),
     )
     subparsers.add_parser(
         "profile-init",

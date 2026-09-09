@@ -2,112 +2,63 @@
 
 Part of the [delivery roadmap](../roadmap.md).
 
-Status: **In progress.** The framework-independent routing, extraction, and
-resolution foundation is implemented: the bounded intent taxonomy with
-partitioned mutation authority, the normalized channel work unit, deterministic
-pre-routing, the strict versioned router and expense/refund extraction model
-boundaries with their deterministic policy vetoes, the versioned category-fit
-boundary, pure resolution of occurrence time, amount sign, and both reconciled
-allocation dimensions, and the strict-schema retry boundary behind a narrow
-model port. The typed root router is assembled as a LangGraph state graph over
-the persistent PostgreSQL checkpointer, with a local structured-output adapter
-and a local command for exercising it by hand. The expense and refund
-specialist workflow runs end to end, storing a draft through the existing
-application services or reporting the question it owes, and the extraction
-boundary no longer blocks that path. The owner category review pauses on a
-persistent interrupt and settles every J3 branch, and the read-only routes
-answer from scoped registries of domain read tools. One explicit dispatcher now
-connects the router to every Step 3 specialist and is wired to the local
-administration command. All six pinned suites are
-executable and measured. The workflow suite passes every gate; the five that
-measure model judgment each fail at least one. The binding constraint the
-suites isolated has since been screened directly at Step 1's capability screen,
-which answers it in two halves: the candidate cannot leave an optional field
-alone in any boundary shape, and it can answer with a discriminated union. No
-channel wiring exists yet, and no confidence bar, prompt, or model is
-promoted.
+Status: **Complete (2026-09-09).** The framework-independent workflow
+contracts, all Step 3 specialist graphs, persistent category review,
+correction/undo, the transport-neutral dispatcher, administration entry point,
+and evaluation/reporting infrastructure are implemented. EVD-004 promotes
+Qwen3 14B with router v6, extraction v6, category-fit v6, tool-selection v5,
+routing confidence 0.5, and `explicit-finance-scope-v1`. Every applicable
+blocking gate passes on the pinned datasets without a threshold change. V1 has
+no automatic-post subset, so every new movement remains a draft. Telegram,
+owner-facing response rendering, and the end-to-end latency measurement remain
+Step 4; receipt behavior remains Step 6.
 
-## Current deterministic read-selection candidate — 2026-09-09
+## Promoted deterministic read-selection policy — 2026-09-09
 
 [AD-017](../arc42/decisions/AD-017-versioned-read-selection-policy.md)
 implements a separately versioned pure policy between parsed model selection
-and the existing registry acceptance. `model-only-v0` is the promoted runtime
-default and exact rollback. `explicit-finance-scope-v1` is the candidate under
-evaluation for the measured funding and advice failure clusters; it can use
+and the existing registry acceptance. EVD-004 promotes
+`explicit-finance-scope-v1`; `model-only-v0` remains its exact rollback. V1 uses
 only explicit normalized text and trusted active display names, preserves a
 model-resolved period, and abstains rather than guessing an unresolved past
 month. It cannot emit figures or widen a routed registry.
 
 The tools and advice suites, their manifests, the dispatcher, the administration
-command, and the sweep script all carry the policy version. Evaluation defaults
-to V1 while runtime remains on V0 until the pinned gates pass and the decision
-log promotes it. Owner usefulness labels from the completed Qwen run may be
-reused only for byte-equivalent JSON results under the same rubric; changed
-results return to the loopback reviewer. No threshold, prompt, schema, dataset,
-or historical decision changed in this increment.
+command, and the sweep script all carry the policy version. The final Qwen runs
+score tool selection at 116/119 = 0.9748, real-fixture postconditions at 99/99,
+and advice interpretation at 52/52. Owner usefulness labels were reused only
+for 46 byte-equivalent JSON results; the owner rescored all six changed results,
+and the complete current median is 5.0. No threshold, prompt text, schema,
+dataset, or historical outcome changed.
 
-## Current corrective increment — 2026-09-08
+## Historical corrective increment — 2026-09-08
 
 The owner authorized the [contract and evaluation corrections](../experiments/text-workflow-fixes-2026-09-08.md)
 using Qwen3 14B. That document supersedes historical diagnostic claims below
 about missing specificity/funding instructions and query-accessible surveys.
 Development datasets are versioned separately from their historical baselines.
-Step 3 remains in progress; no model, confidence or auto-post policy is promoted.
+At that measurement point Step 3 remained in progress and no model, confidence, or auto-post policy was promoted; EVD-004 supersedes that status.
 
 ## Prerequisites
 
-Step 2 complete. A capability-screened local candidate exists from Step 1, but
-no candidate is promoted to a product role; promotion happens through this
-step's gates and the experiment decision log.
+Step 2 is complete. Step 1 supplied the local candidates and evaluation
+foundation; this step has now promoted Qwen3 14B through EVD-004 after the
+product suites passed.
 
-## Remaining increments
+## Completed increments
 
-This order is a handoff aid, not new scope. Each increment must land with its
-own tests and documentation, and none may ship a later step's behavior.
-
-1. The read-only query and advice routes with scoped tool registries.
-   Implemented; see the evidence below.
-2. Persistent human-in-the-loop category review over the existing pending
-   proposal port, covering approve, best existing, named existing, re-propose,
-   cancel, unrelated input, and the three-rejection transition, with side
-   effects placed after the interrupt and made idempotent for replay.
-   Implemented; see the evidence below.
-3. The pinned `routing/intent-it`, `ingestion/expense-it`,
-   `categorization/purpose-it`, `workflow/category-review-it`,
-   `tools/selection-and-use`, and `advice/grounding-it` datasets and suites,
-   then calibration of the routing confidence bar and the auto-post eligibility
-   policy on held-out labels. The last two were added to this increment by an
-   explicit owner scope decision: increment 1 shipped the read-only query and
-   advice routes, and the suite catalog already gated them, so leaving them
-   unmeasured would have left implemented behaviour outside the evaluation
-   boundary. All six suites are executable and reach their promotion minimums.
-   `workflow/category-review-it` passes every gate; the other five fail at
-   least one, so none supports a promotion. The routing confidence bar has been
-   calibrated on a held-out split and no usable value exists, which is a
-   conclusion rather than an open item: the escalations the bar would have to
-   prevent come from a confident model, not an uncertain one. The auto-post
-   eligibility policy remains uncalibrated because categorization agreement is
-   0.124, so no eligible subset can be defined at all. This increment blocks
-   usable end-to-end behaviour, not just promotion: see the measured findings in
-   the evidence below. An ad-hoc check against the screened
-   Qwen3 14B profile routed the expense, refund, split-funding, query, budget,
-   advice, and non-finance journeys as the product baseline expects, but routed
-   `Vorrei caricare 100 euro di buoni pasto` to the expense route instead of
-   the unsupported route that journey J5 requires. Misreading a benefit credit
-   as spending is a safety-tagged failure, so the intent dataset must cover
-   wallet-credit phrasing. Self-reported confidence was coarse and nearly
-   constant across every case, which is why the bar has to be calibrated on
-   held-out labels rather than on model self-report.
-4. Promotion of the model, prompts, schemas, and thresholds through
-   [Decision Log](../experiments/decision-log.md), which currently records that no
-   routing confidence bar and no auto-post threshold are promoted. Blocked, and
-   correctly so: five of the six suites fail a blocking gate, and the auto-post
-   eligibility policy cannot even be calibrated, because categorization
-   agreement is 0.124 and no eligible subset can be defined at any threshold.
-   Nothing here is waiting on work inside this step. The capability screen run
-   on 2026-09-03 is what the blockage was waiting for, and it does not clear
-   the candidate: see the two entries at the end of the evidence below for what
-   it did and did not settle.
+1. Implemented scoped query/advice tools, persistent category review,
+   correction/undo specialists, and one dispatcher for every Step 3 text route.
+2. Published immutable datasets and executable suites for routing, ingestion,
+   categorization, category review, tool use, and advice, including injection,
+   latency, reporting slices, and owner usefulness evidence.
+3. Calibrated auto-post and found no qualifying V1 subset. The broadest policy
+   scored 131/150 = 0.8733 against 0.98, so all movements remain drafts and the
+   two empty-subset metrics are explicitly inapplicable.
+4. Measured the final configuration on Qwen3 14B. All applicable gates pass;
+   EVD-004 records the exact model, runtime, prompts, schemas, policy, taxonomy,
+   datasets, effective commit, residual risks, and rollback target. The owner
+   stopped the Ministral comparison after its ingestion suite failed.
 
 ## Deliverables
 
@@ -127,24 +78,45 @@ own tests and documentation, and none may ship a later step's behavior.
   by hand before a channel exists; no channel adapter, durable worker, or
   owner-facing response. Implemented for every Step 3 text specialist.
 - Production prompt/model configuration promoted through the experiment
-  decision log.
+  decision log. Implemented by EVD-004.
 
 ## Exit criteria
 
-- Routing, extraction, categorization, HITL, tool, advice-grounding, injection,
-  and latency gates pass on pinned datasets.
+- Routing, extraction, categorization, HITL, tool, advice-grounding, and
+  injection gates pass on pinned datasets.
 - Per-suite warm latency is reported diagnostically on every text suite.
   NFR-PER-001 remains an end-to-end criterion and is measured in Step 4 once
   the channel gateway and complete response path exist; the per-suite number
   cannot satisfy or fail that product target.
 - Restart/resume and repeated-command tests produce zero duplicate writes.
-- Every Italian acceptance example in the product baseline passes through the
-  real local model in integration/evaluation runs.
+- The Step 3-owned parsing, routing, specialist, and domain postconditions of
+  the Italian product-baseline examples pass through the real local model or
+  their deterministic review branches. The remaining observable response
+  surface (including the default funding source display and modify/undo
+  controls) and a single channel-to-owner acceptance run are explicitly
+  deferred to Step 4. The mixed-receipt example remains assigned to Step 6.
 - Graph state contains only small serializable values and stable references;
   domain data remains in repositories.
 
 ## Current implementation evidence
 
+- EVD-004 promotes Qwen3 14B on implementation commit `c02c2f0`. The final
+  runs are `ROU-20260909-145350-b1919d44`,
+  `ING-20260909-150059-3f9abaac`, `CAT-20260909-150354-f2f4e790`,
+  `TOO-20260909-150703-7b2c9501`, owner-reviewed
+  `ADV-20260909-144755-762f53cc`, and
+  `REV-20260909-150839-7a1a525f`. All applicable blocking gates pass. The
+  published failure analyses retain the four routing, twenty categorization,
+  and three tool-selection accuracy errors and explain why none crosses a
+  zero-tolerance safety, authorization, provenance, replay, or real-fixture
+  postcondition gate.
+- The exact Italian baseline expense, split-funding, review, query, and advice
+  phrases are represented in the final routing dataset; their specialist
+  semantics are covered by the ingestion, category-review, tools, and advice
+  suites against the real local model and PostgreSQL where applicable. Step 3
+  emits typed outcomes and grounded facts only. Telegram wording and controls
+  do not exist in this step, so their observable half is recorded for the Step
+  4 end-to-end acceptance run rather than claimed here.
 - Every suite now records wall-clock `latency_ms` on each case and publishes
   `warm_latency_p95_ms` as a non-blocking diagnostic. The common method excludes
   the first in-suite case as warm-up, keeps subsequent successful observations,
@@ -154,8 +126,9 @@ own tests and documentation, and none may ship a later step's behavior.
   inference benchmark. These numbers locate slow specialist boundaries, but do
   not measure NFR-PER-001: that requirement names the complete text workflow
   from channel input to owner-visible response, whose gateway and response
-  surface belong to Step 4. The complete Step 3 sweep below will publish the
-  first comparable values for both 14B candidates.
+  surface belong to Step 4. Qwen has a complete six-suite measurement; the
+  owner stopped Ministral after its ingestion gate failed, so its later suites
+  were deliberately not rerun.
 - Report schema 3 carries public-safe slice labels per case and publishes
   aggregate and failure counts for difficulty, intent, domain feature, auto-post
   eligibility, funding class, category provenance, the six required adversarial
@@ -548,7 +521,8 @@ own tests and documentation, and none may ship a later step's behavior.
   space, so no realistic message resolves to them directly.
 - Measured against the screened Qwen3 14B profile, the suite fails four
   blocking gates and the result is much worse than routing's:
-  - `purpose_label_agreement` 0.124 against a 0.85 gate.
+  - The initial v1.0 run reported `purpose_label_agreement` 0.124 against
+    a 0.85 gate; the final v1.1 run supersedes it at 0.8693.
   - `false_new_category_proposal` 0.929 against a 0.05 gate: 131 of 141 cases
     with an adequate existing node produced a proposal instead.
   - `merchant_or_payment_method_proposed_as_category` counted 2 against zero
@@ -774,7 +748,7 @@ own tests and documentation, and none may ship a later step's behavior.
   there is not a documentation nit but an unmeasured change waiting to happen.
 - Neither result promotes anything or changes a contract yet. The union probe's
   variant-selection accuracy is a diagnostic over six synthetic categories and
-  is not comparable with `categorization/purpose-it`'s 0.124 agreement over the
+  is not comparable with the historical `categorization/purpose-it` 0.124 agreement over the
   real taxonomy; reading it as evidence that a union fixes categorization would
   be reading a mechanism check as a domain score. What the screen establishes is
   narrower and firmer: a union is available to a boundary that wants one, and no
@@ -902,6 +876,7 @@ own tests and documentation, and none may ship a later step's behavior.
   published tree with nothing in the table to say so. Five of the six published
   rows also could not record their chat-template hash, which their promotion
   blockers already stated and the summary now shows.
-- No exit criterion is met yet. Every gate in the
-  [Evaluation Matrix](../experiments/evaluation-matrix.md) requires the model
-  half, the specialist workflows, and pinned datasets that remain open.
+- Step 3 is complete. The final six-suite Qwen evidence, owner review,
+  auto-post disposition, EVD-004 promotion, replay tests, serializable-state
+  checks, and explicit Step 4/Step 6 acceptance boundaries satisfy its exit
+  criteria without lowering a threshold or rewriting a historical dataset.

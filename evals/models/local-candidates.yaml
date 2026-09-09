@@ -1,7 +1,7 @@
 catalog_schema_version: "1"
 researched_at: "2026-09-01"
-status: experimental
-promotion_effect: none
+status: role-specific
+promotion_effect: "text-qwen3-14b promoted for Step 3 text workflows by EVD-004"
 target:
   gpu: NVIDIA GeForce RTX 5070 Ti
   vram_mib: 16303

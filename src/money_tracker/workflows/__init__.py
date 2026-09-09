@@ -130,7 +130,6 @@ from money_tracker.workflows.state import (
 )
 from money_tracker.workflows.tools import (
     ADVICE_TOOLS,
-    CANDIDATE_READ_SELECTION_POLICY,
     DEFAULT_READ_SELECTION_POLICY,
     QUERY_TOOLS,
     TOOL_CONTRACT_VERSION,
@@ -152,7 +151,6 @@ from money_tracker.workflows.wire import (
 __all__ = [
     "BOUNDARIES",
     "CATEGORY_FIT",
-    "CANDIDATE_READ_SELECTION_POLICY",
     "DEFAULT_READ_SELECTION_POLICY",
     "EXTRACTION",
     "ROUTER",

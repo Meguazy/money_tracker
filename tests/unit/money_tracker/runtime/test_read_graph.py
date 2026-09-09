@@ -29,6 +29,7 @@ from money_tracker.domain import (
 )
 from money_tracker.runtime import build_read_graph
 from money_tracker.workflows import (
+    DEFAULT_READ_SELECTION_POLICY,
     TOOL_SELECTION,
     ChannelMessage,
     ReadOutcome,
@@ -191,9 +192,7 @@ def _run(
     text: str = "quanto ho speso per gli abbonamenti questo mese?",
     category_names: tuple[str, ...] = (),
     funding_source_names: tuple[str, ...] = (),
-    selection_policy: ReadSelectionPolicyVersion = (
-        ReadSelectionPolicyVersion.MODEL_ONLY_V0
-    ),
+    selection_policy: ReadSelectionPolicyVersion = DEFAULT_READ_SELECTION_POLICY,
 ) -> tuple[dict[str, Any], ScriptedModel]:
     """Invoke the compiled read workflow over a real reporting service."""
 

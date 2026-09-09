@@ -136,8 +136,8 @@ def test_human_review_and_deferral_are_mutually_exclusive() -> None:
         )
 
 
-def test_read_suites_default_to_the_versioned_candidate_policy() -> None:
-    """Measure the candidate explicitly while production stays on rollback V0."""
+def test_read_suites_default_to_the_promoted_policy() -> None:
+    """Measure the same policy EVD-004 promotes for production."""
 
     parser = _parser()
 

@@ -221,11 +221,8 @@ class ReadSelectionPolicyVersion(StrEnum):
     EXPLICIT_FINANCE_SCOPE_V1 = "explicit-finance-scope-v1"
 
 
-DEFAULT_READ_SELECTION_POLICY = ReadSelectionPolicyVersion.MODEL_ONLY_V0
-"""Promoted runtime policy; V0 preserves the model result unchanged."""
-
-CANDIDATE_READ_SELECTION_POLICY = ReadSelectionPolicyVersion.EXPLICIT_FINANCE_SCOPE_V1
-"""Policy under evaluation for the known funding and advice blind spots."""
+DEFAULT_READ_SELECTION_POLICY = ReadSelectionPolicyVersion.EXPLICIT_FINANCE_SCOPE_V1
+"""Policy promoted by EVD-004; V0 remains the direct rollback."""
 
 _INSTRUCTION_ATTACK_TERMS: Final = (
     "ignora le istruzioni",
@@ -498,7 +495,6 @@ def tool_vocabulary(intent: WorkflowIntent) -> tuple[str, ...]:
 __all__ = [
     "ADVICE_TOOLS",
     "CATEGORY_TOOLS",
-    "CANDIDATE_READ_SELECTION_POLICY",
     "DEFAULT_READ_SELECTION_POLICY",
     "QUERY_TOOLS",
     "TOOL_CONTRACT_VERSION",

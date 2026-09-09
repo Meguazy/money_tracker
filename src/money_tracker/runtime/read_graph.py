@@ -186,8 +186,8 @@ def build_read_graph(
             boundary and available as trusted policy vocabulary.
         funding_source_names: Active source display names available only to the
             deterministic selection policy.
-        selection_policy: Versioned post-model policy. The default preserves
-            the model result unchanged; callers must opt into candidates.
+        selection_policy: Versioned post-model policy. EVD-004 promotes V1;
+            callers can select V0 for exact model-only rollback.
 
     Returns:
         A compiled graph that maps one routed question to grounded figures or

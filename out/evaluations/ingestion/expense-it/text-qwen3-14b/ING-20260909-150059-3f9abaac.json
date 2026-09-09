@@ -1,0 +1,562 @@
+{
+  "blocking_gates_passed": true,
+  "case_totals": {
+    "error": 0,
+    "failed": 0,
+    "passed": 170
+  },
+  "completed_at": "2026-09-09T15:00:59.098468+00:00",
+  "configuration": {
+    "auto_post_policy_promoted": false,
+    "boundary_exposes_currency": false,
+    "boundary_schema": "WireExpenseExtraction",
+    "dataset_minimum": 150,
+    "default_received_at": "2026-09-15T12:00:00+02:00",
+    "fixture_funding_sources": [
+      "Carta",
+      "Contanti",
+      "Buoni pasto",
+      "Carta aziendale",
+      "Vecchia carta"
+    ],
+    "instructions_sha256": "f6729e82e77b7178a984f3d2f6057984b42ab694a9b7fba5e737ba22bf5525cb",
+    "instructions_version": "candidate-extraction-it-v6",
+    "latency_measurement": {
+      "blocking": false,
+      "clock": "monotonic",
+      "percentile_method": "nearest_rank",
+      "scope": "per_case_suite_wall_clock",
+      "successful_cases_only": true,
+      "warmup_cases_excluded": 1
+    }
+  },
+  "dataset": {
+    "content_hash": "8ac7249b198d65b86bbee3b098aa7ffa2602936a5feb0f098a250df129ca0453",
+    "id": "ingestion-expense-it-v1",
+    "item_count": 170,
+    "version": "1.0.0"
+  },
+  "eligible_for_promotion": true,
+  "meets_dataset_minimum": true,
+  "metrics": [
+    {
+      "applicable": true,
+      "blocking": true,
+      "comparison": "at_least",
+      "denominator": 170,
+      "inapplicability_reason": null,
+      "name": "schema_validity_after_one_repair",
+      "numerator": 170,
+      "passed": true,
+      "threshold": 1.0,
+      "value": 1.0
+    },
+    {
+      "applicable": true,
+      "blocking": true,
+      "comparison": "at_least",
+      "denominator": 162,
+      "inapplicability_reason": null,
+      "name": "amount_exact_match",
+      "numerator": 162,
+      "passed": true,
+      "threshold": 0.99,
+      "value": 1.0
+    },
+    {
+      "applicable": true,
+      "blocking": true,
+      "comparison": "at_least",
+      "denominator": 152,
+      "inapplicability_reason": null,
+      "name": "occurrence_semantic_exactness",
+      "numerator": 152,
+      "passed": true,
+      "threshold": 0.97,
+      "value": 1.0
+    },
+    {
+      "applicable": true,
+      "blocking": true,
+      "comparison": "at_least",
+      "denominator": 152,
+      "inapplicability_reason": null,
+      "name": "funding_source_and_class_match",
+      "numerator": 152,
+      "passed": true,
+      "threshold": 0.97,
+      "value": 1.0
+    },
+    {
+      "applicable": true,
+      "blocking": true,
+      "comparison": "at_least",
+      "denominator": 12,
+      "inapplicability_reason": null,
+      "name": "split_parts_exact_and_reconciled",
+      "numerator": 12,
+      "passed": true,
+      "threshold": 0.99,
+      "value": 1.0
+    },
+    {
+      "applicable": true,
+      "blocking": true,
+      "comparison": "at_least",
+      "denominator": 170,
+      "inapplicability_reason": null,
+      "name": "expense_refund_polarity",
+      "numerator": 170,
+      "passed": true,
+      "threshold": 0.99,
+      "value": 1.0
+    },
+    {
+      "applicable": true,
+      "blocking": true,
+      "comparison": "at_least",
+      "denominator": 28,
+      "inapplicability_reason": null,
+      "name": "required_ambiguity_reported",
+      "numerator": 28,
+      "passed": true,
+      "threshold": 0.98,
+      "value": 1.0
+    },
+    {
+      "applicable": true,
+      "blocking": true,
+      "comparison": "at_most",
+      "denominator": 170,
+      "inapplicability_reason": null,
+      "name": "fabricated_merchant_date_or_payment_field",
+      "numerator": 0,
+      "passed": true,
+      "threshold": 0.01,
+      "value": 0.0
+    },
+    {
+      "applicable": true,
+      "blocking": false,
+      "comparison": "at_least",
+      "denominator": 14,
+      "inapplicability_reason": null,
+      "name": "merchant_semantic_match",
+      "numerator": 12,
+      "passed": true,
+      "threshold": null,
+      "value": 0.8571
+    },
+    {
+      "applicable": true,
+      "blocking": false,
+      "comparison": "at_least",
+      "denominator": 0,
+      "inapplicability_reason": null,
+      "name": "fabricated_funding_silently_resolved",
+      "numerator": 0,
+      "passed": true,
+      "threshold": null,
+      "value": 1.0
+    },
+    {
+      "applicable": true,
+      "blocking": false,
+      "comparison": "at_least",
+      "denominator": 8,
+      "inapplicability_reason": null,
+      "name": "amount_invented_where_none_stated",
+      "numerator": 0,
+      "passed": true,
+      "threshold": null,
+      "value": 0.0
+    },
+    {
+      "applicable": true,
+      "blocking": false,
+      "comparison": "at_least",
+      "denominator": 170,
+      "inapplicability_reason": null,
+      "name": "outcome_agreement",
+      "numerator": 170,
+      "passed": true,
+      "threshold": null,
+      "value": 1.0
+    },
+    {
+      "applicable": true,
+      "blocking": false,
+      "comparison": "at_least",
+      "denominator": 169,
+      "inapplicability_reason": null,
+      "name": "warm_latency_p95_ms",
+      "numerator": 169,
+      "passed": true,
+      "threshold": null,
+      "value": 3554.0
+    }
+  ],
+  "model": {
+    "alias": "local-model",
+    "gguf_filename": "Qwen3-14B-Q5_K_M.gguf",
+    "gguf_sha256": "sha256:e7c9aba1129ca2936be9eca01419d9f86af40e08caa01230d5574b34d08e3e31",
+    "metadata_complete": true,
+    "quantization": "Q5_K_M"
+  },
+  "promotion_blockers": [],
+  "run_id": "ING-20260909-150059-3f9abaac",
+  "slices": {
+    "dimensions": {
+      "adversarial_tag": [
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 34,
+          "value": "locale"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 3,
+          "value": "negation"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 90,
+          "value": "none"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "prompt_injection"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 3,
+          "value": "quoted_text"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 40,
+          "value": "relative_date"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 5,
+          "value": "typo"
+        }
+      ],
+      "auto_post_eligibility": [
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "eligible"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 170,
+          "value": "ineligible"
+        }
+      ],
+      "category_provenance": [
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "alias"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 170,
+          "value": "not_applicable"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "proposal"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "seed"
+        }
+      ],
+      "difficulty": [
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 46,
+          "value": "adversarial"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 16,
+          "value": "ambiguous"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 19,
+          "value": "easy"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 89,
+          "value": "normal"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "unclassified"
+        }
+      ],
+      "domain_feature": [
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 11,
+          "value": "benefit"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 13,
+          "value": "calendar-date"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 2,
+          "value": "delayed-timestamp"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 20,
+          "value": "funding"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 2,
+          "value": "future-date"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 34,
+          "value": "locale"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 14,
+          "value": "merchant"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 8,
+          "value": "missing-amount"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 4,
+          "value": "multiple-numbers"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 3,
+          "value": "negation"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 3,
+          "value": "polarity"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 3,
+          "value": "quoted"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 12,
+          "value": "refund"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 40,
+          "value": "relative-date"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 10,
+          "value": "safety"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 14,
+          "value": "split"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 5,
+          "value": "typo"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 11,
+          "value": "unclassified"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 8,
+          "value": "unreadable-date"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 8,
+          "value": "unresolvable-funding"
+        }
+      ],
+      "funding_class": [
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 11,
+          "value": "benefit"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 119,
+          "value": "default"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 16,
+          "value": "not_applicable"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 4,
+          "value": "other"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 145,
+          "value": "personal_funds"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 14,
+          "value": "split"
+        }
+      ],
+      "intent": [
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 158,
+          "value": "expense"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 12,
+          "value": "refund"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 0,
+          "value": "unclassified"
+        }
+      ],
+      "media_quality": [
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 170,
+          "value": "not_applicable"
+        }
+      ],
+      "warm_state": [
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 169,
+          "value": "warm"
+        },
+        {
+          "error_count": 0,
+          "failure_count": 0,
+          "total": 1,
+          "value": "warmup"
+        }
+      ]
+    },
+    "overall": {
+      "error_count": 0,
+      "failure_count": 0,
+      "total": 170,
+      "value": "all"
+    },
+    "version_set": {
+      "dataset": {
+        "content_hash": "8ac7249b198d65b86bbee3b098aa7ffa2602936a5feb0f098a250df129ca0453",
+        "id": "ingestion-expense-it-v1",
+        "version": "1.0.0"
+      },
+      "model": {
+        "alias": "local-model",
+        "gguf_filename": "Qwen3-14B-Q5_K_M.gguf",
+        "gguf_sha256": "sha256:e7c9aba1129ca2936be9eca01419d9f86af40e08caa01230d5574b34d08e3e31",
+        "metadata_complete": true,
+        "quantization": "Q5_K_M"
+      },
+      "prompt": {
+        "id": "candidate-extraction-it-v6",
+        "sha256": "f6729e82e77b7178a984f3d2f6057984b42ab694a9b7fba5e737ba22bf5525cb"
+      },
+      "receipt_pipeline": "not_applicable",
+      "report_schema": "3",
+      "schema": "WireExpenseExtraction",
+      "suite": "ingestion/expense-it",
+      "taxonomy": "not_applicable",
+      "tools": "not_applicable"
+    }
+  },
+  "source_commit": "c02c2f00e189276c3b7e21d382ff8452a7844ca5",
+  "suite": "ingestion/expense-it"
+}

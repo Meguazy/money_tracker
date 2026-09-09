@@ -89,3 +89,11 @@ write-to-read safety bar, deterministic pre-routing is 16/16, and ambiguous
 clarification is 53/53. The four residual case failures are `ROU-CLA-012`,
 `ROU-QRY-021`, `ROU-CLA-019`, and `ROU-COR-006`; none causes a blocking gate to
 fail. Warm per-case suite p95 is 856 ms over 205 measured cases.
+
+## Promotion measurement — 2026-09-09
+
+Run `ROU-20260909-145350-b1919d44` on `routing-intent-it-v1.2` 1.2.0
+passes every blocking gate at the measured 0.5 confidence bar. Exact agreement
+is 202/206 and macro-F1 is 0.9807; all four residual label errors stay outside
+the two zero-tolerance read/write crossover gates. Deterministic pre-routing is
+16/16 and all 53 ambiguity cases clarify safely. Warm p95 is 959 ms.

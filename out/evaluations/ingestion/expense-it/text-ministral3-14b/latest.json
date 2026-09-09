@@ -2,10 +2,10 @@
   "blocking_gates_passed": false,
   "case_totals": {
     "error": 0,
-    "failed": 5,
-    "passed": 165
+    "failed": 3,
+    "passed": 167
   },
-  "completed_at": "2026-09-09T10:33:20.157371+00:00",
+  "completed_at": "2026-09-09T15:19:29.383986+00:00",
   "configuration": {
     "auto_post_policy_promoted": false,
     "boundary_exposes_currency": false,
@@ -58,10 +58,10 @@
       "denominator": 162,
       "inapplicability_reason": null,
       "name": "amount_exact_match",
-      "numerator": 160,
+      "numerator": 159,
       "passed": false,
       "threshold": 0.99,
-      "value": 0.9877
+      "value": 0.9815
     },
     {
       "applicable": true,
@@ -82,10 +82,10 @@
       "denominator": 152,
       "inapplicability_reason": null,
       "name": "funding_source_and_class_match",
-      "numerator": 151,
+      "numerator": 152,
       "passed": true,
       "threshold": 0.97,
-      "value": 0.9934
+      "value": 1.0
     },
     {
       "applicable": true,
@@ -106,10 +106,10 @@
       "denominator": 170,
       "inapplicability_reason": null,
       "name": "expense_refund_polarity",
-      "numerator": 168,
+      "numerator": 167,
       "passed": false,
       "threshold": 0.99,
-      "value": 0.9882
+      "value": 0.9824
     },
     {
       "applicable": true,
@@ -118,10 +118,10 @@
       "denominator": 28,
       "inapplicability_reason": null,
       "name": "required_ambiguity_reported",
-      "numerator": 26,
+      "numerator": 27,
       "passed": false,
       "threshold": 0.98,
-      "value": 0.9286
+      "value": 0.9643
     },
     {
       "applicable": true,
@@ -130,10 +130,10 @@
       "denominator": 170,
       "inapplicability_reason": null,
       "name": "fabricated_merchant_date_or_payment_field",
-      "numerator": 2,
-      "passed": false,
+      "numerator": 1,
+      "passed": true,
       "threshold": 0.01,
-      "value": 0.0118
+      "value": 0.0059
     },
     {
       "applicable": true,
@@ -151,13 +151,13 @@
       "applicable": true,
       "blocking": false,
       "comparison": "at_least",
-      "denominator": 1,
+      "denominator": 0,
       "inapplicability_reason": null,
       "name": "fabricated_funding_silently_resolved",
       "numerator": 0,
       "passed": true,
       "threshold": null,
-      "value": 0.0
+      "value": 1.0
     },
     {
       "applicable": true,
@@ -178,10 +178,10 @@
       "denominator": 170,
       "inapplicability_reason": null,
       "name": "outcome_agreement",
-      "numerator": 165,
+      "numerator": 167,
       "passed": true,
       "threshold": null,
-      "value": 0.9706
+      "value": 0.9824
     },
     {
       "applicable": true,
@@ -193,7 +193,7 @@
       "numerator": 169,
       "passed": true,
       "threshold": null,
-      "value": 3427.0
+      "value": 3607.0
     }
   ],
   "model": {
@@ -206,7 +206,7 @@
   "promotion_blockers": [
     "blocking_gate_failed_or_unmeasured"
   ],
-  "run_id": "ING-20260909-103320-7ba9d870",
+  "run_id": "ING-20260909-151929-3b66bd06",
   "slices": {
     "dimensions": {
       "adversarial_tag": [
@@ -224,7 +224,7 @@
         },
         {
           "error_count": 0,
-          "failure_count": 4,
+          "failure_count": 2,
           "total": 90,
           "value": "none"
         },
@@ -262,7 +262,7 @@
         },
         {
           "error_count": 0,
-          "failure_count": 5,
+          "failure_count": 3,
           "total": 170,
           "value": "ineligible"
         }
@@ -276,7 +276,7 @@
         },
         {
           "error_count": 0,
-          "failure_count": 5,
+          "failure_count": 3,
           "total": 170,
           "value": "not_applicable"
         },
@@ -296,7 +296,7 @@
       "difficulty": [
         {
           "error_count": 0,
-          "failure_count": 3,
+          "failure_count": 1,
           "total": 46,
           "value": "adversarial"
         },
@@ -388,7 +388,7 @@
         },
         {
           "error_count": 0,
-          "failure_count": 1,
+          "failure_count": 0,
           "total": 3,
           "value": "polarity"
         },
@@ -412,7 +412,7 @@
         },
         {
           "error_count": 0,
-          "failure_count": 2,
+          "failure_count": 1,
           "total": 10,
           "value": "safety"
         },
@@ -442,7 +442,7 @@
         },
         {
           "error_count": 0,
-          "failure_count": 2,
+          "failure_count": 1,
           "total": 8,
           "value": "unresolvable-funding"
         }
@@ -456,13 +456,13 @@
         },
         {
           "error_count": 0,
-          "failure_count": 3,
+          "failure_count": 2,
           "total": 119,
           "value": "default"
         },
         {
           "error_count": 0,
-          "failure_count": 2,
+          "failure_count": 1,
           "total": 16,
           "value": "not_applicable"
         },
@@ -474,7 +474,7 @@
         },
         {
           "error_count": 0,
-          "failure_count": 3,
+          "failure_count": 2,
           "total": 145,
           "value": "personal_funds"
         },
@@ -488,7 +488,7 @@
       "intent": [
         {
           "error_count": 0,
-          "failure_count": 5,
+          "failure_count": 3,
           "total": 158,
           "value": "expense"
         },
@@ -508,7 +508,7 @@
       "media_quality": [
         {
           "error_count": 0,
-          "failure_count": 5,
+          "failure_count": 3,
           "total": 170,
           "value": "not_applicable"
         }
@@ -516,7 +516,7 @@
       "warm_state": [
         {
           "error_count": 0,
-          "failure_count": 5,
+          "failure_count": 3,
           "total": 169,
           "value": "warm"
         },
@@ -530,7 +530,7 @@
     },
     "overall": {
       "error_count": 0,
-      "failure_count": 5,
+      "failure_count": 3,
       "total": 170,
       "value": "all"
     },
@@ -559,6 +559,6 @@
       "tools": "not_applicable"
     }
   },
-  "source_commit": "24898ccab5a785a69648d120c776f4dad5162ef1",
+  "source_commit": "c02c2f00e189276c3b7e21d382ff8452a7844ca5",
   "suite": "ingestion/expense-it"
 }

@@ -5,7 +5,7 @@
     "failed": 32,
     "passed": 121
   },
-  "completed_at": "2026-09-09T10:35:51.335020+00:00",
+  "completed_at": "2026-09-09T15:22:13.123638+00:00",
   "configuration": {
     "auto_post_policy_promoted": false,
     "boundary_schema": "BoundWireCategoryFit",
@@ -139,7 +139,7 @@
       "numerator": 152,
       "passed": true,
       "threshold": null,
-      "value": 1062.0
+      "value": 1143.0
     }
   ],
   "model": {
@@ -152,7 +152,7 @@
   "promotion_blockers": [
     "blocking_gate_failed_or_unmeasured"
   ],
-  "run_id": "CAT-20260909-103551-23b7246d",
+  "run_id": "CAT-20260909-152213-acd8263a",
   "slices": {
     "dimensions": {
       "adversarial_tag": [
@@ -310,7 +310,7 @@
         },
         {
           "error_count": 0,
-          "failure_count": 19,
+          "failure_count": 18,
           "total": 124,
           "value": "existing"
         },
@@ -328,7 +328,7 @@
         },
         {
           "error_count": 0,
-          "failure_count": 2,
+          "failure_count": 3,
           "total": 18,
           "value": "merchant-or-payment-method"
         },
@@ -352,7 +352,7 @@
         },
         {
           "error_count": 0,
-          "failure_count": 2,
+          "failure_count": 3,
           "total": 18,
           "value": "safety"
         },
@@ -475,6 +475,6 @@
       "tools": "not_applicable"
     }
   },
-  "source_commit": "24898ccab5a785a69648d120c776f4dad5162ef1",
+  "source_commit": "c02c2f00e189276c3b7e21d382ff8452a7844ca5",
   "suite": "categorization/purpose-it"
 }

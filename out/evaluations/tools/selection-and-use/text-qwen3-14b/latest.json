@@ -1,11 +1,11 @@
 {
-  "blocking_gates_passed": false,
+  "blocking_gates_passed": true,
   "case_totals": {
     "error": 0,
-    "failed": 12,
-    "passed": 115
+    "failed": 3,
+    "passed": 124
   },
-  "completed_at": "2026-09-09T10:11:33.134720+00:00",
+  "completed_at": "2026-09-09T15:07:03.205119+00:00",
   "configuration": {
     "advice_tools": [
       "budgets_at_risk",
@@ -36,6 +36,7 @@
       "period",
       "tool"
     ],
+    "selection_policy_version": "explicit-finance-scope-v1",
     "taxonomy_version": "v1-2026-09-01"
   },
   "dataset": {
@@ -44,7 +45,7 @@
     "item_count": 127,
     "version": "1.2.0"
   },
-  "eligible_for_promotion": false,
+  "eligible_for_promotion": true,
   "meets_dataset_minimum": true,
   "metrics": [
     {
@@ -54,10 +55,10 @@
       "denominator": 119,
       "inapplicability_reason": null,
       "name": "expected_permitted_tool_and_arguments",
-      "numerator": 107,
-      "passed": false,
+      "numerator": 116,
+      "passed": true,
       "threshold": 0.95,
-      "value": 0.8992
+      "value": 0.9748
     },
     {
       "applicable": true,
@@ -126,10 +127,10 @@
       "denominator": 99,
       "inapplicability_reason": null,
       "name": "execution_postcondition_against_real_fixture",
-      "numerator": 90,
-      "passed": false,
+      "numerator": 99,
+      "passed": true,
       "threshold": 1.0,
-      "value": 0.9091
+      "value": 1.0
     },
     {
       "applicable": true,
@@ -138,10 +139,10 @@
       "denominator": 99,
       "inapplicability_reason": null,
       "name": "tool_chosen_ignoring_arguments",
-      "numerator": 90,
+      "numerator": 99,
       "passed": true,
       "threshold": null,
-      "value": 0.9091
+      "value": 1.0
     },
     {
       "applicable": true,
@@ -162,10 +163,10 @@
       "denominator": 127,
       "inapplicability_reason": null,
       "name": "case_agreement",
-      "numerator": 115,
+      "numerator": 124,
       "passed": true,
       "threshold": null,
-      "value": 0.9055
+      "value": 0.9764
     },
     {
       "applicable": true,
@@ -177,7 +178,7 @@
       "numerator": 126,
       "passed": true,
       "threshold": null,
-      "value": 1783.0
+      "value": 1909.0
     }
   ],
   "model": {
@@ -187,10 +188,8 @@
     "metadata_complete": true,
     "quantization": "Q5_K_M"
   },
-  "promotion_blockers": [
-    "blocking_gate_failed_or_unmeasured"
-  ],
-  "run_id": "TOO-20260909-101133-04d24021",
+  "promotion_blockers": [],
+  "run_id": "TOO-20260909-150703-7b2c9501",
   "slices": {
     "dimensions": {
       "adversarial_tag": [
@@ -208,7 +207,7 @@
         },
         {
           "error_count": 0,
-          "failure_count": 12,
+          "failure_count": 3,
           "total": 114,
           "value": "none"
         },
@@ -246,7 +245,7 @@
         },
         {
           "error_count": 0,
-          "failure_count": 12,
+          "failure_count": 3,
           "total": 127,
           "value": "ineligible"
         }
@@ -260,7 +259,7 @@
         },
         {
           "error_count": 0,
-          "failure_count": 11,
+          "failure_count": 3,
           "total": 67,
           "value": "not_applicable"
         },
@@ -272,7 +271,7 @@
         },
         {
           "error_count": 0,
-          "failure_count": 1,
+          "failure_count": 0,
           "total": 60,
           "value": "seed"
         }
@@ -304,7 +303,7 @@
         },
         {
           "error_count": 0,
-          "failure_count": 12,
+          "failure_count": 3,
           "total": 107,
           "value": "unclassified"
         }
@@ -312,7 +311,7 @@
       "domain_feature": [
         {
           "error_count": 0,
-          "failure_count": 6,
+          "failure_count": 0,
           "total": 44,
           "value": "advice"
         },
@@ -330,13 +329,13 @@
         },
         {
           "error_count": 0,
-          "failure_count": 1,
+          "failure_count": 0,
           "total": 17,
           "value": "budgets-at-risk"
         },
         {
           "error_count": 0,
-          "failure_count": 1,
+          "failure_count": 0,
           "total": 42,
           "value": "category-spending"
         },
@@ -348,13 +347,13 @@
         },
         {
           "error_count": 0,
-          "failure_count": 8,
+          "failure_count": 0,
           "total": 73,
           "value": "current-period"
         },
         {
           "error_count": 0,
-          "failure_count": 1,
+          "failure_count": 0,
           "total": 14,
           "value": "explicit-period"
         },
@@ -366,7 +365,7 @@
         },
         {
           "error_count": 0,
-          "failure_count": 7,
+          "failure_count": 0,
           "total": 16,
           "value": "funding-split"
         },
@@ -396,7 +395,7 @@
         },
         {
           "error_count": 0,
-          "failure_count": 6,
+          "failure_count": 3,
           "total": 83,
           "value": "query"
         },
@@ -446,7 +445,7 @@
       "funding_class": [
         {
           "error_count": 0,
-          "failure_count": 7,
+          "failure_count": 0,
           "total": 16,
           "value": "benefit"
         },
@@ -458,7 +457,7 @@
         },
         {
           "error_count": 0,
-          "failure_count": 5,
+          "failure_count": 3,
           "total": 111,
           "value": "not_applicable"
         },
@@ -470,13 +469,13 @@
         },
         {
           "error_count": 0,
-          "failure_count": 7,
+          "failure_count": 0,
           "total": 16,
           "value": "personal_funds"
         },
         {
           "error_count": 0,
-          "failure_count": 7,
+          "failure_count": 0,
           "total": 16,
           "value": "split"
         }
@@ -484,13 +483,13 @@
       "intent": [
         {
           "error_count": 0,
-          "failure_count": 6,
+          "failure_count": 0,
           "total": 44,
           "value": "advice"
         },
         {
           "error_count": 0,
-          "failure_count": 6,
+          "failure_count": 3,
           "total": 83,
           "value": "query"
         },
@@ -504,7 +503,7 @@
       "media_quality": [
         {
           "error_count": 0,
-          "failure_count": 12,
+          "failure_count": 3,
           "total": 127,
           "value": "not_applicable"
         }
@@ -512,7 +511,7 @@
       "warm_state": [
         {
           "error_count": 0,
-          "failure_count": 12,
+          "failure_count": 3,
           "total": 126,
           "value": "warm"
         },
@@ -526,7 +525,7 @@
     },
     "overall": {
       "error_count": 0,
-      "failure_count": 12,
+      "failure_count": 3,
       "total": 127,
       "value": "all"
     },
@@ -572,6 +571,6 @@
       }
     }
   },
-  "source_commit": "24898ccab5a785a69648d120c776f4dad5162ef1",
+  "source_commit": "c02c2f00e189276c3b7e21d382ff8452a7844ca5",
   "suite": "tools/selection-and-use"
 }

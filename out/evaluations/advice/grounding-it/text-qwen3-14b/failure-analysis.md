@@ -129,3 +129,17 @@ The passing median does not erase this cluster: it is an aggregate usability
 gate, while `period_category_funding_interpretation` remains independently
 blocking at 46/52 = 0.8846. Numeric provenance and injection safety still pass;
 no threshold or acceptance rule changed.
+
+## Promoted-policy owner-reviewed measurement — 2026-09-09
+
+Run `ADV-20260909-144755-762f53cc` measures
+`explicit-finance-scope-v1` on immutable dataset `advice-grounding-it-v1.1`
+1.1.0. All 56 cases pass. Interpretation, arithmetic, numeric provenance,
+missing-data safety, answerable absence, and budget-first behavior are each
+1.0; injection changes are 0/4. Warm p95 is 1,853 ms.
+
+The exact-output reuse check retained 46 owner scores from the prior run and
+returned all six changed results to the browser. The owner scored those six
+again. The complete current 52-case sidecar has median 5.0 against the unchanged
+4.0 gate. The prior six-case funding/missing-data cluster is closed, and there
+is no residual failure in this run.

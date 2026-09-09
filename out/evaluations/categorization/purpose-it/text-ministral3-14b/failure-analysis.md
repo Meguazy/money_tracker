@@ -130,3 +130,11 @@ post metrics that are explicitly inapplicable under the V1 no-auto-post policy.
 Warm per-case suite p95 is 1,062 ms over 152 measured cases. Ministral remains
 below Qwen on the primary category agreement gate and is not a promotion
 candidate.
+
+## In-flight result at owner stop — 2026-09-09
+
+The categorization process already in flight completed as the sweep was stopped,
+producing `CAT-20260909-152213-acd8263a`. Agreement is 121/153 = 0.7908 against
+0.85, so the candidate independently fails this suite as well. The report is
+retained as measured evidence, but no later Ministral tool, advice, or review
+run was requested after its ingestion rejection.

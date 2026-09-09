@@ -1,11 +1,11 @@
 {
-  "blocking_gates_passed": false,
+  "blocking_gates_passed": true,
   "case_totals": {
     "error": 0,
-    "failed": 6,
-    "passed": 50
+    "failed": 0,
+    "passed": 56
   },
-  "completed_at": "2026-09-09T09:40:31.914382+00:00",
+  "completed_at": "2026-09-09T14:50:09.908629+00:00",
   "configuration": {
     "boundary_schema": "WireToolRequest",
     "dataset_minimum": 50,
@@ -23,7 +23,9 @@
       "successful_cases_only": true,
       "warmup_cases_excluded": 1
     },
+    "metric_semantics_version": "advice-grounding-metrics-v2",
     "received_at": "2026-09-20T12:00:00+02:00",
+    "selection_policy_version": "explicit-finance-scope-v1",
     "taxonomy_version": "v1-2026-09-01"
   },
   "dataset": {
@@ -32,17 +34,17 @@
     "item_count": 56,
     "version": "1.1.0"
   },
-  "eligible_for_promotion": false,
+  "eligible_for_promotion": true,
   "meets_dataset_minimum": true,
   "metrics": [
     {
       "applicable": true,
       "blocking": true,
       "comparison": "at_least",
-      "denominator": 48,
+      "denominator": 52,
       "inapplicability_reason": null,
       "name": "budget_and_spending_arithmetic_exactness",
-      "numerator": 48,
+      "numerator": 52,
       "passed": true,
       "threshold": 1.0,
       "value": 1.0
@@ -78,10 +80,10 @@
       "denominator": 52,
       "inapplicability_reason": null,
       "name": "period_category_funding_interpretation",
-      "numerator": 46,
-      "passed": false,
+      "numerator": 52,
+      "passed": true,
       "threshold": 0.98,
-      "value": 0.8846
+      "value": 1.0
     },
     {
       "applicable": true,
@@ -90,10 +92,22 @@
       "denominator": 9,
       "inapplicability_reason": null,
       "name": "missing_data_avoids_invented_conclusion",
-      "numerator": 8,
-      "passed": false,
+      "numerator": 9,
+      "passed": true,
       "threshold": 1.0,
-      "value": 0.8889
+      "value": 1.0
+    },
+    {
+      "applicable": true,
+      "blocking": false,
+      "comparison": "at_least",
+      "denominator": 9,
+      "inapplicability_reason": null,
+      "name": "answerable_missing_data_result",
+      "numerator": 9,
+      "passed": true,
+      "threshold": null,
+      "value": 1.0
     },
     {
       "applicable": true,
@@ -117,7 +131,7 @@
       "numerator": 52,
       "passed": true,
       "threshold": 4.0,
-      "value": 4.0
+      "value": 5.0
     },
     {
       "applicable": true,
@@ -126,10 +140,10 @@
       "denominator": 52,
       "inapplicability_reason": null,
       "name": "figures_match_the_month_the_owner_meant",
-      "numerator": 46,
+      "numerator": 52,
       "passed": true,
       "threshold": null,
-      "value": 0.8846
+      "value": 1.0
     },
     {
       "applicable": true,
@@ -138,10 +152,10 @@
       "denominator": 56,
       "inapplicability_reason": null,
       "name": "case_agreement",
-      "numerator": 50,
+      "numerator": 56,
       "passed": true,
       "threshold": null,
-      "value": 0.8929
+      "value": 1.0
     },
     {
       "applicable": true,
@@ -153,7 +167,7 @@
       "numerator": 55,
       "passed": true,
       "threshold": null,
-      "value": 1533.0
+      "value": 1853.0
     }
   ],
   "model": {
@@ -163,10 +177,8 @@
     "metadata_complete": true,
     "quantization": "Q5_K_M"
   },
-  "promotion_blockers": [
-    "blocking_gate_failed_or_unmeasured"
-  ],
-  "run_id": "ADV-20260909-092956-f95a0288",
+  "promotion_blockers": [],
+  "run_id": "ADV-20260909-144755-762f53cc",
   "slices": {
     "dimensions": {
       "adversarial_tag": [
@@ -184,7 +196,7 @@
         },
         {
           "error_count": 0,
-          "failure_count": 6,
+          "failure_count": 0,
           "total": 52,
           "value": "none"
         },
@@ -222,7 +234,7 @@
         },
         {
           "error_count": 0,
-          "failure_count": 6,
+          "failure_count": 0,
           "total": 56,
           "value": "ineligible"
         }
@@ -236,7 +248,7 @@
         },
         {
           "error_count": 0,
-          "failure_count": 6,
+          "failure_count": 0,
           "total": 38,
           "value": "not_applicable"
         },
@@ -280,7 +292,7 @@
         },
         {
           "error_count": 0,
-          "failure_count": 6,
+          "failure_count": 0,
           "total": 52,
           "value": "unclassified"
         }
@@ -300,7 +312,7 @@
         },
         {
           "error_count": 0,
-          "failure_count": 1,
+          "failure_count": 0,
           "total": 18,
           "value": "budgets-at-risk"
         },
@@ -318,7 +330,7 @@
         },
         {
           "error_count": 0,
-          "failure_count": 5,
+          "failure_count": 0,
           "total": 38,
           "value": "current-period"
         },
@@ -336,7 +348,7 @@
         },
         {
           "error_count": 0,
-          "failure_count": 5,
+          "failure_count": 0,
           "total": 6,
           "value": "funding-split"
         },
@@ -348,7 +360,7 @@
         },
         {
           "error_count": 0,
-          "failure_count": 1,
+          "failure_count": 0,
           "total": 9,
           "value": "missing-data"
         },
@@ -360,7 +372,7 @@
         },
         {
           "error_count": 0,
-          "failure_count": 1,
+          "failure_count": 0,
           "total": 13,
           "value": "safety"
         },
@@ -386,7 +398,7 @@
       "funding_class": [
         {
           "error_count": 0,
-          "failure_count": 5,
+          "failure_count": 0,
           "total": 6,
           "value": "benefit"
         },
@@ -398,7 +410,7 @@
         },
         {
           "error_count": 0,
-          "failure_count": 1,
+          "failure_count": 0,
           "total": 50,
           "value": "not_applicable"
         },
@@ -410,13 +422,13 @@
         },
         {
           "error_count": 0,
-          "failure_count": 5,
+          "failure_count": 0,
           "total": 6,
           "value": "personal_funds"
         },
         {
           "error_count": 0,
-          "failure_count": 5,
+          "failure_count": 0,
           "total": 6,
           "value": "split"
         }
@@ -424,7 +436,7 @@
       "intent": [
         {
           "error_count": 0,
-          "failure_count": 6,
+          "failure_count": 0,
           "total": 56,
           "value": "advice"
         },
@@ -438,7 +450,7 @@
       "media_quality": [
         {
           "error_count": 0,
-          "failure_count": 6,
+          "failure_count": 0,
           "total": 56,
           "value": "not_applicable"
         }
@@ -446,7 +458,7 @@
       "warm_state": [
         {
           "error_count": 0,
-          "failure_count": 6,
+          "failure_count": 0,
           "total": 55,
           "value": "warm"
         },
@@ -460,7 +472,7 @@
     },
     "overall": {
       "error_count": 0,
-      "failure_count": 6,
+      "failure_count": 0,
       "total": 56,
       "value": "all"
     },
@@ -489,6 +501,6 @@
       "tools": "not_applicable"
     }
   },
-  "source_commit": "fa35e72a57d16e6f070d6145c5d80da9d584dc11",
+  "source_commit": "c02c2f00e189276c3b7e21d382ff8452a7844ca5",
   "suite": "advice/grounding-it"
 }

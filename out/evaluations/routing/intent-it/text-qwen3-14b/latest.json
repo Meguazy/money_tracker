@@ -5,7 +5,7 @@
     "failed": 4,
     "passed": 202
   },
-  "completed_at": "2026-09-09T09:47:56.179105+00:00",
+  "completed_at": "2026-09-09T14:53:50.028786+00:00",
   "configuration": {
     "boundary_schema": "RouteClassification",
     "dataset_minimum": 200,
@@ -112,7 +112,7 @@
       "numerator": 205,
       "passed": true,
       "threshold": null,
-      "value": 856.0
+      "value": 959.0
     }
   ],
   "model": {
@@ -123,7 +123,7 @@
     "quantization": "Q5_K_M"
   },
   "promotion_blockers": [],
-  "run_id": "ROU-20260909-094756-f1e6fe4c",
+  "run_id": "ROU-20260909-145350-b1919d44",
   "slices": {
     "dimensions": {
       "adversarial_tag": [
@@ -938,6 +938,6 @@
       "tools": "not_applicable"
     }
   },
-  "source_commit": "efea66649f45b8c96d26a6a2d72af9360f5bcafe",
+  "source_commit": "c02c2f00e189276c3b7e21d382ff8452a7844ca5",
   "suite": "routing/intent-it"
 }

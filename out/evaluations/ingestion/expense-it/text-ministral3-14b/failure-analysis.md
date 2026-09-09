@@ -107,3 +107,12 @@ against 0.99, polarity 168/170 = 0.9882 against 0.99, required ambiguity 26/28 =
 0.9286 against 0.98, and fabricated optional fields 2/170 = 0.0118 against the
 0.01 maximum. Schema validity and split reconciliation remain perfect. Warm
 per-case suite p95 is 3,427 ms over 169 measured cases.
+
+## Owner-stopped comparison — 2026-09-09
+
+Run `ING-20260909-151929-3b66bd06` fails three blocking gates on the immutable
+170-case dataset: amount exactness is 159/162, expense/refund polarity is
+167/170, and required ambiguity is 27/28. Funding and splits remain exact, but
+three owner-visible movement semantics are wrong. The owner stopped the
+candidate sweep on this evidence and selected Qwen3 14B for promotion; no gate
+or label changed.

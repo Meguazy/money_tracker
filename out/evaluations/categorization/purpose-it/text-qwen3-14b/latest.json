@@ -5,7 +5,7 @@
     "failed": 20,
     "passed": 133
   },
-  "completed_at": "2026-09-09T09:57:28.946421+00:00",
+  "completed_at": "2026-09-09T15:03:54.707241+00:00",
   "configuration": {
     "auto_post_policy_promoted": false,
     "boundary_schema": "BoundWireCategoryFit",
@@ -139,7 +139,7 @@
       "numerator": 152,
       "passed": true,
       "threshold": null,
-      "value": 1071.0
+      "value": 1171.0
     }
   ],
   "model": {
@@ -150,7 +150,7 @@
     "quantization": "Q5_K_M"
   },
   "promotion_blockers": [],
-  "run_id": "CAT-20260909-095728-c48b5b5c",
+  "run_id": "CAT-20260909-150354-f2f4e790",
   "slices": {
     "dimensions": {
       "adversarial_tag": [
@@ -473,6 +473,6 @@
       "tools": "not_applicable"
     }
   },
-  "source_commit": "efea66649f45b8c96d26a6a2d72af9360f5bcafe",
+  "source_commit": "c02c2f00e189276c3b7e21d382ff8452a7844ca5",
   "suite": "categorization/purpose-it"
 }

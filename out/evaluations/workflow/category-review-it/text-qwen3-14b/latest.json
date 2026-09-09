@@ -5,7 +5,7 @@
     "failed": 0,
     "passed": 37
   },
-  "completed_at": "2026-09-09T10:00:33.537170+00:00",
+  "completed_at": "2026-09-09T15:08:39.504373+00:00",
   "configuration": {
     "aliases_written_outside_bootstrap": true,
     "auto_post_policy_promoted": false,
@@ -162,7 +162,7 @@
       "numerator": 36,
       "passed": true,
       "threshold": null,
-      "value": 251.0
+      "value": 267.0
     }
   ],
   "model": {
@@ -173,7 +173,7 @@
     "quantization": "Q5_K_M"
   },
   "promotion_blockers": [],
-  "run_id": "REV-20260909-100033-f71e93fd",
+  "run_id": "REV-20260909-150839-7a1a525f",
   "slices": {
     "dimensions": {
       "adversarial_tag": [
@@ -652,6 +652,6 @@
       "tools": "not_applicable"
     }
   },
-  "source_commit": "efea66649f45b8c96d26a6a2d72af9360f5bcafe",
+  "source_commit": "c02c2f00e189276c3b7e21d382ff8452a7844ca5",
   "suite": "workflow/category-review-it"
 }

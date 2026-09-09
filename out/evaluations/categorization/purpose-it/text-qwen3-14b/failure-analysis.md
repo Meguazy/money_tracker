@@ -89,3 +89,13 @@ alias-equivalent proposals remain 0/3. Both automatic-post metrics are
 inapplicable because V1 has no calibrated automatic-post subset; this is the
 recorded no-auto-post policy, not an empty passing sample. Warm per-case suite
 p95 is 1,071 ms over 152 measured cases.
+
+## Promotion measurement — 2026-09-09
+
+Run `CAT-20260909-150354-f2f4e790` on
+`categorization-purpose-it-v1.1` 1.1.0 passes all applicable gates. Purpose
+agreement is 133/153 = 0.8693 against 0.85; 20 label disagreements remain as
+measured accuracy errors. False proposals are 1/142 and merchant/payment or
+alias-equivalent proposals are zero. The two automatic-post gates are explicitly
+inapplicable because V1 promotes no auto-post subset; every movement remains a
+draft. Warm p95 is 1,171 ms.

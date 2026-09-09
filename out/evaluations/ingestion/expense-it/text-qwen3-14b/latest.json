@@ -5,7 +5,7 @@
     "failed": 0,
     "passed": 170
   },
-  "completed_at": "2026-09-09T09:54:48.708212+00:00",
+  "completed_at": "2026-09-09T15:00:59.098468+00:00",
   "configuration": {
     "auto_post_policy_promoted": false,
     "boundary_exposes_currency": false,
@@ -142,10 +142,10 @@
       "denominator": 14,
       "inapplicability_reason": null,
       "name": "merchant_semantic_match",
-      "numerator": 13,
+      "numerator": 12,
       "passed": true,
       "threshold": null,
-      "value": 0.9286
+      "value": 0.8571
     },
     {
       "applicable": true,
@@ -193,7 +193,7 @@
       "numerator": 169,
       "passed": true,
       "threshold": null,
-      "value": 3499.0
+      "value": 3554.0
     }
   ],
   "model": {
@@ -204,7 +204,7 @@
     "quantization": "Q5_K_M"
   },
   "promotion_blockers": [],
-  "run_id": "ING-20260909-095448-521c1927",
+  "run_id": "ING-20260909-150059-3f9abaac",
   "slices": {
     "dimensions": {
       "adversarial_tag": [
@@ -557,6 +557,6 @@
       "tools": "not_applicable"
     }
   },
-  "source_commit": "efea66649f45b8c96d26a6a2d72af9360f5bcafe",
+  "source_commit": "c02c2f00e189276c3b7e21d382ff8452a7844ca5",
   "suite": "ingestion/expense-it"
 }

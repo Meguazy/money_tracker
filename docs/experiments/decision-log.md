@@ -220,3 +220,58 @@ Every future row must identify:
   the fixture-backed absence was actually returned, and interpretation remains
   independently blocking. The v1 8/9 result is retained in its published run.
 - This changes no dataset, label, threshold, prompt default, or promotion.
+
+## Step 3 restored prompt defaults — 2026-09-09
+
+- This append corrects the selected-configuration line in EVD-003 without
+  rewriting that historical entry. After its measurements, commit `abd6d16`
+  restored `tool_selection` v5 and commit `7c6c3b7` restored `category_fit` v6.
+- The effective pre-promotion defaults are router v6, extraction v6,
+  category-fit v6, and tool-selection v5. The rejected category subtree/leaf v1
+  boundary from AD-015 has no runtime path.
+- This correction changes no result, threshold, dataset, or label.
+
+## EVD-004 — Promote Qwen3 14B for Step 3 text workflows (2026-09-09)
+
+- Decision: promote profile `text-qwen3-14b` with
+  `Qwen3-14B-Q5_K_M.gguf`, quantization `Q5_K_M`, GGUF SHA-256
+  `e7c9aba1129ca2936be9eca01419d9f86af40e08caa01230d5574b34d08e3e31`.
+  The owner explicitly selected Qwen3 14B after stopping the Ministral
+  comparison on its failing ingestion result.
+- Inference runtime: local llama.cpp `version: 0.3.0-dev` build 1, commit
+  `3466812`; server binary SHA-256
+  `19eaa4a708bb35194ed730b2f7d61fe2058f620d9565ec30a4773f1726695cb2`;
+  context 8192; chat-template SHA-256
+  `57f1fd00f0013a2be96aa79b857391f27e23df5b5f847072b524c897e24d0361`.
+- Promoted prompts and policy: router v6, extraction v6, category-fit v6,
+  tool-selection v5, `explicit-finance-scope-v1`, routing confidence 0.5, and
+  no automatic-post subset. No threshold moved.
+- Schemas and deterministic semantics: `RouteClassification`/router contract
+  v1, `WireExpenseExtraction`/extraction contract v1,
+  `BoundWireCategoryFit`/category-fit contract v1, `WireToolRequest`/tool
+  contract v2, workflow state v1, read-result contract v2,
+  `advice-grounding-metrics-v2`, and `human-usefulness-v1`.
+- Taxonomy: `v1-2026-09-01`. Immutable datasets: routing 1.2.0
+  (`routing-intent-it-v1.2`), ingestion 1.0.0 (`ingestion-expense-it-v1`),
+  categorization 1.1.0 (`categorization-purpose-it-v1.1`), tools 1.2.0
+  (`tools-selection-and-use-it-v1.2`), advice 1.1.0
+  (`advice-grounding-it-v1.1`), and category review 1.0.0
+  (`category-review-it-v1`).
+- Complete Qwen evidence on implementation commit
+  `c02c2f00e189276c3b7e21d382ff8452a7844ca5`: routing
+  `ROU-20260909-145350-b1919d44`, ingestion
+  `ING-20260909-150059-3f9abaac`, categorization
+  `CAT-20260909-150354-f2f4e790`, tools
+  `TOO-20260909-150703-7b2c9501`, owner-reviewed advice
+  `ADV-20260909-144755-762f53cc`, and category review
+  `REV-20260909-150839-7a1a525f`. Every applicable blocking gate passes.
+- Material residuals: routing has four ordinary label errors while both
+  read/write crossover gates remain zero; categorization has 20 disagreements
+  but passes 0.8693 against 0.85; tools has three unknown-category accuracy
+  errors but passes 0.9748 and every real-fixture, authorization, injection, and
+  provenance gate. V1 auto-post remains disabled. Per-suite latency is
+  diagnostic; NFR-PER-001 remains assigned to Step 4 end-to-end measurement.
+- Rollback target: select `model-only-v0` for read selection and return to the
+  unpromoted Step 3 configuration at commit `5ef71ab`. There was no previously
+  promoted text model. The model-dependent entry point can therefore be
+  disabled rather than silently substituting another candidate.

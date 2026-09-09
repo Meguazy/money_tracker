@@ -1,11 +1,11 @@
 {
-  "blocking_gates_passed": false,
+  "blocking_gates_passed": true,
   "case_totals": {
     "error": 0,
-    "failed": 13,
-    "passed": 193
+    "failed": 10,
+    "passed": 196
   },
-  "completed_at": "2026-09-09T10:26:30.949078+00:00",
+  "completed_at": "2026-09-09T15:12:13.737611+00:00",
   "configuration": {
     "boundary_schema": "RouteClassification",
     "dataset_minimum": 200,
@@ -27,7 +27,7 @@
     "item_count": 206,
     "version": "1.2.0"
   },
-  "eligible_for_promotion": false,
+  "eligible_for_promotion": true,
   "meets_dataset_minimum": true,
   "metrics": [
     {
@@ -37,10 +37,10 @@
       "denominator": 206,
       "inapplicability_reason": null,
       "name": "macro_f1",
-      "numerator": 193,
-      "passed": false,
+      "numerator": 196,
+      "passed": true,
       "threshold": 0.95,
-      "value": 0.9469
+      "value": 0.9616
     },
     {
       "applicable": true,
@@ -85,10 +85,10 @@
       "denominator": 53,
       "inapplicability_reason": null,
       "name": "ambiguous_safely_clarified",
-      "numerator": 52,
+      "numerator": 53,
       "passed": true,
       "threshold": 0.98,
-      "value": 0.9811
+      "value": 1.0
     },
     {
       "applicable": true,
@@ -97,10 +97,10 @@
       "denominator": 206,
       "inapplicability_reason": null,
       "name": "exact_label_agreement",
-      "numerator": 193,
+      "numerator": 196,
       "passed": true,
       "threshold": null,
-      "value": 0.9369
+      "value": 0.9515
     },
     {
       "applicable": true,
@@ -112,7 +112,7 @@
       "numerator": 205,
       "passed": true,
       "threshold": null,
-      "value": 1646.0
+      "value": 1737.0
     }
   ],
   "model": {
@@ -122,10 +122,8 @@
     "metadata_complete": true,
     "quantization": "Q5_K_M"
   },
-  "promotion_blockers": [
-    "blocking_gate_failed_or_unmeasured"
-  ],
-  "run_id": "ROU-20260909-102630-10cb13f4",
+  "promotion_blockers": [],
+  "run_id": "ROU-20260909-151213-4506ae99",
   "slices": {
     "dimensions": {
       "adversarial_tag": [
@@ -137,13 +135,13 @@
         },
         {
           "error_count": 0,
-          "failure_count": 1,
+          "failure_count": 0,
           "total": 3,
           "value": "negation"
         },
         {
           "error_count": 0,
-          "failure_count": 12,
+          "failure_count": 10,
           "total": 191,
           "value": "none"
         },
@@ -181,7 +179,7 @@
         },
         {
           "error_count": 0,
-          "failure_count": 13,
+          "failure_count": 10,
           "total": 206,
           "value": "ineligible"
         }
@@ -195,7 +193,7 @@
         },
         {
           "error_count": 0,
-          "failure_count": 13,
+          "failure_count": 10,
           "total": 206,
           "value": "not_applicable"
         },
@@ -239,7 +237,7 @@
         },
         {
           "error_count": 0,
-          "failure_count": 13,
+          "failure_count": 10,
           "total": 206,
           "value": "unclassified"
         }
@@ -247,7 +245,7 @@
       "domain_feature": [
         {
           "error_count": 0,
-          "failure_count": 2,
+          "failure_count": 1,
           "total": 7,
           "value": "acceptance-example"
         },
@@ -523,7 +521,7 @@
         },
         {
           "error_count": 0,
-          "failure_count": 1,
+          "failure_count": 0,
           "total": 2,
           "value": "meta"
         },
@@ -541,7 +539,7 @@
         },
         {
           "error_count": 0,
-          "failure_count": 1,
+          "failure_count": 0,
           "total": 3,
           "value": "negation"
         },
@@ -649,7 +647,7 @@
         },
         {
           "error_count": 0,
-          "failure_count": 7,
+          "failure_count": 5,
           "total": 105,
           "value": "safety"
         },
@@ -783,7 +781,7 @@
         },
         {
           "error_count": 0,
-          "failure_count": 13,
+          "failure_count": 10,
           "total": 196,
           "value": "not_applicable"
         },
@@ -815,13 +813,13 @@
         },
         {
           "error_count": 0,
-          "failure_count": 4,
+          "failure_count": 3,
           "total": 13,
           "value": "category_follow_up"
         },
         {
           "error_count": 0,
-          "failure_count": 1,
+          "failure_count": 0,
           "total": 31,
           "value": "clarification"
         },
@@ -845,7 +843,7 @@
         },
         {
           "error_count": 0,
-          "failure_count": 1,
+          "failure_count": 0,
           "total": 12,
           "value": "non_finance"
         },
@@ -889,7 +887,7 @@
       "media_quality": [
         {
           "error_count": 0,
-          "failure_count": 13,
+          "failure_count": 10,
           "total": 206,
           "value": "not_applicable"
         }
@@ -897,7 +895,7 @@
       "warm_state": [
         {
           "error_count": 0,
-          "failure_count": 13,
+          "failure_count": 10,
           "total": 205,
           "value": "warm"
         },
@@ -911,7 +909,7 @@
     },
     "overall": {
       "error_count": 0,
-      "failure_count": 13,
+      "failure_count": 10,
       "total": 206,
       "value": "all"
     },
@@ -940,6 +938,6 @@
       "tools": "not_applicable"
     }
   },
-  "source_commit": "24898ccab5a785a69648d120c776f4dad5162ef1",
+  "source_commit": "c02c2f00e189276c3b7e21d382ff8452a7844ca5",
   "suite": "routing/intent-it"
 }

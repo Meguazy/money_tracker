@@ -13,3 +13,10 @@ pre-routing remains 16/16; no read-only input reaches a write route and no write
 input is treated as read-only. Ambiguous clarification narrowly passes at 52/53
 = 0.9811. The model therefore misses the accuracy gate without breaching the
 two directional safety gates.
+
+## Stopped comparison — 2026-09-09
+
+Run `ROU-20260909-151213-4506ae99` passes the routing gates with 196/206 exact
+labels and macro-F1 0.9616. Both read/write crossover counts remain zero. This
+did not make the candidate promotable: the owner stopped its comparison after
+the following ingestion suite failed.

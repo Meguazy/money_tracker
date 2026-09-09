@@ -1,8 +1,9 @@
 # AD-013: Host Runtime and Encrypted Backup
 
 - Status: accepted
-- Implementation: Compose topology and encrypted Restic backup/restore
-  implemented; systemd units and scheduling planned
+- Implementation: Compose topology, encrypted Restic backup/restore, and the
+  Telegram gateway, workflow worker, and llama.cpp service units implemented;
+  the backup timer and its scheduling planned
 - Date: 2026-09-01
 
 ## Context

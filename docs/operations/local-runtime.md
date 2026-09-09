@@ -56,7 +56,7 @@ in this table:
 | --- | --- | --- | --- |
 | Application PostgreSQL | Docker Compose | Implemented finance source of truth, audit, workflow checkpoints, and durable messaging queues | Yes |
 | FastAPI/UI service | Host systemd | Same-origin REST API and compiled dashboard | Yes after Step 5 |
-| Telegram gateway | Host entry point implemented; systemd planned | Authorized long polling, durable ingest, safe file metadata, callback acknowledgement, outbox dispatch | Yes after Step 4 acceptance |
+| Telegram gateway | Host systemd user service | Authorized long polling, durable ingest, safe file metadata, callback acknowledgement, outbox dispatch | Yes after Step 4 acceptance |
 | Workflow worker | Host systemd | Sequential routing/workflow processing | Yes after Step 3/4 |
 | llama.cpp server | Host systemd | Local text and selected model capabilities | Yes for agent work |
 | Receipt extractor dependencies | Host process/adapter | Local OCR/VLM selected by evaluation | Yes after Step 6 |
@@ -86,14 +86,18 @@ working directories and environment files, restart policies, startup timeouts,
 and journald identifiers. User lingering or an equivalent boot setup is
 required if user services must start before graphical login.
 
-The `money-tracker-telegram` entry point is executable for validation, one poll,
-or continuous concurrent ingress/outbox loops. It has no inference dependency;
-its persisted offset resumes after restart. Pairing and the real test bot remain
-unavailable, so this is not yet an accepted product service.
+The `money-tracker-telegram` entry point is executable for validation, owner
+pairing, one poll, continuous ingress/outbox loops, and operator health, dead
+letter, and replay inspection. It has no inference dependency; its persisted
+offset resumes after restart. `money-tracker-worker` processes the durable
+inbox in a separate process. The real test bot remains unused, so this is not
+yet an accepted product service.
 
-No systemd unit filenames or installation commands are documented as executable
-yet. Step 4/5 must add real checked-in unit templates, installation/removal
-instructions, and a boot/restart integration test before updating this status.
+Checked-in unit templates live in `deploy/systemd/`, and
+`scripts/install_systemd_units.sh` renders them for the current checkout into
+`~/.config/systemd/user/`. Removal is `systemctl --user disable --now <unit>`
+followed by deleting the rendered file. A boot/restart recovery test on real
+hardware is still outstanding and is part of Step 4 acceptance.
 
 ## Target health model
 

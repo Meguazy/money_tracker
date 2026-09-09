@@ -2,13 +2,12 @@
 
 Part of the [delivery roadmap](../roadmap.md).
 
-Status: **In progress — the complete Telegram path is implemented and
-unaccepted.** Durable persistence, the gateway, response rendering, the
-sequential worker, and one-use owner pairing are in the repository, so an owner
-can now pair a bot and exercise the pipeline. Step 3 and its EVD-004 baseline
-remain unchanged. Messaging health reporting, systemd units, and every exit
-criterion below are still outstanding: nothing here has been run against a real
-Telegram bot.
+Status: **In progress — every deliverable is implemented and none is
+accepted.** Durable persistence, the gateway, response rendering, the
+sequential worker, one-use owner pairing, operator health and replay commands,
+and host service units are all in the repository. Step 3 and its EVD-004
+baseline remain unchanged. What is missing is evidence: no exit criterion below
+is satisfied, because nothing here has been run against a real Telegram bot.
 
 ## Repository-truth inventory
 
@@ -29,9 +28,11 @@ Telegram bot.
   response renderer exists yet.
 - `money-tracker-telegram` is the production gateway entry point with
   `validate`, `pair`, `poll-once`, and `run`. `money-tracker-worker` is the
-  separate processing entry point with `process-once` and `run`. Administration
-  still has no replay or messaging-health command, so a dead letter is visible
-  only through the database.
+  separate processing entry point with `process-once` and `run`. `health`,
+  `dead-letters`, and `replay` cover operator inspection and recovery.
+- `deploy/systemd/` holds user-service templates for the gateway, the worker,
+  and llama.cpp, rendered for a checkout by `scripts/install_systemd_units.sh`.
+  No unit has been enabled against a real bot.
 - Compose provides application PostgreSQL and optional Langfuse. No systemd
   unit is checked in. FastAPI is neither installed nor required by the Step 4
   runtime.
@@ -67,7 +68,7 @@ are deliberately narrow:
 | Sequential worker | Process one claimed work unit through `WorkflowDispatcher.dispatch` | Lease lifecycle and typed outcome handoff only |
 | Response renderer | Render typed outcomes plus repository-read display data | Italian text and bounded controls, no persistence or transport |
 | Gateway runtime | Run independent polling and outbox loops | Process lifecycle; no in-memory correctness state |
-| Administration/health | Generate pairing, inspect/retry/replay/status/readiness | Operator policy and safe output, no private message rendering |
+| Administration/health | Generate pairing, report health, list dead letters, replay one item | Operator policy and safe output, no private message rendering |
 
 The gateway atomically inserts authorized normalized rows and advances its
 environment-specific next offset. The worker claims only the first non-terminal
@@ -123,6 +124,29 @@ printing private content or identifiers.
 - Twenty-four unit tests passed, including a contract test that drives the real
   ingestion callback grammar with the rendered buttons, and one that fails if a
   new reason code reaches the owner as generic prose.
+
+## Operations implementation evidence
+
+- `health`, `dead-letters`, and `replay` print JSON carrying counts, ages, safe
+  identifiers, and reason codes, and no message content. A real-PostgreSQL test
+  proves a failed item is listable, that its owner text does not appear in the
+  projection, and that replaying it returns the same source reference to the
+  queue with its replay counter incremented.
+- Both long-running processes classify why they stopped: exit code 1 for
+  something an operator must change, 2 for an unreachable dependency. The units
+  set `RestartPreventExitStatus=1`, so a missing credential stops visibly
+  instead of restarting forever, while a database that starts late converges on
+  its own. Eleven unit tests cover the classification and the safety of the
+  printed reason.
+- The gateway warns the owner when it resumes after longer than the Bot API
+  keeps undelivered updates. The warning names when it last listened rather
+  than an elapsed duration, and is keyed by that instant, so restarting inside
+  one outage produces one message. Five unit tests cover the threshold, the
+  unpaired case, the never-polled case, and the repeated restart.
+- Token rotation stays a manual BotFather procedure by decision: revoking a
+  token has no Bot API method behind it, so a helper could automate only the
+  file swap while implying the risky half was handled. `validate` verifies the
+  replacement before the gateway starts with it.
 
 ## Pairing implementation evidence
 

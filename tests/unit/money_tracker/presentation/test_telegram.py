@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -16,6 +16,8 @@ from money_tracker.presentation import (
     TelegramResponseRenderer,
     action_code,
     action_for_code,
+    downtime_notice,
+    pairing_confirmation,
 )
 from money_tracker.telegram import (
     TelegramInboundUpdate,
@@ -541,3 +543,37 @@ class _IngestRepository:
         """Return the advanced offset for the observed batch."""
 
         return int(max(values["observed_update_ids"])) + 1
+
+
+def test_a_downtime_warning_names_when_the_gap_started() -> None:
+    """Say what the owner can act on: when I stopped listening, and to resend."""
+
+    notice = downtime_notice(datetime(2026, 9, 8, 5, 30, tzinfo=UTC))
+
+    assert notice.kind is ResponseKind.DOWNTIME
+    assert "08/09/2026" in notice.text
+    assert "07:30" in notice.text
+    assert "riscrivimi" in notice.text
+    assert notice.buttons == ()
+
+
+def test_two_renders_of_one_outage_are_identical() -> None:
+    """Let a restart inside the same outage reuse its logical response."""
+
+    started = datetime(2026, 9, 8, 5, 30, tzinfo=UTC)
+
+    assert downtime_notice(started) == downtime_notice(started)
+    assert downtime_notice(started).content_hash != (
+        downtime_notice(started + timedelta(hours=1)).content_hash
+    )
+
+
+def test_a_pairing_confirmation_offers_no_controls() -> None:
+    """Confirm the binding without inviting a callback nothing can answer."""
+
+    response = pairing_confirmation()
+
+    assert response.kind is ResponseKind.PAIRED
+    assert response.buttons == ()
+    assert response.target is None
+    assert "/help" in response.text

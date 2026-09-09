@@ -2,8 +2,8 @@
 
 - Status: Bot API adapter, secure configuration, durable polling, private-owner
   filtering, outbox delivery, Italian response rendering, the sequential
-  workflow worker, and one-use owner pairing are implemented; messaging health,
-  systemd, and real test-bot acceptance remain pending
+  workflow worker, one-use owner pairing, operator health/replay commands, and
+  host service units are implemented; real test-bot acceptance remains pending
 - Bot created: no
 - Production token configured: no
 - Test bot configured: no
@@ -30,6 +30,15 @@ in for the other.
 The path is complete end to end, but nothing in it has been run against a real
 Telegram bot yet. Treat the first pairing as the start of acceptance testing,
 not as a routine setup step, and use the test bot for it.
+
+Both processes classify why they stopped, so a supervisor can tell a problem
+that a restart fixes from one that it hides:
+
+| Exit code | Meaning | Correct response |
+| --- | --- | --- |
+| 0 | The operation finished | Nothing |
+| 1 | An operator must change something | Stop and fix; the units do not restart |
+| 2 | A dependency was unreachable | Restart when it returns; the units do this |
 
 Use a separate bot for integration/E2E tests so experiments cannot consume or
 reply to production updates.
@@ -171,6 +180,43 @@ commit but before confirmation causes a duplicate delivery that the unique
 constraint absorbs. Domain commands add their own idempotency key because inbox
 deduplication alone is not sufficient proof against replay/resume.
 
+## Inspecting and recovering the queue
+
+Every operator command prints JSON and none of them print message content:
+
+    uv run --env-file .env money-tracker-telegram health
+    uv run --env-file .env money-tracker-telegram dead-letters
+    uv run --env-file .env money-tracker-telegram replay --inbox-id <uuid>
+
+`health` reports queue depths, the oldest waiting item, the persisted offset,
+whether an owner is paired, and whether the last poll is old enough that
+Telegram may have discarded updates. `dead-letters` lists what failed with its
+identity, attempts, and reason code, which is where the `--inbox-id` for a
+replay comes from.
+
+Replay preserves the source reference, so the finance command keys the work
+unit already derived stay the same. An item that had already committed a
+mutation before failing therefore returns its first result instead of applying
+a second one. That is what makes replay safe to offer at all, and it is why
+replay never rewinds the Telegram offset.
+
+## Running as host services
+
+Install the checked-in unit templates for this checkout:
+
+    scripts/install_systemd_units.sh
+
+This renders `deploy/systemd/*.service` with the repository path and the `uv`
+binary, writes them to `~/.config/systemd/user/`, and reloads the user manager.
+It installs without starting, and prints the remaining steps: pair the owner,
+enable lingering so the services survive logout, then enable each unit.
+
+The units are user services because the application owns no system-wide
+resource. They are not ordered against Docker: a user unit cannot depend on the
+system Docker service, so a database that starts late is handled by the exit
+codes above instead. The worker is deliberately not ordered after the gateway
+either, since their failure domains are separate on purpose.
+
 ## Offline limitation
 
 The official Bot API states that incoming updates are not kept longer than 24
@@ -178,7 +224,9 @@ hours. This is a hard accepted V1 limitation:
 
 - downtime under 24 hours: ingest every update still available and process in
   order after startup;
-- downtime over 24 hours: send a possible-loss warning when service resumes;
+- downtime over 24 hours: the gateway warns the owner when it resumes, naming
+  when it last listened and asking them to resend; the warning is keyed by that
+  instant, so restarting inside one outage does not repeat it;
 - never claim to know which expired messages are missing;
 - the owner must forward or resend older chat messages manually.
 
@@ -212,13 +260,20 @@ logical outbox row or financial mutation is never acceptable.
 
 ## Token compromise or rotation
 
-Until Step 4 implements a tested helper, use BotFather's official token rotation
-flow and then update only the private local configuration.
+Rotation stays a manual BotFather procedure, and no helper will be added.
+Revoking a bot token is a BotFather chat operation with no Bot API method
+behind it, so a local helper could only ever automate the file swap and would
+give the misleading impression that the risky half was handled too. What the
+application does provide is verification: `money-tracker-telegram validate`
+confirms the new token before you start the gateway with it.
 
-1. Stop the future Telegram gateway to avoid ambiguous credentials.
+1. Stop the Telegram gateway to avoid ambiguous credentials:
+   `systemctl --user stop money-tracker-telegram.service`.
 2. Revoke/regenerate the token in BotFather.
 3. Store the new token privately; do not print or commit it.
-4. Restart and verify `getMe`, webhook state, owner mapping, and backlog behavior.
+4. Verify the new credential without starting the loops:
+   `uv run --env-file .env money-tracker-telegram validate`.
+5. Restart the gateway and check `health` for the owner binding and backlog.
 5. Search redacted logs/artifacts for accidental exposure and rotate again if
    any copy may remain.
 

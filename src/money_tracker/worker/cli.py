@@ -15,8 +15,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from threading import Event
 
-from langchain_core.exceptions import ModelConnectionError
 from langgraph.checkpoint.base import BaseCheckpointSaver
+from psycopg import OperationalError
 
 from money_tracker.application import (
     CategoryProposalService,
@@ -34,6 +34,7 @@ from money_tracker.persistence.database import (
 from money_tracker.persistence.finance import PostgresFinanceRepository
 from money_tracker.persistence.messaging import PostgresMessagingRepository
 from money_tracker.presentation import TelegramResponseRenderer
+from money_tracker.process_exit import exit_code_for, failure_reason
 from money_tracker.runtime import (
     LocalStructuredOutputModel,
     build_workflow_dispatcher,
@@ -202,14 +203,14 @@ def main(argv: Sequence[str] | None = None) -> None:
                 )
                 return
             _run_forever(worker)
-    except (RuntimeError, ValueError, LookupError) as error:
-        reason = (
-            "local_inference_unavailable"
-            if isinstance(error, ModelConnectionError)
-            else "configuration_or_database"
-        )
-        print(f"Workflow worker failed: {reason}", file=sys.stderr)
-        raise SystemExit(1) from None
+    except (
+        LookupError,
+        OperationalError,
+        RuntimeError,
+        ValueError,
+    ) as error:
+        print(f"Workflow worker failed: {failure_reason(error)}", file=sys.stderr)
+        raise SystemExit(int(exit_code_for(error))) from None
 
 
 def _run_forever(worker: SequentialWorker) -> None:

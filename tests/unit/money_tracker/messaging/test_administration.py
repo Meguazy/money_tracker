@@ -11,7 +11,11 @@ import pytest
 
 from money_tracker.messaging import (
     DEFAULT_PAIRING_LIFETIME,
+    TELEGRAM_UPDATE_RETENTION,
+    DeadLetter,
     MessagingAdministration,
+    MessagingHealth,
+    downtime_gap,
 )
 
 NOW = datetime(2026, 9, 9, 8, tzinfo=UTC)
@@ -41,11 +45,39 @@ class _Repository:
 
     def __init__(self) -> None:
         self.stored: list[dict[str, Any]] = []
+        self.limits: list[int] = []
+        self.replayed: list[tuple[UUID, datetime]] = []
 
     def create_pairing_code(self, **values: Any) -> None:
         """Record one stored pairing code."""
 
         self.stored.append(values)
+
+    def health(self, bot_key: str) -> MessagingHealth:
+        """Return the recorded health snapshot."""
+
+        return _health()
+
+    def dead_letters(self, bot_key: str, *, limit: int) -> tuple[DeadLetter, ...]:
+        """Return one synthetic failed item and record the requested limit."""
+
+        self.limits.append(limit)
+        return (
+            DeadLetter(
+                id=UUID("00000000-0000-0000-0000-0000000000d1"),
+                update_id=7,
+                source_reference="telegram:telegram-test:7",
+                attempt_count=5,
+                replay_count=0,
+                last_error_code="model_unavailable",
+                accepted_at=NOW,
+            ),
+        )
+
+    def replay_inbox(self, inbox_id: UUID, *, now: datetime) -> None:
+        """Record one replay request."""
+
+        self.replayed.append((inbox_id, now))
 
 
 def _service(repository: _Repository) -> MessagingAdministration:
@@ -125,3 +157,79 @@ def test_a_code_that_expires_immediately_is_refused() -> None:
             profile_id=PROFILE,
             lifetime=timedelta(0),
         )
+
+
+def _health(last_poll_at: datetime | None = NOW) -> MessagingHealth:
+    """Build one content-free health snapshot."""
+
+    return MessagingHealth(
+        bot_key="telegram-test",
+        next_offset=12,
+        pending_inbox=1,
+        retrying_inbox=0,
+        inbox_dead_letters=2,
+        pending_outbox=0,
+        retrying_outbox=0,
+        outbox_dead_letters=0,
+        active_actions=1,
+        last_observed_at=NOW,
+        last_poll_at=last_poll_at,
+        oldest_inbox_at=NOW,
+        oldest_outbox_at=None,
+    )
+
+
+def test_health_is_reported_without_message_content() -> None:
+    """Give an operator counts and offsets, never what the owner wrote."""
+
+    health = _service(_Repository()).health("telegram-test")
+
+    assert health.inbox_dead_letters == 2
+    assert health.next_offset == 12
+
+
+def test_dead_letters_carry_identity_reason_and_no_content() -> None:
+    """Show exactly what deciding on a replay needs."""
+
+    repository = _Repository()
+
+    items = _service(repository).dead_letters("telegram-test")
+
+    assert items[0].last_error_code == "model_unavailable"
+    assert items[0].source_reference == "telegram:telegram-test:7"
+    assert repository.limits == [50]
+
+
+def test_replay_names_the_selected_item_and_the_instant() -> None:
+    """Return one chosen dead letter to the queue, not the whole backlog."""
+
+    repository = _Repository()
+    inbox_id = UUID("00000000-0000-0000-0000-0000000000d1")
+
+    _service(repository).replay(inbox_id)
+
+    assert repository.replayed == [(inbox_id, NOW)]
+
+
+def test_a_bot_that_never_polled_reports_no_downtime() -> None:
+    """Report no gap rather than an infinite one before the first poll."""
+
+    assert downtime_gap(_health(last_poll_at=None), now=NOW) is None
+
+
+def test_a_long_outage_exceeds_the_telegram_update_retention() -> None:
+    """Detect the window in which Telegram may have discarded updates."""
+
+    short = downtime_gap(_health(), now=NOW + timedelta(hours=23))
+    long = downtime_gap(_health(), now=NOW + timedelta(hours=30))
+
+    assert short is not None and short <= TELEGRAM_UPDATE_RETENTION
+    assert long is not None and long > TELEGRAM_UPDATE_RETENTION
+
+
+def test_a_clock_that_moved_backwards_reports_no_negative_gap() -> None:
+    """Never turn a corrected clock into a nonsensical negative outage."""
+
+    gap = downtime_gap(_health(), now=NOW - timedelta(hours=1))
+
+    assert gap == timedelta(0)

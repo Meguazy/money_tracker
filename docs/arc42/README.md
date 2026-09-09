@@ -29,9 +29,9 @@ specialist checkpoints, finance repositories, private receipt-media adapter,
 and verified encrypted backup are implemented. Step 4 design is reconciled in
 AD-018; its normalized messaging schema, contracts, retry policy, PostgreSQL
 repository, Bot API transport, authorized ingestion, gateway process, Italian
-response renderer, sequential workflow worker, and one-use owner pairing are
-implemented. The repository does not yet contain messaging health reporting or
-systemd units.
+response renderer, sequential workflow worker, one-use owner pairing, operator
+health and replay commands, and host service units are implemented. What is
+missing is evidence: nothing has been run against a real Telegram bot.
 The web application and receipt extraction pipeline remain assigned to later
 roadmap steps.
 
@@ -169,8 +169,8 @@ boundary is not end-to-end encrypted and must not be described as local storage.
 Money Tracker workstation
 ├── Host processes
 │   ├── FastAPI application and compiled React UI        [planned]
-│   ├── Telegram gateway                                [implemented entry point; systemd pending]
-│   ├── Sequential workflow worker                      [implemented entry point; systemd pending]
+│   ├── Telegram gateway                                [implemented; unit template checked in]
+│   ├── Sequential workflow worker                      [implemented; unit template checked in]
 │   │   ├── typed dispatcher, router, and text graphs  [implemented library]
 │   │   └── Italian response renderer                  [implemented library]
 │   └── llama.cpp/OpenAI-compatible inference           [scaffolded]
@@ -212,7 +212,7 @@ Money Tracker workstation
 | `telegram.config` | Select one test/production bot and securely read its distinct owner-only token file | Process environment, private filesystem, messaging environment enum | No authoritative state; credential exists only in process memory | Host gateway; absolute path, owner UID, regular no-follow file, and mode 0600 required |
 | `telegram.transport` | Call official Bot API methods and reduce responses to typed values | `httpx`, bounded timeouts, messaging outbox contracts | No durable state | Host gateway only; every exception is replaced by a content-free reason code |
 | `telegram.ingestion` | Authorize one persisted private owner and normalize a complete observed batch | Telegram transport values and `MessagingRepository` | Acceptance policy only | Runs before persistence; groups/foreign users retain counters only and never trigger file lookup |
-| `telegram.gateway` | Run independent long-poll and outbox-delivery loops | Transport, ingestion service, repository, clock, retry policy | No in-memory correctness state | Production `money-tracker-telegram` entry point; no LangGraph, model, or finance repository dependency; systemd pending |
+| `telegram.gateway` | Run independent long-poll and outbox-delivery loops | Transport, ingestion service, repository, clock, retry policy | No in-memory correctness state | Production `money-tracker-telegram` entry point; no LangGraph, model, or finance repository dependency; user service unit checked in |
 | `development` | Validate canonical documentation and privacy-ignore invariants | Repository Markdown/YAML/filesystem | No persistent data | Service-independent development command |
 
 ### Human usefulness review runtime
@@ -289,8 +289,8 @@ catalog is promoted; every identifier carries a `candidate-` prefix.
 
 AD-018 divides the Step 4 runtime into seven replaceable blocks. The contracts,
 retry policy, PostgreSQL repository, ingestion service, Bot API transport,
-gateway process, response renderer, sequential worker, and pairing
-administration are implemented; health and replay reporting remain planned:
+gateway process, response renderer, sequential worker, pairing, and the
+administration and health commands are all implemented:
 
 | Component | Responsibility | Interface/dependencies | Data ownership | Deployment/security |
 | --- | --- | --- | --- | --- |
@@ -948,9 +948,14 @@ External backup folder/disk
 └── encrypted Restic repository
 ```
 
-The `money-tracker-telegram` and `money-tracker-worker` host entry points
-exist, but no systemd unit is installed yet and the real test bot has not been
-accepted.
+`deploy/systemd/` holds checked-in user-service templates for the gateway, the
+worker, and llama.cpp, rendered for a checkout by
+`scripts/install_systemd_units.sh`. They are user services because the
+application owns no system-wide resource, and they are not ordered against
+Docker because a user unit cannot be: a database that starts late is handled by
+process exit codes instead. Exit code 1 means an operator must change something
+and the unit stops; exit code 2 means a dependency was unreachable and the unit
+restarts. No unit has yet been enabled against a real bot.
 
 Systemd user services use lingering, or an equivalent host setup, to recover
 without a manual application start. Each service tolerates delayed database,
@@ -1232,14 +1237,14 @@ environment file.
 - [AD-018: Telegram processing transactions and ordering](decisions/AD-018-telegram-processing-transactions.md):
   reconciled Step 4 persistence, Bot API transport, authorized ingestion,
   persisted-offset runtime, outbox delivery, Italian response rendering, the
-  sequential worker, and one-use owner pairing are implemented; health
-  reporting, operational wiring, and real-bot acceptance remain planned.
+  sequential worker, one-use owner pairing, and operator health/replay commands
+  are implemented; real-bot acceptance remains outstanding.
 
 ### Partially implemented Telegram decisions
 
-AD-004 and AD-010 now have persistence, gateway, pairing, worker, and
-presentation implementation evidence. They remain incomplete until health
-reporting, systemd operations, and real test-bot acceptance are complete.
+AD-004 and AD-010 now have persistence, gateway, pairing, worker, presentation,
+and operator-command implementation evidence. They remain incomplete until real
+test-bot acceptance is complete.
 
 ## 10. Quality Requirements
 

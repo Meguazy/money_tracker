@@ -13,6 +13,7 @@ from psycopg.types.json import Jsonb
 
 from money_tracker.messaging.contracts import (
     BotEnvironment,
+    DeadLetter,
     InboxClaim,
     InboxStatus,
     MessagingHealth,
@@ -501,6 +502,76 @@ class PostgresMessagingRepository:
             claim_token=row["claim_token"],
             claimed_until=row["claimed_until"],
         )
+
+    def dead_letters(self, bot_key: str, *, limit: int) -> tuple[DeadLetter, ...]:
+        """List failed work items in Telegram order, oldest first.
+
+        The projection is deliberately content-free. An operator deciding
+        whether to replay needs the identity, the attempts, and the reason
+        code; the owner's text is none of their business even when they are
+        the owner, because a terminal is not a private chat.
+
+        Args:
+            bot_key: Bot and environment persistence scope.
+            limit: Maximum rows to return.
+
+        Returns:
+            Dead letters ordered by their Telegram update identity.
+
+        Raises:
+            ValueError: If the limit is not positive.
+        """
+
+        validate_bot_key(bot_key)
+        if limit <= 0:
+            raise ValueError("dead letter limit must be positive")
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT id, update_id, source_reference, attempt_count, "
+                "replay_count, last_error_code, accepted_at "
+                "FROM messaging.telegram_inbox "
+                "WHERE bot_key = %s AND status = 'dead_letter' "
+                "ORDER BY update_id LIMIT %s",
+                (bot_key, limit),
+            ).fetchall()
+        return tuple(
+            DeadLetter(
+                id=cast(UUID, row["id"]),
+                update_id=cast(int, row["update_id"]),
+                source_reference=cast(str, row["source_reference"]),
+                attempt_count=cast(int, row["attempt_count"]),
+                replay_count=cast(int, row["replay_count"]),
+                last_error_code=cast("str | None", row["last_error_code"]),
+                accepted_at=cast(datetime, row["accepted_at"]),
+            )
+            for row in rows
+        )
+
+    def enqueue_notice(self, notice: OutboxMessageDraft, *, now: datetime) -> UUID:
+        """Queue one owner message that no inbound work unit asked for.
+
+        Pairing confirmations and downtime warnings are not answers to an inbox
+        row, so they carry no `inbox_id`. Their logical key still makes them
+        idempotent: a restart inside the same downtime episode re-derives the
+        same key and adds no second message.
+
+        Args:
+            notice: Logical response to create, without an inbox reference.
+            now: Aware creation instant.
+
+        Returns:
+            The identifier of the created or already existing message.
+
+        Raises:
+            ValueError: If the notice claims an inbox item.
+            MessagingConflictError: If the key holds different content.
+        """
+
+        require_aware(now, field="now")
+        if notice.inbox_id is not None:
+            raise ValueError("an operator notice answers no inbox item")
+        with self._connect() as connection:
+            return self._insert_or_verify_outbox(connection, notice, now)
 
     def claim_next_outbox(
         self,

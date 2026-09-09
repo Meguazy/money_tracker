@@ -1,0 +1,27 @@
+[Unit]
+Description=Money Tracker sequential workflow worker
+Documentation=file://%h/money-tracker/docs/operations/telegram.md
+# Deliberately not ordered after the gateway. The two have separate failure
+# domains: the gateway must keep accepting Telegram updates while this side is
+# down, and this side must keep draining the durable inbox while the gateway
+# is down.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=__MONEY_TRACKER_ROOT__
+ExecStart=__UV_BINARY__ run --env-file .env money-tracker-worker run
+Restart=always
+RestartSec=10
+RestartPreventExitStatus=1
+KillSignal=SIGINT
+TimeoutStopSec=60
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=read-only
+ProtectSystem=strict
+ReadWritePaths=__MONEY_TRACKER_ROOT__
+
+[Install]
+WantedBy=default.target

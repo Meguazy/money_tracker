@@ -14,10 +14,15 @@ from datetime import datetime, timedelta
 from typing import Protocol
 from uuid import UUID
 
+from money_tracker.messaging.contracts import DeadLetter, MessagingHealth
 from money_tracker.messaging.ports import MessagingRepository
 
 DEFAULT_PAIRING_LIFETIME = timedelta(minutes=10)
+TELEGRAM_UPDATE_RETENTION = timedelta(hours=24)
+"""How long the Bot API keeps an undelivered update, per its documentation."""
+
 _CODE_BYTES = 16
+_DEAD_LETTER_LIMIT = 50
 
 
 class Clock(Protocol):
@@ -120,9 +125,77 @@ class MessagingAdministration:
         )
         return PairingCode(code=code, expires_at=expires_at)
 
+    def health(self, bot_key: str) -> MessagingHealth:
+        """Return the content-free queue and offset summary for an operator.
+
+        Args:
+            bot_key: Bot and environment persistence scope.
+
+        Returns:
+            Counts, ages, and offset state carrying no message content.
+        """
+
+        return self._repository.health(bot_key)
+
+    def dead_letters(
+        self,
+        bot_key: str,
+        *,
+        limit: int = _DEAD_LETTER_LIMIT,
+    ) -> tuple[DeadLetter, ...]:
+        """List failed work items in the order they arrived.
+
+        Args:
+            bot_key: Bot and environment persistence scope.
+            limit: Maximum rows to return.
+
+        Returns:
+            Dead letters carrying identity, attempts, and reason codes only.
+        """
+
+        return self._repository.dead_letters(bot_key, limit=limit)
+
+    def replay(self, inbox_id: UUID) -> None:
+        """Return one dead letter to the queue with its identity intact.
+
+        Replay preserves the source reference, so the finance command keys the
+        work unit already derived stay the same. A replayed item that already
+        committed a mutation therefore returns the first result rather than
+        applying a second one, which is what makes this safe to offer at all.
+
+        Args:
+            inbox_id: Dead letter an operator chose to retry.
+
+        Raises:
+            MessagingConflictError: If the item is not a dead letter.
+        """
+
+        self._repository.replay_inbox(inbox_id, now=self._clock.now())
+
+
+def downtime_gap(health: MessagingHealth, *, now: datetime) -> timedelta | None:
+    """Return how long the gateway was not listening, when that is knowable.
+
+    A bot that has never polled has no gap to report rather than an infinite
+    one: there is no earlier moment when a message could have been missed.
+
+    Args:
+        health: Content-free messaging state.
+        now: Aware current instant.
+
+    Returns:
+        The elapsed time since the last successful poll, or None.
+    """
+
+    if health.last_poll_at is None:
+        return None
+    return max(now - health.last_poll_at, timedelta(0))
+
 
 __all__ = [
     "DEFAULT_PAIRING_LIFETIME",
+    "TELEGRAM_UPDATE_RETENTION",
     "MessagingAdministration",
     "PairingCode",
+    "downtime_gap",
 ]

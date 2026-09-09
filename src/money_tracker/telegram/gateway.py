@@ -7,9 +7,16 @@ from concurrent.futures import FIRST_EXCEPTION, ThreadPoolExecutor, wait
 from datetime import datetime, timedelta
 from threading import Event
 from typing import Protocol
-from uuid import uuid4
+from uuid import NAMESPACE_URL, uuid4, uuid5
 
-from money_tracker.messaging import MessagingRepository, RetryPolicy
+from money_tracker.messaging import (
+    TELEGRAM_UPDATE_RETENTION,
+    MessagingRepository,
+    OutboxMessageDraft,
+    RetryPolicy,
+    downtime_gap,
+)
+from money_tracker.presentation import downtime_notice
 from money_tracker.telegram.config import TelegramSettings
 from money_tracker.telegram.contracts import IngestReport
 from money_tracker.telegram.ingestion import TelegramUpdateIngestor
@@ -76,9 +83,48 @@ class TelegramGateway:
         )
         self._transport.validate_bot()
         self._transport.disable_webhook()
+        self._announce_downtime(now=now)
         _LOGGER.info(
             "Telegram gateway ready environment=%s",
             self._settings.environment.value,
+        )
+
+    def _announce_downtime(self, *, now: datetime) -> None:
+        """Warn the owner when Telegram may have expired updates while off.
+
+        The Bot API discards undelivered updates after 24 hours and nothing
+        local can recover them, so the only honest response is to say the gap
+        exists and ask the owner to resend. The notice is keyed by the instant
+        the gap started, which makes repeated restarts inside one outage
+        produce one message rather than one per start.
+        """
+
+        bot_key = self._settings.bot_key
+        binding = self._repository.owner_binding(bot_key)
+        if binding is None:
+            return
+        health = self._repository.health(bot_key)
+        gap = downtime_gap(health, now=now)
+        if gap is None or gap <= TELEGRAM_UPDATE_RETENTION:
+            return
+        last_poll_at = health.last_poll_at
+        assert last_poll_at is not None
+        notice = downtime_notice(last_poll_at)
+        self._repository.enqueue_notice(
+            OutboxMessageDraft(
+                id=uuid5(NAMESPACE_URL, f"money-tracker:downtime:{last_poll_at}"),
+                bot_key=bot_key,
+                telegram_chat_id=binding.telegram_chat_id,
+                logical_key=f"downtime:{last_poll_at.isoformat()}",
+                response_kind=notice.kind.value,
+                text=notice.text,
+                content_hash=notice.content_hash,
+            ),
+            now=now,
+        )
+        _LOGGER.warning(
+            "Telegram downtime exceeded update retention hours=%d",
+            int(gap.total_seconds() // 3600),
         )
 
     def run_once(self) -> IngestReport:

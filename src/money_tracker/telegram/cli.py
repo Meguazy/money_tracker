@@ -8,16 +8,24 @@ import logging
 import sys
 from collections.abc import Sequence
 from datetime import UTC, datetime
+from uuid import UUID
+
+from psycopg import OperationalError
 
 from money_tracker.application.runtime import UUID4Generator
-from money_tracker.messaging import MessagingAdministration
+from money_tracker.messaging import (
+    TELEGRAM_UPDATE_RETENTION,
+    MessagingAdministration,
+    downtime_gap,
+)
 from money_tracker.persistence.database import database_url_from_env
 from money_tracker.persistence.finance import PostgresFinanceRepository
 from money_tracker.persistence.messaging import PostgresMessagingRepository
+from money_tracker.process_exit import exit_code_for, failure_reason
 from money_tracker.telegram.config import TelegramSettings
 from money_tracker.telegram.gateway import TelegramGateway
 from money_tracker.telegram.ingestion import TelegramUpdateIngestor
-from money_tracker.telegram.transport import BotApiClient, TelegramTransportError
+from money_tracker.telegram.transport import BotApiClient
 
 
 class _SystemClock:
@@ -39,11 +47,25 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run the durable Telegram gateway")
     parser.add_argument(
         "command",
-        choices=("run", "poll-once", "pair", "validate"),
-        help=(
-            "validate configuration, create an owner pairing code, process one "
-            "batch, or run continuously"
+        choices=(
+            "run",
+            "poll-once",
+            "pair",
+            "health",
+            "dead-letters",
+            "replay",
+            "validate",
         ),
+        help=(
+            "validate configuration, create an owner pairing code, report "
+            "health, list or replay dead letters, process one batch, or run "
+            "continuously"
+        ),
+    )
+    parser.add_argument(
+        "--inbox-id",
+        type=UUID,
+        help="dead letter to return to the queue, required by replay",
     )
     return parser
 
@@ -90,6 +112,103 @@ def _pair(
     }
 
 
+def _health(
+    settings: TelegramSettings,
+    repository: PostgresMessagingRepository,
+) -> dict[str, object]:
+    """Report queue, offset, and downtime state without message content."""
+
+    now = _SystemClock().now()
+    health = MessagingAdministration(
+        repository,
+        clock=_SystemClock(),
+        ids=UUID4Generator(),
+    ).health(settings.bot_key)
+    gap = downtime_gap(health, now=now)
+    return {
+        "active_actions": health.active_actions,
+        "dead_letters": {
+            "inbox": health.inbox_dead_letters,
+            "outbox": health.outbox_dead_letters,
+        },
+        "downtime_exceeds_update_retention": (
+            gap is not None and gap > TELEGRAM_UPDATE_RETENTION
+        ),
+        "environment": settings.environment.value,
+        "inbox": {
+            "pending": health.pending_inbox,
+            "retrying": health.retrying_inbox,
+            "oldest_at": (
+                None
+                if health.oldest_inbox_at is None
+                else health.oldest_inbox_at.isoformat()
+            ),
+        },
+        "last_poll_at": (
+            None if health.last_poll_at is None else health.last_poll_at.isoformat()
+        ),
+        "next_offset": health.next_offset,
+        "outbox": {
+            "pending": health.pending_outbox,
+            "retrying": health.retrying_outbox,
+            "oldest_at": (
+                None
+                if health.oldest_outbox_at is None
+                else health.oldest_outbox_at.isoformat()
+            ),
+        },
+        "owner_paired": repository.owner_binding(settings.bot_key) is not None,
+    }
+
+
+def _dead_letters(
+    settings: TelegramSettings,
+    repository: PostgresMessagingRepository,
+) -> dict[str, object]:
+    """List failed work items with identity and reason but no content."""
+
+    items = MessagingAdministration(
+        repository,
+        clock=_SystemClock(),
+        ids=UUID4Generator(),
+    ).dead_letters(settings.bot_key)
+    return {
+        "dead_letters": [
+            {
+                "accepted_at": item.accepted_at.isoformat(),
+                "attempt_count": item.attempt_count,
+                "inbox_id": str(item.id),
+                "last_error_code": item.last_error_code,
+                "replay_count": item.replay_count,
+                "source_reference": item.source_reference,
+                "update_id": item.update_id,
+            }
+            for item in items
+        ],
+        "environment": settings.environment.value,
+    }
+
+
+def _replay(
+    repository: PostgresMessagingRepository,
+    inbox_id: UUID | None,
+) -> dict[str, object]:
+    """Return one operator-selected dead letter to the queue.
+
+    Raises:
+        SystemExit: If no dead letter was named.
+    """
+
+    if inbox_id is None:
+        raise SystemExit("replay requires --inbox-id from the dead-letters command")
+    MessagingAdministration(
+        repository,
+        clock=_SystemClock(),
+        ids=UUID4Generator(),
+    ).replay(inbox_id)
+    return {"inbox_id": str(inbox_id), "status": "queued"}
+
+
 def main(argv: Sequence[str] | None = None) -> None:
     """Run one safely configured Telegram gateway operation.
 
@@ -111,6 +230,15 @@ def main(argv: Sequence[str] | None = None) -> None:
         repository = PostgresMessagingRepository(database_url)
         if args.command == "pair":
             print(json.dumps(_pair(settings, repository, database_url), indent=2))
+            return
+        if args.command == "health":
+            print(json.dumps(_health(settings, repository), indent=2))
+            return
+        if args.command == "dead-letters":
+            print(json.dumps(_dead_letters(settings, repository), indent=2))
+            return
+        if args.command == "replay":
+            print(json.dumps(_replay(repository, args.inbox_id), indent=2))
             return
         token = settings.read_token()
         with BotApiClient(token, settings) as transport:
@@ -150,10 +278,11 @@ def main(argv: Sequence[str] | None = None) -> None:
                 )
                 return
             gateway.run_forever()
-    except (RuntimeError, ValueError, LookupError, TelegramTransportError) as error:
-        if isinstance(error, TelegramTransportError):
-            reason = error.code
-        else:
-            reason = "configuration_or_database"
-        print(f"Telegram gateway failed: {reason}", file=sys.stderr)
-        raise SystemExit(1) from None
+    except (
+        LookupError,
+        OperationalError,
+        RuntimeError,
+        ValueError,
+    ) as error:
+        print(f"Telegram gateway failed: {failure_reason(error)}", file=sys.stderr)
+        raise SystemExit(int(exit_code_for(error))) from None

@@ -14,6 +14,7 @@ from money_tracker.presentation.telegram import (
     TelegramResponseRenderer,
     action_code,
     action_for_code,
+    downtime_notice,
     pairing_confirmation,
 )
 
@@ -25,5 +26,6 @@ __all__ = [
     "TelegramResponseRenderer",
     "action_code",
     "action_for_code",
+    "downtime_notice",
     "pairing_confirmation",
 ]

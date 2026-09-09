@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 import hashlib
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
-from uuid import uuid4
+from uuid import UUID, uuid4
 
-from money_tracker.messaging import BotEnvironment, OwnerBinding
+from money_tracker.messaging import (
+    BotEnvironment,
+    MessagingHealth,
+    OutboxMessageDraft,
+    OwnerBinding,
+)
 from money_tracker.telegram import (
     BotIdentity,
     TelegramGateway,
@@ -43,6 +48,8 @@ class _Repository:
         )
         self.confirmations: list[Any] = []
         self.counters: tuple[int, int] = (0, 0)
+        self.notices: list[OutboxMessageDraft] = []
+        self.last_poll_at: datetime | None = _NOW
 
     def ensure_bot(self, *_: object, **__: object) -> None:
         """Record gateway initialization."""
@@ -72,6 +79,31 @@ class _Repository:
         self.offset = max(values["observed_update_ids"]) + 1
         self.counters = (values["rejected_count"], values["unsupported_count"])
         return self.offset
+
+    def health(self, _: str) -> MessagingHealth:
+        """Return a content-free snapshot carrying the configured poll time."""
+
+        return MessagingHealth(
+            bot_key="telegram-test",
+            next_offset=self.offset,
+            pending_inbox=0,
+            retrying_inbox=0,
+            inbox_dead_letters=0,
+            pending_outbox=0,
+            retrying_outbox=0,
+            outbox_dead_letters=0,
+            active_actions=0,
+            last_observed_at=self.last_poll_at,
+            last_poll_at=self.last_poll_at,
+            oldest_inbox_at=None,
+            oldest_outbox_at=None,
+        )
+
+    def enqueue_notice(self, notice: OutboxMessageDraft, **_: Any) -> UUID:
+        """Record one owner notice that answers no inbox item."""
+
+        self.notices.append(notice)
+        return notice.id
 
     def pair_owner(self, **values: Any) -> OwnerBinding | None:
         """Bind the owner only for the one live synthetic code."""
@@ -486,3 +518,79 @@ def test_work_after_a_successful_pairing_is_accepted_in_the_same_batch() -> None
 
     assert len(report.accepted) == 1
     assert report.accepted[0].text == "Synthetic message"
+
+
+def _downtime_gateway(repository: _Repository, clock_now: datetime) -> TelegramGateway:
+    """Build one gateway whose clock sits at the configured instant."""
+
+    class _At:
+        def now(self) -> datetime:
+            """Return the configured restart instant."""
+
+            return clock_now
+
+    return TelegramGateway(
+        settings=_settings(),
+        transport=_Transport((), []),  # type: ignore[arg-type]
+        repository=repository,  # type: ignore[arg-type]
+        ingestor=TelegramUpdateIngestor(repository),  # type: ignore[arg-type]
+        clock=_At(),
+    )
+
+
+def test_a_short_outage_warns_the_owner_about_nothing() -> None:
+    """Stay quiet when Telegram still holds everything it received."""
+
+    repository = _Repository()
+
+    _downtime_gateway(repository, _NOW + timedelta(hours=23)).prepare()
+
+    assert repository.notices == []
+
+
+def test_a_long_outage_warns_that_updates_may_be_lost() -> None:
+    """Say plainly that Telegram may have discarded what it could not deliver."""
+
+    repository = _Repository()
+
+    _downtime_gateway(repository, _NOW + timedelta(hours=30)).prepare()
+
+    assert len(repository.notices) == 1
+    notice = repository.notices[0]
+    assert notice.response_kind == "downtime"
+    assert notice.telegram_chat_id == 1001
+    assert notice.inbox_id is None
+    assert notice.logical_key == f"downtime:{_NOW.isoformat()}"
+
+
+def test_restarting_inside_one_outage_produces_one_warning() -> None:
+    """Key the warning by the gap it describes, not by the restart count."""
+
+    repository = _Repository()
+
+    _downtime_gateway(repository, _NOW + timedelta(hours=30)).prepare()
+    _downtime_gateway(repository, _NOW + timedelta(hours=31)).prepare()
+
+    assert len({notice.logical_key for notice in repository.notices}) == 1
+    assert len({notice.id for notice in repository.notices}) == 1
+
+
+def test_an_unpaired_bot_warns_nobody() -> None:
+    """Never queue a message for an owner chat that does not exist yet."""
+
+    repository = _Repository(paired=False)
+
+    _downtime_gateway(repository, _NOW + timedelta(hours=30)).prepare()
+
+    assert repository.notices == []
+
+
+def test_a_bot_that_never_polled_warns_nobody() -> None:
+    """Treat a first start as a first start rather than an infinite outage."""
+
+    repository = _Repository()
+    repository.last_poll_at = None
+
+    _downtime_gateway(repository, _NOW + timedelta(days=400)).prepare()
+
+    assert repository.notices == []

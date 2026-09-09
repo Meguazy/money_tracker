@@ -3,8 +3,9 @@
 - Status: accepted
 - Implementation: messaging contracts/repository, category-review replay, Bot
   API transport, authorized ingress, gateway/outbox loops, Italian response
-  rendering, the sequential worker, and one-use owner pairing implemented;
-  health reporting, systemd operations, and real-bot acceptance pending
+  rendering, the sequential worker, one-use owner pairing, operator
+  health/replay commands, and host service units implemented; real-bot
+  acceptance pending
 - Date: 2026-09-09
 - Supersedes: the raw-update retention detail in
   [AD-010](AD-010-telegram-durable-messaging.md); all other AD-010 choices remain
@@ -137,7 +138,11 @@ cannot target another movement or review.
 
 The Step 4 runtime does not require FastAPI. Operator commands and machine-safe
 process exit codes provide health/readiness and recovery until the Step 5 local
-control plane exists.
+control plane exists. Exactly two failure classes are distinguished, because
+that is what a supervisor can act on: a configuration problem stops the process
+and must not be restarted into, while an unreachable dependency restarts. The
+gateway also warns the owner directly when it resumes after longer than the Bot
+API keeps undelivered updates, since no local state can recover that gap.
 
 ## Alternatives considered
 
@@ -188,6 +193,12 @@ contract test drives the real ingestion grammar with the rendered buttons, and
 another proves every stable reason code has an owner-facing question.
 Twenty-four unit tests cover rendering, digest stability, and refusal of
 missing display data.
+
+Operator commands cover health, dead letters, and replay. Their output carries
+counts, ages, safe identifiers, and reason codes but no message content, and
+replay preserves the source reference so a replayed item that already mutated
+finance returns its first result. A downtime warning is keyed by the instant
+the gap started, so restarting inside one outage produces one message.
 
 `MessagingAdministration` generates one short-lived code per bot, revoking any
 earlier live one, and returns the clear value exactly once for operator

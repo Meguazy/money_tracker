@@ -2,12 +2,15 @@
 
 from money_tracker.messaging.administration import (
     DEFAULT_PAIRING_LIFETIME,
+    TELEGRAM_UPDATE_RETENTION,
     MessagingAdministration,
     PairingCode,
+    downtime_gap,
 )
 from money_tracker.messaging.contracts import (
     MAX_TELEGRAM_FILE_BYTES,
     BotEnvironment,
+    DeadLetter,
     InboxClaim,
     InboxStatus,
     MessagingHealth,
@@ -30,8 +33,10 @@ from money_tracker.messaging.retry import RetryPolicy
 
 __all__ = [
     "DEFAULT_PAIRING_LIFETIME",
+    "TELEGRAM_UPDATE_RETENTION",
     "MAX_TELEGRAM_FILE_BYTES",
     "BotEnvironment",
+    "DeadLetter",
     "InboxClaim",
     "InboxStatus",
     "MessagingAdministration",
@@ -47,6 +52,7 @@ __all__ = [
     "PendingActionDraft",
     "PendingActionStatus",
     "PairingCode",
+    "downtime_gap",
     "PendingActionTarget",
     "RetryPolicy",
     "WorkflowResult",

@@ -1,0 +1,28 @@
+[Unit]
+Description=Money Tracker Telegram gateway
+Documentation=file://%h/money-tracker/docs/operations/telegram.md
+# The application database runs in Docker, which a user unit cannot order
+# itself against. Recovery is handled by restarting on a dependency exit code
+# instead, so a workstation that starts Docker late converges without help.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=__MONEY_TRACKER_ROOT__
+ExecStart=__UV_BINARY__ run --env-file .env money-tracker-telegram run
+Restart=always
+RestartSec=10
+# Exit code 1 means an operator has to change something. Restarting would
+# repeat the same failure forever and bury it in the journal.
+RestartPreventExitStatus=1
+KillSignal=SIGINT
+TimeoutStopSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=read-only
+ProtectSystem=strict
+ReadWritePaths=__MONEY_TRACKER_ROOT__
+
+[Install]
+WantedBy=default.target

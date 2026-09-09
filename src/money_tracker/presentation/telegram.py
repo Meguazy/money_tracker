@@ -220,6 +220,8 @@ class ResponseKind(StrEnum):
         REVIEW_CANCELLED: Confirmation that a review ended with no write.
         ANSWER: Read-only query or advice answer built from tool facts.
         PAIRED: Confirmation that the owner binding was created.
+        DOWNTIME: Warning that Telegram may have expired updates while the
+            workstation was off.
         HELP: Answer to the help command.
         STATUS: Answer to the status command.
         UNSUPPORTED: Acknowledgement of a route V1 does not serve yet.
@@ -232,6 +234,7 @@ class ResponseKind(StrEnum):
     REVIEW_CANCELLED = "review_cancelled"
     ANSWER = "answer"
     PAIRED = "paired"
+    DOWNTIME = "downtime"
     HELP = "help"
     STATUS = "status"
     UNSUPPORTED = "unsupported"
@@ -256,6 +259,41 @@ def pairing_confirmation() -> OwnerResponse:
             (
                 "Fatto: questo account è ora l'unico proprietario del bot.",
                 "Scrivimi una spesa a parole, oppure /help per l'elenco completo.",
+            )
+        ),
+    )
+
+
+def downtime_notice(last_poll_at: datetime) -> OwnerResponse:
+    """Warn that Telegram may have dropped updates during a long outage.
+
+    Telegram keeps undelivered updates for 24 hours, and nothing local can
+    recover what it discarded. The honest message therefore names when the bot
+    was last listening and asks the owner to resend, rather than implying the
+    gap can be reconstructed.
+
+    The text names that instant rather than an elapsed duration on purpose: a
+    restart inside the same outage must re-render the identical message, and an
+    elapsed hour count would change between two of them.
+
+    Args:
+        last_poll_at: Aware instant of the last successful Telegram poll.
+
+    Returns:
+        One control-free warning naming the start of the gap.
+    """
+
+    return OwnerResponse(
+        kind=ResponseKind.DOWNTIME,
+        text="\n".join(
+            (
+                f"Sono tornato online. L'ultima volta che ho letto i messaggi "
+                f"era il {_date(last_poll_at)} alle "
+                f"{last_poll_at.astimezone(ZoneInfo(V1_TIMEZONE)).strftime('%H:%M')}.",
+                "Telegram conserva i messaggi non consegnati per 24 ore, quindi "
+                "potrei aver perso qualcosa di più vecchio.",
+                "Non posso sapere quali: se ti aspettavi una risposta, "
+                "riscrivimi quei messaggi.",
             )
         ),
     )
@@ -684,5 +722,6 @@ __all__ = [
     "TelegramResponseRenderer",
     "action_code",
     "action_for_code",
+    "downtime_notice",
     "pairing_confirmation",
 ]

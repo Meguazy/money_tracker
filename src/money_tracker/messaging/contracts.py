@@ -348,6 +348,43 @@ class PendingAction:
 
 
 @dataclass(frozen=True, slots=True)
+class DeadLetter:
+    """One failed work item an operator may inspect and replay.
+
+    The fields are exactly what deciding on a replay needs and nothing more:
+    no owner text, no Telegram identity, and no failure message. An operator
+    troubleshooting a queue does not need to read the owner's finances, and a
+    record that carried them would end up in a terminal or a ticket.
+
+    Attributes:
+        id: Stable inbox identifier a replay names.
+        update_id: Telegram ordering identity, useful for correlating a report.
+        source_reference: Stable idempotency source a replay preserves.
+        attempt_count: Automatic attempts already spent.
+        replay_count: Times an operator already returned this item to pending.
+        last_error_code: Safe bounded reason the final attempt recorded.
+        accepted_at: When the gateway durably accepted the update.
+    """
+
+    id: UUID
+    update_id: int
+    source_reference: str
+    attempt_count: int
+    replay_count: int
+    last_error_code: str | None
+    accepted_at: datetime
+
+    def __post_init__(self) -> None:
+        """Validate content-free operator metadata."""
+
+        require_aware(self.accepted_at, field="accepted_at")
+        if self.update_id < 0 or self.attempt_count < 0 or self.replay_count < 0:
+            raise ValueError("dead letter counters cannot be negative")
+        if not self.source_reference.strip():
+            raise ValueError("a dead letter must keep its source reference")
+
+
+@dataclass(frozen=True, slots=True)
 class MessagingHealth:
     """Content-free messaging state summary for operations."""
 

@@ -8,6 +8,7 @@ from uuid import UUID
 
 from money_tracker.messaging.contracts import (
     BotEnvironment,
+    DeadLetter,
     InboxClaim,
     MessagingHealth,
     NormalizedTelegramUpdate,
@@ -87,6 +88,12 @@ class MessagingRepository(Protocol):
 
     def replay_inbox(self, inbox_id: UUID, *, now: datetime) -> None:
         """Return one dead letter to pending without changing source identity."""
+
+    def dead_letters(self, bot_key: str, *, limit: int) -> tuple[DeadLetter, ...]:
+        """List failed work items an operator may inspect and replay."""
+
+    def enqueue_notice(self, notice: OutboxMessageDraft, *, now: datetime) -> UUID:
+        """Queue one owner message that no inbound work unit asked for."""
 
     def claim_next_outbox(
         self,

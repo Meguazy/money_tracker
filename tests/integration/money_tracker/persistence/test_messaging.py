@@ -569,3 +569,102 @@ def test_outbox_retry_is_bounded_and_becomes_visible_dead_letter(
         )
         is None
     )
+
+
+@pytest.mark.postgres
+def test_dead_letters_are_listable_and_replayable_without_content(
+    postgres_url: str,
+) -> None:
+    """Give an operator enough to act on, and nothing the owner wrote."""
+
+    repository, bot_key = _repository(postgres_url)
+    update = _update(bot_key, 0)
+    _ingest(repository, bot_key, update)
+    claim = repository.claim_next_inbox(
+        bot_key,
+        now=_NOW + timedelta(seconds=1),
+        lease=timedelta(minutes=1),
+        claim_token=uuid4(),
+    )
+    assert claim is not None
+    repository.fail_inbox(
+        claim,
+        error_code="model_unavailable",
+        transient=False,
+        retry_at=None,
+        now=_NOW + timedelta(seconds=2),
+    )
+
+    listed = repository.dead_letters(bot_key, limit=10)
+
+    assert len(listed) == 1
+    item = listed[0]
+    assert item.id == update.id
+    assert item.last_error_code == "model_unavailable"
+    assert item.source_reference == update.source_reference
+    assert update.text is not None
+    assert update.text not in str(item)
+
+    repository.replay_inbox(item.id, now=_NOW + timedelta(seconds=3))
+
+    assert repository.dead_letters(bot_key, limit=10) == ()
+    replayed = repository.claim_next_inbox(
+        bot_key,
+        now=_NOW + timedelta(seconds=4),
+        lease=timedelta(minutes=1),
+        claim_token=uuid4(),
+    )
+    assert replayed is not None
+    assert replayed.update.source_reference == update.source_reference
+    assert replayed.replay_count == 1
+
+
+@pytest.mark.postgres
+def test_an_operator_notice_is_queued_once_per_logical_key(
+    postgres_url: str,
+) -> None:
+    """Let a restart inside one outage add no second warning."""
+
+    repository, bot_key = _repository(postgres_url)
+    notice = _response(
+        bot_key=bot_key,
+        inbox_id=None,
+        logical_key="downtime:2026-09-08T05:30:00+00:00",
+    )
+
+    first = repository.enqueue_notice(notice, now=_NOW)
+    second = repository.enqueue_notice(notice, now=_NOW + timedelta(minutes=5))
+
+    assert first == second
+    assert (
+        _count(
+            postgres_url,
+            "SELECT count(*) FROM messaging.telegram_outbox WHERE bot_key = %s",
+            (bot_key,),
+        )
+        == 1
+    )
+    claim = repository.claim_next_outbox(
+        bot_key,
+        now=_NOW + timedelta(minutes=6),
+        lease=timedelta(minutes=1),
+        claim_token=uuid4(),
+    )
+    assert claim is not None and claim.message.inbox_id is None
+
+
+@pytest.mark.postgres
+def test_a_notice_that_claims_an_inbox_item_is_refused(
+    postgres_url: str,
+) -> None:
+    """Keep the answer-to-a-work-unit path distinct from an operator notice."""
+
+    repository, bot_key = _repository(postgres_url)
+    update = _update(bot_key, 0)
+    _ingest(repository, bot_key, update)
+
+    with pytest.raises(ValueError, match="answers no inbox item"):
+        repository.enqueue_notice(
+            _response(bot_key=bot_key, inbox_id=update.id),
+            now=_NOW,
+        )

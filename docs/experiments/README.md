@@ -61,6 +61,16 @@ are. Runs written before that separation existed stay where they were written:
 each manifest records the path it was written to, and rewriting a historical
 manifest to match a newer layout would change a claim the run made.
 
+Report manifest schema 3 adds public-safe per-case `slice_values`. Both raw
+`scores.json` and committed run JSON aggregate them under `slices`, with
+`total`, `failure_count`, and `error_count` for every required dimension and
+value. Dimensions may overlap: a split paid partly with benefit credit belongs
+to `split`, `benefit`, and `personal_funds`. Required values remain present at
+zero, so absence is distinguishable from a forgotten aggregation. The same
+block records the model, prompt/hash, boundary schema, exact tool registries,
+taxonomy, receipt pipeline, and dataset as one version set. No message or model
+prose enters the published report.
+
 List the declared candidates, and see which weights are downloaded, with:
 
     uv run money-tracker-eval catalog

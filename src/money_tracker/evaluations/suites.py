@@ -82,6 +82,7 @@ class CaseResult(BaseModel):
         tags: Dataset tags, used to inspect failures by class rather than only
             in aggregate.
         latency_ms: End-to-end duration when the case reached a model.
+        slice_values: Public-safe labels used for required report breakdowns.
         detail: Small non-sensitive diagnostic, such as a refusal reason code.
     """
 
@@ -93,6 +94,7 @@ class CaseResult(BaseModel):
     actual: str | None = None
     tags: list[str] = Field(default_factory=list)
     latency_ms: int | None = None
+    slice_values: dict[str, list[str]] = Field(default_factory=dict)
     detail: str | None = None
 
 
@@ -182,7 +184,7 @@ class SuiteReport(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    manifest_schema_version: Literal["1", "2"] = "2"
+    manifest_schema_version: Literal["1", "2", "3"] = "3"
     run_id: str
     suite: str
     started_at: str
@@ -482,6 +484,217 @@ def blocking_gates_passed(
     return executed and all(metric.passed for metric in metrics if metric.blocking)
 
 
+_SLICE_DEFAULTS: dict[str, tuple[str, ...]] = {
+    "difficulty": ("easy", "normal", "adversarial", "ambiguous", "unclassified"),
+    "intent": ("unclassified",),
+    "domain_feature": ("unclassified",),
+    "auto_post_eligibility": ("eligible", "ineligible"),
+    "funding_class": (
+        "personal_funds",
+        "benefit",
+        "default",
+        "split",
+        "other",
+        "not_applicable",
+    ),
+    "category_provenance": ("seed", "alias", "proposal", "not_applicable"),
+    "adversarial_tag": (
+        "typo",
+        "locale",
+        "relative_date",
+        "negation",
+        "quoted_text",
+        "prompt_injection",
+        "none",
+    ),
+    "warm_state": ("warmup", "warm"),
+    "media_quality": ("not_applicable",),
+}
+
+
+def case_slice_values(
+    case: Mapping[str, JsonValue], *, suite: str, position: int
+) -> dict[str, list[str]]:
+    """Derive required public reporting labels from one versioned case.
+
+    Args:
+        case: Parsed dataset row. Message text is never copied.
+        suite: Suite owning the case, used where intent is implicit.
+        position: Zero-based execution order; the first case is the warm-up.
+
+    Returns:
+        Stable, public-safe values for every required reporting dimension.
+    """
+
+    tags = {str(tag) for tag in cast(list[JsonValue], case.get("tags", []))}
+    difficulties = sorted(tags & {"easy", "normal", "adversarial", "ambiguous"})
+
+    intent_value = case.get("expected_intent") or case.get("route")
+    if intent_value is None:
+        intent_value = {
+            "ingestion/expense-it": case.get("expected_polarity") or "expense",
+            "categorization/purpose-it": "category_fit",
+            "workflow/category-review-it": "category_follow_up",
+            "advice/grounding-it": "advice",
+        }.get(suite, "unclassified")
+
+    metadata_tags = {
+        "synthetic",
+        "it-IT",
+        "easy",
+        "normal",
+        "adversarial",
+        "ambiguous",
+    }
+    domain_features = sorted(tags - metadata_tags) or ["unclassified"]
+
+    funding: set[str] = set()
+    expected_funding = case.get("expected_funding")
+    if isinstance(expected_funding, list):
+        for allocation in expected_funding:
+            if isinstance(allocation, list) and len(allocation) >= 2:
+                funding_class = str(allocation[1])
+                if funding_class in {"personal_funds", "benefit", "other"}:
+                    funding.add(funding_class)
+        if len(expected_funding) > 1:
+            funding.add("split")
+        if expected_funding and case.get("states_funding") is False:
+            funding.add("default")
+    if tags & {"benefit", "benefit-credit"}:
+        funding.add("benefit")
+    if tags & {"split", "split-funding", "funding-split"}:
+        funding.add("split")
+    if "funding-split" in tags:
+        funding.update({"personal_funds", "benefit"})
+
+    provenance: set[str] = set()
+    if "alias" in tags:
+        provenance.add("alias")
+    elif case.get("expected_outcome") == "proposal" or "proposal" in tags:
+        provenance.add("proposal")
+    elif case.get("expected_category_name") is not None:
+        provenance.add("seed")
+    elif suite == "workflow/category-review-it":
+        provenance.add("proposal")
+
+    adversarial: set[str] = set()
+    mappings = {
+        "typo": {"typo", "digit-swap"},
+        "locale": {"locale"},
+        "relative_date": {"relative-date", "relative-period"},
+        "negation": {"negation"},
+        "quoted_text": {"quoted", "reported-speech"},
+        "prompt_injection": {"prompt-injection"},
+    }
+    for label, source_tags in mappings.items():
+        if tags & source_tags:
+            adversarial.add(label)
+
+    media_tags = sorted(
+        tags
+        & {
+            "blurred",
+            "cropped",
+            "glare",
+            "handwritten",
+            "low-contrast",
+            "rotated",
+        }
+    )
+    return {
+        "difficulty": difficulties or ["unclassified"],
+        "intent": [str(intent_value)],
+        "domain_feature": domain_features,
+        "auto_post_eligibility": [
+            "eligible" if case.get("auto_post_eligible") is True else "ineligible"
+        ],
+        "funding_class": sorted(funding) or ["not_applicable"],
+        "category_provenance": sorted(provenance) or ["not_applicable"],
+        "adversarial_tag": sorted(adversarial) or ["none"],
+        "warm_state": ["warmup" if position == 0 else "warm"],
+        "media_quality": media_tags or ["not_applicable"],
+    }
+
+
+def _slice_count(value: str, cases: Sequence[CaseResult]) -> dict[str, JsonValue]:
+    """Count aggregate, failed, and errored cases for one slice value."""
+
+    errors = sum(case.status is CaseStatus.ERROR for case in cases)
+    failures = sum(case.status is not CaseStatus.PASSED for case in cases)
+    return {
+        "value": value,
+        "total": len(cases),
+        "failure_count": failures,
+        "error_count": errors,
+    }
+
+
+def _version_set(report: SuiteReport) -> dict[str, JsonValue]:
+    """Return the exact version-bearing configuration for one report."""
+
+    configuration = report.configuration
+    prompt: dict[str, JsonValue] = {
+        "id": configuration.get("instructions_version", "not_recorded"),
+        "sha256": configuration.get("instructions_sha256", "not_recorded"),
+    }
+    tools: JsonValue = "not_applicable"
+    if "query_tools" in configuration or "advice_tools" in configuration:
+        tools = {
+            "query_registry": configuration.get("query_tools", []),
+            "advice_registry": configuration.get("advice_tools", []),
+            "request_schema_fields": configuration.get("request_schema_fields", []),
+        }
+    return {
+        "report_schema": report.manifest_schema_version,
+        "suite": report.suite,
+        "dataset": {
+            "id": report.dataset.dataset_id,
+            "version": report.dataset.version,
+            "content_hash": report.dataset.content_hash,
+        },
+        "model": model_row(report.model),
+        "prompt": prompt,
+        "schema": configuration.get("boundary_schema", "not_applicable"),
+        "tools": tools,
+        "taxonomy": configuration.get("taxonomy_version", "not_applicable"),
+        "receipt_pipeline": configuration.get(
+            "receipt_pipeline_version", "not_applicable"
+        ),
+    }
+
+
+def aggregate_report_slices(report: SuiteReport) -> dict[str, JsonValue]:
+    """Aggregate required report dimensions without reopening artifacts.
+
+    Args:
+        report: Complete run whose case labels already carry public slice values.
+
+    Returns:
+        Overall and per-value counts plus the run's exact version set. A failure
+        count includes execution errors; ``error_count`` keeps those visible.
+    """
+
+    dimensions: dict[str, JsonValue] = {}
+    for dimension, defaults in _SLICE_DEFAULTS.items():
+        values = set(defaults)
+        for case in report.cases:
+            values.update(case.slice_values.get(dimension, ()))
+        rows: list[dict[str, JsonValue]] = []
+        for value in sorted(values):
+            matching = [
+                case
+                for case in report.cases
+                if value in case.slice_values.get(dimension, ())
+            ]
+            rows.append(_slice_count(value, matching))
+        dimensions[dimension] = cast(JsonValue, rows)
+    return {
+        "overall": _slice_count("all", report.cases),
+        "dimensions": dimensions,
+        "version_set": _version_set(report),
+    }
+
+
 def write_report(report: SuiteReport, *, output_root: Path) -> Path:
     """Write one run's manifest and scores under a fresh artifact directory.
 
@@ -518,6 +731,7 @@ def write_report(report: SuiteReport, *, output_root: Path) -> Path:
             "meets_dataset_minimum": report.meets_dataset_minimum,
             "eligible_for_promotion": report.eligible_for_promotion,
             "promotion_blockers": report.promotion_blockers,
+            "slices": aggregate_report_slices(report),
         },
     )
     return directory
@@ -752,6 +966,7 @@ def publish_scores(report: SuiteReport, *, out_root: Path | None = None) -> Path
             status.value: sum(1 for case in report.cases if case.status is status)
             for status in CaseStatus
         },
+        "slices": aggregate_report_slices(report),
     }
     _write_json(directory / f"{report.run_id}.json", payload)
     _write_json(directory / "latest.json", payload)
@@ -1048,7 +1263,9 @@ __all__ = [
     "CaseStatus",
     "MetricScore",
     "SuiteReport",
+    "aggregate_report_slices",
     "blocking_gates_passed",
+    "case_slice_values",
     "dataset_metadata",
     "candidate_catalog",
     "latency_measurement_configuration",

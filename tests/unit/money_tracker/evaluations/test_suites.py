@@ -21,8 +21,10 @@ from money_tracker.evaluations.suites import (
     CaseStatus,
     MetricScore,
     SuiteReport,
+    aggregate_report_slices,
     blocking_gates_passed,
     candidate_catalog,
+    case_slice_values,
     dataset_metadata,
     latency_measurement_configuration,
     load_cases,
@@ -403,6 +405,7 @@ def test_a_run_writes_a_manifest_and_a_compact_score_summary(
     assert scores["dataset_content_hash"] == "b" * 64
     assert scores["configuration"]["minimum_confidence"] == 0.5
     assert scores["metrics"][0]["name"] == "macro_f1"
+    assert scores["slices"]["overall"]["total"] == 1
 
 
 def test_the_score_summary_states_why_promotion_is_blocked(
@@ -433,8 +436,85 @@ def test_a_case_record_carries_labels_rather_than_prose(tmp_path: Path) -> None:
         "actual",
         "tags",
         "latency_ms",
+        "slice_values",
         "detail",
     }
+
+
+def test_case_slices_derive_only_versioned_fields_and_tags() -> None:
+    """Classify overlapping funding and adversarial dimensions explicitly."""
+
+    values = case_slice_values(
+        {
+            "expected_polarity": "expense",
+            "expected_funding": [
+                ["Carta", "personal_funds", 1000],
+                ["Buoni pasto", "benefit", 500],
+            ],
+            "expected_outcome": "resolved",
+            "states_funding": True,
+            "tags": ["adversarial", "typo", "locale", "relative-date", "split"],
+        },
+        suite="ingestion/expense-it",
+        position=0,
+    )
+
+    assert values["difficulty"] == ["adversarial"]
+    assert values["intent"] == ["expense"]
+    assert values["funding_class"] == ["benefit", "personal_funds", "split"]
+    assert values["adversarial_tag"] == ["locale", "relative_date", "typo"]
+    assert values["auto_post_eligibility"] == ["ineligible"]
+    assert values["warm_state"] == ["warmup"]
+
+
+def test_report_slices_count_failures_without_reprocessing_artifacts(
+    tmp_path: Path,
+) -> None:
+    """Publish the answer to an adversarial failure-count question."""
+
+    cases = [
+        CaseResult(
+            case_id="a",
+            status=CaseStatus.FAILED,
+            expected="refused",
+            slice_values={
+                "difficulty": ["adversarial"],
+                "adversarial_tag": ["prompt_injection"],
+                "warm_state": ["warmup"],
+            },
+        ),
+        CaseResult(
+            case_id="b",
+            status=CaseStatus.PASSED,
+            expected="answered",
+            slice_values={
+                "difficulty": ["normal"],
+                "adversarial_tag": ["none"],
+                "warm_state": ["warm"],
+            },
+        ),
+    ]
+    report = _report(
+        tmp_path,
+        dataset=DatasetMetadata(
+            suite="tools/selection-and-use",
+            dataset_id="tools-v1",
+            version="1.0.0",
+            content_hash="b" * 64,
+            item_count=2,
+        ),
+        suite="tools/selection-and-use",
+        cases=cases,
+    )
+
+    slices = aggregate_report_slices(report)
+    difficulty = {row["value"]: row for row in slices["dimensions"]["difficulty"]}
+    injection = {row["value"]: row for row in slices["dimensions"]["adversarial_tag"]}
+
+    assert slices["overall"]["failure_count"] == 1
+    assert difficulty["adversarial"]["failure_count"] == 1
+    assert injection["prompt_injection"]["total"] == 1
+    assert slices["version_set"]["dataset"]["version"] == "1.0.0"
 
 
 def test_a_run_that_reached_nothing_cannot_pass_its_gates() -> None:
@@ -539,6 +619,7 @@ def test_every_score_surface_names_the_model_that_produced_it(
     assert scores["model"]["gguf_filename"] == "Qwen3-14B-Q5_K_M.gguf"
     assert scores["model"]["gguf_sha256"] == "sha256:" + "c" * 64
     assert scores["model"]["metadata_complete"] is True
+    assert latest["slices"] == scores["slices"]
 
 
 def test_the_summary_names_each_row_model_and_says_when_they_differ(

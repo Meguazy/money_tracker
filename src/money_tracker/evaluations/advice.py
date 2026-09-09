@@ -37,6 +37,7 @@ from pydantic import JsonValue
 
 from money_tracker.application import ReportingService
 from money_tracker.domain import (
+    TAXONOMY_VERSION,
     CategoryStatus,
     TaxonomyError,
     YearMonth,
@@ -54,6 +55,7 @@ from money_tracker.evaluations.suites import (
     MetricScore,
     SuiteReport,
     blocking_gates_passed,
+    case_slice_values,
     dataset_metadata,
     latency_measurement_configuration,
     load_cases,
@@ -338,8 +340,13 @@ def run_advice_suite(
     reporting = ReportingService(PostgresFinanceRepository(database_url))
     results: list[CaseResult] = []
     observations: dict[str, Mapping[str, JsonValue]] = {}
-    for case in cases:
+    for index, case in enumerate(cases):
         result, observed = _execute(graph, owner, reporting, case)
+        result = result.model_copy(
+            update={
+                "slice_values": case_slice_values(case, suite=SUITE, position=index)
+            }
+        )
         results.append(result)
         observations[result.case_id] = observed
 
@@ -366,6 +373,7 @@ def run_advice_suite(
             "human_usefulness_reviewed": False,
             "dataset_minimum": DATASET_MINIMUM,
             "latency_measurement": latency_measurement_configuration(),
+            "taxonomy_version": TAXONOMY_VERSION,
         },
         metrics=metrics,
         cases=results,

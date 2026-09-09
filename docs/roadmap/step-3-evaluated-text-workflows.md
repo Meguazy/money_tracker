@@ -137,6 +137,14 @@ own tests and documentation, and none may ship a later step's behavior.
   from channel input to owner-visible response, whose gateway and response
   surface belong to Step 4. The complete Step 3 sweep below will publish the
   first comparable values for both 14B candidates.
+- Report schema 3 carries public-safe slice labels per case and publishes
+  aggregate and failure counts for difficulty, intent, domain feature, auto-post
+  eligibility, funding class, category provenance, the six required adversarial
+  tags, warm state, and media quality. It also records a single version set for
+  model, prompt, boundary schema, tool registries, taxonomy, receipt pipeline,
+  and dataset. Required empty values remain visible with zero counts. Thus a
+  published `tools` run can answer how many failures are adversarial directly
+  from `slices`, without reopening `artifacts/evals/`.
 - The `workflows` component is framework-independent: it imports Pydantic,
   `zoneinfo`, and pure domain values, and no LangGraph, model client,
   repository, or transport module. It owns no persistent state.

@@ -46,6 +46,7 @@ from money_tracker.application import (
 )
 from money_tracker.application.runtime import SystemClock, UUID4Generator
 from money_tracker.domain import (
+    TAXONOMY_VERSION,
     Category,
     CategoryProposal,
     CategoryStatus,
@@ -76,6 +77,7 @@ from money_tracker.evaluations.suites import (
     MetricScore,
     SuiteReport,
     blocking_gates_passed,
+    case_slice_values,
     dataset_metadata,
     latency_measurement_configuration,
     load_cases,
@@ -699,9 +701,14 @@ def run_category_review_suite(
 
     results: list[CaseResult] = []
     observations: dict[str, Mapping[str, JsonValue]] = {}
-    for case in cases:
+    for index, case in enumerate(cases):
         result, observed = _execute(
             database_url, repository, profile, card, case, instructions
+        )
+        result = result.model_copy(
+            update={
+                "slice_values": case_slice_values(case, suite=SUITE, position=index)
+            }
         )
         results.append(result)
         observations[result.case_id] = observed
@@ -726,6 +733,7 @@ def run_category_review_suite(
             "model_port": "scripted",
             "dataset_minimum": DATASET_MINIMUM,
             "latency_measurement": latency_measurement_configuration(),
+            "taxonomy_version": TAXONOMY_VERSION,
             "fixture_taxonomy_nodes": len(fixture_taxonomy().categories),
             "aliases_written_outside_bootstrap": True,
             "auto_post_policy_promoted": False,

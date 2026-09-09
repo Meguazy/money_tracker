@@ -65,6 +65,7 @@ from money_tracker.evaluations.suites import (
     MetricScore,
     SuiteReport,
     blocking_gates_passed,
+    case_slice_values,
     dataset_metadata,
     latency_measurement_configuration,
     load_cases,
@@ -529,8 +530,13 @@ def run_ingestion_suite(
 
     results: list[CaseResult] = []
     judgments: dict[str, _Judgment] = {}
-    for case in cases:
+    for index, case in enumerate(cases):
         result, judgment = _execute(port, candidate, case, sources)
+        result = result.model_copy(
+            update={
+                "slice_values": case_slice_values(case, suite=SUITE, position=index)
+            }
+        )
         results.append(result)
         judgments[result.case_id] = judgment
 

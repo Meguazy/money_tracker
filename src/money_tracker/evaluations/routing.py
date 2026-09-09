@@ -39,6 +39,7 @@ from money_tracker.evaluations.suites import (
     MetricScore,
     SuiteReport,
     blocking_gates_passed,
+    case_slice_values,
     dataset_metadata,
     latency_measurement_configuration,
     load_cases,
@@ -57,6 +58,7 @@ from money_tracker.workflows import (
     ROUTER,
     CallbackAction,
     ChannelMessage,
+    RouteClassification,
     RoutingContext,
     RoutingSource,
     WorkflowIntent,
@@ -346,7 +348,14 @@ def run_routing_suite(
     )
     results: list[CaseResult] = []
     for index, case in enumerate(cases):
-        results.append(_execute(graph, case, index))
+        result = _execute(graph, case, index)
+        results.append(
+            result.model_copy(
+                update={
+                    "slice_values": case_slice_values(case, suite=SUITE, position=index)
+                }
+            )
+        )
     metrics = [*_metrics(cases, results), warm_latency_p95_metric(results)]
     passed = blocking_gates_passed(metrics, results)
     meets_minimum = dataset.item_count >= DATASET_MINIMUM
@@ -363,6 +372,7 @@ def run_routing_suite(
             "minimum_confidence": minimum_confidence,
             "instructions_version": instructions_version,
             "instructions_sha256": sha256_text(instructions),
+            "boundary_schema": RouteClassification.__name__,
             "dataset_minimum": DATASET_MINIMUM,
             "latency_measurement": latency_measurement_configuration(),
         },

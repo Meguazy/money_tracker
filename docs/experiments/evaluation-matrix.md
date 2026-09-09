@@ -193,3 +193,14 @@ Every suite reports aggregate and failure counts by:
 - typo, locale, relative date, negation, quoted text, and prompt injection;
 - model/prompt/schema/tool/taxonomy/receipt-pipeline version;
 - warm/cold state and relevant media-quality tags.
+
+Manifest schema 3 stores only public-safe slice labels with each case. Published
+run JSON reports `total`, `failure_count`, and `error_count` for every value; an
+execution error is included in the failure count and also remains visible on its
+own. Multi-valued dimensions deliberately overlap, while mandatory values with
+no cases remain present at zero. The first case is labelled `warmup` and excluded
+from `warm_latency_p95_ms`; later successful cases are labelled `warm`. With no
+promoted auto-post policy, every current text case is `ineligible`. The
+`version_set` block pins the dataset and report schema alongside the model,
+prompt/hash, boundary schema, tool registries, taxonomy, and receipt pipeline
+where each applies.

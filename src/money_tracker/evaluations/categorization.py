@@ -31,6 +31,7 @@ from uuid import uuid4
 from pydantic import BaseModel, JsonValue
 
 from money_tracker.domain import (
+    TAXONOMY_VERSION,
     DomainError,
     Taxonomy,
     initial_taxonomy,
@@ -46,6 +47,7 @@ from money_tracker.evaluations.suites import (
     MetricScore,
     SuiteReport,
     blocking_gates_passed,
+    case_slice_values,
     dataset_metadata,
     latency_measurement_configuration,
     load_cases,
@@ -329,7 +331,7 @@ def run_categorization_suite(
     proposed_names: dict[str, str | None] = {}
     named_while_proposing: dict[str, bool] = {}
     headings: dict[str, str | None] = {}
-    for case in cases:
+    for index, case in enumerate(cases):
         if two_stage is None:
             result, proposed, named = _execute(
                 port, candidate, schema, rendered, case, taxonomy
@@ -339,6 +341,11 @@ def run_categorization_suite(
             result, proposed, named, heading = _execute_two_stage(
                 port, two_stage, case, taxonomy
             )
+        result = result.model_copy(
+            update={
+                "slice_values": case_slice_values(case, suite=SUITE, position=index)
+            }
+        )
         results.append(result)
         proposed_names[result.case_id] = proposed
         named_while_proposing[result.case_id] = named
@@ -382,6 +389,7 @@ def run_categorization_suite(
             "taxonomy_active_categories": len(_active_names(taxonomy)),
             "dataset_minimum": DATASET_MINIMUM,
             "latency_measurement": latency_measurement_configuration(),
+            "taxonomy_version": TAXONOMY_VERSION,
             "auto_post_policy_promoted": False,
         },
         metrics=metrics + _two_stage_diagnostics(results, headings, taxonomy),

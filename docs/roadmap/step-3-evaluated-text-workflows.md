@@ -27,6 +27,25 @@ alone in any boundary shape, and it can answer with a discriminated union. No
 channel wiring exists yet, and no confidence bar, prompt, or model is
 promoted.
 
+## Current deterministic read-selection candidate — 2026-09-09
+
+[AD-017](../arc42/decisions/AD-017-versioned-read-selection-policy.md)
+implements a separately versioned pure policy between parsed model selection
+and the existing registry acceptance. `model-only-v0` is the promoted runtime
+default and exact rollback. `explicit-finance-scope-v1` is the candidate under
+evaluation for the measured funding and advice failure clusters; it can use
+only explicit normalized text and trusted active display names, preserves a
+model-resolved period, and abstains rather than guessing an unresolved past
+month. It cannot emit figures or widen a routed registry.
+
+The tools and advice suites, their manifests, the dispatcher, the administration
+command, and the sweep script all carry the policy version. Evaluation defaults
+to V1 while runtime remains on V0 until the pinned gates pass and the decision
+log promotes it. Owner usefulness labels from the completed Qwen run may be
+reused only for byte-equivalent JSON results under the same rubric; changed
+results return to the loopback reviewer. No threshold, prompt, schema, dataset,
+or historical decision changed in this increment.
+
 ## Current corrective increment — 2026-09-08
 
 The owner authorized the [contract and evaluation corrections](../experiments/text-workflow-fixes-2026-09-08.md)

@@ -7,7 +7,10 @@ import json
 from collections.abc import Sequence
 from pathlib import Path
 
-from money_tracker.evaluations.advice import run_advice_suite
+from money_tracker.evaluations.advice import (
+    HUMAN_USEFULNESS_RUBRIC_VERSION,
+    run_advice_suite,
+)
 from money_tracker.evaluations.calibration import run_calibration
 from money_tracker.evaluations.capabilities import run_capability_suite
 from money_tracker.evaluations.catalog import (
@@ -22,7 +25,10 @@ from money_tracker.evaluations.categorization import (
     run_categorization_suite,
 )
 from money_tracker.evaluations.category_review import run_category_review_suite
-from money_tracker.evaluations.human_review import serve_human_usefulness_review
+from money_tracker.evaluations.human_review import (
+    reuse_or_serve_human_usefulness_review,
+    serve_human_usefulness_review,
+)
 from money_tracker.evaluations.ingestion import (
     EXTRACTION_CANDIDATES,
     run_ingestion_suite,
@@ -39,6 +45,10 @@ from money_tracker.evaluations.suites import (
 from money_tracker.evaluations.tool_use import run_tool_use_suite
 from money_tracker.persistence.database import database_url_from_env
 from money_tracker.runtime.read_graph import SELECTION_BOUNDARIES
+from money_tracker.workflows import (
+    CANDIDATE_READ_SELECTION_POLICY,
+    ReadSelectionPolicyVersion,
+)
 from money_tracker.workflows.prompts import (
     CATEGORY_FIT,
     CATEGORY_LEAF,
@@ -307,6 +317,12 @@ def _parser() -> argparse.ArgumentParser:
         help="read-tool selection boundary under test; recorded with the score",
     )
     tools.add_argument(
+        "--selection-policy",
+        choices=[version.value for version in ReadSelectionPolicyVersion],
+        default=CANDIDATE_READ_SELECTION_POLICY.value,
+        help="versioned post-model selection policy under test",
+    )
+    tools.add_argument(
         "--output-root",
         type=Path,
         default=repository_root / "artifacts" / "evals",
@@ -329,6 +345,12 @@ def _parser() -> argparse.ArgumentParser:
         help="read-tool selection boundary under test; recorded with the score",
     )
     advice.add_argument(
+        "--selection-policy",
+        choices=[version.value for version in ReadSelectionPolicyVersion],
+        default=CANDIDATE_READ_SELECTION_POLICY.value,
+        help="versioned post-model selection policy under test",
+    )
+    advice.add_argument(
         "--output-root",
         type=Path,
         default=repository_root / "artifacts" / "evals",
@@ -338,6 +360,14 @@ def _parser() -> argparse.ArgumentParser:
         "--review-human-usefulness",
         action="store_true",
         help="open a loopback browser review for all non-injection results",
+    )
+    advice.add_argument(
+        "--reuse-human-usefulness-review",
+        type=Path,
+        help=(
+            "prior completed owner-review JSON; unchanged results reuse their "
+            "scores and only changed results open in the browser"
+        ),
     )
     advice.add_argument(
         "--human-review-port",
@@ -529,7 +559,14 @@ def main(argv: Sequence[str] | None = None) -> None:
         SystemExit: With status one when a blocking gate or metadata gate fails.
     """
 
-    args = _parser().parse_args(argv)
+    parser = _parser()
+    args = parser.parse_args(argv)
+    if getattr(args, "reuse_human_usefulness_review", None) is not None and not getattr(
+        args, "review_human_usefulness", False
+    ):
+        parser.error(
+            "--reuse-human-usefulness-review requires --review-human-usefulness"
+        )
     if args.suite == "catalog":
         _run_catalog(args.profile, args.field)
         return
@@ -578,10 +615,21 @@ def main(argv: Sequence[str] | None = None) -> None:
                 database_url=database_url_from_env(test_database=True),
                 boundary=SELECTION_BOUNDARIES[args.instructions],
                 instructions=prompt(TOOL_SELECTION, args.instructions).text,
+                selection_policy=ReadSelectionPolicyVersion(args.selection_policy),
                 human_reviewer=(
                     (
-                        lambda run_id, items: serve_human_usefulness_review(
-                            run_id, items, port=args.human_review_port
+                        lambda run_id, items: (
+                            reuse_or_serve_human_usefulness_review(
+                                run_id,
+                                items,
+                                review_path=args.reuse_human_usefulness_review,
+                                rubric_version=HUMAN_USEFULNESS_RUBRIC_VERSION,
+                                port=args.human_review_port,
+                            )
+                            if args.reuse_human_usefulness_review is not None
+                            else serve_human_usefulness_review(
+                                run_id, items, port=args.human_review_port
+                            )
                         )
                     )
                     if args.review_human_usefulness
@@ -601,6 +649,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                 database_url=database_url_from_env(test_database=True),
                 boundary=SELECTION_BOUNDARIES[args.instructions],
                 instructions=prompt(TOOL_SELECTION, args.instructions).text,
+                selection_policy=ReadSelectionPolicyVersion(args.selection_policy),
             )
         )
         return

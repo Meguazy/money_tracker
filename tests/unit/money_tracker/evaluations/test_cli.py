@@ -134,3 +134,35 @@ def test_human_review_and_deferral_are_mutually_exclusive() -> None:
                 "--defer-human-usefulness",
             ]
         )
+
+
+def test_read_suites_default_to_the_versioned_candidate_policy() -> None:
+    """Measure the candidate explicitly while production stays on rollback V0."""
+
+    parser = _parser()
+
+    assert parser.parse_args(["tools"]).selection_policy == "explicit-finance-scope-v1"
+    assert parser.parse_args(["advice"]).selection_policy == "explicit-finance-scope-v1"
+    assert (
+        parser.parse_args(
+            ["tools", "--selection-policy", "model-only-v0"]
+        ).selection_policy
+        == "model-only-v0"
+    )
+
+
+def test_advice_accepts_a_prior_review_for_selective_reuse(tmp_path: Path) -> None:
+    """Carry the prior sidecar path only when browser review is requested."""
+
+    path = tmp_path / "human-usefulness-review.json"
+    args = _parser().parse_args(
+        [
+            "advice",
+            "--review-human-usefulness",
+            "--reuse-human-usefulness-review",
+            str(path),
+        ]
+    )
+
+    assert args.review_human_usefulness is True
+    assert args.reuse_human_usefulness_review == path

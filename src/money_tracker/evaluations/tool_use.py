@@ -90,8 +90,10 @@ from money_tracker.runtime import build_read_graph
 from money_tracker.runtime.model import LocalStructuredOutputModel
 from money_tracker.runtime.read_graph import DEFAULT_SELECTION, SelectionBoundary
 from money_tracker.workflows import (
+    CANDIDATE_READ_SELECTION_POLICY,
     TOOL_SELECTION,
     ReadOutcome,
+    ReadSelectionPolicyVersion,
     StructuredOutputModel,
     ToolRequest,
     WorkflowIntent,
@@ -452,6 +454,7 @@ def run_tool_use_suite(
     model: StructuredOutputModel | None = None,
     instructions: str = DEFAULT_SELECTION_INSTRUCTIONS,
     boundary: SelectionBoundary = DEFAULT_SELECTION,
+    selection_policy: ReadSelectionPolicyVersion = CANDIDATE_READ_SELECTION_POLICY,
 ) -> SuiteReport:
     """Execute the tool suite and always emit a deterministic report.
 
@@ -467,6 +470,8 @@ def run_tool_use_suite(
         boundary: Selection schema and conversion under test.
             Defaults to the flat contract, and is recorded so a score
             is attributable to one boundary shape.
+        selection_policy: Versioned post-model policy under test. Evaluation
+            defaults to the candidate while runtime remains on rollback V0.
 
     Returns:
         The complete report, already written to its artifact directory.
@@ -490,6 +495,8 @@ def run_tool_use_suite(
             for category in initial_taxonomy().categories
             if category.status is CategoryStatus.ACTIVE
         ),
+        funding_source_names=tuple(owner.sources),
+        selection_policy=selection_policy,
     )
 
     results: list[CaseResult] = []
@@ -521,6 +528,7 @@ def run_tool_use_suite(
         environment=collect_environment_metadata(),
         configuration={
             "instructions_version": boundary.version,
+            "selection_policy_version": selection_policy.value,
             "instructions_sha256": sha256_text(instructions),
             "boundary_schema": boundary.schema.__name__,
             "received_at": RECEIVED_AT.isoformat(),

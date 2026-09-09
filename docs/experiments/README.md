@@ -104,16 +104,20 @@ with:
     RUN_POSTGRES_INTEGRATION_TESTS=1 \
       uv run --env-file .env money-tracker-eval category-review
     RUN_POSTGRES_INTEGRATION_TESTS=1 \
-      uv run --env-file .env money-tracker-eval tools
+      uv run --env-file .env money-tracker-eval tools \
+        --selection-policy explicit-finance-scope-v1
     RUN_POSTGRES_INTEGRATION_TESTS=1 \
-      uv run --env-file .env money-tracker-eval advice
+      uv run --env-file .env money-tracker-eval advice \
+        --selection-policy explicit-finance-scope-v1
 
 Measure several candidates in one go, one at a time, with:
 
     ./scripts/sweep_models.sh --minimum-confidence 0.5 \
       text-qwen3-14b text-ministral3-14b
 
-The sweep resolves each candidate's weights from the catalog, restarts the
+The sweep records `explicit-finance-scope-v1` for tools and advice by
+default; pass `--selection-policy model-only-v0` for the direct rollback
+comparison. The sweep resolves each candidate's weights from the catalog, restarts the
 inference server for it, runs every suite with `--model-profile`, and writes one
 directory per candidate under `artifacts/sweeps/<run>/`. A failing blocking gate
 is a measurement, so the sweep records it and continues; only a run that could

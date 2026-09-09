@@ -49,6 +49,18 @@ manifest reports the median computed from those entries. The committed score
 contains only the aggregate metric. Use `--human-review-port <port>` if the
 default port `8765` is occupied.
 
+For a new run after a versioned workflow change, reuse an earlier completed
+review and show only changed results with:
+
+    python -m money_tracker.evaluations.cli advice \
+      --model-profile <profile-id> --review-human-usefulness \
+      --reuse-human-usefulness-review <prior-run>/human-usefulness-review.json
+
+A score is reused only when the rubric, owner disposition, case identifier,
+message, outcome, and structured answer all match. The new run receives a full
+sidecar containing reused and newly entered scores; any changed result must be
+scored again.
+
 If the owner explicitly defers review to Step 5, use
 `--defer-human-usefulness`. That records an inapplicable gate with the deferral
 reason and writes a pending-free sidecar; it does not invent a score or treat an

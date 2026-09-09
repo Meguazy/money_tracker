@@ -82,9 +82,11 @@ from money_tracker.runtime import build_read_graph
 from money_tracker.runtime.model import LocalStructuredOutputModel
 from money_tracker.runtime.read_graph import DEFAULT_SELECTION, SelectionBoundary
 from money_tracker.workflows import (
+    CANDIDATE_READ_SELECTION_POLICY,
     TOOL_SELECTION,
     ChannelMessage,
     ReadOutcome,
+    ReadSelectionPolicyVersion,
     ReadTool,
     StructuredOutputModel,
     ToolRequest,
@@ -459,6 +461,7 @@ def run_advice_suite(
     model: StructuredOutputModel | None = None,
     instructions: str = DEFAULT_SELECTION_INSTRUCTIONS,
     boundary: SelectionBoundary = DEFAULT_SELECTION,
+    selection_policy: ReadSelectionPolicyVersion = CANDIDATE_READ_SELECTION_POLICY,
     human_reviewer: HumanUsefulnessReviewer | None = None,
     human_usefulness_deferred: bool = False,
 ) -> SuiteReport:
@@ -475,6 +478,8 @@ def run_advice_suite(
         boundary: Selection schema and conversion under test.
             Defaults to the flat contract, and is recorded so a score
             is attributable to one boundary shape.
+        selection_policy: Versioned post-model policy under test. Evaluation
+            defaults to the candidate while runtime remains on rollback V0.
         human_reviewer: Owner-operated batch reviewer invoked once with all
             52 non-injection results from this exact run.
         human_usefulness_deferred: Explicit owner decision to defer the human
@@ -504,6 +509,8 @@ def run_advice_suite(
             for category in initial_taxonomy().categories
             if category.status is CategoryStatus.ACTIVE
         ),
+        funding_source_names=tuple(owner.sources),
+        selection_policy=selection_policy,
     )
 
     reporting = ReportingService(PostgresFinanceRepository(database_url))
@@ -561,6 +568,7 @@ def run_advice_suite(
         environment=collect_environment_metadata(),
         configuration={
             "instructions_version": boundary.version,
+            "selection_policy_version": selection_policy.value,
             "instructions_sha256": sha256_text(instructions),
             "boundary_schema": boundary.schema.__name__,
             "received_at": RECEIVED_AT.isoformat(),

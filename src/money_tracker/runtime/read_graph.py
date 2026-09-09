@@ -48,9 +48,11 @@ from money_tracker.domain import (
     YearMonth,
 )
 from money_tracker.workflows import (
+    DEFAULT_READ_SELECTION_POLICY,
     TOOL_SELECTION,
     ReadOutcome,
     ReadReason,
+    ReadSelectionPolicyVersion,
     ReadTool,
     ReadWorkflowState,
     StructuredOutputError,
@@ -58,6 +60,7 @@ from money_tracker.workflows import (
     ToolRequest,
     WorkflowIntent,
     accept_tool_request,
+    apply_read_selection_policy,
     asks_for_an_unavailable_budget,
     default_prompt,
     parse_with_one_repair,
@@ -163,6 +166,8 @@ def build_read_graph(
     checkpointer: BaseCheckpointSaver[str] | None = None,
     selection_boundary: SelectionBoundary = FLAT_SELECTION,
     category_names: tuple[str, ...] = (),
+    funding_source_names: tuple[str, ...] = (),
+    selection_policy: ReadSelectionPolicyVersion = DEFAULT_READ_SELECTION_POLICY,
 ) -> CompiledStateGraph[ReadWorkflowState, None, ReadWorkflowState, ReadWorkflowState]:
     """Compile the read-only question and advice workflow.
 
@@ -178,8 +183,11 @@ def build_read_graph(
         selection_boundary: Schema and conversion the selection node asks for.
             Defaults to the flat contract, so an existing caller is unchanged.
         category_names: Active category display names shown to the selection
-            boundary. Empty by default, which renders nothing and leaves the
-            boundary asking for a category it has not been shown.
+            boundary and available as trusted policy vocabulary.
+        funding_source_names: Active source display names available only to the
+            deterministic selection policy.
+        selection_policy: Versioned post-model policy. The default preserves
+            the model result unchanged; callers must opt into candidates.
 
     Returns:
         A compiled graph that maps one routed question to grounded figures or
@@ -209,6 +217,14 @@ def build_read_graph(
             )
         except StructuredOutputError:
             return _clarify(ReadReason.MODEL_OUTPUT_INVALID)
+        request = apply_read_selection_policy(
+            request,
+            intent=intent,
+            message=message.normalized_text,
+            category_names=category_names,
+            funding_source_names=funding_source_names,
+            version=selection_policy,
+        )
         if request is None:
             return _clarify(ReadReason.TOOL_NOT_REGISTERED)
         try:

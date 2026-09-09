@@ -35,6 +35,7 @@ from money_tracker.runtime.review_graph import (
 )
 from money_tracker.runtime.router_graph import build_router_graph
 from money_tracker.workflows import (
+    DEFAULT_READ_SELECTION_POLICY,
     ChannelMessage,
     DispatchContext,
     DispatchOutcome,
@@ -42,6 +43,7 @@ from money_tracker.workflows import (
     DispatchStatus,
     ExpenseWorkflowState,
     MovementChangeState,
+    ReadSelectionPolicyVersion,
     ReadTool,
     ReadWorkflowState,
     ReviewWorkflowState,
@@ -346,6 +348,8 @@ def build_workflow_dispatcher(
     category_candidate: CategoryFitCandidate | None = None,
     selection_boundary: SelectionBoundary,
     category_names: tuple[str, ...] = (),
+    funding_source_names: tuple[str, ...] = (),
+    selection_policy: ReadSelectionPolicyVersion = DEFAULT_READ_SELECTION_POLICY,
     checkpointer: BaseCheckpointSaver[str] | None = None,
 ) -> WorkflowDispatcher:
     """Assemble the single dispatcher from independently bounded graphs.
@@ -367,6 +371,9 @@ def build_workflow_dispatcher(
         category_candidate: Purpose schema/conversion paired with its text.
         selection_boundary: Tool schema/conversion paired with its text.
         category_names: Active names visible to read selection.
+        funding_source_names: Active source display names visible to the
+            deterministic read-selection policy.
+        selection_policy: Versioned post-model policy; defaults to promoted V0.
         checkpointer: Persistent serializer-safe graph checkpoint adapter.
 
     Returns:
@@ -420,6 +427,8 @@ def build_workflow_dispatcher(
                 checkpointer=checkpointer,
                 selection_boundary=selection_boundary,
                 category_names=category_names,
+                funding_source_names=funding_source_names,
+                selection_policy=selection_policy,
             ),
         ),
         review=cast(

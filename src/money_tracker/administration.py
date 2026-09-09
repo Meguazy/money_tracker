@@ -55,6 +55,7 @@ from money_tracker.runtime import (
 from money_tracker.runtime.read_graph import DEFAULT_SELECTION
 from money_tracker.workflows import (
     CATEGORY_FIT,
+    DEFAULT_READ_SELECTION_POLICY,
     EXTRACTION,
     ROUTER,
     TOOL_SELECTION,
@@ -63,6 +64,7 @@ from money_tracker.workflows import (
     DispatchContext,
     DispatchOutcome,
     PendingMovementAction,
+    ReadSelectionPolicyVersion,
     RoutingContext,
     RoutingDecision,
     default_prompt,
@@ -152,6 +154,12 @@ def _parser() -> argparse.ArgumentParser:
             "run the selected Step 3 specialist in this trusted profile; "
             "routing-only diagnostics when omitted"
         ),
+    )
+    route.add_argument(
+        "--read-selection-policy",
+        choices=[version.value for version in ReadSelectionPolicyVersion],
+        default=DEFAULT_READ_SELECTION_POLICY.value,
+        help="versioned read-selection policy (default: promoted model-only-v0)",
     )
     subparsers.add_parser(
         "profile-init",
@@ -341,6 +349,9 @@ def _route(args: argparse.Namespace) -> dict[str, object]:
     ) -> DispatchOutcome:
         """Assemble against the selected checkpoint lifetime and dispatch once."""
 
+        funding_source_names = tuple(
+            source.name for source in repository.get_funding_sources(args.profile_id)
+        )
         category_names = tuple(
             category.name
             for category in repository.get_taxonomy(args.profile_id).categories
@@ -368,6 +379,8 @@ def _route(args: argparse.Namespace) -> dict[str, object]:
             category_candidate=DEFAULT_CATEGORY_FIT_CANDIDATE,
             selection_boundary=DEFAULT_SELECTION,
             category_names=category_names,
+            funding_source_names=funding_source_names,
+            selection_policy=ReadSelectionPolicyVersion(args.read_selection_policy),
             checkpointer=checkpointer,
         )
         return dispatcher.dispatch(message, context=context)

@@ -139,3 +139,59 @@ def test_loopback_page_accepts_one_authenticated_complete_submission() -> None:
         server.shutdown()
         server.server_close()
         thread.join(timeout=2)
+
+
+def test_reuse_keeps_only_scores_for_identical_current_results(tmp_path) -> None:
+    """Require exact question, outcome, answer, rubric, and owner evidence."""
+
+    from money_tracker.evaluations.human_review import reusable_human_scores
+
+    items = _items()
+    path = tmp_path / "human-usefulness-review.json"
+    path.write_text(
+        json.dumps(
+            {
+                "rubric_version": "human-usefulness-v1",
+                "reviewer_role": "owner",
+                "disposition": "completed",
+                "scores": [
+                    {**items[0].as_json(), "score": 4},
+                    {
+                        **items[1].as_json(),
+                        "observed_answer": {
+                            "total": {"currency": "EUR", "minor_units": 1}
+                        },
+                        "score": 2,
+                    },
+                ],
+            }
+        )
+    )
+
+    reused, pending = reusable_human_scores(
+        path, items, rubric_version="human-usefulness-v1"
+    )
+
+    assert reused == {"ADV-001": 4}
+    assert [item.case_id for item in pending] == ["ADV-002"]
+
+
+def test_reuse_rejects_an_unattributable_review(tmp_path) -> None:
+    """Do not carry labels across rubrics or from an incomplete review."""
+
+    from money_tracker.evaluations.human_review import reusable_human_scores
+
+    path = tmp_path / "human-usefulness-review.json"
+    path.write_text(
+        json.dumps(
+            {
+                "rubric_version": "human-usefulness-v0",
+                "reviewer_role": "owner",
+                "disposition": "completed",
+                "scores": [],
+            }
+        )
+    )
+
+    with pytest.raises(ValueError, match="different rubric"):
+        reusable_human_scores(path, _items(), rubric_version="human-usefulness-v1")

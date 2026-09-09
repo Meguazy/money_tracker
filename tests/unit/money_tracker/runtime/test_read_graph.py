@@ -33,6 +33,7 @@ from money_tracker.workflows import (
     ChannelMessage,
     ReadOutcome,
     ReadReason,
+    ReadSelectionPolicyVersion,
     ReadTool,
     WorkflowIntent,
     default_prompt,
@@ -126,7 +127,13 @@ class InMemoryReporting:
         return self.budgets
 
 
-def _posted(category_name: str, minor_units: int, *, month: int = 9) -> Expense:
+def _posted(
+    category_name: str,
+    minor_units: int,
+    *,
+    month: int = 9,
+    funding_source: FundingSource = CARD,
+) -> Expense:
     """Build one posted movement allocated to a named category."""
 
     category = TAXONOMY.resolve_active(category_name)
@@ -145,7 +152,7 @@ def _posted(category_name: str, minor_units: int, *, month: int = 9) -> Expense:
             ),
         ),
         payment_allocations=(
-            PaymentAllocation(funding_source_id=CARD.id, amount=amount),
+            PaymentAllocation(funding_source_id=funding_source.id, amount=amount),
         ),
         source_reference=f"test:{uuid4()}",
         idempotency_key=f"key:{uuid4()}",
@@ -182,6 +189,11 @@ def _run(
     budgets: tuple[MonthlyBudget, ...] = (),
     intent: WorkflowIntent = WorkflowIntent.QUERY,
     text: str = "quanto ho speso per gli abbonamenti questo mese?",
+    category_names: tuple[str, ...] = (),
+    funding_source_names: tuple[str, ...] = (),
+    selection_policy: ReadSelectionPolicyVersion = (
+        ReadSelectionPolicyVersion.MODEL_ONLY_V0
+    ),
 ) -> tuple[dict[str, Any], ScriptedModel]:
     """Invoke the compiled read workflow over a real reporting service."""
 
@@ -190,6 +202,9 @@ def _run(
         model=model,
         reporting=ReportingService(InMemoryReporting(expenses, budgets)),
         selection_instructions=default_prompt(TOOL_SELECTION).text,
+        category_names=category_names,
+        funding_source_names=funding_source_names,
+        selection_policy=selection_policy,
     )
     state = compiled.invoke(
         initial_read_state(
@@ -456,3 +471,56 @@ def test_a_node_reached_without_its_request_fails_loudly() -> None:
                 _request(tool="funding_class_split", category_name=None)
             )
         )
+
+
+def test_candidate_policy_repairs_funding_selection_before_execution() -> None:
+    """Execute the all-source split despite an adjacent category model error."""
+
+    state, _ = _run(
+        [_request(category_name="Bar, ristoranti e asporto")],
+        expenses=(
+            _posted("Bar, ristoranti e asporto", 3000, funding_source=CARD),
+            _posted("Bar, ristoranti e asporto", 1200, funding_source=VOUCHERS),
+        ),
+        intent=WorkflowIntent.ADVICE,
+        text="Come si divide la mia spesa tra fondi personali e buoni pasto?",
+        funding_source_names=(CARD.name, VOUCHERS.name),
+        selection_policy=ReadSelectionPolicyVersion.EXPLICIT_FINANCE_SCOPE_V1,
+    )
+
+    assert state["executed_tool"] == ReadTool.FUNDING_CLASS_SPLIT.value
+    assert _answer(state)["split"]["personal_funds"]["minor_units"] == 3000
+    assert _answer(state)["split"]["benefit"]["minor_units"] == 1200
+
+
+def test_model_only_rollback_keeps_the_original_runtime_selection() -> None:
+    """Recover the previous graph behavior by selecting the V0 policy."""
+
+    state, _ = _run(
+        [_request(category_name="Bar, ristoranti e asporto")],
+        expenses=(_posted("Bar, ristoranti e asporto", 3000),),
+        intent=WorkflowIntent.ADVICE,
+        text="Come si divide la mia spesa tra fondi personali e buoni pasto?",
+        category_names=("Bar, ristoranti e asporto",),
+        funding_source_names=(CARD.name, VOUCHERS.name),
+        selection_policy=ReadSelectionPolicyVersion.MODEL_ONLY_V0,
+    )
+
+    assert state["executed_tool"] == ReadTool.CATEGORY_SPENDING.value
+
+
+def test_candidate_policy_repairs_a_named_advice_category() -> None:
+    """Execute category spending when advice names an active category exactly."""
+
+    state, _ = _run(
+        [_request(tool="budgets_at_risk", category_name=None)],
+        expenses=(_posted("Abbonamenti", 2997),),
+        intent=WorkflowIntent.ADVICE,
+        text="Mi consigli di tagliare sugli abbonamenti?",
+        category_names=("Abbonamenti", "Bar, ristoranti e asporto"),
+        selection_policy=ReadSelectionPolicyVersion.EXPLICIT_FINANCE_SCOPE_V1,
+    )
+
+    assert state["executed_tool"] == ReadTool.CATEGORY_SPENDING.value
+    assert _answer(state)["category_name"] == "Abbonamenti"
+    assert _answer(state)["posted_spend"]["minor_units"] == 2997

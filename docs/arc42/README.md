@@ -190,7 +190,7 @@ Money Tracker workstation
 | `persistence` | Apply versioned migrations and bootstrap persistent LangGraph checkpoints | Alembic, psycopg, PostgreSQL checkpointer | Foundation schemas and workflow checkpoints | Host administration CLI; least-privilege loopback database role |
 | `domain` | Enforce exact money, expense/refund, dual-allocation, taxonomy, wallet, budget, receipt-metadata, and audit contracts | Pure Python value objects and policies; no framework or infrastructure import | No infrastructure state | Shared host-process library; deterministic validation of untrusted inputs |
 | `application` | Coordinate idempotent expense lifecycle and receipt registration/review, audited wallet/budget mutations, pending proposal submission, owner category decisions, and read-only reporting through narrow ports | Finance, administration, proposal, review, reporting, and receipt-metadata repository ports plus clock and ID contracts | Command, concurrency, review-boundary, and audit semantics, not stored state | Shared by future CLI/API/worker; profile scope comes from trusted caller context; node creation is reachable only through an owner decision, and receipt deletion is not exposed |
-| `workflows` | Own the bounded intent taxonomy, normalized channel work unit, deterministic pre-routing, strict versioned model boundaries and policy vetoes, deterministic allocation resolution, draft and correction preparation, stable creation/correction/undo command identities, and the strict-schema retry boundary behind a narrow model port | Pydantic, `zoneinfo`, and pure domain values; no LangGraph, model client, repository, or transport import | Routing destinations, authority classes, stable routing and resolution reason codes, and the product calendar; no persistent state | Shared by the planned worker; a model can select no deterministic route and supply no profile/timezone/authorization field, no resolved instant, no amount sign, and no funding-source identifier; reason codes carry no owner text |
+| `workflows` | Own the bounded intent taxonomy, normalized channel work unit, deterministic pre-routing, strict versioned model boundaries, policy vetoes, and post-model read-selection policies, deterministic allocation resolution, draft and correction preparation, stable creation/correction/undo command identities, and the strict-schema retry boundary behind a narrow model port | Pydantic, `zoneinfo`, and pure domain values; no LangGraph, model client, repository, or transport import | Routing destinations, authority classes, stable routing and resolution reason codes, and the product calendar; no persistent state | Shared by the planned worker; a model can select no deterministic route and supply no profile/timezone/authorization field, no resolved instant, no amount sign, and no funding-source identifier; reason codes carry no owner text |
 | `runtime` | Assemble the compiled root-router, expense/refund, correction/undo, category-review, and read graphs; dispatch one normalized work unit to exactly one specialist; adapt the local endpoint to the structured-output port | LangGraph, LangChain, application services, the persistent checkpointer, and `workflows` contracts | No domain state of its own; checkpoint contents remain owned by each graph state contract | Host administration CLI today and future worker; dispatcher trusts only injected profile/correlation context and emits no presentation text |
 | `api.contracts` | Define strict, versioned finance request/response, mutation-header, and problem wire shapes | Pydantic and domain response values; no web framework | No state; stable JSON field semantics only | Shared by future FastAPI adapter; no endpoint, network listener, credentials, or private media fields |
 | `backup` | Create verified encrypted authoritative snapshots, report their freshness, and restore only into explicitly empty isolated targets | Restic and PostgreSQL client executables, psycopg identity/receipt queries, private archive and configuration paths | Snapshot contents and the versioned integrity manifest in the owner repository; no finance state of its own | Host CLI under an exclusive lock; absolute-path and owner-only input checks, recovery secret passed only by file path, failures name no argument or environment |
@@ -418,17 +418,21 @@ makes exactly one decision, and everything after it is deterministic.
 3. The selection boundary is strict, versioned independently, and exposes no
    profile, identifier, amount, funding source, or free-form query. There is
    deliberately no generic SQL tool in the vocabulary at all.
-4. Deterministic acceptance admits the requested tool against the registry of
+4. A versioned pure policy may repair only an enumerated semantic scope from
+   normalized text and trusted active display names. `model-only-v0` preserves
+   the request and remains the runtime default; `explicit-finance-scope-v1` is
+   an evaluation candidate with V0 as its direct rollback.
+5. Deterministic acceptance admits the resulting tool against the registry of
    the *routed* intent, taken from trusted context rather than from the model,
-   so a model cannot widen its own scope by claiming a different route.
-5. The tool then executes against the domain read models over stored records.
+   so neither model nor policy can widen the route scope.
+6. The tool then executes against the domain read models over stored records.
    A model supplies a tool name, a category the owner named, and at most a
    calendar month; it supplies no figure, sees no figure, and can reach no node
    that would let it claim one.
-6. Absence is reported rather than smoothed. An unconfigured budget is stated
+7. Absence is reported rather than smoothed. An unconfigured budget is stated
    as missing, posted spend with no budget to compare against is named, and an
    unresolvable category becomes a question instead of a zero.
-7. The reporting service depends on a port that exposes only reads, so a
+8. The reporting service depends on a port that exposes only reads, so a
    mutation is absent from the object graph these nodes can reach rather than
    merely disallowed by convention.
 
@@ -1125,6 +1129,9 @@ environment file.
   transport-neutral typed outcome, explicit router-to-specialist composition,
   trusted action correlation, and administration CLI wiring implemented;
   durable worker and channel presentation planned.
+- [AD-017: Versioned deterministic read-selection policy](decisions/AD-017-versioned-read-selection-policy.md):
+  pure V0 rollback and narrowly scoped V1 candidate implemented between model
+  parsing and registry acceptance; V1 promotion remains evaluation-gated.
 
 ### Planned accepted decisions
 

@@ -14,6 +14,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from threading import Thread
 from typing import Any, cast
 
@@ -248,6 +249,105 @@ def serve_human_usefulness_review(
         return server.submitted_scores
 
 
+def reusable_human_scores(
+    review_path: Path,
+    items: Sequence[HumanReviewItem],
+    *,
+    rubric_version: str,
+) -> tuple[dict[str, int], tuple[HumanReviewItem, ...]]:
+    """Reuse owner scores only when the reviewed result is byte-equivalent JSON.
+
+    Args:
+        review_path: Completed review sidecar from an earlier advice run.
+        items: Current results that need owner scores.
+        rubric_version: Rubric identifier required from the prior review.
+
+    Returns:
+        Reusable scores and the ordered items whose observable result changed.
+
+    Raises:
+        ValueError: If the source is malformed, incomplete, or uses another
+            rubric or reviewer disposition.
+    """
+
+    try:
+        payload = json.loads(review_path.read_text())
+    except (OSError, json.JSONDecodeError) as error:
+        raise ValueError(f"cannot read reusable human review: {review_path}") from error
+    if not isinstance(payload, dict):
+        raise ValueError("reusable human review must be a JSON object")
+    if payload.get("rubric_version") != rubric_version:
+        raise ValueError("reusable human review uses a different rubric")
+    if (
+        payload.get("reviewer_role") != "owner"
+        or payload.get("disposition") != "completed"
+    ):
+        raise ValueError("reusable human review is not a completed owner review")
+    entries = payload.get("scores")
+    if not isinstance(entries, list):
+        raise ValueError("reusable human review has no score entries")
+
+    prior: dict[str, dict[str, object]] = {}
+    for entry in entries:
+        if not isinstance(entry, dict) or not isinstance(entry.get("case_id"), str):
+            raise ValueError("reusable human review contains a malformed score entry")
+        case_id = cast(str, entry["case_id"])
+        if case_id in prior:
+            raise ValueError(f"reusable human review repeats case {case_id}")
+        score = entry.get("score")
+        if type(score) is not int or not 1 <= score <= 5:
+            raise ValueError(
+                f"reusable human review has an invalid score for {case_id}"
+            )
+        prior[case_id] = entry
+
+    reused: dict[str, int] = {}
+    pending: list[HumanReviewItem] = []
+    for item in items:
+        entry = prior.get(item.case_id)
+        if (
+            entry is not None
+            and entry.get("message") == item.message
+            and entry.get("observed_outcome") == item.observed_outcome
+            and entry.get("observed_answer") == item.observed_answer
+        ):
+            reused[item.case_id] = cast(int, entry["score"])
+        else:
+            pending.append(item)
+    return reused, tuple(pending)
+
+
+def reuse_or_serve_human_usefulness_review(
+    session_id: str,
+    items: Sequence[HumanReviewItem],
+    *,
+    review_path: Path,
+    rubric_version: str,
+    port: int = 8765,
+) -> Mapping[str, int]:
+    """Reuse unchanged owner labels and review only changed results in a browser.
+
+    Args:
+        session_id: Exact current evaluation run identifier.
+        items: Current non-injection results.
+        review_path: Prior completed owner-review sidecar.
+        rubric_version: Rubric that both review rounds must share.
+        port: IPv4 loopback port for any remaining cases.
+
+    Returns:
+        A complete score map for the current run.
+    """
+
+    reused, pending = reusable_human_scores(
+        review_path, items, rubric_version=rubric_version
+    )
+    print(f"Reusing {len(reused)} unchanged owner scores; {len(pending)} need review.")
+    if not pending:
+        return reused
+    reviewed = serve_human_usefulness_review(session_id, pending, port=port)
+    return {**reused, **reviewed}
+
+
 _HTML = r"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Advice usefulness review</title><style>
@@ -275,6 +375,8 @@ async function start(){const data=await(await fetch('/api/cases',{cache:'no-stor
 __all__ = [
     "HumanReviewItem",
     "HumanReviewServer",
+    "reusable_human_scores",
+    "reuse_or_serve_human_usefulness_review",
     "serve_human_usefulness_review",
     "validate_scores",
 ]

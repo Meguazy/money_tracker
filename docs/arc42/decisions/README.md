@@ -23,6 +23,7 @@ implementation state is still `planned`.
 
 | [AD-015](AD-015-two-stage-category-fit.md) | Two-stage category fit | Rejected | Implemented, measured at 0.7712 against the single call's 0.8693, and rejected; kept behind an evaluation flag so the result stays reproducible |
 | [AD-016](AD-016-explicit-workflow-dispatcher.md) | Explicit workflow dispatcher | Accepted | Implemented for all Step 3 text specialists; channel presentation remains planned |
+| [AD-017](AD-017-versioned-read-selection-policy.md) | Versioned deterministic read-selection policy | Accepted | V0 runtime rollback and V1 evaluation candidate implemented; V1 promotion pending |
 
 ## Maintenance rules
 

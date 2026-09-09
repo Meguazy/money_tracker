@@ -25,6 +25,8 @@ set -euo pipefail
 #   --minimum-confidence N    required when the routing suite is included; no
 #                             value is promoted, so there is no default
 #   --output-root DIR         sweep output root (default: artifacts/sweeps)
+#   --selection-policy ID     policy for tools and advice
+#                             (default: explicit-finance-scope-v1)
 #   --keep-running-server     refuse to take over a server serving different
 #                             weights instead of restoring it afterwards
 #   --dry-run                 print the plan and resolve every candidate
@@ -36,6 +38,7 @@ cd "${repository_root}"
 suites="routing ingestion categorization tools advice category-review"
 minimum_confidence=""
 output_root="artifacts/sweeps"
+selection_policy="explicit-finance-scope-v1"
 dry_run=false
 keep_running_server=false
 profiles=()
@@ -45,6 +48,7 @@ while [[ $# -gt 0 ]]; do
     --suites) suites="${2:?--suites needs a value}"; shift 2 ;;
     --minimum-confidence) minimum_confidence="${2:?--minimum-confidence needs a value}"; shift 2 ;;
     --output-root) output_root="${2:?--output-root needs a value}"; shift 2 ;;
+    --selection-policy) selection_policy="${2:?--selection-policy needs a value}"; shift 2 ;;
     --keep-running-server) keep_running_server=true; shift ;;
     --dry-run) dry_run=true; shift ;;
     -h|--help)
@@ -226,6 +230,7 @@ sweep_root="${output_root}/${run_id}"
 echo "sweep ${run_id}"
 echo "  suites:  ${suites}"
 echo "  output:  ${sweep_root}/<candidate>/"
+echo "  read policy: ${selection_policy}"
 echo
 
 failures=0
@@ -250,7 +255,11 @@ for profile in "${profiles[@]}"; do
   if ${dry_run}; then
     echo "  would write ${candidate_dir}/"
     for suite in ${suites}; do
-      echo "    would run: money-tracker-eval ${suite} --model-profile ${profile}"
+      if [[ "${suite}" == "tools" || "${suite}" == "advice" ]]; then
+        echo "    would run: money-tracker-eval ${suite} --model-profile ${profile} --selection-policy ${selection_policy}"
+      else
+        echo "    would run: money-tracker-eval ${suite} --model-profile ${profile}"
+      fi
     done
     echo
     continue
@@ -300,6 +309,8 @@ for profile in "${profiles[@]}"; do
     arguments=("${suite}" --model-profile "${profile}")
     if [[ "${suite}" == "routing" ]]; then
       arguments+=(--minimum-confidence "${minimum_confidence}")
+    elif [[ "${suite}" == "tools" || "${suite}" == "advice" ]]; then
+      arguments+=(--selection-policy "${selection_policy}")
     fi
     printf '  %-16s' "${suite}"
     if uv run money-tracker-eval "${arguments[@]}" >"${candidate_dir}/${suite}.json" 2>"${candidate_dir}/${suite}.log"; then

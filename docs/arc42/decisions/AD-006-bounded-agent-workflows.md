@@ -157,6 +157,12 @@ the model supplies a tool name, an owner-named category, and at most a calendar
 month, and never a figure. The reporting service depends on a port exposing
 only reads, so a mutation is absent from the object graph those nodes reach.
 
+[AD-017](AD-017-versioned-read-selection-policy.md) inserts an independently
+versioned pure policy between parsing and acceptance. Its promoted
+`model-only-v0` path is identity behavior; its V1 candidate repairs only
+explicit scopes from normalized text and trusted active display names, then
+faces the same registry and safety vetoes.
+
 [AD-016](AD-016-explicit-workflow-dispatcher.md) composes the router and all
 Step 3 specialists behind one transport-neutral call. It keeps the graphs and
 their checkpoint state independent, starts a persistent category review when a

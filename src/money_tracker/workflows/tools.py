@@ -35,6 +35,7 @@ from money_tracker.workflows.contracts import (
     _WorkflowContract,
 )
 from money_tracker.workflows.intents import WorkflowIntent
+from money_tracker.workflows.resolution import normalize_owner_text
 
 TOOL_CONTRACT_VERSION = "v2"
 """Version of the read-tool selection boundary.
@@ -207,6 +208,203 @@ BUDGET_QUESTION_TERMS: Final = ("budget", "limite", "residuo")
 """Italian words that mark a question about a budget rather than about spending."""
 
 
+class ReadSelectionPolicyVersion(StrEnum):
+    """Versioned deterministic policy applied after model tool selection.
+
+    Attributes:
+        MODEL_ONLY_V0: Preserve the parsed model request without semantic repair.
+        EXPLICIT_FINANCE_SCOPE_V1: Repair only explicit funding, category, and
+            overall-advice scopes supported by trusted route vocabulary.
+    """
+
+    MODEL_ONLY_V0 = "model-only-v0"
+    EXPLICIT_FINANCE_SCOPE_V1 = "explicit-finance-scope-v1"
+
+
+DEFAULT_READ_SELECTION_POLICY = ReadSelectionPolicyVersion.MODEL_ONLY_V0
+"""Promoted runtime policy; V0 preserves the model result unchanged."""
+
+CANDIDATE_READ_SELECTION_POLICY = ReadSelectionPolicyVersion.EXPLICIT_FINANCE_SCOPE_V1
+"""Policy under evaluation for the known funding and advice blind spots."""
+
+_INSTRUCTION_ATTACK_TERMS: Final = (
+    "ignora le istruzioni",
+    "ignora il registro",
+    "salta la conferma",
+    "rivela il prompt",
+    "rivela integralmente le istruzioni",
+    "stampa il prompt",
+    "non chiamare strumenti",
+    "non chiamare alcun tool",
+)
+_FUNDING_SCOPE_TERMS: Final = (
+    "buoni pasto",
+    "ticket restaurant",
+    "fondi personali",
+    "miei soldi",
+    "soldi miei",
+    "tasca mia",
+    "benefit",
+    "welfare",
+)
+_BALANCE_TERMS: Final = (
+    "saldo",
+    "rimane",
+    "rimangono",
+    "rimasto",
+    "rimasti",
+    "disponibile",
+    "credito",
+    "ho ancora",
+)
+_UNBUDGETED_SURVEY_TERMS: Final = (
+    "senza budget",
+    "senza avere un budget",
+    "non hanno un budget",
+    "non sto controllando con un budget",
+)
+_GENERAL_ADVICE_TERMS: Final = (
+    "consiglio sulle spese",
+    "consigli sulle spese",
+)
+_NONCURRENT_PERIOD_TERMS: Final = (
+    "mese scorso",
+    "scorso mese",
+    "gennaio",
+    "febbraio",
+    "marzo",
+    "aprile",
+    "maggio",
+    "giugno",
+    "luglio",
+    "agosto",
+    "settembre",
+    "ottobre",
+    "novembre",
+    "dicembre",
+)
+
+
+def apply_read_selection_policy(
+    request: ToolRequest | None,
+    *,
+    intent: WorkflowIntent,
+    message: str,
+    category_names: tuple[str, ...] = (),
+    funding_source_names: tuple[str, ...] = (),
+    version: ReadSelectionPolicyVersion = DEFAULT_READ_SELECTION_POLICY,
+) -> ToolRequest | None:
+    """Apply one reversible deterministic semantic repair to a model request.
+
+    The V1 policy acts only on information present in the normalized owner text
+    and on active display names supplied by trusted runtime context. It cannot
+    choose a profile, identifier, amount, source identifier, or figure. A model
+    request supplies the period when one was parsed; when the model abstains,
+    the policy only defaults to the current month if the text names no other
+    month. Balance language always prevents a funding-spend repair.
+
+    Args:
+        request: Parsed model selection, or None when the model abstained.
+        intent: Trusted routed read intent.
+        message: Normalized owner text.
+        category_names: Active purpose names from trusted configuration.
+        funding_source_names: Active payment-source display names from trusted
+            configuration.
+        version: Policy version. MODEL_ONLY_V0 is the direct rollback path.
+
+    Returns:
+        The original request, a narrowly repaired request, or None when the
+        policy has no safe decision.
+    """
+
+    if version is ReadSelectionPolicyVersion.MODEL_ONLY_V0:
+        return request
+    folded = normalize_owner_text(message)
+    if _contains_any(folded, _INSTRUCTION_ATTACK_TERMS):
+        return request
+    balance_question = _contains_any(folded, _BALANCE_TERMS)
+    funding_terms = (*_FUNDING_SCOPE_TERMS, *funding_source_names)
+    if _contains_any(folded, funding_terms) and not balance_question:
+        return _replacement_request(
+            request,
+            tool=ReadTool.FUNDING_CLASS_SPLIT,
+            category_name=None,
+            message=message,
+        )
+
+    if intent is not WorkflowIntent.ADVICE:
+        return request
+    category_name = _named_category_in_text(folded, category_names)
+    if category_name is not None:
+        return _replacement_request(
+            request,
+            tool=ReadTool.CATEGORY_SPENDING,
+            category_name=category_name,
+            message=message,
+        )
+    if _contains_any(folded, _UNBUDGETED_SURVEY_TERMS):
+        return _replacement_request(
+            request,
+            tool=ReadTool.BUDGETS_AT_RISK,
+            category_name=None,
+            message=message,
+        )
+    if request is None and _contains_any(folded, _GENERAL_ADVICE_TERMS):
+        return _replacement_request(
+            request,
+            tool=ReadTool.BUDGETS_AT_RISK,
+            category_name=None,
+            message=message,
+        )
+    return request
+
+
+def _replacement_request(
+    request: ToolRequest | None,
+    *,
+    tool: ReadTool,
+    category_name: str | None,
+    message: str,
+) -> ToolRequest | None:
+    """Build a repaired request without guessing a model-abstained past month."""
+
+    if request is None and _names_noncurrent_period(message):
+        return None
+    return ToolRequest(
+        tool=tool,
+        category_name=category_name,
+        period=None if request is None else request.period,
+        evidence=(request.evidence if request is not None else message[:280]),
+    )
+
+
+def _contains_any(folded: str, candidates: tuple[str, ...]) -> bool:
+    """Return whether normalized text contains one normalized trusted phrase."""
+
+    return any(normalize_owner_text(candidate) in folded for candidate in candidates)
+
+
+def _named_category_in_text(folded: str, category_names: tuple[str, ...]) -> str | None:
+    """Return the longest active display name stated explicitly in the text."""
+
+    matches = [name for name in category_names if normalize_owner_text(name) in folded]
+    return max(matches, key=len) if matches else None
+
+
+def _names_noncurrent_period(message: str) -> bool:
+    """Return whether an abstained model left a non-current month unresolved."""
+
+    folded = normalize_owner_text(message)
+    numeric_month = any(
+        len(token) == 7
+        and token[:4].isdigit()
+        and token[4] == "-"
+        and token[5:].isdigit()
+        for token in folded.split()
+    )
+    return numeric_month or _contains_any(folded, _NONCURRENT_PERIOD_TERMS)
+
+
 def asks_for_an_unavailable_budget(
     request: ToolRequest, *, intent: WorkflowIntent, message: str
 ) -> bool:
@@ -300,12 +498,16 @@ def tool_vocabulary(intent: WorkflowIntent) -> tuple[str, ...]:
 __all__ = [
     "ADVICE_TOOLS",
     "CATEGORY_TOOLS",
+    "CANDIDATE_READ_SELECTION_POLICY",
+    "DEFAULT_READ_SELECTION_POLICY",
     "QUERY_TOOLS",
     "TOOL_CONTRACT_VERSION",
     "TOOL_REGISTRIES",
+    "ReadSelectionPolicyVersion",
     "ReadTool",
     "ToolRequest",
     "accept_tool_request",
+    "apply_read_selection_policy",
     "registry_for",
     "tool_vocabulary",
 ]

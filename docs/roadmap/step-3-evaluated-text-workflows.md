@@ -114,6 +114,10 @@ own tests and documentation, and none may ship a later step's behavior.
 
 - Routing, extraction, categorization, HITL, tool, advice-grounding, injection,
   and latency gates pass on pinned datasets.
+- Per-suite warm latency is reported diagnostically on every text suite.
+  NFR-PER-001 remains an end-to-end criterion and is measured in Step 4 once
+  the channel gateway and complete response path exist; the per-suite number
+  cannot satisfy or fail that product target.
 - Restart/resume and repeated-command tests produce zero duplicate writes.
 - Every Italian acceptance example in the product baseline passes through the
   real local model in integration/evaluation runs.
@@ -122,6 +126,17 @@ own tests and documentation, and none may ship a later step's behavior.
 
 ## Current implementation evidence
 
+- Every suite now records wall-clock `latency_ms` on each case and publishes
+  `warm_latency_p95_ms` as a non-blocking diagnostic. The common method excludes
+  the first in-suite case as warm-up, keeps subsequent successful observations,
+  and uses nearest-rank p95. The run configuration records that scope and method.
+  For `workflow/category-review-it` this is whole-scenario latency over real
+  PostgreSQL with its declared scripted model port; it is not a local-model
+  inference benchmark. These numbers locate slow specialist boundaries, but do
+  not measure NFR-PER-001: that requirement names the complete text workflow
+  from channel input to owner-visible response, whose gateway and response
+  surface belong to Step 4. The complete Step 3 sweep below will publish the
+  first comparable values for both 14B candidates.
 - The `workflows` component is framework-independent: it imports Pydantic,
   `zoneinfo`, and pure domain values, and no LangGraph, model client,
   repository, or transport module. It owns no persistent state.

@@ -35,6 +35,7 @@ blocking_gates:
     comparison: at_most
     threshold: 0.01
 diagnostic_metrics:
+  - warm_latency_p95_ms
   - merchant_semantic_match
   - fabricated_funding_silently_resolved
   - amount_invented_where_none_stated

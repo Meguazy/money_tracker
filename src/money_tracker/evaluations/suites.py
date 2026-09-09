@@ -25,6 +25,7 @@ summary cannot reconstruct anything private.
 from __future__ import annotations
 
 import json
+import math
 from collections.abc import Iterable, Mapping, Sequence
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -402,6 +403,60 @@ def rate(numerator: int, denominator: int) -> float:
     if denominator == 0:
         return 1.0
     return round(numerator / denominator, 4)
+
+
+def warm_latency_p95_metric(
+    cases: Sequence[CaseResult], *, warmup_cases: int = 1
+) -> MetricScore:
+    """Report the successful per-case p95 after an in-suite warm-up sample.
+
+    Args:
+        cases: Ordered case results carrying measured wall-clock latency.
+        warmup_cases: Leading observations excluded from the warm distribution.
+
+    Returns:
+        A non-blocking nearest-rank p95 metric in milliseconds. Errors and
+        missing timings are excluded because the product latency target applies
+        to successful runs.
+
+    Raises:
+        ValueError: If ``warmup_cases`` is negative.
+    """
+
+    if warmup_cases < 0:
+        raise ValueError("warmup_cases cannot be negative")
+    samples = sorted(
+        case.latency_ms
+        for case in cases[warmup_cases:]
+        if case.status is not CaseStatus.ERROR and case.latency_ms is not None
+    )
+    value = float(samples[math.ceil(0.95 * len(samples)) - 1]) if samples else 0.0
+    return MetricScore(
+        name="warm_latency_p95_ms",
+        value=value,
+        threshold=None,
+        blocking=False,
+        numerator=len(samples),
+        denominator=len(samples),
+    )
+
+
+def latency_measurement_configuration() -> dict[str, JsonValue]:
+    """Describe the common per-suite warm-latency measurement method.
+
+    Returns:
+        Public-safe configuration that distinguishes this diagnostic from the
+        future end-to-end product measurement.
+    """
+
+    return {
+        "scope": "per_case_suite_wall_clock",
+        "clock": "monotonic",
+        "warmup_cases_excluded": 1,
+        "successful_cases_only": True,
+        "percentile_method": "nearest_rank",
+        "blocking": False,
+    }
 
 
 def blocking_gates_passed(
@@ -996,6 +1051,7 @@ __all__ = [
     "blocking_gates_passed",
     "dataset_metadata",
     "candidate_catalog",
+    "latency_measurement_configuration",
     "load_cases",
     "loaded_model_filename",
     "model_key",
@@ -1010,5 +1066,6 @@ __all__ = [
     "server_properties",
     "sha256_text",
     "utc_now",
+    "warm_latency_p95_metric",
     "write_report",
 ]

@@ -40,12 +40,14 @@ from money_tracker.evaluations.suites import (
     SuiteReport,
     blocking_gates_passed,
     dataset_metadata,
+    latency_measurement_configuration,
     load_cases,
     model_metadata,
     new_run_id,
     rate,
     sha256_text,
     utc_now,
+    warm_latency_p95_metric,
     write_report,
 )
 from money_tracker.runtime import build_router_graph
@@ -345,7 +347,7 @@ def run_routing_suite(
     results: list[CaseResult] = []
     for index, case in enumerate(cases):
         results.append(_execute(graph, case, index))
-    metrics = _metrics(cases, results)
+    metrics = [*_metrics(cases, results), warm_latency_p95_metric(results)]
     passed = blocking_gates_passed(metrics, results)
     meets_minimum = dataset.item_count >= DATASET_MINIMUM
     report = SuiteReport(
@@ -362,6 +364,7 @@ def run_routing_suite(
             "instructions_version": instructions_version,
             "instructions_sha256": sha256_text(instructions),
             "dataset_minimum": DATASET_MINIMUM,
+            "latency_measurement": latency_measurement_configuration(),
         },
         metrics=metrics,
         cases=results,

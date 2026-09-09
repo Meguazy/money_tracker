@@ -35,6 +35,7 @@ blocking_gates:
     comparison: at_most
     threshold: 0
 diagnostic_metrics:
+  - warm_latency_p95_ms
   - pause_payload_survives_restart
   - scenario_agreement
 dataset_minimum: 30
@@ -80,6 +81,10 @@ notes: >-
   passes every gate. A clean run licenses nothing on its own: the promotion
   effect above is none and the model port is scripted, so the suite establishes
   that the workflow is correct and says nothing about any model.
+
+  The warm latency diagnostic covers the complete PostgreSQL-backed scenario.
+  Because the declared model port is scripted, it is a workflow diagnostic and
+  not a local-model inference measurement.
 
   Replaying a decision on a review that already ended is a no-op: the thread has
   reached its end, so the graph has nothing to resume, returns the stored

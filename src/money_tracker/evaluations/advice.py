@@ -55,12 +55,14 @@ from money_tracker.evaluations.suites import (
     SuiteReport,
     blocking_gates_passed,
     dataset_metadata,
+    latency_measurement_configuration,
     load_cases,
     model_metadata,
     new_run_id,
     rate,
     sha256_text,
     utc_now,
+    warm_latency_p95_metric,
     write_report,
 )
 from money_tracker.evaluations.tool_use import (
@@ -341,7 +343,10 @@ def run_advice_suite(
         results.append(result)
         observations[result.case_id] = observed
 
-    metrics = _metrics(cases, results, observations)
+    metrics = [
+        *_metrics(cases, results, observations),
+        warm_latency_p95_metric(results),
+    ]
     passed = blocking_gates_passed(metrics, results)
     meets_minimum = dataset.item_count >= DATASET_MINIMUM
     report = SuiteReport(
@@ -360,6 +365,7 @@ def run_advice_suite(
             "received_at": RECEIVED_AT.isoformat(),
             "human_usefulness_reviewed": False,
             "dataset_minimum": DATASET_MINIMUM,
+            "latency_measurement": latency_measurement_configuration(),
         },
         metrics=metrics,
         cases=results,

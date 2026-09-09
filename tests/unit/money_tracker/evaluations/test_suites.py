@@ -24,6 +24,7 @@ from money_tracker.evaluations.suites import (
     blocking_gates_passed,
     candidate_catalog,
     dataset_metadata,
+    latency_measurement_configuration,
     load_cases,
     model_key,
     new_run_id,
@@ -31,6 +32,7 @@ from money_tracker.evaluations.suites import (
     publish_scores,
     rate,
     utc_now,
+    warm_latency_p95_metric,
     write_report,
 )
 
@@ -245,6 +247,49 @@ def test_rate_is_exact_to_four_places() -> None:
     assert rate(1, 3) == 0.3333
     assert rate(96, 100) == 0.96
     assert rate(3, 3) == 1.0
+
+
+def test_warm_latency_p95_excludes_warmup_and_errors() -> None:
+    """Use nearest-rank p95 over successful timed cases after warm-up."""
+
+    results = [
+        CaseResult(
+            case_id="warmup",
+            status=CaseStatus.PASSED,
+            expected="x",
+            latency_ms=9_999,
+        ),
+        *[
+            CaseResult(
+                case_id=f"warm-{index}",
+                status=CaseStatus.PASSED,
+                expected="x",
+                latency_ms=value,
+            )
+            for index, value in enumerate(range(1, 21), start=1)
+        ],
+        CaseResult(
+            case_id="error",
+            status=CaseStatus.ERROR,
+            expected="x",
+            latency_ms=20_000,
+        ),
+    ]
+
+    metric = warm_latency_p95_metric(results)
+
+    assert metric.value == 19.0
+    assert metric.denominator == 20
+    assert metric.threshold is None
+    assert metric.blocking is False
+    assert latency_measurement_configuration()["warmup_cases_excluded"] == 1
+
+
+def test_warm_latency_rejects_a_negative_warmup() -> None:
+    """Reject a measurement configuration that slices from the tail."""
+
+    with pytest.raises(ValueError, match="cannot be negative"):
+        warm_latency_p95_metric([], warmup_cases=-1)
 
 
 def test_a_run_id_sorts_and_carries_no_personal_data() -> None:

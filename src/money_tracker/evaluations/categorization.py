@@ -47,12 +47,14 @@ from money_tracker.evaluations.suites import (
     SuiteReport,
     blocking_gates_passed,
     dataset_metadata,
+    latency_measurement_configuration,
     load_cases,
     model_metadata,
     new_run_id,
     rate,
     sha256_text,
     utc_now,
+    warm_latency_p95_metric,
     write_report,
 )
 from money_tracker.runtime.model import LocalStructuredOutputModel
@@ -342,14 +344,17 @@ def run_categorization_suite(
         named_while_proposing[result.case_id] = named
         headings[result.case_id] = heading
 
-    metrics = _metrics(
-        cases,
-        results,
-        proposed_names,
-        named_while_proposing,
-        taxonomy,
-        both_halves_expressible=schema is CategoryFit,
-    )
+    metrics = [
+        *_metrics(
+            cases,
+            results,
+            proposed_names,
+            named_while_proposing,
+            taxonomy,
+            both_halves_expressible=schema is CategoryFit,
+        ),
+        warm_latency_p95_metric(results),
+    ]
     passed = blocking_gates_passed(metrics, results)
     meets_minimum = dataset.item_count >= DATASET_MINIMUM
     report = SuiteReport(
@@ -376,6 +381,7 @@ def run_categorization_suite(
             "model_calls_per_case": 1 if two_stage is None else "one or two",
             "taxonomy_active_categories": len(_active_names(taxonomy)),
             "dataset_minimum": DATASET_MINIMUM,
+            "latency_measurement": latency_measurement_configuration(),
             "auto_post_policy_promoted": False,
         },
         metrics=metrics + _two_stage_diagnostics(results, headings, taxonomy),

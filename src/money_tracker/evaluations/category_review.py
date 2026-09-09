@@ -77,12 +77,14 @@ from money_tracker.evaluations.suites import (
     SuiteReport,
     blocking_gates_passed,
     dataset_metadata,
+    latency_measurement_configuration,
     load_cases,
     model_metadata,
     new_run_id,
     rate,
     sha256_text,
     utc_now,
+    warm_latency_p95_metric,
     write_report,
 )
 from money_tracker.persistence.database import (
@@ -704,7 +706,10 @@ def run_category_review_suite(
         results.append(result)
         observations[result.case_id] = observed
 
-    metrics = _metrics(cases, results, observations)
+    metrics = [
+        *_metrics(cases, results, observations),
+        warm_latency_p95_metric(results),
+    ]
     passed = blocking_gates_passed(metrics, results)
     meets_minimum = dataset.item_count >= DATASET_MINIMUM
     report = SuiteReport(
@@ -720,6 +725,7 @@ def run_category_review_suite(
             "instructions_sha256": sha256_text(instructions),
             "model_port": "scripted",
             "dataset_minimum": DATASET_MINIMUM,
+            "latency_measurement": latency_measurement_configuration(),
             "fixture_taxonomy_nodes": len(fixture_taxonomy().categories),
             "aliases_written_outside_bootstrap": True,
             "auto_post_policy_promoted": False,

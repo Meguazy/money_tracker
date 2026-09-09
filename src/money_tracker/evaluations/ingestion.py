@@ -66,12 +66,14 @@ from money_tracker.evaluations.suites import (
     SuiteReport,
     blocking_gates_passed,
     dataset_metadata,
+    latency_measurement_configuration,
     load_cases,
     model_metadata,
     new_run_id,
     rate,
     sha256_text,
     utc_now,
+    warm_latency_p95_metric,
     write_report,
 )
 from money_tracker.runtime.model import LocalStructuredOutputModel
@@ -532,7 +534,7 @@ def run_ingestion_suite(
         results.append(result)
         judgments[result.case_id] = judgment
 
-    metrics = _metrics(cases, results, judgments)
+    metrics = [*_metrics(cases, results, judgments), warm_latency_p95_metric(results)]
     passed = blocking_gates_passed(metrics, results)
     meets_minimum = dataset.item_count >= DATASET_MINIMUM
     report = SuiteReport(
@@ -551,6 +553,7 @@ def run_ingestion_suite(
             "fixture_funding_sources": [name for name, _, _, _ in _FIXTURE_SOURCES],
             "default_received_at": _RECEIVED_AT.isoformat(),
             "dataset_minimum": DATASET_MINIMUM,
+            "latency_measurement": latency_measurement_configuration(),
             "boundary_exposes_currency": "currency" in candidate.schema.model_fields,
             "auto_post_policy_promoted": False,
         },

@@ -28,6 +28,7 @@ blocking_gates:
     comparison: at_least
     threshold: 1.0
 diagnostic_metrics:
+  - warm_latency_p95_ms
   - proposals_offered
 dataset_minimum: 150
 publication:

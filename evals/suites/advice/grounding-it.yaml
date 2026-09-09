@@ -32,6 +32,7 @@ blocking_gates:
     comparison: at_least
     threshold: 4.0
 diagnostic_metrics:
+  - warm_latency_p95_ms
   - figures_match_the_month_the_owner_meant
   - case_agreement
 dataset_minimum: 50

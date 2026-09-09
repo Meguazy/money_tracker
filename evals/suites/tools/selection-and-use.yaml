@@ -32,6 +32,7 @@ blocking_gates:
     comparison: at_least
     threshold: 1.0
 diagnostic_metrics:
+  - warm_latency_p95_ms
   - tool_chosen_ignoring_arguments
   - period_invented_where_none_stated
   - case_agreement

@@ -14,9 +14,10 @@ understood the owner to mean, and whether a question about absent data produces
 an absence or an invention.
 
 One gate cannot be automated and is not pretended otherwise. The matrix asks for
-a human usefulness median on a five-point rubric, which needs the owner. It is
-emitted with a zero denominator and named in the report, so a promotion decision
-sees an unmeasured gate rather than a missing one.
+a human usefulness median on a five-point rubric, which needs the owner. The
+interactive reviewer scores the 52 applicable outputs from that exact run and
+writes the entries beside its raw manifest. Without a completed review the gate
+remains pending, unless the owner explicitly defers it to Step 5.
 
 The J8 ordering rule is measured only where it is unambiguous. `Sto spendendo
 troppo?` with no category named must reach the budget survey, because budgets
@@ -29,8 +30,9 @@ from __future__ import annotations
 
 import json
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
+from statistics import median
 from typing import Any, cast
 
 from pydantic import JsonValue
@@ -101,6 +103,12 @@ DATASET_MINIMUM = 50
 
 BUDGET_FIRST_TOOL = "budgets_at_risk"
 """The tool a `too much` question with no named category must reach."""
+
+HUMAN_USEFULNESS_RUBRIC_VERSION = "human-usefulness-v1"
+"""Owner-review rubric recorded beside every advice run."""
+
+HumanUsefulnessReviewer = Callable[[str, str, Mapping[str, JsonValue]], int]
+"""Callable that scores one observed advice result from one to five."""
 
 
 def _facets(
@@ -188,6 +196,9 @@ def _metrics(
     cases: Sequence[Mapping[str, JsonValue]],
     results: Sequence[CaseResult],
     observations: Mapping[str, Mapping[str, JsonValue]],
+    *,
+    human_scores: Mapping[str, int] | None = None,
+    human_usefulness_deferred: bool = False,
 ) -> list[MetricScore]:
     """Score every gate the evaluation matrix defines for advice grounding."""
 
@@ -234,13 +245,10 @@ def _metrics(
             name="too_much_uses_budget_then_history",
             threshold=1.0,
         ),
-        MetricScore(
-            name="human_usefulness_median",
-            value=0.0,
-            threshold=4.0,
-            blocking=True,
-            numerator=0,
-            denominator=0,
+        _human_usefulness_metric(
+            cases,
+            human_scores or {},
+            deferred=human_usefulness_deferred,
         ),
         _metric(
             "figures",
@@ -257,6 +265,146 @@ def _metrics(
             denominator=len(paired),
         ),
     ]
+
+
+def _human_review_case_ids(
+    cases: Sequence[Mapping[str, JsonValue]],
+) -> list[str]:
+    """Return advice cases that require owner usefulness review.
+
+    Prompt-injection fixtures exercise a safety refusal rather than advice
+    usefulness, leaving the original 52 fixture-backed advice cases.
+    """
+
+    return [
+        str(case["case_id"])
+        for case in cases
+        if "prompt-injection" not in cast(list[JsonValue], case.get("tags", []))
+    ]
+
+
+def _human_usefulness_metric(
+    cases: Sequence[Mapping[str, JsonValue]],
+    scores: Mapping[str, int],
+    *,
+    deferred: bool,
+) -> MetricScore:
+    """Compute the owner usefulness median from a complete real review.
+
+    Args:
+        cases: Versioned advice cases. Injection-only fixtures are excluded.
+        scores: Owner-entered one-to-five scores keyed by case identifier.
+        deferred: Whether the owner explicitly deferred this gate to Step 5.
+
+    Returns:
+        The blocking median, or an explicit structural deferral.
+
+    Raises:
+        ValueError: If scores are out of range, refer to other cases, or cover
+            only part of the required review.
+    """
+
+    required = _human_review_case_ids(cases)
+    required_set = set(required)
+    unknown = sorted(set(scores) - required_set)
+    if unknown:
+        raise ValueError(f"human usefulness scores name unknown cases: {unknown}")
+    invalid = sorted(
+        case_id
+        for case_id, score in scores.items()
+        if type(score) is not int or not 1 <= score <= 5
+    )
+    if invalid:
+        raise ValueError(f"human usefulness scores must be between 1 and 5: {invalid}")
+    if deferred:
+        if scores:
+            raise ValueError("a deferred human usefulness review cannot carry scores")
+        return MetricScore(
+            name="human_usefulness_median",
+            value=0.0,
+            threshold=4.0,
+            blocking=True,
+            numerator=0,
+            denominator=0,
+            applicable=False,
+            inapplicability_reason=(
+                "The owner explicitly deferred the 52-case usefulness review "
+                "to Step 5; no model or automated judge substituted for it."
+            ),
+        )
+    if scores and set(scores) != required_set:
+        missing = sorted(required_set - set(scores))
+        raise ValueError(
+            f"human usefulness review must score every required case; missing {missing}"
+        )
+    values = [scores[case_id] for case_id in required if case_id in scores]
+    return MetricScore(
+        name="human_usefulness_median",
+        value=float(median(values)) if values else 0.0,
+        threshold=4.0,
+        blocking=True,
+        numerator=len(values),
+        denominator=len(required) if values else 0,
+    )
+
+
+def _write_human_review_record(
+    directory: Path,
+    *,
+    report: SuiteReport,
+    cases: Sequence[Mapping[str, JsonValue]],
+    observations: Mapping[str, Mapping[str, JsonValue]],
+    scores: Mapping[str, int],
+    deferred: bool,
+) -> Path:
+    """Write the owner-review evidence beside the ignored raw run.
+
+    Args:
+        directory: Raw run directory.
+        report: Report whose model output the owner reviewed.
+        cases: Dataset rows; their synthetic messages stay in ignored artifacts.
+        observations: Structured results produced by this exact run.
+        scores: Owner-entered scores from this invocation.
+        deferred: Whether review was explicitly deferred.
+
+    Returns:
+        Path to the atomically written review record.
+    """
+
+    required = set(_human_review_case_ids(cases))
+    entries = [
+        {
+            "case_id": str(case["case_id"]),
+            "message": case.get("message"),
+            "observed_outcome": observations.get(str(case["case_id"]), {}).get(
+                "outcome"
+            ),
+            "observed_answer": observations.get(str(case["case_id"]), {}).get("answer"),
+            "score": scores.get(str(case["case_id"])),
+        }
+        for case in cases
+        if str(case["case_id"]) in required
+    ]
+    payload = {
+        "rubric_version": HUMAN_USEFULNESS_RUBRIC_VERSION,
+        "reviewer_role": "owner",
+        "run_id": report.run_id,
+        "dataset_id": report.dataset.dataset_id,
+        "dataset_version": report.dataset.version,
+        "dataset_content_hash": report.dataset.content_hash,
+        "disposition": (
+            "deferred" if deferred else "completed" if scores else "pending"
+        ),
+        "scores": entries,
+    }
+    path = directory / "human-usefulness-review.json"
+    temporary = path.with_suffix(".json.tmp")
+    temporary.write_text(
+        json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    temporary.replace(path)
+    return path
 
 
 def _failure_count_metric(
@@ -299,6 +447,8 @@ def run_advice_suite(
     model: StructuredOutputModel | None = None,
     instructions: str = DEFAULT_SELECTION_INSTRUCTIONS,
     boundary: SelectionBoundary = DEFAULT_SELECTION,
+    human_reviewer: HumanUsefulnessReviewer | None = None,
+    human_usefulness_deferred: bool = False,
 ) -> SuiteReport:
     """Execute the advice suite and always emit a deterministic report.
 
@@ -313,12 +463,18 @@ def run_advice_suite(
         boundary: Selection schema and conversion under test.
             Defaults to the flat contract, and is recorded so a score
             is attributable to one boundary shape.
+        human_reviewer: Owner-operated scorer invoked on each of the 52
+            non-injection results from this exact run.
+        human_usefulness_deferred: Explicit owner decision to defer the human
+            gate to Step 5. It cannot be combined with a reviewer.
 
     Returns:
         The complete report, already written to its artifact directory.
     """
 
     require_isolated_database(database_url)
+    if human_reviewer is not None and human_usefulness_deferred:
+        raise ValueError("human review and deferral are mutually exclusive")
     started_at = utc_now()
     cases, content_hash = load_cases(dataset_path)
     dataset = dataset_metadata(
@@ -340,6 +496,8 @@ def run_advice_suite(
     reporting = ReportingService(PostgresFinanceRepository(database_url))
     results: list[CaseResult] = []
     observations: dict[str, Mapping[str, JsonValue]] = {}
+    human_scores: dict[str, int] = {}
+    review_case_ids = set(_human_review_case_ids(cases))
     for index, case in enumerate(cases):
         result, observed = _execute(graph, owner, reporting, case)
         result = result.model_copy(
@@ -349,9 +507,22 @@ def run_advice_suite(
         )
         results.append(result)
         observations[result.case_id] = observed
+        if human_reviewer is not None and result.case_id in review_case_ids:
+            score = human_reviewer(result.case_id, str(case["message"]), observed)
+            if type(score) is not int or not 1 <= score <= 5:
+                raise ValueError(
+                    f"human usefulness score for {result.case_id} must be 1-5"
+                )
+            human_scores[result.case_id] = score
 
     metrics = [
-        *_metrics(cases, results, observations),
+        *_metrics(
+            cases,
+            results,
+            observations,
+            human_scores=human_scores,
+            human_usefulness_deferred=human_usefulness_deferred,
+        ),
         warm_latency_p95_metric(results),
     ]
     passed = blocking_gates_passed(metrics, results)
@@ -370,7 +541,16 @@ def run_advice_suite(
             "instructions_sha256": sha256_text(instructions),
             "boundary_schema": boundary.schema.__name__,
             "received_at": RECEIVED_AT.isoformat(),
-            "human_usefulness_reviewed": False,
+            "human_usefulness_reviewed": bool(human_scores),
+            "human_usefulness_review_disposition": (
+                "deferred"
+                if human_usefulness_deferred
+                else "completed"
+                if human_scores
+                else "pending"
+            ),
+            "human_usefulness_rubric_version": HUMAN_USEFULNESS_RUBRIC_VERSION,
+            "human_usefulness_required_cases": len(review_case_ids),
             "dataset_minimum": DATASET_MINIMUM,
             "latency_measurement": latency_measurement_configuration(),
             "taxonomy_version": TAXONOMY_VERSION,
@@ -385,6 +565,14 @@ def run_advice_suite(
     directory = write_report(report, output_root=output_root)
     report = report.model_copy(update={"local_artifact_path": str(directory)})
     write_report(report, output_root=output_root)
+    _write_human_review_record(
+        directory,
+        report=report,
+        cases=cases,
+        observations=observations,
+        scores=human_scores,
+        deferred=human_usefulness_deferred,
+    )
     return report
 
 
@@ -535,4 +723,11 @@ def _execute(
     )
 
 
-__all__ = ["BUDGET_FIRST_TOOL", "DATASET_MINIMUM", "SUITE", "run_advice_suite"]
+__all__ = [
+    "BUDGET_FIRST_TOOL",
+    "DATASET_MINIMUM",
+    "HUMAN_USEFULNESS_RUBRIC_VERSION",
+    "HumanUsefulnessReviewer",
+    "SUITE",
+    "run_advice_suite",
+]

@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import argparse
 import json
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
+
+from pydantic import JsonValue
 
 from money_tracker.evaluations.advice import run_advice_suite
 from money_tracker.evaluations.calibration import run_calibration
@@ -332,6 +334,17 @@ def _parser() -> argparse.ArgumentParser:
         type=Path,
         default=repository_root / "artifacts" / "evals",
     )
+    usefulness = advice.add_mutually_exclusive_group()
+    usefulness.add_argument(
+        "--review-human-usefulness",
+        action="store_true",
+        help="prompt the owner for a 1-5 score on each non-injection result",
+    )
+    usefulness.add_argument(
+        "--defer-human-usefulness",
+        action="store_true",
+        help="record an explicit owner decision to defer this gate to Step 5",
+    )
     calibration = subparsers.add_parser(
         "calibrate-routing",
         help="sweep the routing confidence bar and score a held-out split once",
@@ -481,6 +494,42 @@ def _command_summary(report: SuiteReport) -> dict[str, object]:
     }
 
 
+def _terminal_human_usefulness_reviewer(
+    case_id: str, message: str, observed: Mapping[str, JsonValue]
+) -> int:
+    """Collect one owner usefulness score for the result just produced.
+
+    Args:
+        case_id: Stable case identifier.
+        message: Synthetic dataset request shown for review.
+        observed: Structured outcome from this exact model run.
+
+    Returns:
+        Owner-entered score from one to five.
+    """
+
+    print(f"\n{case_id}\nRequest: {message}")
+    print(
+        "Observed result: "
+        + json.dumps(
+            {
+                "outcome": observed.get("outcome"),
+                "answer": observed.get("answer"),
+            },
+            sort_keys=True,
+            ensure_ascii=False,
+        )
+    )
+    while True:
+        try:
+            score = int(input("Human usefulness score (1-5): ").strip())
+        except ValueError:
+            score = 0
+        if 1 <= score <= 5:
+            return score
+        print("Enter one integer from 1 to 5.")
+
+
 def _print_and_exit(report: SuiteReport) -> None:
     """Print one suite summary and fail the process on a blocking gate.
 
@@ -560,6 +609,12 @@ def main(argv: Sequence[str] | None = None) -> None:
                 database_url=database_url_from_env(test_database=True),
                 boundary=SELECTION_BOUNDARIES[args.instructions],
                 instructions=prompt(TOOL_SELECTION, args.instructions).text,
+                human_reviewer=(
+                    _terminal_human_usefulness_reviewer
+                    if args.review_human_usefulness
+                    else None
+                ),
+                human_usefulness_deferred=args.defer_human_usefulness,
             )
         )
         return

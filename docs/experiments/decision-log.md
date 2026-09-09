@@ -174,3 +174,17 @@ Every future row must identify:
 - Evidence: [corrective experiment](text-workflow-fixes-2026-09-08.md).
 - Promotion prerequisites remain: complete measured gates, human usefulness,
   auto-post calibration, untouched reviewed holdout and runtime validation.
+
+## Step 3 auto-post applicability — 2026-09-09
+
+- Evidence: `CAT-20260908-153538-8281a737` and
+  `out/evaluations/categorization/purpose-it/auto-post-calibration-2026-09-08.md`.
+- Measured value: the broadest possible policy, auto-post every `existing`
+  answer and refer every proposal, is 131/150 = 0.8733 against the unchanged
+  0.98 precision gate. The boundary exposes no confidence field, and selecting
+  narrower categories on these same labels would not be held-out calibration.
+- Consequence: `auto_post_subset_category_precision` and
+  `auto_post_subset_invariant_validity` are inapplicable in V1 because there is
+  no automatic-post subset to which either obligation applies. Every movement
+  remains a draft for owner confirmation, as the product baseline permits.
+- This records no threshold change and promotes no model, prompt, or policy.

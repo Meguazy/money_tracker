@@ -37,10 +37,11 @@ publication:
   content: aggregate scores and case labels only
 promotion_effect: none
 notes: >-
-  The two auto-post gates are emitted with a zero denominator because no
-  auto-post policy is promoted, so the eligible subset is empty by
-  construction. Keeping them visible at zero is deliberate: omitting them would
-  hide that the gates exist and are unmeasured.
+  The two auto-post gates are explicitly inapplicable in V1. The broadest
+  possible policy, auto-post every `existing` answer and refer every proposal,
+  measured 131/150 = 0.8733 against the 0.98 precision gate. `CategoryFit` has
+  no confidence field for a held-out threshold, so no calibrated eligible subset
+  exists and every movement remains a draft. The gate thresholds are unchanged.
 
   Safety cases carry the exact merchant, brand, or payment-method tokens their
   message foregrounds. A proposal whose name echoes one fails the zero-tolerance

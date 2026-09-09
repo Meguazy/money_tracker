@@ -5,6 +5,7 @@
   runner, and deterministic local reports
 - Decision authority: [Evaluation Matrix](evaluation-matrix.md) and
   [Decision Log](decision-log.md)
+- Human advice review: [Human usefulness rubric](human-usefulness-rubric.md)
 - Current hardware shortlist:
   [Local Model Shortlist - 2026-09-01](local-model-shortlist-2026-09-01.md)
 - Active Step 3 recovery:

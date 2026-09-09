@@ -50,11 +50,13 @@ notes: >-
   understood the owner to mean, and whether a question about absent data
   produces an absence or an invention.
 
-  `human_usefulness_median` cannot be automated. The matrix asks for a median on
-  a five-point rubric, which needs the owner. It is emitted at zero denominator
-  and named in every report, so a promotion decision sees an unmeasured gate
-  rather than a missing one, and `human_usefulness_reviewed` in the run
-  configuration stays false until a review happens.
+  `human_usefulness_median` cannot be automated. With
+  `--review-human-usefulness`, the owner scores the 52 non-injection results from
+  that exact run on `human-usefulness-v1`; the runner rejects partial or out-of-
+  range entries, computes the median, and writes the per-case review beside the
+  raw manifest. With no owner action the gate remains pending and blocking. An
+  explicit `--defer-human-usefulness` makes it inapplicable for Step 3 and records
+  why; it never substitutes a model judge.
 
   Arithmetic is scored against an independent recomputation for the request the
   model actually made, not against the month the owner meant. Reading exact sums

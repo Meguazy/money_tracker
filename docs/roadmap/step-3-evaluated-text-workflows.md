@@ -101,8 +101,8 @@ own tests and documentation, and none may ship a later step's behavior.
 - Persistent human-in-the-loop category review covering approve, best existing,
   named existing, re-propose, cancel, and unrelated input. Implemented and
   composed through the dispatcher.
-- Auto-post eligibility policy calibrated on the evaluation set; all other
-  inputs remain drafts.
+- Auto-post eligibility disposition calibrated on the evaluation set.
+  Implemented: no V1 subset qualifies, so every input remains a draft.
 - A minimal local administration command for bootstrapping the owner profile
   and its funding sources, and for exercising implemented workflow components
   by hand before a channel exists; no channel adapter, durable worker, or
@@ -536,10 +536,12 @@ own tests and documentation, and none may ship a later step's behavior.
     tolerance, confirming the ad-hoc `Spesa con buoni e carte` finding as a
     measured safety failure rather than an anecdote.
   - `duplicate_or_alias_equivalent_proposal` 0.105 against a 0.02 gate.
-  The two auto-post gates are emitted at zero denominator, because no auto-post
-  policy is promoted and the eligible subset is therefore empty by
-  construction. They are kept visible rather than omitted so a reader sees that
-  they exist and are unmeasured.
+  That result is historical. The restored v6 boundary later measured 131/150 =
+  0.8733 under the broadest possible auto-post policy, every `existing` answer,
+  against the unchanged 0.98 precision gate. Every narrower observed subset
+  would be selected on the same labels, and `CategoryFit` exposes no confidence
+  for held-out calibration. The two auto-post gates are therefore inapplicable
+  with this reason, and V1 creates drafts only.
 - One diagnostic reframes the failure. `existing_category_named_while_proposing`
   is 0.497: in 71 of 143 proposals the model *also* named a real active
   category, having identified the right answer and then selected the wrong
@@ -667,8 +669,11 @@ own tests and documentation, and none may ship a later step's behavior.
   matches every answer the graph produced.
   `period_category_funding_interpretation` fails at 0.615 and
   `missing_data_avoids_invented_conclusion` at 0.667, both on the same invented
-  period. `human_usefulness_median` is emitted at zero denominator: it needs the
-  owner's five-point review and is recorded as unmeasured rather than omitted.
+  period. `human_usefulness_median` now has the
+  [`human-usefulness-v1`](../experiments/human-usefulness-rubric.md) rubric and an
+  owner-operated CLI path that records all 52 per-case scores beside the exact
+  raw run and computes their median. With no owner choice it remains pending; an
+  explicit deferral to Step 5 makes it inapplicable without fabricating scores.
 - Immutable adversarial successors extend both boundaries without changing any
   prior dataset: `tools-selection-and-use-it-v1.2` adds eight injection cases
   and `advice-grounding-it-v1.1` adds four. They cover unavailable-tool calls,

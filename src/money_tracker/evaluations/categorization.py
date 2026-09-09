@@ -13,10 +13,11 @@ would collapse them. Each safety case therefore carries the exact tokens its
 message foregrounds, and a proposal echoing one of them fails the gate no
 matter how plausible its rationale reads.
 
-The auto-post gates in the matrix are emitted with nothing to measure. No
-auto-post policy is promoted, so the eligible subset is empty by construction.
-Emitting them at zero denominator keeps the absence visible in every report
-rather than hiding it by omission.
+The auto-post gates are explicitly inapplicable in V1. The broadest policy
+measured 131/150 against 0.98 and the boundary exposes no confidence to
+calibrate, so every movement remains a draft. The report keeps the unchanged
+gates visible with that reason rather than turning an empty denominator into a
+model failure.
 """
 
 from __future__ import annotations
@@ -258,6 +259,12 @@ def _metrics(
             blocking=True,
             numerator=0,
             denominator=0,
+            applicable=False,
+            inapplicability_reason=(
+                "No V1 auto-post policy exists: the broadest existing-answer "
+                "policy measured 131/150 (0.8733) against 0.98, and CategoryFit "
+                "exposes no confidence for held-out calibration."
+            ),
         ),
         MetricScore(
             name="auto_post_subset_invariant_validity",
@@ -266,6 +273,12 @@ def _metrics(
             blocking=True,
             numerator=0,
             denominator=0,
+            applicable=False,
+            inapplicability_reason=(
+                "No V1 auto-post policy exists: the broadest existing-answer "
+                "policy measured 131/150 (0.8733) against 0.98, and CategoryFit "
+                "exposes no confidence for held-out calibration."
+            ),
         ),
         MetricScore(
             name="existing_category_named_while_proposing",

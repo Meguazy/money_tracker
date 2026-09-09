@@ -308,13 +308,8 @@ def test_the_diagnostic_is_unmeasurable_on_a_union_boundary(tmp_path: Path) -> N
     assert metric.passed
 
 
-def test_the_auto_post_gates_are_visible_but_unmeasured(tmp_path: Path) -> None:
-    """Keep an unmeasured gate visible rather than omitting it.
-
-    No auto-post policy is promoted, so the eligible subset is empty by
-    construction. Emitting the gates at zero denominator states that; omitting
-    them would hide that they exist at all.
-    """
+def test_the_auto_post_gates_are_explicitly_inapplicable(tmp_path: Path) -> None:
+    """Record the measured reason V1 has no automatic-post subset."""
 
     completion = _judgment(category_name="Spesa alimentare", evidence="spesa")
     report = run_categorization_suite(
@@ -332,5 +327,7 @@ def test_the_auto_post_gates_are_visible_but_unmeasured(tmp_path: Path) -> None:
     ):
         assert metrics[name].denominator == 0
         assert metrics[name].blocking is True
-        assert metrics[name].passed is False
+        assert metrics[name].applicable is False
+        assert metrics[name].passed is True
+        assert "131/150 (0.8733)" in str(metrics[name].inapplicability_reason)
     assert report.configuration["auto_post_policy_promoted"] is False

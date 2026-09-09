@@ -9,6 +9,7 @@ import pytest
 
 from money_tracker.evaluations.cli import (
     _command_summary,
+    _parser,
     _require_declared_model,
     _run_catalog,
 )
@@ -112,3 +113,24 @@ def test_a_bare_field_needs_a_candidate_and_must_exist() -> None:
 
     with pytest.raises(SystemExit, match="declares no projector"):
         _run_catalog("text-qwen3-14b", "projector")
+
+
+def test_human_review_and_deferral_are_mutually_exclusive() -> None:
+    """Require one explicit owner disposition for the human gate."""
+
+    parser = _parser()
+    reviewed = parser.parse_args(["advice", "--review-human-usefulness"])
+    deferred = parser.parse_args(["advice", "--defer-human-usefulness"])
+
+    assert reviewed.review_human_usefulness is True
+    assert reviewed.defer_human_usefulness is False
+    assert deferred.review_human_usefulness is False
+    assert deferred.defer_human_usefulness is True
+    with pytest.raises(SystemExit):
+        parser.parse_args(
+            [
+                "advice",
+                "--review-human-usefulness",
+                "--defer-human-usefulness",
+            ]
+        )

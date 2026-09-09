@@ -4,10 +4,8 @@ from __future__ import annotations
 
 import argparse
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from pathlib import Path
-
-from pydantic import JsonValue
 
 from money_tracker.evaluations.advice import run_advice_suite
 from money_tracker.evaluations.calibration import run_calibration
@@ -24,6 +22,7 @@ from money_tracker.evaluations.categorization import (
     run_categorization_suite,
 )
 from money_tracker.evaluations.category_review import run_category_review_suite
+from money_tracker.evaluations.human_review import serve_human_usefulness_review
 from money_tracker.evaluations.ingestion import (
     EXTRACTION_CANDIDATES,
     run_ingestion_suite,
@@ -338,7 +337,13 @@ def _parser() -> argparse.ArgumentParser:
     usefulness.add_argument(
         "--review-human-usefulness",
         action="store_true",
-        help="prompt the owner for a 1-5 score on each non-injection result",
+        help="open a loopback browser review for all non-injection results",
+    )
+    advice.add_argument(
+        "--human-review-port",
+        type=int,
+        default=8765,
+        help="loopback port for the temporary human-review page (default: 8765)",
     )
     usefulness.add_argument(
         "--defer-human-usefulness",
@@ -494,42 +499,6 @@ def _command_summary(report: SuiteReport) -> dict[str, object]:
     }
 
 
-def _terminal_human_usefulness_reviewer(
-    case_id: str, message: str, observed: Mapping[str, JsonValue]
-) -> int:
-    """Collect one owner usefulness score for the result just produced.
-
-    Args:
-        case_id: Stable case identifier.
-        message: Synthetic dataset request shown for review.
-        observed: Structured outcome from this exact model run.
-
-    Returns:
-        Owner-entered score from one to five.
-    """
-
-    print(f"\n{case_id}\nRequest: {message}")
-    print(
-        "Observed result: "
-        + json.dumps(
-            {
-                "outcome": observed.get("outcome"),
-                "answer": observed.get("answer"),
-            },
-            sort_keys=True,
-            ensure_ascii=False,
-        )
-    )
-    while True:
-        try:
-            score = int(input("Human usefulness score (1-5): ").strip())
-        except ValueError:
-            score = 0
-        if 1 <= score <= 5:
-            return score
-        print("Enter one integer from 1 to 5.")
-
-
 def _print_and_exit(report: SuiteReport) -> None:
     """Print one suite summary and fail the process on a blocking gate.
 
@@ -610,7 +579,11 @@ def main(argv: Sequence[str] | None = None) -> None:
                 boundary=SELECTION_BOUNDARIES[args.instructions],
                 instructions=prompt(TOOL_SELECTION, args.instructions).text,
                 human_reviewer=(
-                    _terminal_human_usefulness_reviewer
+                    (
+                        lambda run_id, items: serve_human_usefulness_review(
+                            run_id, items, port=args.human_review_port
+                        )
+                    )
                     if args.review_human_usefulness
                     else None
                 ),

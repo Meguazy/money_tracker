@@ -46,6 +46,7 @@ from money_tracker.domain import (
     initial_taxonomy,
 )
 from money_tracker.evaluations.fixtures import OwnerFixture, require_isolated_database
+from money_tracker.evaluations.human_review import HumanReviewItem
 from money_tracker.evaluations.metadata import (
     CapabilitySettings,
     collect_environment_metadata,
@@ -107,8 +108,8 @@ BUDGET_FIRST_TOOL = "budgets_at_risk"
 HUMAN_USEFULNESS_RUBRIC_VERSION = "human-usefulness-v1"
 """Owner-review rubric recorded beside every advice run."""
 
-HumanUsefulnessReviewer = Callable[[str, str, Mapping[str, JsonValue]], int]
-"""Callable that scores one observed advice result from one to five."""
+HumanUsefulnessReviewer = Callable[[str, Sequence[HumanReviewItem]], Mapping[str, int]]
+"""Callable that collects a complete owner review for one exact run."""
 
 
 def _facets(
@@ -463,8 +464,8 @@ def run_advice_suite(
         boundary: Selection schema and conversion under test.
             Defaults to the flat contract, and is recorded so a score
             is attributable to one boundary shape.
-        human_reviewer: Owner-operated scorer invoked on each of the 52
-            non-injection results from this exact run.
+        human_reviewer: Owner-operated batch reviewer invoked once with all
+            52 non-injection results from this exact run.
         human_usefulness_deferred: Explicit owner decision to defer the human
             gate to Step 5. It cannot be combined with a reviewer.
 
@@ -476,6 +477,7 @@ def run_advice_suite(
     if human_reviewer is not None and human_usefulness_deferred:
         raise ValueError("human review and deferral are mutually exclusive")
     started_at = utc_now()
+    run_id = new_run_id("ADV")
     cases, content_hash = load_cases(dataset_path)
     dataset = dataset_metadata(
         suite=SUITE, path=dataset_path, cases=cases, content_hash=content_hash
@@ -507,13 +509,23 @@ def run_advice_suite(
         )
         results.append(result)
         observations[result.case_id] = observed
-        if human_reviewer is not None and result.case_id in review_case_ids:
-            score = human_reviewer(result.case_id, str(case["message"]), observed)
-            if type(score) is not int or not 1 <= score <= 5:
-                raise ValueError(
-                    f"human usefulness score for {result.case_id} must be 1-5"
-                )
-            human_scores[result.case_id] = score
+
+    if human_reviewer is not None:
+        review_items = [
+            HumanReviewItem(
+                case_id=str(case["case_id"]),
+                message=str(case["message"]),
+                observed_outcome=(
+                    str(observations[str(case["case_id"])].get("outcome"))
+                    if observations[str(case["case_id"])].get("outcome") is not None
+                    else None
+                ),
+                observed_answer=observations[str(case["case_id"])].get("answer"),
+            )
+            for case in cases
+            if str(case["case_id"]) in review_case_ids
+        ]
+        human_scores = dict(human_reviewer(run_id, review_items))
 
     metrics = [
         *_metrics(
@@ -528,7 +540,7 @@ def run_advice_suite(
     passed = blocking_gates_passed(metrics, results)
     meets_minimum = dataset.item_count >= DATASET_MINIMUM
     report = SuiteReport(
-        run_id=new_run_id("ADV"),
+        run_id=run_id,
         suite=SUITE,
         started_at=started_at,
         completed_at=utc_now(),

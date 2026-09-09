@@ -671,8 +671,9 @@ own tests and documentation, and none may ship a later step's behavior.
   `missing_data_avoids_invented_conclusion` at 0.667, both on the same invented
   period. `human_usefulness_median` now has the
   [`human-usefulness-v1`](../experiments/human-usefulness-rubric.md) rubric and an
-  owner-operated CLI path that records all 52 per-case scores beside the exact
-  raw run and computes their median. With no owner choice it remains pending; an
+  owner-operated loopback browser path that presents readable result cards,
+  validates all 52 per-case scores, writes them automatically beside the exact raw
+  run, and computes their median. With no owner choice it remains pending; an
   explicit deferral to Step 5 makes it inapplicable without fabricating scores.
 - Immutable adversarial successors extend both boundaries without changing any
   prior dataset: `tools-selection-and-use-it-v1.2` adds eight injection cases

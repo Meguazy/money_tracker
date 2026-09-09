@@ -197,12 +197,25 @@ Money Tracker workstation
 | `administration` | Expose bounded local profile bootstrap, funding-source configuration, receipt storage/registration, and one-shot dispatch of every Step 3 text route | Database URL, absolute archive setting, application services, the workflow dispatcher, and local model adapter | No independent state; emits safe identifiers, grounded facts, and reason codes only | Host CLI; active-profile preflight for specialists, explicit trusted correlations, no private paths or message content in JSON |
 | `persistence.finance` | Bootstrap profile/taxonomy, persist complete expense and budget aggregates, append balance-safe wallet movements, validate/store pending proposals, and register/transition receipt metadata transactionally | psycopg and narrow application repository contracts | Finance tables, allocations, budgets/overrides, wallet ledger, proposals, versioned receipt metadata, audit, and idempotency records | Dedicated application PostgreSQL; no receipt bytes or paths; optimistic versions protect mutable aggregates |
 | `media.local` | Decode, validate, atomically retain, and integrity-check private receipt originals | Receipt-media port, Pillow, private filesystem | Original bytes under sharded SHA-256 keys; no database state | Host library outside web roots; `0700` directories, `0600` files, no-follow verified reads; root wired explicitly by admin CLI, API/worker planned |
-| `evaluations` | Probe real model protocols, capture exact runtime metadata, score deterministically, optionally publish aggregates | OpenAI-compatible HTTP, local files, optional Langfuse SDK | Ignored local run artifacts, and published aggregate scores keyed by suite and by the model that produced them; no domain authority | Host CLI; secrets, image bytes and paths are excluded |
+| `evaluations` | Probe real model protocols, capture exact runtime metadata, score deterministically, collect owner usefulness labels, optionally publish aggregates | OpenAI-compatible HTTP, local files, optional Langfuse SDK, and a temporary standard-library loopback HTTP interface | Ignored local run artifacts and browser-local draft scores, plus published aggregate scores keyed by suite and by the model that produced them; no domain authority | Host CLI; the review page binds only to `127.0.0.1`, uses a per-run submission token and no external assets, and excludes secrets, image bytes and paths |
 | `evaluations.catalog` | Read the declared local model candidates, name the model behind a score, and refuse a run that is not measuring the candidate it declared | Committed candidate YAML, local weights paths, and the inference server's own report of what it loaded | No state; the committed catalog is the source of truth for what a candidate is | Host CLI; never downloads, installs, or selects weights, and a candidate it cannot pin by hash is refused at load time |
 | `workflows.wire` | Hold the union-shaped schemas a local model is asked to fill and convert them purely to the domain contracts | Pydantic and the `workflows` contracts; no model client or transport | No state; conversion only | Shared by every model boundary; an unstated field has an explicit variant, so a fabricated value has no shape and a split that does not reconcile is refused where it can still be repaired |
 | `workflows.two_stage` | Compose the heading and level boundaries into one category judgment, choosing the subtree before the level | The two instruction catalogs, the bound wire schemas, and the narrow model port | No state; a pure composition over two calls | Evaluation only. AD-015 is rejected on its measurement, and this component is kept so that result stays reproducible; no runtime path uses it |
 | `workflows.prompts` | Load, validate, and version the instruction catalogs each boundary is given | JSON catalogs under `prompt_data/`, the intent taxonomy, and the tool registry | No state; catalogs are read-only data | Vocabularies are derived from the taxonomy and registry, so a stale catalog is refused at load time; nothing is promoted |
 | `development` | Validate canonical documentation and privacy-ignore invariants | Repository Markdown/YAML/filesystem | No persistent data | Service-independent development command |
+
+### Human usefulness review runtime
+
+After the advice runner completes every model call, it gives the evaluation-only
+review component the 52 synthetic non-injection requests and their structured
+results in memory. The component serves a one-session browser interface from the
+same host process on IPv4 loopback. The browser keeps an isolated draft under the
+run ID and returns a complete 1–5 score map with the per-process token. The server
+rejects partial, unknown, and out-of-range entries, shuts down after the accepted
+submission, and returns the scores to the runner. The runner then computes the
+median and writes `human-usefulness-review.json` beside that exact raw run. This
+interface has no product route, domain authority, repository access, external
+asset, or persistent listener.
 
 ### Model-facing boundary shapes and instruction catalogs
 

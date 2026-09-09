@@ -34,12 +34,20 @@ Run the suite interactively against the pinned candidate:
     python -m money_tracker.evaluations.cli advice \
       --model-profile <profile-id> --review-human-usefulness
 
-The runner asks for one score after each of the 52 applicable results. It rejects
-values outside 1–5 and refuses a partial score set. The raw run directory receives
-`human-usefulness-review.json`, containing the rubric ID, run ID, dataset identity
-and hash, each reviewed case, the observed structured result, and the owner score.
-The manifest reports the median computed from those entries. The committed score
-contains only the aggregate metric.
+After producing all 52 applicable results, the runner prints a loopback URL.
+Open it in a browser to review one readable case card at a time. The page formats
+money amounts, summarizes budget results, keeps the raw JSON in a collapsible
+section, accepts the keys 1–5, and saves the current draft in browser local storage.
+It has no external assets and is available only from the host at `127.0.0.1`.
+
+`Submit all ratings` is enabled only when every case has a score. On
+submission, the runner validates the complete score set and automatically writes
+`human-usefulness-review.json` in the raw run directory. The file contains the
+rubric ID, run ID, dataset identity and hash, each reviewed case, the observed
+structured result, and the owner score; no manual editing is required. The
+manifest reports the median computed from those entries. The committed score
+contains only the aggregate metric. Use `--human-review-port <port>` if the
+default port `8765` is occupied.
 
 If the owner explicitly defers review to Step 5, use
 `--defer-human-usefulness`. That records an inapplicable gate with the deferral

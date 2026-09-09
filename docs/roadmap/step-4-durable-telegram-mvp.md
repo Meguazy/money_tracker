@@ -2,10 +2,12 @@
 
 Part of the [delivery roadmap](../roadmap.md).
 
-Status: **In progress — durable persistence and Telegram gateway
-implemented.** Step 3 and its EVD-004 baseline remain unchanged. The workflow
-worker, pairing administration, presentation, systemd units, and real test-bot
-evidence do not exist yet and are not claimed by this status.
+Status: **In progress — durable persistence, Telegram gateway, response
+rendering, and the sequential worker implemented.** Step 3 and its EVD-004
+baseline remain unchanged. Pairing administration, messaging health, systemd
+units, and real test-bot evidence do not exist yet and are not claimed by this
+status. Without pairing there is still no supported way to create the owner
+binding, so the pipeline cannot yet be exercised end to end by the owner.
 
 ## Repository-truth inventory
 
@@ -25,9 +27,11 @@ evidence do not exist yet and are not claimed by this status.
   acknowledgement, and an independent outbox loop. No workflow worker or
   response renderer exists yet.
 - `money-tracker-telegram` is the production gateway entry point with `validate`,
-  `poll-once`, and `run`. Administration still has no owner-pairing, replay, or
-  messaging-health command, so an owner binding cannot yet be created through a
-  supported operator path.
+  `poll-once`, and `run`. `money-tracker-worker` is the separate processing
+  entry point with `process-once` and `run`. Administration still has no
+  owner-pairing, replay, or messaging-health command, so an owner binding
+  cannot yet be created through a supported operator path. That is now the only
+  thing between this repository and a usable bot.
 - Compose provides application PostgreSQL and optional Langfuse. No systemd
   unit is checked in. FastAPI is neither installed nor required by the Step 4
   runtime.
@@ -41,8 +45,10 @@ evidence do not exist yet and are not claimed by this status.
   and re-proposal commands return the first stored result; competing branches
   conflict without another finance write.
 - `presentation.telegram` renders every dispatch status in Italian and owns the
-  bounded callback vocabulary. It is a library with no caller yet: without the
-  worker, nothing turns a dispatch outcome into an outbox row.
+  bounded callback vocabulary.
+- `SequentialWorker` claims the oldest eligible row, resolves its correlation,
+  dispatches once, and commits result, response, mapping, and completion in one
+  messaging transaction. It holds no Bot API credential.
 
 ## Reconciled design
 
@@ -114,6 +120,26 @@ printing private content or identifiers.
 - Twenty-four unit tests passed, including a contract test that drives the real
   ingestion callback grammar with the rendered buttons, and one that fails if a
   new reason code reaches the owner as generic prose.
+
+## Worker implementation evidence
+
+- The worker translates one claimed row into `ChannelMessage`, derives the
+  trusted `DispatchContext` from finance and messaging reads, and calls only
+  the dispatch port. An unresolved callback keeps its branch but loses its
+  correlation, so routing clarifies instead of applying an old decision to a
+  new target.
+- Outbox and pending-action identifiers are derived from the inbox row. A real
+  PostgreSQL test kills the process between the finance write and the messaging
+  transaction, releases the row, and proves the re-dispatched item produces one
+  logical response rather than a second.
+- Five real-PostgreSQL tests cover the complete terminal transaction, immediate
+  deliverability of the committed response, the crash window, head-of-line
+  ordering behind a retrying row, and consumption of an answered correlation.
+  Eighteen unit tests cover translation, correlation, failure classification,
+  the bounded attempt budget, and lease loss.
+- The dispatch assembly is rebuilt per work unit, because the read-selection
+  policy receives the active category names at build time and an approved
+  review changes them between two messages.
 
 ## Gateway implementation evidence
 

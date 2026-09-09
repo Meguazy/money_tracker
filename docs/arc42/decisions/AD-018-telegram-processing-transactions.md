@@ -2,9 +2,9 @@
 
 - Status: accepted
 - Implementation: messaging contracts/repository, category-review replay, Bot
-  API transport, authorized ingress, gateway/outbox loops, and Italian response
-  rendering implemented; worker, pairing administration, operations, and
-  real-bot acceptance pending
+  API transport, authorized ingress, gateway/outbox loops, Italian response
+  rendering, and the sequential worker implemented; pairing administration,
+  health reporting, operations, and real-bot acceptance pending
 - Date: 2026-09-09
 - Supersedes: the raw-update retention detail in
   [AD-010](AD-010-telegram-durable-messaging.md); all other AD-010 choices remain
@@ -179,6 +179,17 @@ contract test drives the real ingestion grammar with the rendered buttons, and
 another proves every stable reason code has an owner-facing question.
 Twenty-four unit tests cover rendering, digest stability, and refusal of
 missing display data.
+
+`SequentialWorker` implements the two-phase protocol. It leases the head row,
+resolves a callback or reply against its active mapping before that
+correlation may enter `DispatchContext`, dispatches once, and commits the typed
+result, the uniquely keyed response, any new mapping, and completion together.
+Outbox and pending-action identifiers are derived from the inbox row rather
+than generated, which is what lets a re-dispatched item land on the response
+its logical key already names; a real-PostgreSQL test kills the process before
+the terminal transaction and proves exactly one response survives. A
+clarification deliberately leaves the resolved mapping active, because
+consuming it would leave the message the owner is holding inert.
 
 The production `BotApiClient` uses explicit allowed update types, bounded
 connect/read/write timeouts, backlog-preserving webhook removal, plain-text

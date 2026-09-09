@@ -92,6 +92,53 @@ class ReviewConfigurationReader(Protocol):
         """Return the candidate currently awaiting the owner."""
 
 
+def review_question(
+    configuration: ReviewConfigurationReader,
+    review: CategoryReviewService,
+    *,
+    profile_id: UUID,
+    proposal_id: UUID,
+) -> ReviewQuestion:
+    """Render what the owner is shown, from the authoritative stored proposal.
+
+    The graph asks this before pausing, and the durable worker asks it again to
+    render the same paused review into a channel message. Both must show one
+    question, so it is built here from stored state rather than carried through
+    a checkpoint or restated by a channel.
+
+    Args:
+        configuration: Trusted reads of the proposal and the taxonomy.
+        review: Service owning the AD-008 candidate-loop bound.
+        profile_id: Trusted owner scope.
+        proposal_id: Review currently awaiting the owner.
+
+    Returns:
+        The candidate, its parent, its rationale, the reuse shortlist, and
+        whether another candidate may still be offered.
+    """
+
+    proposal = configuration.get_category_proposal(profile_id, proposal_id)
+    taxonomy = configuration.get_taxonomy(profile_id)
+    parent = (
+        None
+        if proposal.parent_id is None
+        else taxonomy.category(proposal.parent_id).name
+    )
+    return ReviewQuestion(
+        proposal_id=str(proposal.id),
+        candidate_name=proposal.proposed_name,
+        parent_name=parent,
+        rationale=proposal.rationale,
+        alternative_names=tuple(
+            taxonomy.category(identifier).name
+            for identifier in proposal.alternative_category_ids
+        ),
+        can_repropose=not review.exhausted(
+            profile_id=profile_id, proposal_id=proposal_id
+        ),
+    )
+
+
 def build_review_graph(
     *,
     model: StructuredOutputModel,
@@ -128,29 +175,13 @@ def build_review_graph(
         raise ValueError("category instructions do not match their candidate")
 
     def _question(state: ReviewWorkflowState) -> ReviewQuestion:
-        """Render what the owner is shown, from the authoritative proposal."""
+        """Render the paused question against this graph's injected reads."""
 
-        profile_id = UUID(state["profile_id"])
-        proposal_id = UUID(state["proposal_id"])
-        proposal = configuration.get_category_proposal(profile_id, proposal_id)
-        taxonomy = configuration.get_taxonomy(profile_id)
-        parent = (
-            None
-            if proposal.parent_id is None
-            else taxonomy.category(proposal.parent_id).name
-        )
-        return ReviewQuestion(
-            proposal_id=str(proposal.id),
-            candidate_name=proposal.proposed_name,
-            parent_name=parent,
-            rationale=proposal.rationale,
-            alternative_names=tuple(
-                taxonomy.category(identifier).name
-                for identifier in proposal.alternative_category_ids
-            ),
-            can_repropose=not review.exhausted(
-                profile_id=profile_id, proposal_id=proposal_id
-            ),
+        return review_question(
+            configuration,
+            review,
+            profile_id=UUID(state["profile_id"]),
+            proposal_id=UUID(state["proposal_id"]),
         )
 
     def run_ask(state: ReviewWorkflowState) -> ReviewWorkflowState:

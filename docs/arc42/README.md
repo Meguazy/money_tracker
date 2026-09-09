@@ -28,9 +28,10 @@ extraction v6, category-fit v6, tool-selection v5, routing confidence 0.5, and
 specialist checkpoints, finance repositories, private receipt-media adapter,
 and verified encrypted backup are implemented. Step 4 design is reconciled in
 AD-018; its normalized messaging schema, contracts, retry policy, PostgreSQL
-repository, Bot API transport, authorized ingestion, gateway process, and
-Italian response renderer are implemented. The repository does not yet contain
-the sequential workflow worker, pairing administration, or systemd units.
+repository, Bot API transport, authorized ingestion, gateway process, Italian
+response renderer, and sequential workflow worker are implemented. The
+repository does not yet contain pairing administration or systemd units, so no
+supported path creates the owner binding every accepted update needs.
 The web application and receipt extraction pipeline remain assigned to later
 roadmap steps.
 
@@ -169,7 +170,7 @@ Money Tracker workstation
 ├── Host processes
 │   ├── FastAPI application and compiled React UI        [planned]
 │   ├── Telegram gateway                                [implemented entry point; systemd pending]
-│   ├── Sequential workflow worker                      [planned]
+│   ├── Sequential workflow worker                      [implemented entry point; systemd pending]
 │   │   ├── typed dispatcher, router, and text graphs  [implemented library]
 │   │   └── Italian response renderer                  [implemented library]
 │   └── llama.cpp/OpenAI-compatible inference           [scaffolded]
@@ -196,6 +197,7 @@ Money Tracker workstation
 | `application` | Coordinate idempotent expense lifecycle and receipt registration/review, audited wallet/budget mutations, pending proposal submission, owner category decisions, and read-only reporting through narrow ports | Finance, administration, proposal, review, reporting, and receipt-metadata repository ports plus clock and ID contracts | Command, concurrency, review-boundary, and audit semantics, not stored state | Shared by future CLI/API/worker; profile scope comes from trusted caller context; node creation is reachable only through an owner decision, and receipt deletion is not exposed |
 | `workflows` | Own the bounded intent taxonomy, normalized channel work unit, deterministic pre-routing, strict versioned model boundaries, policy vetoes, and post-model read-selection policies, deterministic allocation resolution, draft and correction preparation, stable creation/correction/undo command identities, and the strict-schema retry boundary behind a narrow model port | Pydantic, `zoneinfo`, and pure domain values; no LangGraph, model client, repository, or transport import | Routing destinations, authority classes, stable routing and resolution reason codes, and the product calendar; no persistent state | Shared by the planned worker; a model can select no deterministic route and supply no profile/timezone/authorization field, no resolved instant, no amount sign, and no funding-source identifier; reason codes carry no owner text |
 | `runtime` | Assemble the compiled root-router, expense/refund, correction/undo, category-review, and read graphs; dispatch one normalized work unit to exactly one specialist; adapt the local endpoint to the structured-output port | LangGraph, LangChain, application services, the persistent checkpointer, and `workflows` contracts | No domain state of its own; checkpoint contents remain owned by each graph state contract | Host administration CLI today and future worker; dispatcher trusts only injected profile/correlation context and emits no presentation text |
+| `worker` | Claim the oldest eligible durable work unit, translate it into the normalized channel message, dispatch it once, and commit result, response, correlation, and completion together | Messaging repository port, finance read ports, a narrow dispatch port, and the response renderer | No authoritative state; every identifier it creates is derived from the inbox row so a recovered attempt reproduces the same logical response | systemd host service, separate failure domain from the gateway; holds no Bot API credential and imports no transport type |
 | `presentation` | Render typed dispatch outcomes, committed movement facts, and paused review questions as Italian owner text and bounded controls | Dispatcher outcome contracts, messaging control values, and pure domain values; no model, transport, or repository import | No state; owns the callback code vocabulary and the response-kind names embedded in outbox logical keys | Worker library; content is a function of committed state only, so a replayed render reproduces the same logical response |
 | `api.contracts` | Define strict, versioned finance request/response, mutation-header, and problem wire shapes | Pydantic and domain response values; no web framework | No state; stable JSON field semantics only | Shared by future FastAPI adapter; no endpoint, network listener, credentials, or private media fields |
 | `backup` | Create verified encrypted authoritative snapshots, report their freshness, and restore only into explicitly empty isolated targets | Restic and PostgreSQL client executables, psycopg identity/receipt queries, private archive and configuration paths | Snapshot contents and the versioned integrity manifest in the owner repository; no finance state of its own | Host CLI under an exclusive lock; absolute-path and owner-only input checks, recovery secret passed only by file path, failures name no argument or environment |
@@ -287,8 +289,8 @@ catalog is promoted; every identifier carries a `candidate-` prefix.
 
 AD-018 divides the Step 4 runtime into seven replaceable blocks. The contracts,
 retry policy, PostgreSQL repository, ingestion service, Bot API transport,
-gateway process, and response renderer are implemented; the worker remains
-planned:
+gateway process, response renderer, and sequential worker are all implemented;
+pairing administration and health remain planned:
 
 | Component | Responsibility | Interface/dependencies | Data ownership | Deployment/security |
 | --- | --- | --- | --- | --- |
@@ -297,7 +299,7 @@ planned:
 | `persistence.messaging` | Implement the AD-018 transactions and uniqueness/lease rules | psycopg and the dedicated application PostgreSQL | Entire `messaging` schema | Least-privilege application role; content is private and included in authoritative backup |
 | `telegram.transport` | Implement the official HTTPS Bot API methods with bounded timeouts and redacted failures | `httpx` and configured Bot API base URL/token | No durable state | Gateway only; production/test configuration is mutually exclusive |
 | `telegram.gateway` | Run independent ingress and outbox loops | Bot API transport and messaging service | No in-memory correctness state | systemd host service; no model or finance repository dependency |
-| `worker` | Translate one claimed row to `ChannelMessage`, construct `DispatchContext`, call the Step 3 dispatcher, and finalize messaging state | Messaging/finance read ports and `WorkflowDispatcher.dispatch` | No authoritative state | systemd host service; no token or Telegram client |
+| `worker` (implemented) | Translate one claimed row to `ChannelMessage`, construct `DispatchContext`, call the Step 3 dispatcher, and finalize messaging state | Messaging/finance read ports and a narrow dispatch port | No authoritative state; derives outbox and pending-action identity from the inbox row so a recovery reproduces them | systemd host service; no token or Telegram client |
 | `presentation.telegram` (implemented) | Render typed workflow outcomes and controls in Italian | Dispatch outcome plus bounded display projections | No state | Worker library; never exposes tool names, raw evaluation JSON, or internal IDs; content depends only on committed state so a replayed render is identical |
 
 The gateway and worker have separate failure domains. The gateway remains able to
@@ -858,13 +860,12 @@ manual acceptance check.
 5. The owner reviews the complete draft through Telegram or the dashboard.
 6. Only an approved, reconciled draft is posted; otherwise it remains in review.
 
-### Telegram recovery and processing (gateway implemented; worker planned)
+### Telegram recovery and processing (implemented except pairing)
 
-The migration/repository and production gateway implement atomic ingest,
-persisted-offset resume, authorization, callback acknowledgement after commit,
-and independently leased outbox delivery. The Italian renderer implements step
-5's presentation half. The workflow worker remains planned, and the sequence
-lacks real test-bot acceptance.
+The migration/repository, production gateway, response renderer, and sequential
+worker implement every step below. What is missing is the supported way to
+create the owner binding the gateway authorizes against, so the sequence has no
+real test-bot acceptance yet.
 
 1. The gateway requests the environment's persisted next offset through long
    polling and filters authorization and supported update types before work.
@@ -944,8 +945,9 @@ External backup folder/disk
 └── encrypted Restic repository
 ```
 
-The `money-tracker-telegram` host entry point exists, but no systemd unit is
-installed yet and the real test bot has not been accepted.
+The `money-tracker-telegram` and `money-tracker-worker` host entry points
+exist, but no systemd unit is installed yet and the real test bot has not been
+accepted.
 
 Systemd user services use lingering, or an equivalent host setup, to recover
 without a manual application start. Each service tolerates delayed database,
@@ -1226,15 +1228,15 @@ environment file.
   V0 remains the direct configuration rollback.
 - [AD-018: Telegram processing transactions and ordering](decisions/AD-018-telegram-processing-transactions.md):
   reconciled Step 4 persistence, Bot API transport, authorized ingestion,
-  persisted-offset runtime, outbox delivery, and Italian response rendering are
-  implemented; worker, pairing administration, operational wiring, and real-bot
-  acceptance remain planned.
+  persisted-offset runtime, outbox delivery, Italian response rendering, and
+  the sequential worker are implemented; pairing administration, health
+  reporting, operational wiring, and real-bot acceptance remain planned.
 
 ### Partially implemented Telegram decisions
 
-AD-004 and AD-010 now have persistence and gateway implementation evidence.
-They remain incomplete until pairing, worker/presentation, operations, and real
-test-bot acceptance are complete.
+AD-004 and AD-010 now have persistence, gateway, worker, and presentation
+implementation evidence. They remain incomplete until pairing, operations, and
+real test-bot acceptance are complete.
 
 ## 10. Quality Requirements
 

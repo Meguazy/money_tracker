@@ -1,9 +1,9 @@
 # Telegram Operations
 
 - Status: Bot API adapter, secure configuration, durable polling, private-owner
-  filtering, outbox delivery, and Italian response rendering are implemented;
-  pairing administration, the workflow worker, systemd, and real test-bot
-  acceptance remain pending
+  filtering, outbox delivery, Italian response rendering, and the sequential
+  workflow worker are implemented; pairing administration, messaging health,
+  systemd, and real test-bot acceptance remain pending
 - Bot created: no
 - Production token configured: no
 - Test bot configured: no
@@ -22,12 +22,15 @@ Authoritative references:
 ## Current implementation boundary
 
 `money-tracker-telegram` can validate, poll, durably ingest, acknowledge
-callbacks, and deliver existing outbox rows. It requires a previously persisted
-owner binding; the supported pairing administration path and workflow worker do
-not exist yet. Owner-facing text and controls are implemented but have no
-caller until the worker exists, so nothing yet creates an outbox row. Therefore
-no finance workflow is usable through Telegram and the real test-bot acceptance
-remains pending.
+callbacks, and deliver existing outbox rows. `money-tracker-worker` processes
+that inbox in order and commits owner-facing responses. Run both: the gateway
+owns the Telegram connection, the worker owns finance processing, and neither
+can stand in for the other.
+
+One thing is still missing, and it blocks everything else: no supported command
+creates the owner binding. The gateway rejects every update until that binding
+exists, so a freshly created bot cannot yet be used, and the real test-bot
+acceptance remains pending.
 
 Use a separate bot for integration/E2E tests so experiments cannot consume or
 reply to production updates.
@@ -82,8 +85,9 @@ is opt-in and currently unexecuted:
 
 Do not run `poll-once` or `run` before the pairing command is implemented;
 unpaired observations are deliberately acknowledged as rejected and retain no
-content. Pairing, Italian product commands, and BotFather command registration
-remain planned.
+content. Pairing and BotFather command registration remain planned. Italian
+owner responses and their inline controls are implemented and are produced by
+the worker.
 
 Candidate UI commands such as `/start`, `/help`, `/status`, and `/cancel` are
 product design targets, not current executable entry points. Their final list
@@ -105,6 +109,20 @@ API in Step 4.
 Never use the Telegram chat ID as a LangGraph workflow/thread ID. Each workflow
 has its own stable identifier; pending actions map callbacks/replies to that
 exact workflow.
+
+## Running the two processes
+
+The gateway and the worker are separate processes on purpose. The gateway keeps
+accepting Telegram updates while inference is slow or stopped; the worker keeps
+processing the durable backlog without holding a Bot API credential.
+
+    uv run --env-file .env money-tracker-telegram run
+    uv run --env-file .env money-tracker-worker run
+
+`money-tracker-worker process-once` handles a single eligible work unit and
+prints whether one was claimed, which is the safe way to inspect behavior
+before running the loop. The worker refuses to start without an owner binding,
+because every accepted update belongs to one.
 
 ## Implemented long-polling durability
 
@@ -154,8 +172,12 @@ work.
 
 Inbox and outbox claims persist bounded attempt and retry metadata; the fifth
 failed attempt becomes a dead letter. The gateway applies bounded network
-backoff and the Bot API `retry_after` hint. Worker/admin replay commands remain
-planned.
+backoff and the Bot API `retry_after` hint. The worker classifies its own
+failures: an unreachable local model or a losing concurrent mutation is
+retried, while a missing record, a rejected domain rule, or a conflicting
+logical response becomes a dead letter immediately rather than consuming five
+attempts. Operator replay and health commands remain planned, so a dead letter
+is currently visible only through the database.
 
 Outbound replies use the transactional outbox and its independent gateway loop.
 Telegram does not provide a general exactly-once `sendMessage` contract, so a

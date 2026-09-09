@@ -33,6 +33,7 @@ from money_tracker.workflows.dispatch import (
     DispatchReason,
     DispatchStatus,
     PendingMovementAction,
+    outcome_facts,
     review_decision_from_message,
 )
 from money_tracker.workflows.errors import (
@@ -256,6 +257,7 @@ __all__ = [
     "resolve_funding_source",
     "resolve_occurrence_time",
     "resolve_payment_allocations",
+    "outcome_facts",
     "review_decision_from_message",
     "routing_context_from_state",
     "routing_decision_from_state",

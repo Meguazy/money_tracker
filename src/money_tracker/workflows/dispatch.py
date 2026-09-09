@@ -117,6 +117,52 @@ class DispatchOutcome:
     clarification_reason: str | None = None
 
 
+def outcome_facts(outcome: DispatchOutcome) -> dict[str, Any]:
+    """Project one typed outcome onto JSON-compatible safe facts.
+
+    This is the shape a durable worker persists as its typed result and an
+    operator command prints. Both need the same projection, and both must be
+    able to read a past result without the objects that produced it, so
+    identifiers become strings and enumerations become their stable values.
+
+    Args:
+        outcome: Typed result of one dispatched work unit.
+
+    Returns:
+        A mapping of stable keys to JSON primitives, tool facts included.
+    """
+
+    decision = outcome.routing
+    return {
+        "answer": outcome.facts,
+        "clarification_reason": outcome.clarification_reason,
+        "command": decision.command.value if decision.command else None,
+        "confidence": decision.confidence,
+        "executed_tool": (
+            None if outcome.executed_tool is None else outcome.executed_tool.value
+        ),
+        "expense_id": None if outcome.expense_id is None else str(outcome.expense_id),
+        "intent": decision.intent.value,
+        "outcome": outcome.status.value,
+        "pending_action_id": (
+            str(decision.pending_action_id) if decision.pending_action_id else None
+        ),
+        "proposal_id": (
+            None if outcome.proposal_id is None else str(outcome.proposal_id)
+        ),
+        "reason": decision.reason.value,
+        "settled_category_id": (
+            None
+            if outcome.settled_category_id is None
+            else str(outcome.settled_category_id)
+        ),
+        "source": decision.source.value,
+        "target_movement_id": (
+            str(decision.target_movement_id) if decision.target_movement_id else None
+        ),
+    }
+
+
 _NAMED_CATEGORY = re.compile(r"^usa\s+la\s+categoria\s+(.+)$", re.IGNORECASE)
 
 
@@ -168,5 +214,6 @@ __all__ = [
     "DispatchReason",
     "DispatchStatus",
     "PendingMovementAction",
+    "outcome_facts",
     "review_decision_from_message",
 ]

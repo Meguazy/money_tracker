@@ -66,9 +66,9 @@ from money_tracker.workflows import (
     PendingMovementAction,
     ReadSelectionPolicyVersion,
     RoutingContext,
-    RoutingDecision,
     default_prompt,
     normalize_owner_text,
+    outcome_facts,
 )
 from money_tracker.workflows.candidates import (
     DEFAULT_CATEGORY_FIT_CANDIDATE,
@@ -335,7 +335,7 @@ def _route(args: argparse.Namespace) -> dict[str, object]:
             )
         )
         try:
-            return _dispatch_facts(dispatcher.dispatch(message, context=context))
+            return outcome_facts(dispatcher.dispatch(message, context=context))
         except ModelConnectionError as error:
             raise SystemExit(
                 "this work unit needs the local inference server; start it with "
@@ -396,48 +396,7 @@ def _route(args: argparse.Namespace) -> dict[str, object]:
             "this work unit needs the local inference server; start it with "
             "scripts/run_llama_server.sh (deterministic routes need no model)"
         ) from error
-    return _dispatch_facts(outcome)
-
-
-def _dispatch_facts(outcome: DispatchOutcome) -> dict[str, object]:
-    """Render one typed dispatch outcome as safe administration JSON."""
-
-    decision = outcome.routing
-    return _routing_facts(decision) | {
-        "answer": outcome.facts,
-        "clarification_reason": outcome.clarification_reason,
-        "executed_tool": (
-            None if outcome.executed_tool is None else outcome.executed_tool.value
-        ),
-        "expense_id": None if outcome.expense_id is None else str(outcome.expense_id),
-        "outcome": outcome.status.value,
-        "proposal_id": (
-            None if outcome.proposal_id is None else str(outcome.proposal_id)
-        ),
-        "settled_category_id": (
-            None
-            if outcome.settled_category_id is None
-            else str(outcome.settled_category_id)
-        ),
-    }
-
-
-def _routing_facts(decision: RoutingDecision) -> dict[str, object]:
-    """Render the safe facts of one routing decision."""
-
-    return {
-        "command": decision.command.value if decision.command else None,
-        "confidence": decision.confidence,
-        "intent": decision.intent.value,
-        "pending_action_id": (
-            str(decision.pending_action_id) if decision.pending_action_id else None
-        ),
-        "reason": decision.reason.value,
-        "source": decision.source.value,
-        "target_movement_id": (
-            str(decision.target_movement_id) if decision.target_movement_id else None
-        ),
-    }
+    return outcome_facts(outcome)
 
 
 def _profile_init() -> dict[str, object]:

@@ -47,6 +47,16 @@ class FinanceRepository(Protocol):
     def get_funding_sources(self, profile_id: UUID) -> tuple[FundingSource, ...]:
         """Load the profile's funding sources."""
 
+    def get_latest_correctable_movement(self, profile_id: UUID) -> UUID | None:
+        """Return the movement a correction or undo would target by default.
+
+        A channel correction names no identifier, so the runtime resolves the
+        movement the owner most plausibly means: the most recently recorded one
+        that has not already reached a terminal state. Returning None is an
+        answerable fact rather than an error, because it is what turns an
+        uncorrelated correction into a question instead of a guess.
+        """
+
     def create_expense(
         self,
         expense: Expense,

@@ -723,6 +723,31 @@ class PostgresFinanceRepository:
             for row in rows
         )
 
+    def get_latest_correctable_movement(self, profile_id: UUID) -> UUID | None:
+        """Return the most recent movement still open to correction or undo.
+
+        Recording order decides, not occurrence order: the owner refers to the
+        summary they last saw, and a backdated movement recorded afterwards is
+        still the newer one from their side. Voided and discarded rows are
+        excluded because neither can accept a further change.
+
+        Args:
+            profile_id: Trusted owner scope.
+
+        Returns:
+            The movement identifier, or None when the profile has none.
+        """
+
+        with connect(self._database_url) as connection:
+            row = connection.execute(
+                "SELECT id FROM finance.expenses "
+                "WHERE profile_id = %s AND status IN "
+                "('draft', 'needs_review', 'posted') "
+                "ORDER BY created_at DESC, id DESC LIMIT 1",
+                (profile_id,),
+            ).fetchone()
+        return None if row is None else cast(UUID, row[0])
+
     def get_expense(self, profile_id: UUID, expense_id: UUID) -> Expense:
         """Load one complete aggregate within a trusted profile.
 

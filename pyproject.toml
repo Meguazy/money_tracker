@@ -26,6 +26,7 @@ money-tracker-db = "money_tracker.persistence.cli:main"
 money-tracker-eval = "money_tracker.evaluations.cli:main"
 money-tracker-telegram = "money_tracker.telegram.cli:main"
 money-tracker-validate-docs = "money_tracker.development.docs_validation:main"
+money-tracker-worker = "money_tracker.worker.cli:main"
 
 [dependency-groups]
 dev = [

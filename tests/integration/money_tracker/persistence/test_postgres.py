@@ -1108,6 +1108,40 @@ def test_concurrent_budget_replacements_allow_exactly_one_winner(
         ).fetchone() == (2,)
 
 
+@pytest.mark.postgres
+def test_latest_correctable_movement_follows_recording_order(
+    postgres_url: str,
+) -> None:
+    """Offer the movement the owner last saw, never a voided one."""
+
+    upgrade_database(postgres_url)
+    repository, profile, source, category_id = _repository_fixture(postgres_url)
+    assert repository.get_latest_correctable_movement(profile.id) is None
+
+    older = _domain_draft(profile, source, category_id, idempotency_key="latest:1")
+    repository.create_expense(
+        older,
+        audit_event=_audit(older, "create", None),
+        request_hash="a" * 64,
+    )
+    newer = _domain_draft(profile, source, category_id, idempotency_key="latest:2")
+    repository.create_expense(
+        newer,
+        audit_event=_audit(newer, "create", None),
+        request_hash="b" * 64,
+    )
+
+    assert repository.get_latest_correctable_movement(profile.id) == newer.id
+
+    with connect(postgres_url) as connection:
+        connection.execute(
+            "UPDATE finance.expenses SET status = 'voided' WHERE id = %s",
+            (newer.id,),
+        )
+
+    assert repository.get_latest_correctable_movement(profile.id) == older.id
+
+
 def _category_proposal(
     profile: Profile,
     *,

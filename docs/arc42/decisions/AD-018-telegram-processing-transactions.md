@@ -1,7 +1,8 @@
 # AD-018: Telegram Processing Transactions and Ordering
 
 - Status: accepted
-- Implementation: planned for Roadmap Step 4
+- Implementation: messaging contracts, retry policy, migration, and PostgreSQL
+  repository implemented; gateway, worker, rendering, and operations planned
 - Date: 2026-09-09
 - Supersedes: the raw-update retention detail in
   [AD-010](AD-010-telegram-durable-messaging.md); all other AD-010 choices remain
@@ -146,6 +147,20 @@ control plane exists.
   single-owner workload.
 - **Claim exactly-once Bot API delivery.** Rejected because `sendMessage` has no
   caller idempotency key and an accepted response can be lost in transit.
+
+## Implementation evidence
+
+Migration `20260909_0005` creates the offset, inbox, outbox, pairing, binding,
+and pending-action tables with database checks and stable uniqueness. The
+transport-neutral `messaging` contracts reject unsafe identifiers, naive time,
+unsupported or oversized file metadata, empty work, and overlong callback data.
+`PostgresMessagingRepository` owns one transaction per ingest batch or terminal
+worker transition, serializes per-bot claims through the offset row, recovers
+expired leases, blocks later work behind an ineligible head row, applies the
+five-attempt terminal boundary, and preserves source identity during replay.
+Unit tests cover the contracts and deterministic retry schedule. Nine
+`@pytest.mark.postgres` tests exercise the production adapter over the real
+PostgreSQL protocol, including a concurrent two-connection claim.
 
 ## Consequences
 

@@ -1,7 +1,8 @@
 # AD-010: Telegram Long Polling and Durable Messaging
 
 - Status: accepted; raw-update retention detail superseded by AD-018
-- Implementation: transaction and ordering design refined by AD-018; code planned
+- Implementation: transaction and ordering design refined by AD-018; PostgreSQL
+  state and repository implemented, Bot API gateway and workers planned
 - Date: 2026-09-01
 
 ## Context
@@ -27,6 +28,13 @@ owner through a short-lived local code and reject all other users and groups.
 retention with minimum normalized fields and refines the transaction boundaries,
 strict head-of-line ordering, pending-action scope, replay result, and external
 delivery guarantee. Long polling and the other choices above remain accepted.
+
+Migration `20260909_0005` and `PostgresMessagingRepository` implement the
+durable half of this decision: environment-specific offsets, normalized inbox,
+claims, retries, dead letters, replay, unique logical outbox, delivery state,
+hashed one-use pairing, sole-owner bindings per bot, and scoped pending actions.
+The real Bot API adapter and process entry points remain unimplemented, so this
+is not yet evidence of a usable Telegram channel.
 
 ## Alternatives considered
 

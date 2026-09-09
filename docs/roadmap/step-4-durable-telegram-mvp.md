@@ -2,10 +2,10 @@
 
 Part of the [delivery roadmap](../roadmap.md).
 
-Status: **In progress — design reconciled with repository truth.** Step 3 is
-complete and EVD-004 remains the fixed text-workflow baseline. Messaging
-persistence, Telegram processes, presentation, systemd units, and real test-bot
-evidence do not exist yet and are not claimed by this status.
+Status: **In progress — durable messaging persistence implemented.** Step 3 is
+complete and EVD-004 remains the fixed text-workflow baseline. Telegram
+transport/processes, presentation, systemd units, and real test-bot evidence do
+not exist yet and are not claimed by this status.
 
 ## Repository-truth inventory
 
@@ -15,20 +15,24 @@ evidence do not exist yet and are not claimed by this status.
 - Application services and `PostgresFinanceRepository` own finance writes,
   audit, optimistic concurrency, command idempotency, category review, and
   reporting. Telegram code must not mutate their tables directly.
-- The `messaging` schema exists but contains no tables. No inbox, outbox,
-  offset, owner binding, pairing, pending action, retry, or dead-letter
-  repository exists.
+- Migration `20260909_0005` now creates environment-specific offsets, the
+  minimum normalized inbox, bounded leases/retries/dead letters, unique logical
+  outbox state, hashed pairing codes, owner bindings, and scoped pending
+  actions. `PostgresMessagingRepository` implements their AD-018 transactions.
 - `httpx` is already a runtime dependency, but there is no Bot API adapter,
   token configuration, gateway, worker, response renderer, or Telegram test
   fixture.
 - Administration has profile/funding bootstrap, receipt storage, one-shot Step
-  3 dispatch, and backup commands. It has no messaging inspection, pairing,
-  replay, health, or service entry point.
+  3 dispatch, and backup commands. The repository exposes pairing, replay, and
+  content-free health contracts, but no operator command or service entry point
+  wires them yet.
 - Compose provides application PostgreSQL and optional Langfuse. No systemd
   unit is checked in. FastAPI is neither installed nor required by the Step 4
   runtime.
-- Unit, PostgreSQL integration, inference integration, and CLI E2E structures
-  exist. Telegram and messaging-recovery markers, fixtures, and suites do not.
+- Unit and real-PostgreSQL messaging suites now cover normalized contracts,
+  deterministic retry, duplicate ingestion, concurrent and ordered claims,
+  retry/dead-letter/replay, durable outbox/action recovery, and pairing. The
+  Telegram test-bot fixture and end-to-end suite remain absent.
 - A concrete replay gap remains: category-review settlement rejects an already
   settled proposal but does not yet guarantee reconstruction of the original
   typed terminal result after a crash before outbox creation.
@@ -64,6 +68,20 @@ logical response and zero duplicate finance writes, not an impossible
 exactly-once claim about Telegram. Health output distinguishes database,
 transport, worker, outbox, model, downtime risk, and dead letters without
 printing private content or identifiers.
+
+## Persistence implementation evidence
+
+- `messaging.contracts` and `messaging.retry` keep queue state transport-neutral,
+  serializable, bounded, and free of Bot API credentials or raw updates.
+- Migration `20260909_0005` owns six messaging tables and refuses destructive
+  downgrade. Stable uniqueness covers bot/update, source reference, logical
+  response, pairing hash, and the per-bot owner binding.
+- `PostgresMessagingRepository` commits ingest-plus-offset and
+  result-plus-outbox-plus-action transitions atomically, serializes claims per
+  bot, recovers expired leases, and exposes content-free health counts.
+- Thirteen unit tests and nine `@pytest.mark.postgres` tests passed. The
+  PostgreSQL suite uses the real service and protocol; a two-connection race
+  proved that only one worker receives the oldest item.
 
 ## Deliverables
 

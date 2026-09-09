@@ -3,8 +3,8 @@
 - Status: accepted
 - Implementation: foundation, finance schema, expense/wallet/budget repository
   operations, replay-safe correction/undo command claims, pending-proposal
-  persistence, and receipt registration/review transitions implemented;
-  remaining adapters and messaging persistence planned
+  persistence, receipt registration/review transitions, and durable messaging
+  persistence implemented; remaining adapters planned
 - Date: 2026-09-01
 
 ## Context
@@ -48,10 +48,18 @@ idempotency, and source-row locking for balance-safe wallet debits are enforced.
 Correction and undo now use the general command-claim table as well: the claim,
 complete aggregate replacement, allocation replacement, and audit event commit
 in one transaction, while an identical replay returns the stored result.
-Real PostgreSQL tests cover migration, constraints, rollback, restart
-persistence, identical retry, stale versions, and concurrent expense and wallet
-writers, including concurrent receipt review transitions. Proposal resolution,
-receipt extraction/deletion, messaging persistence, and backup are still open.
+Roadmap Step 4 migration `20260909_0005` adds environment-scoped offsets,
+minimum normalized inbox rows, bounded claim/retry/dead-letter state, unique
+logical outbox messages, hashed one-use pairing, owner bindings, and scoped
+pending actions. `PostgresMessagingRepository` implements the AD-018 transaction
+boundaries and strict head-of-line claims. Real PostgreSQL tests cover duplicate
+ingestion, competing claims, ordered retries, exhaustion, safe replay, durable
+outbox/action recovery, environment separation, and pairing.
+Existing real PostgreSQL tests continue to cover finance migration, constraints,
+rollback, restart persistence, identical retry, stale versions, and concurrent
+expense and wallet writers, including concurrent receipt review transitions.
+Proposal resolution, receipt extraction/deletion, and remaining transport
+adapters are still open.
 
 ## Consequences
 

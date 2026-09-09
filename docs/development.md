@@ -41,10 +41,12 @@ the persistent LangGraph checkpointer:
 The service binds to `127.0.0.1:5433`, owns an independent persistent volume,
 and exposes the non-superuser `money_tracker` role to the application. The
 first migration creates the `finance`, `messaging`, and `workflow` schema
-boundaries. The Step 2 migration adds authoritative finance tables,
-deferred reconciliation constraints, immutable audit/wallet rows, taxonomy
-bootstrap support, and expense idempotency/version state. Messaging tables
-remain planned.
+boundaries. The Step 2 migrations add authoritative finance tables, deferred
+reconciliation constraints, immutable audit/wallet rows, taxonomy bootstrap,
+and expense idempotency/version state. Step 4 migration `20260909_0005` adds
+normalized Telegram offsets/inbox/outbox, bounded processing and delivery
+attempts, dead letters, pairing, owner bindings, and pending actions. It stores
+no raw Bot API update or token-bearing URL.
 
 The foundation downgrade is intentionally guarded and the finance migration
 refuses destructive downgrade. The command below is now usable only when the
@@ -54,8 +56,18 @@ Step 2 finance tables have been applied:
     uv run --env-file .env money-tracker-db downgrade-foundation \\
       --confirm-empty-foundation
 
-Never use the guarded downgrade as a production rollback. Restore a verified
-backup or deploy forward when data exists.
+Never use the guarded downgrade as a production rollback. The messaging
+migration also refuses destructive downgrade. Restore a verified backup or
+deploy forward when data exists.
+
+Run the durable messaging repository integration suite only against the
+guarded local test database:
+
+    RUN_POSTGRES_INTEGRATION_TESTS=1 uv run --env-file .env pytest -q \
+      tests/integration/money_tracker/persistence/test_messaging.py
+
+The fixture accepts only `money_tracker_test` on loopback port 5433 and removes
+only the schemas it owns.
 
 ## Bootstrapping the owner profile
 

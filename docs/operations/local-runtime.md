@@ -52,7 +52,7 @@ in this table:
 
 | Service | Host/container | Responsibility | Core? |
 | --- | --- | --- | --- |
-| Application PostgreSQL | Docker Compose | Implemented finance source of truth, audit, and checkpoint foundation; messaging planned | Yes |
+| Application PostgreSQL | Docker Compose | Implemented finance source of truth, audit, workflow checkpoints, and durable messaging queues | Yes |
 | FastAPI/UI service | Host systemd | Same-origin REST API and compiled dashboard | Yes after Step 5 |
 | Telegram gateway | Host systemd | Long poll, durable ingest, file transport, outbox dispatch | Yes after Step 4 |
 | Workflow worker | Host systemd | Sequential routing/workflow processing | Yes after Step 3/4 |

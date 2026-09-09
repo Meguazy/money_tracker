@@ -1,0 +1,1000 @@
+"""PostgreSQL adapter for durable Telegram messaging state."""
+
+from __future__ import annotations
+
+import re
+from datetime import datetime, timedelta
+from typing import cast
+from uuid import UUID
+
+from psycopg import Connection, connect
+from psycopg.rows import DictRow, dict_row
+from psycopg.types.json import Jsonb
+
+from money_tracker.messaging.contracts import (
+    BotEnvironment,
+    InboxClaim,
+    InboxStatus,
+    MessagingHealth,
+    NormalizedTelegramUpdate,
+    OutboundButton,
+    OutboxClaim,
+    OutboxMessageDraft,
+    OutboxStatus,
+    OwnerBinding,
+    PendingAction,
+    PendingActionDraft,
+    PendingActionStatus,
+    PendingActionTarget,
+    WorkflowResult,
+    require_aware,
+    validate_bot_key,
+)
+
+MAX_AUTOMATIC_ATTEMPTS = 5
+_ERROR_CODE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+_SHA256 = re.compile(r"^[0-9a-f]{64}$")
+
+
+class MessagingConflictError(RuntimeError):
+    """Report a stable identity reused with different durable content."""
+
+
+class MessagingLeaseError(RuntimeError):
+    """Report an expired, stale, or otherwise invalid worker lease."""
+
+
+class PostgresMessagingRepository:
+    """Own durable Telegram offsets, queues, pairing, and correlations.
+
+    The adapter deliberately exposes normalized records rather than Bot API
+    payloads. Each mutating method opens one PostgreSQL transaction so callers
+    cannot accidentally split the transaction boundaries accepted in AD-018.
+    """
+
+    def __init__(self, database_url: str) -> None:
+        """Bind the adapter without exposing its credential in representations.
+
+        Args:
+            database_url: Dedicated PostgreSQL application database URL.
+
+        Raises:
+            ValueError: If the URL is not a PostgreSQL URL.
+        """
+
+        if not database_url.startswith("postgresql://"):
+            raise ValueError("messaging repository requires a PostgreSQL URL")
+        self._database_url = database_url
+
+    def ensure_bot(
+        self,
+        bot_key: str,
+        *,
+        environment: BotEnvironment,
+        now: datetime,
+    ) -> None:
+        """Create offset ownership or validate the existing environment."""
+
+        validate_bot_key(bot_key)
+        require_aware(now, field="now")
+        with self._connect() as connection:
+            row = connection.execute(
+                "INSERT INTO messaging.telegram_offsets "
+                "(bot_key, environment, created_at, updated_at) "
+                "VALUES (%s, %s, %s, %s) ON CONFLICT (bot_key) DO NOTHING "
+                "RETURNING environment",
+                (bot_key, environment.value, now, now),
+            ).fetchone()
+            if row is None:
+                row = connection.execute(
+                    "SELECT environment FROM messaging.telegram_offsets "
+                    "WHERE bot_key = %s",
+                    (bot_key,),
+                ).fetchone()
+                if row is None or row["environment"] != environment.value:
+                    raise MessagingConflictError(
+                        "bot key belongs to a different environment"
+                    )
+
+    def polling_offset(self, bot_key: str) -> int:
+        """Return the gateway-owned next Bot API offset."""
+
+        validate_bot_key(bot_key)
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT next_offset FROM messaging.telegram_offsets WHERE bot_key = %s",
+                (bot_key,),
+            ).fetchone()
+        if row is None:
+            raise LookupError("bot key is not initialized")
+        return cast(int, row["next_offset"])
+
+    def commit_ingest_batch(
+        self,
+        *,
+        bot_key: str,
+        expected_offset: int,
+        observed_update_ids: tuple[int, ...],
+        accepted_updates: tuple[NormalizedTelegramUpdate, ...],
+        rejected_count: int,
+        unsupported_count: int,
+        now: datetime,
+    ) -> int:
+        """Atomically retain normalized work and acknowledge observed updates.
+
+        Exact stale redeliveries are harmless. Any overlapping or divergent
+        offset expectation is rejected so two gateway instances cannot silently
+        transfer acknowledgement ownership.
+        """
+
+        validate_bot_key(bot_key)
+        require_aware(now, field="now")
+        if expected_offset < 0 or rejected_count < 0 or unsupported_count < 0:
+            raise ValueError("ingest counters and offset cannot be negative")
+        if not observed_update_ids:
+            raise ValueError("an ingest batch must contain observed updates")
+        if tuple(sorted(set(observed_update_ids))) != observed_update_ids:
+            raise ValueError("observed update identifiers must be unique and ordered")
+        if len(accepted_updates) + rejected_count + unsupported_count != len(
+            observed_update_ids
+        ):
+            raise ValueError("ingest disposition counts do not cover the batch")
+        observed = set(observed_update_ids)
+        for update in accepted_updates:
+            if update.bot_key != bot_key or update.update_id not in observed:
+                raise ValueError("accepted update is outside the ingest batch scope")
+
+        next_offset = observed_update_ids[-1] + 1
+        with self._connect() as connection:
+            offset = self._lock_offset(connection, bot_key)
+            current = cast(int, offset["next_offset"])
+            if current != expected_offset:
+                if current >= next_offset:
+                    return current
+                raise MessagingConflictError("persisted Telegram offset changed")
+            for update in accepted_updates:
+                self._insert_or_verify_inbox(connection, update)
+            connection.execute(
+                "UPDATE messaging.telegram_offsets SET next_offset = %s, "
+                "last_observed_at = %s, last_poll_at = %s, "
+                "rejected_update_count = rejected_update_count + %s, "
+                "unsupported_update_count = unsupported_update_count + %s, "
+                "updated_at = %s WHERE bot_key = %s",
+                (
+                    next_offset,
+                    now,
+                    now,
+                    rejected_count,
+                    unsupported_count,
+                    now,
+                    bot_key,
+                ),
+            )
+        return next_offset
+
+    def record_empty_poll(self, bot_key: str, *, now: datetime) -> None:
+        """Record transport liveness without moving the durable offset."""
+
+        validate_bot_key(bot_key)
+        require_aware(now, field="now")
+        with self._connect() as connection:
+            result = connection.execute(
+                "UPDATE messaging.telegram_offsets SET last_poll_at = %s, "
+                "updated_at = %s WHERE bot_key = %s",
+                (now, now, bot_key),
+            )
+            if result.rowcount != 1:
+                raise LookupError("bot key is not initialized")
+
+    def claim_next_inbox(
+        self,
+        bot_key: str,
+        *,
+        now: datetime,
+        lease: timedelta,
+        claim_token: UUID,
+    ) -> InboxClaim | None:
+        """Lease the oldest non-terminal inbox item when it is eligible."""
+
+        validate_bot_key(bot_key)
+        require_aware(now, field="now")
+        if lease <= timedelta(0):
+            raise ValueError("inbox lease must be positive")
+        with self._connect() as connection:
+            self._lock_offset(connection, bot_key)
+            row = connection.execute(
+                "SELECT * FROM messaging.telegram_inbox "
+                "WHERE bot_key = %s AND status NOT IN ('completed', 'dead_letter') "
+                "ORDER BY update_id FOR UPDATE LIMIT 1",
+                (bot_key,),
+            ).fetchone()
+            if row is None:
+                return None
+            if (
+                row["status"] == InboxStatus.PROCESSING.value
+                and row["claimed_until"] > now
+            ):
+                return None
+            if (
+                row["status"] == InboxStatus.RETRY.value
+                and row["next_attempt_at"] > now
+            ):
+                return None
+            claimed_until = now + lease
+            connection.execute(
+                "UPDATE messaging.telegram_inbox SET status = 'processing', "
+                "attempt_count = attempt_count + 1, claim_token = %s, "
+                "claimed_until = %s, last_error_code = NULL WHERE id = %s",
+                (claim_token, claimed_until, row["id"]),
+            )
+            row["status"] = InboxStatus.PROCESSING.value
+            row["attempt_count"] += 1
+            row["claim_token"] = claim_token
+            row["claimed_until"] = claimed_until
+        return self._inbox_claim(row)
+
+    def fail_inbox(
+        self,
+        claim: InboxClaim,
+        *,
+        error_code: str,
+        transient: bool,
+        retry_at: datetime | None,
+        now: datetime,
+    ) -> None:
+        """Schedule a bounded retry or move an inbox claim to dead letter."""
+
+        self._validate_failure(error_code, retry_at=retry_at, now=now)
+        retry = transient and claim.attempt_count < MAX_AUTOMATIC_ATTEMPTS
+        if retry and retry_at is None:
+            raise ValueError("transient failure requires a retry timestamp")
+        status = InboxStatus.RETRY if retry else InboxStatus.DEAD_LETTER
+        next_attempt = retry_at if retry else now
+        with self._connect() as connection:
+            result = connection.execute(
+                "UPDATE messaging.telegram_inbox SET status = %s, "
+                "next_attempt_at = %s, claim_token = NULL, claimed_until = NULL, "
+                "last_error_code = %s WHERE id = %s AND status = 'processing' "
+                "AND claim_token = %s",
+                (
+                    status.value,
+                    next_attempt,
+                    error_code,
+                    claim.update.id,
+                    claim.claim_token,
+                ),
+            )
+            if result.rowcount != 1:
+                raise MessagingLeaseError("inbox lease is no longer current")
+
+    def complete_inbox(
+        self,
+        claim: InboxClaim,
+        *,
+        workflow_status: str,
+        workflow_result: WorkflowResult,
+        response: OutboxMessageDraft,
+        pending_action: PendingActionDraft | None,
+        consumed_action_id: UUID | None,
+        now: datetime,
+    ) -> UUID:
+        """Commit result, logical response, correlation, and completion together."""
+
+        require_aware(now, field="now")
+        if not workflow_status.strip():
+            raise ValueError("workflow status cannot be blank")
+        if response.bot_key != claim.update.bot_key:
+            raise ValueError("outbox response crosses the inbox bot scope")
+        if response.inbox_id not in {None, claim.update.id}:
+            raise ValueError("outbox response targets another inbox item")
+        if pending_action is not None and (
+            pending_action.bot_key != response.bot_key
+            or pending_action.outbox_id != response.id
+            or pending_action.telegram_chat_id != response.telegram_chat_id
+        ):
+            raise ValueError("pending action crosses the response scope")
+        with self._connect() as connection:
+            self._require_inbox_lease(connection, claim)
+            if consumed_action_id is not None:
+                result = connection.execute(
+                    "UPDATE messaging.telegram_pending_actions SET "
+                    "status = 'consumed', consumed_at = %s WHERE id = %s "
+                    "AND bot_key = %s AND telegram_user_id = %s "
+                    "AND telegram_chat_id = %s AND status = 'active'",
+                    (
+                        now,
+                        consumed_action_id,
+                        claim.update.bot_key,
+                        claim.update.telegram_user_id,
+                        claim.update.telegram_chat_id,
+                    ),
+                )
+                if result.rowcount != 1:
+                    raise MessagingConflictError("pending action is not active")
+            outbox_id = self._insert_or_verify_outbox(connection, response, now)
+            if pending_action is not None:
+                self._insert_or_verify_action(connection, pending_action, now)
+            result = connection.execute(
+                "UPDATE messaging.telegram_inbox SET status = 'completed', "
+                "workflow_status = %s, workflow_result = %s, completed_at = %s, "
+                "claim_token = NULL, claimed_until = NULL, last_error_code = NULL "
+                "WHERE id = %s AND status = 'processing' AND claim_token = %s",
+                (
+                    workflow_status,
+                    Jsonb(dict(workflow_result)),
+                    now,
+                    claim.update.id,
+                    claim.claim_token,
+                ),
+            )
+            if result.rowcount != 1:
+                raise MessagingLeaseError("inbox lease is no longer current")
+        return outbox_id
+
+    def replay_inbox(self, inbox_id: UUID, *, now: datetime) -> None:
+        """Return exactly one dead letter to pending with stable source identity."""
+
+        require_aware(now, field="now")
+        with self._connect() as connection:
+            result = connection.execute(
+                "UPDATE messaging.telegram_inbox SET status = 'pending', "
+                "attempt_count = 0, replay_count = replay_count + 1, "
+                "next_attempt_at = %s, last_error_code = NULL "
+                "WHERE id = %s AND status = 'dead_letter'",
+                (now, inbox_id),
+            )
+            if result.rowcount != 1:
+                raise MessagingConflictError(
+                    "only an inbox dead letter can be replayed"
+                )
+
+    def _connect(self) -> Connection[DictRow]:
+        """Open a dictionary-row PostgreSQL connection."""
+
+        return connect(self._database_url, row_factory=dict_row)
+
+    @staticmethod
+    def _validate_failure(
+        error_code: str,
+        *,
+        retry_at: datetime | None,
+        now: datetime,
+    ) -> None:
+        """Validate content-free failure metadata."""
+
+        require_aware(now, field="now")
+        if _ERROR_CODE.fullmatch(error_code) is None:
+            raise ValueError("error code must be a safe bounded identifier")
+        if retry_at is not None:
+            require_aware(retry_at, field="retry_at")
+            if retry_at <= now:
+                raise ValueError("retry timestamp must be in the future")
+
+    @staticmethod
+    def _lock_offset(connection: Connection[DictRow], bot_key: str) -> DictRow:
+        """Serialize one bot's gateway or sequential-worker ownership."""
+
+        row = connection.execute(
+            "SELECT * FROM messaging.telegram_offsets WHERE bot_key = %s FOR UPDATE",
+            (bot_key,),
+        ).fetchone()
+        if row is None:
+            raise LookupError("bot key is not initialized")
+        return row
+
+    @staticmethod
+    def _require_inbox_lease(
+        connection: Connection[DictRow], claim: InboxClaim
+    ) -> None:
+        """Lock and verify the exact inbox lease before a completion commit."""
+
+        row = connection.execute(
+            "SELECT status, claim_token FROM messaging.telegram_inbox "
+            "WHERE id = %s FOR UPDATE",
+            (claim.update.id,),
+        ).fetchone()
+        if (
+            row is None
+            or row["status"] != InboxStatus.PROCESSING.value
+            or row["claim_token"] != claim.claim_token
+        ):
+            raise MessagingLeaseError("inbox lease is no longer current")
+
+    @staticmethod
+    def _insert_or_verify_inbox(
+        connection: Connection[DictRow], update: NormalizedTelegramUpdate
+    ) -> None:
+        """Insert one update or prove an exact idempotent redelivery."""
+
+        inserted = connection.execute(
+            "INSERT INTO messaging.telegram_inbox "
+            "(id, bot_key, update_id, source_reference, telegram_user_id, "
+            "telegram_chat_id, telegram_message_id, received_at, accepted_at, "
+            "text_content, callback_action, callback_query_id, "
+            "reply_to_message_id, has_image, telegram_file_id, "
+            "telegram_file_unique_id, file_media_type, file_size, next_attempt_at) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, "
+            "%s, %s, %s, %s, %s, %s) ON CONFLICT (bot_key, update_id) "
+            "DO NOTHING RETURNING id",
+            (
+                update.id,
+                update.bot_key,
+                update.update_id,
+                update.source_reference,
+                update.telegram_user_id,
+                update.telegram_chat_id,
+                update.telegram_message_id,
+                update.received_at,
+                update.accepted_at,
+                update.text,
+                update.callback_action,
+                update.callback_query_id,
+                update.reply_to_message_id,
+                update.has_image,
+                update.telegram_file_id,
+                update.telegram_file_unique_id,
+                update.file_media_type,
+                update.file_size,
+                update.accepted_at,
+            ),
+        ).fetchone()
+        if inserted is not None:
+            return
+        row = connection.execute(
+            "SELECT id, source_reference, telegram_user_id, telegram_chat_id, "
+            "telegram_message_id, received_at, text_content, callback_action, "
+            "callback_query_id, reply_to_message_id, has_image, telegram_file_id, "
+            "telegram_file_unique_id, file_media_type, file_size "
+            "FROM messaging.telegram_inbox WHERE bot_key = %s AND update_id = %s",
+            (update.bot_key, update.update_id),
+        ).fetchone()
+        expected = (
+            update.id,
+            update.source_reference,
+            update.telegram_user_id,
+            update.telegram_chat_id,
+            update.telegram_message_id,
+            update.received_at,
+            update.text,
+            update.callback_action,
+            update.callback_query_id,
+            update.reply_to_message_id,
+            update.has_image,
+            update.telegram_file_id,
+            update.telegram_file_unique_id,
+            update.file_media_type,
+            update.file_size,
+        )
+        if row is None or tuple(row.values()) != expected:
+            raise MessagingConflictError(
+                "Telegram update identity has different normalized content"
+            )
+
+    @staticmethod
+    def _inbox_claim(row: DictRow) -> InboxClaim:
+        """Map a locked database row to a transport-neutral claim."""
+
+        update = NormalizedTelegramUpdate(
+            id=row["id"],
+            bot_key=row["bot_key"],
+            update_id=row["update_id"],
+            telegram_user_id=row["telegram_user_id"],
+            telegram_chat_id=row["telegram_chat_id"],
+            received_at=row["received_at"],
+            accepted_at=row["accepted_at"],
+            telegram_message_id=row["telegram_message_id"],
+            text=row["text_content"],
+            callback_action=row["callback_action"],
+            callback_query_id=row["callback_query_id"],
+            reply_to_message_id=row["reply_to_message_id"],
+            has_image=row["has_image"],
+            telegram_file_id=row["telegram_file_id"],
+            telegram_file_unique_id=row["telegram_file_unique_id"],
+            file_media_type=row["file_media_type"],
+            file_size=row["file_size"],
+        )
+        return InboxClaim(
+            update=update,
+            status=InboxStatus(row["status"]),
+            attempt_count=row["attempt_count"],
+            replay_count=row["replay_count"],
+            claim_token=row["claim_token"],
+            claimed_until=row["claimed_until"],
+        )
+
+    def claim_next_outbox(
+        self,
+        bot_key: str,
+        *,
+        now: datetime,
+        lease: timedelta,
+        claim_token: UUID,
+    ) -> OutboxClaim | None:
+        """Lease the oldest non-terminal logical response when eligible."""
+
+        validate_bot_key(bot_key)
+        require_aware(now, field="now")
+        if lease <= timedelta(0):
+            raise ValueError("outbox lease must be positive")
+        with self._connect() as connection:
+            self._lock_offset(connection, bot_key)
+            row = connection.execute(
+                "SELECT * FROM messaging.telegram_outbox WHERE bot_key = %s "
+                "AND status NOT IN ('sent', 'dead_letter') "
+                "ORDER BY created_at, id FOR UPDATE LIMIT 1",
+                (bot_key,),
+            ).fetchone()
+            if row is None:
+                return None
+            if (
+                row["status"] == OutboxStatus.SENDING.value
+                and row["claimed_until"] > now
+            ):
+                return None
+            if (
+                row["status"] == OutboxStatus.RETRY.value
+                and row["next_attempt_at"] > now
+            ):
+                return None
+            claimed_until = now + lease
+            connection.execute(
+                "UPDATE messaging.telegram_outbox SET status = 'sending', "
+                "attempt_count = attempt_count + 1, claim_token = %s, "
+                "claimed_until = %s, last_error_code = NULL WHERE id = %s",
+                (claim_token, claimed_until, row["id"]),
+            )
+            row["status"] = OutboxStatus.SENDING.value
+            row["attempt_count"] += 1
+            row["claim_token"] = claim_token
+            row["claimed_until"] = claimed_until
+        return self._outbox_claim(row)
+
+    def fail_outbox(
+        self,
+        claim: OutboxClaim,
+        *,
+        error_code: str,
+        transient: bool,
+        retry_at: datetime | None,
+        now: datetime,
+    ) -> None:
+        """Schedule bounded delivery retry or create an outbox dead letter."""
+
+        self._validate_failure(error_code, retry_at=retry_at, now=now)
+        retry = transient and claim.attempt_count < MAX_AUTOMATIC_ATTEMPTS
+        if retry and retry_at is None:
+            raise ValueError("transient failure requires a retry timestamp")
+        status = OutboxStatus.RETRY if retry else OutboxStatus.DEAD_LETTER
+        next_attempt = retry_at if retry else now
+        with self._connect() as connection:
+            result = connection.execute(
+                "UPDATE messaging.telegram_outbox SET status = %s, "
+                "next_attempt_at = %s, claim_token = NULL, claimed_until = NULL, "
+                "last_error_code = %s WHERE id = %s AND status = 'sending' "
+                "AND claim_token = %s",
+                (
+                    status.value,
+                    next_attempt,
+                    error_code,
+                    claim.message.id,
+                    claim.claim_token,
+                ),
+            )
+            if result.rowcount != 1:
+                raise MessagingLeaseError("outbox lease is no longer current")
+
+    def complete_outbox(
+        self,
+        claim: OutboxClaim,
+        *,
+        telegram_message_id: int,
+        now: datetime,
+    ) -> None:
+        """Persist a successful send and activate its reply correlation."""
+
+        require_aware(now, field="now")
+        if telegram_message_id <= 0:
+            raise ValueError("Telegram message identifier must be positive")
+        with self._connect() as connection:
+            result = connection.execute(
+                "UPDATE messaging.telegram_outbox SET status = 'sent', "
+                "telegram_message_id = %s, sent_at = %s, claim_token = NULL, "
+                "claimed_until = NULL, last_error_code = NULL WHERE id = %s "
+                "AND status = 'sending' AND claim_token = %s",
+                (telegram_message_id, now, claim.message.id, claim.claim_token),
+            )
+            if result.rowcount != 1:
+                raise MessagingLeaseError("outbox lease is no longer current")
+            connection.execute(
+                "UPDATE messaging.telegram_pending_actions SET "
+                "telegram_message_id = %s WHERE outbox_id = %s AND status = 'active'",
+                (telegram_message_id, claim.message.id),
+            )
+
+    def create_pairing_code(
+        self,
+        *,
+        code_id: UUID,
+        bot_key: str,
+        profile_id: UUID,
+        code_hash: str,
+        expires_at: datetime,
+        now: datetime,
+    ) -> None:
+        """Revoke any older code and store one hashed one-use pairing code."""
+
+        validate_bot_key(bot_key)
+        require_aware(now, field="now")
+        require_aware(expires_at, field="expires_at")
+        if expires_at <= now:
+            raise ValueError("pairing code must expire in the future")
+        if _SHA256.fullmatch(code_hash) is None:
+            raise ValueError("pairing code hash must be lowercase SHA-256")
+        with self._connect() as connection:
+            self._lock_offset(connection, bot_key)
+            existing = connection.execute(
+                "SELECT 1 FROM messaging.telegram_owner_bindings WHERE bot_key = %s",
+                (bot_key,),
+            ).fetchone()
+            if existing is not None:
+                raise MessagingConflictError("bot already has an owner binding")
+            connection.execute(
+                "UPDATE messaging.telegram_pairing_codes SET revoked_at = %s "
+                "WHERE bot_key = %s AND used_at IS NULL AND revoked_at IS NULL",
+                (now, bot_key),
+            )
+            connection.execute(
+                "INSERT INTO messaging.telegram_pairing_codes "
+                "(id, bot_key, profile_id, code_hash, expires_at, created_at) "
+                "VALUES (%s, %s, %s, %s, %s, %s)",
+                (code_id, bot_key, profile_id, code_hash, expires_at, now),
+            )
+
+    def pair_owner(
+        self,
+        *,
+        bot_key: str,
+        profile_id: UUID,
+        code_hash: str,
+        telegram_user_id: int,
+        telegram_chat_id: int,
+        now: datetime,
+    ) -> OwnerBinding | None:
+        """Consume a valid code and bind the sole authorized private owner."""
+
+        validate_bot_key(bot_key)
+        require_aware(now, field="now")
+        if telegram_user_id <= 0 or telegram_chat_id <= 0:
+            raise ValueError("owner pairing requires positive private identities")
+        if _SHA256.fullmatch(code_hash) is None:
+            raise ValueError("pairing code hash must be lowercase SHA-256")
+        with self._connect() as connection:
+            self._lock_offset(connection, bot_key)
+            existing = connection.execute(
+                "SELECT * FROM messaging.telegram_owner_bindings WHERE bot_key = %s",
+                (bot_key,),
+            ).fetchone()
+            if existing is not None:
+                binding = self._owner_binding(existing)
+                expected = (profile_id, telegram_user_id, telegram_chat_id)
+                actual = (
+                    binding.profile_id,
+                    binding.telegram_user_id,
+                    binding.telegram_chat_id,
+                )
+                return binding if actual == expected else None
+            code = connection.execute(
+                "SELECT id FROM messaging.telegram_pairing_codes "
+                "WHERE bot_key = %s AND profile_id = %s AND code_hash = %s "
+                "AND used_at IS NULL AND revoked_at IS NULL AND expires_at > %s "
+                "FOR UPDATE",
+                (bot_key, profile_id, code_hash, now),
+            ).fetchone()
+            if code is None:
+                return None
+            connection.execute(
+                "UPDATE messaging.telegram_pairing_codes SET used_at = %s "
+                "WHERE id = %s",
+                (now, code["id"]),
+            )
+            connection.execute(
+                "INSERT INTO messaging.telegram_owner_bindings "
+                "(bot_key, profile_id, telegram_user_id, telegram_chat_id, paired_at) "
+                "VALUES (%s, %s, %s, %s, %s)",
+                (bot_key, profile_id, telegram_user_id, telegram_chat_id, now),
+            )
+        return OwnerBinding(
+            bot_key=bot_key,
+            profile_id=profile_id,
+            telegram_user_id=telegram_user_id,
+            telegram_chat_id=telegram_chat_id,
+            paired_at=now,
+        )
+
+    def owner_binding(self, bot_key: str) -> OwnerBinding | None:
+        """Return the trusted owner identity for one bot, if paired."""
+
+        validate_bot_key(bot_key)
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM messaging.telegram_owner_bindings WHERE bot_key = %s",
+                (bot_key,),
+            ).fetchone()
+        return None if row is None else self._owner_binding(row)
+
+    def resolve_callback_action(
+        self,
+        *,
+        bot_key: str,
+        telegram_user_id: int,
+        telegram_chat_id: int,
+        action_id: UUID,
+        action: str,
+    ) -> PendingAction | None:
+        """Resolve an active callback within its exact owner/chat/action scope."""
+
+        validate_bot_key(bot_key)
+        if not action.strip():
+            raise ValueError("callback action cannot be blank")
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM messaging.telegram_pending_actions WHERE id = %s "
+                "AND bot_key = %s AND telegram_user_id = %s "
+                "AND telegram_chat_id = %s AND status = 'active' "
+                "AND %s = ANY(allowed_actions)",
+                (action_id, bot_key, telegram_user_id, telegram_chat_id, action),
+            ).fetchone()
+        return None if row is None else self._pending_action(row)
+
+    def resolve_reply_action(
+        self,
+        *,
+        bot_key: str,
+        telegram_user_id: int,
+        telegram_chat_id: int,
+        telegram_message_id: int,
+    ) -> PendingAction | None:
+        """Resolve an unambiguous reply to a delivered active interaction."""
+
+        validate_bot_key(bot_key)
+        if telegram_message_id <= 0:
+            raise ValueError("reply message identifier must be positive")
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM messaging.telegram_pending_actions "
+                "WHERE bot_key = %s AND telegram_user_id = %s "
+                "AND telegram_chat_id = %s AND telegram_message_id = %s "
+                "AND status = 'active' ORDER BY created_at",
+                (
+                    bot_key,
+                    telegram_user_id,
+                    telegram_chat_id,
+                    telegram_message_id,
+                ),
+            ).fetchall()
+        if len(rows) != 1:
+            return None
+        return self._pending_action(rows[0])
+
+    def health(self, bot_key: str) -> MessagingHealth:
+        """Return content-free queue, offset, action, and dead-letter state."""
+
+        validate_bot_key(bot_key)
+        with self._connect() as connection:
+            offset = connection.execute(
+                "SELECT next_offset, last_observed_at, last_poll_at "
+                "FROM messaging.telegram_offsets WHERE bot_key = %s",
+                (bot_key,),
+            ).fetchone()
+            if offset is None:
+                raise LookupError("bot key is not initialized")
+            inbox = connection.execute(
+                "SELECT count(*) FILTER (WHERE status = 'pending') AS pending, "
+                "count(*) FILTER (WHERE status = 'retry') AS retrying, "
+                "count(*) FILTER (WHERE status = 'dead_letter') AS dead, "
+                "min(accepted_at) FILTER (WHERE status IN "
+                "('pending', 'processing', 'retry')) AS oldest "
+                "FROM messaging.telegram_inbox WHERE bot_key = %s",
+                (bot_key,),
+            ).fetchone()
+            outbox = connection.execute(
+                "SELECT count(*) FILTER (WHERE status = 'pending') AS pending, "
+                "count(*) FILTER (WHERE status = 'retry') AS retrying, "
+                "count(*) FILTER (WHERE status = 'dead_letter') AS dead, "
+                "min(created_at) FILTER (WHERE status IN "
+                "('pending', 'sending', 'retry')) AS oldest "
+                "FROM messaging.telegram_outbox WHERE bot_key = %s",
+                (bot_key,),
+            ).fetchone()
+            actions = connection.execute(
+                "SELECT count(*) AS active FROM messaging.telegram_pending_actions "
+                "WHERE bot_key = %s AND status = 'active'",
+                (bot_key,),
+            ).fetchone()
+        assert inbox is not None and outbox is not None and actions is not None
+        return MessagingHealth(
+            bot_key=bot_key,
+            next_offset=offset["next_offset"],
+            pending_inbox=inbox["pending"],
+            retrying_inbox=inbox["retrying"],
+            inbox_dead_letters=inbox["dead"],
+            pending_outbox=outbox["pending"],
+            retrying_outbox=outbox["retrying"],
+            outbox_dead_letters=outbox["dead"],
+            active_actions=actions["active"],
+            last_observed_at=offset["last_observed_at"],
+            last_poll_at=offset["last_poll_at"],
+            oldest_inbox_at=inbox["oldest"],
+            oldest_outbox_at=outbox["oldest"],
+        )
+
+    @staticmethod
+    def _owner_binding(row: DictRow) -> OwnerBinding:
+        """Map an owner binding row to its validated contract."""
+
+        return OwnerBinding(
+            bot_key=row["bot_key"],
+            profile_id=row["profile_id"],
+            telegram_user_id=row["telegram_user_id"],
+            telegram_chat_id=row["telegram_chat_id"],
+            paired_at=row["paired_at"],
+        )
+
+    @staticmethod
+    def _pending_action(row: DictRow) -> PendingAction:
+        """Map a pending interaction row to its validated contract."""
+
+        return PendingAction(
+            id=row["id"],
+            bot_key=row["bot_key"],
+            profile_id=row["profile_id"],
+            telegram_user_id=row["telegram_user_id"],
+            telegram_chat_id=row["telegram_chat_id"],
+            outbox_id=row["outbox_id"],
+            target_type=PendingActionTarget(row["target_type"]),
+            target_id=row["target_id"],
+            allowed_actions=tuple(row["allowed_actions"]),
+            status=PendingActionStatus(row["status"]),
+            telegram_message_id=row["telegram_message_id"],
+            created_at=row["created_at"],
+            consumed_at=row["consumed_at"],
+        )
+
+    @staticmethod
+    def _outbox_claim(row: DictRow) -> OutboxClaim:
+        """Map a locked outbox row to a transport-neutral delivery claim."""
+
+        buttons = tuple(
+            OutboundButton(
+                label=cast(str, button["label"]),
+                callback_data=cast(str, button["callback_data"]),
+            )
+            for button in cast(list[dict[str, object]], row["buttons"])
+        )
+        message = OutboxMessageDraft(
+            id=row["id"],
+            bot_key=row["bot_key"],
+            telegram_chat_id=row["telegram_chat_id"],
+            logical_key=row["logical_key"],
+            response_kind=row["response_kind"],
+            text=row["text_content"],
+            content_hash=row["content_hash"],
+            buttons=buttons,
+            inbox_id=row["inbox_id"],
+            reply_to_message_id=row["reply_to_message_id"],
+        )
+        return OutboxClaim(
+            message=message,
+            status=OutboxStatus(row["status"]),
+            attempt_count=row["attempt_count"],
+            claim_token=row["claim_token"],
+            claimed_until=row["claimed_until"],
+        )
+
+    @staticmethod
+    def _insert_or_verify_outbox(
+        connection: Connection[DictRow],
+        response: OutboxMessageDraft,
+        now: datetime,
+    ) -> UUID:
+        """Insert one logical response or verify an exact idempotent replay."""
+
+        buttons = [
+            {"label": button.label, "callback_data": button.callback_data}
+            for button in response.buttons
+        ]
+        inserted = connection.execute(
+            "INSERT INTO messaging.telegram_outbox "
+            "(id, bot_key, inbox_id, telegram_chat_id, logical_key, response_kind, "
+            "text_content, buttons, reply_to_message_id, content_hash, "
+            "next_attempt_at, created_at) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
+            "ON CONFLICT (bot_key, logical_key) DO NOTHING RETURNING id",
+            (
+                response.id,
+                response.bot_key,
+                response.inbox_id,
+                response.telegram_chat_id,
+                response.logical_key,
+                response.response_kind,
+                response.text,
+                Jsonb(buttons),
+                response.reply_to_message_id,
+                response.content_hash,
+                now,
+                now,
+            ),
+        ).fetchone()
+        if inserted is not None:
+            return cast(UUID, inserted["id"])
+        row = connection.execute(
+            "SELECT id, inbox_id, telegram_chat_id, response_kind, text_content, "
+            "buttons, reply_to_message_id, content_hash "
+            "FROM messaging.telegram_outbox WHERE bot_key = %s AND logical_key = %s",
+            (response.bot_key, response.logical_key),
+        ).fetchone()
+        expected = (
+            response.id,
+            response.inbox_id,
+            response.telegram_chat_id,
+            response.response_kind,
+            response.text,
+            buttons,
+            response.reply_to_message_id,
+            response.content_hash,
+        )
+        if row is None or tuple(row.values()) != expected:
+            raise MessagingConflictError(
+                "logical outbox identity has different response content"
+            )
+        return cast(UUID, row["id"])
+
+    @staticmethod
+    def _insert_or_verify_action(
+        connection: Connection[DictRow],
+        action: PendingActionDraft,
+        now: datetime,
+    ) -> None:
+        """Insert a pending action or verify the exact replayed mapping."""
+
+        inserted = connection.execute(
+            "INSERT INTO messaging.telegram_pending_actions "
+            "(id, bot_key, profile_id, telegram_user_id, telegram_chat_id, "
+            "outbox_id, target_type, target_id, allowed_actions, created_at) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
+            "ON CONFLICT (id) DO NOTHING RETURNING id",
+            (
+                action.id,
+                action.bot_key,
+                action.profile_id,
+                action.telegram_user_id,
+                action.telegram_chat_id,
+                action.outbox_id,
+                action.target_type.value,
+                action.target_id,
+                list(action.allowed_actions),
+                now,
+            ),
+        ).fetchone()
+        if inserted is not None:
+            return
+        row = connection.execute(
+            "SELECT bot_key, profile_id, telegram_user_id, telegram_chat_id, "
+            "outbox_id, target_type, target_id, allowed_actions "
+            "FROM messaging.telegram_pending_actions WHERE id = %s",
+            (action.id,),
+        ).fetchone()
+        expected = (
+            action.bot_key,
+            action.profile_id,
+            action.telegram_user_id,
+            action.telegram_chat_id,
+            action.outbox_id,
+            action.target_type.value,
+            action.target_id,
+            list(action.allowed_actions),
+        )
+        if row is None or tuple(row.values()) != expected:
+            raise MessagingConflictError(
+                "pending action identity has different target content"
+            )

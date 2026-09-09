@@ -55,8 +55,9 @@ the referenced file or entry point exists in the repository.
   and optional Langfuse callbacks exist.
 - The dedicated application PostgreSQL is healthy, independently persistent,
   least-privileged, and separate from the Langfuse database. It owns the
-  authoritative finance schema and persistent workflow checkpoints; messaging
-  product tables remain planned.
+  authoritative finance schema, persistent workflow checkpoints, and the
+  normalized Step 4 messaging tables/repository. Telegram processes and
+  operator messaging commands remain planned.
 - Langfuse 4.26.0 and every dependency are pinned by digest. The non-cluster
   repair and health checks pass with the pre-existing volumes preserved.
 - Installed model paths remain workstation-owned and outside the repository.

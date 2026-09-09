@@ -27,8 +27,9 @@ extraction v6, category-fit v6, tool-selection v5, routing confidence 0.5, and
 `explicit-finance-scope-v1`. The transport-neutral dispatcher, persistent
 specialist checkpoints, finance repositories, private receipt-media adapter,
 and verified encrypted backup are implemented. Step 4 design is reconciled in
-AD-018, but the repository does not yet contain messaging tables, a Telegram
-adapter, a workflow worker, owner-facing response rendering, or systemd units.
+AD-018; its normalized messaging schema, contracts, retry policy, and PostgreSQL
+repository are implemented. The repository does not yet contain a Telegram
+adapter, workflow worker, owner-facing response rendering, or systemd units.
 The web application and receipt extraction pipeline remain assigned to later
 roadmap steps.
 
@@ -119,7 +120,7 @@ boundary is not end-to-end encrypted and must not be described as local storage.
 | Application to Langfuse | SDK over local HTTP/OTLP | Redacted graph/model observations and aggregate scores | Implemented, optional and healthy |
 | Telegram gateway to Bot API | HTTPS long polling and send methods | Updates, callback queries, messages, file metadata and downloads | Planned |
 | Browser to application API | Same-origin HTTP JSON | Finance resources, settings, reviews, analytics and operations | Planned |
-| Application to PostgreSQL | PostgreSQL protocol | Checkpoints and finance schema plus expense, wallet, budget, pending-proposal, and receipt-metadata persistence implemented; messaging state planned | Implemented Step 1 foundation and partial Step 2 finance repositories |
+| Application to PostgreSQL | PostgreSQL protocol | Checkpoints, authoritative finance aggregates, normalized messaging offsets/inbox/outbox, pairing, actions, retries, and dead letters | Implemented foundation, finance repositories, and Step 4 messaging persistence |
 | Application to receipt archive | Private host filesystem | Fully decoded original JPEG/PNG/WebP keyed and verified by content hash; no derivatives | Local adapter/admin CLI implemented; API/worker wiring, deletion, and backup planned |
 | Backup process to repository | Restic repository protocol | Database dump, receipts and recovery configuration | Planned |
 
@@ -175,7 +176,7 @@ Money Tracker workstation
 │   ├── Evaluation data and artifacts                   [implemented foundation]
 │   └── Restic staging/configuration                    [implemented, unscheduled]
 └── Docker Compose
-    ├── Application PostgreSQL                          [implemented finance core]
+    ├── Application PostgreSQL                          [implemented finance and messaging core]
     └── Langfuse, PostgreSQL, ClickHouse, Redis, MinIO  [implemented optional]
 ```
 
@@ -188,7 +189,7 @@ Money Tracker workstation
 | `graph` | Define the initial one-node assistant | LangGraph and `BaseChatModel` | In-memory messages for one invocation | Stateless host process |
 | `llm` | Construct an OpenAI-compatible chat adapter | LangChain `ChatOpenAI` | No persistent data | Loopback endpoint by default |
 | `observability` | Enable and flush optional Langfuse callbacks | Langfuse SDK and environment keys | Buffered telemetry until flush | Local Langfuse only |
-| `persistence` | Apply versioned migrations and bootstrap persistent LangGraph checkpoints | Alembic, psycopg, PostgreSQL checkpointer | Foundation schemas and workflow checkpoints | Host administration CLI; least-privilege loopback database role |
+| `persistence` | Apply versioned migrations, bootstrap persistent LangGraph checkpoints, and implement finance/messaging repositories | Alembic, psycopg, PostgreSQL checkpointer | Foundation schemas, workflow checkpoints, finance aggregates, and durable messaging state | Host administration CLI and shared host library; least-privilege loopback database role |
 | `domain` | Enforce exact money, expense/refund, dual-allocation, taxonomy, wallet, budget, receipt-metadata, and audit contracts | Pure Python value objects and policies; no framework or infrastructure import | No infrastructure state | Shared host-process library; deterministic validation of untrusted inputs |
 | `application` | Coordinate idempotent expense lifecycle and receipt registration/review, audited wallet/budget mutations, pending proposal submission, owner category decisions, and read-only reporting through narrow ports | Finance, administration, proposal, review, reporting, and receipt-metadata repository ports plus clock and ID contracts | Command, concurrency, review-boundary, and audit semantics, not stored state | Shared by future CLI/API/worker; profile scope comes from trusted caller context; node creation is reachable only through an owner decision, and receipt deletion is not exposed |
 | `workflows` | Own the bounded intent taxonomy, normalized channel work unit, deterministic pre-routing, strict versioned model boundaries, policy vetoes, and post-model read-selection policies, deterministic allocation resolution, draft and correction preparation, stable creation/correction/undo command identities, and the strict-schema retry boundary behind a narrow model port | Pydantic, `zoneinfo`, and pure domain values; no LangGraph, model client, repository, or transport import | Routing destinations, authority classes, stable routing and resolution reason codes, and the product calendar; no persistent state | Shared by the planned worker; a model can select no deterministic route and supply no profile/timezone/authorization field, no resolved instant, no amount sign, and no funding-source identifier; reason codes carry no owner text |
@@ -257,7 +258,7 @@ catalog is promoted; every identifier carries a `candidate-` prefix.
 | Finance domain (core implemented) | Enforce money, expense/refund, allocation, budget, category and wallet invariants | Pure value objects and domain policies | No infrastructure state | Python application; no framework imports |
 | Application services (expense/wallet/budget, proposal submission and settlement, and receipt registration/review implemented) | Execute validated commands and queries transactionally | Narrow repository ports, clock, ID and future media ports | Command/content idempotency, versioning, review boundary, and audit semantics | Future FastAPI/worker host processes; profile scope injected; product receipt review remains workflow-owned |
 | Finance repositories (expense/wallet/budget/proposal/versioned receipt metadata implemented) | Persist authoritative domain records and analytics projections | PostgreSQL protocol through explicit repository contracts | Finance schema implemented; proposal decisions and receipt deletion open | Dedicated application database; least-privilege credentials; optimistic versions and source locks protect concurrent mutations; no media payloads |
-| Messaging persistence (planned) | Receive, order, lease, retry, dead-letter, replay, correlate, and dispatch transport work | Narrow application port and PostgreSQL | Minimum normalized inbox data, offsets, typed results, logical outbox, pairing, pending actions, and attempt metadata | Gateway and worker; no raw update payload or bot token in rows |
+| Messaging persistence (implemented) | Receive, order, lease, retry, dead-letter, replay, correlate, and complete transport work | `MessagingRepository` port, psycopg, and PostgreSQL | Minimum normalized inbox data, offsets, typed results, logical outbox, pairing, pending actions, and attempt metadata | Shared future gateway/worker/admin adapter; no raw update payload, token, or token-bearing URL in rows |
 | Workflow runtime (dispatcher, router, and Step 3 text specialists implemented) | Route one normalized work unit and execute exactly one bounded specialist | Typed dispatcher outcome, LangGraph, model gateway, application services, checkpointer | Small per-graph versioned workflow state only; authoritative domain data stays in repositories | Administration CLI today and sequential worker in Step 4; no media, credentials, or service objects in checkpoints |
 | Receipt service | Validate media, invoke extractor, reconcile lines, prepare review | Implemented media-store port, planned extractor, finance service | Receipt metadata, extraction versions, review state | Private filesystem; untrusted image boundary; orchestration planned |
 | Analytics service | Compute time, category, budget and funding summaries | Read repositories and deterministic calendar policies | No separate authoritative data | FastAPI and read-only agent tools |
@@ -277,7 +278,9 @@ catalog is promoted; every identifier carries a `candidate-` prefix.
 
 ### Step 4 messaging boundaries
 
-AD-018 divides the planned Step 4 runtime into seven replaceable blocks:
+AD-018 divides the Step 4 runtime into seven replaceable blocks. The contracts,
+retry policy, and PostgreSQL repository are implemented; service and process
+blocks remain planned:
 
 | Component | Responsibility | Interface/dependencies | Data ownership | Deployment/security |
 | --- | --- | --- | --- | --- |
@@ -845,7 +848,12 @@ manual acceptance check.
 5. The owner reviews the complete draft through Telegram or the dashboard.
 6. Only an approved, reconciled draft is posted; otherwise it remains in review.
 
-### Planned Telegram recovery and processing
+### Telegram recovery and processing (persistence partially implemented)
+
+Migration `20260909_0005` and `PostgresMessagingRepository` implement the
+database portions of this sequence: atomic ingest, strict claims, messaging
+completion, bounded failures, replay, and durable delivery state. Gateway and
+worker process behavior remains planned and cannot yet claim the full runtime.
 
 1. The gateway requests the environment's persisted next offset through long
    polling and filters authorization and supported update types before work.
@@ -991,7 +999,7 @@ does not install an API unit because no implemented Step 4 runtime requires it.
 - Callback and free-text follow-up map to explicit pending actions and workflow
   IDs instead of assuming one global chat thread.
 
-### Telegram security and recovery contract (planned)
+### Telegram security and recovery contract (persistence partially implemented)
 
 - Production and test bot environments have separate tokens and offset rows. A
   process selects exactly one environment and never falls back to the other.
@@ -1152,9 +1160,9 @@ environment file.
 ### Partially implemented accepted decisions
 
 - [AD-005: Dedicated application PostgreSQL](decisions/AD-005-application-postgresql.md):
-  service, migration boundary, checkpoints, finance schema, and expense,
-  wallet, budget, pending-proposal, and versioned receipt-review operations
-  implemented; remaining finance adapters and messaging planned.
+  service, migration boundary, checkpoints, finance schema, expense, wallet,
+  budget, pending-proposal, versioned receipt-review, and messaging persistence
+  implemented; remaining adapters planned.
 - [AD-007: Expense and dual-allocation model](decisions/AD-007-expense-allocation-model.md):
   domain, schema, expense/wallet/budget persistence, reconciliation, and
   reports implemented; remaining adapters planned.
@@ -1195,13 +1203,16 @@ environment file.
   promoted V1 policy implemented between model parsing and registry acceptance;
   V0 remains the direct configuration rollback.
 - [AD-018: Telegram processing transactions and ordering](decisions/AD-018-telegram-processing-transactions.md):
-  reconciled Step 4 component, transaction, offset, ordering, replay, and
-  delivery guarantees are accepted; implementation remains planned.
+  reconciled Step 4 contracts, retry policy, database transaction, offset,
+  ordering, replay, and delivery-state persistence are implemented; gateway,
+  worker, renderer, and operational wiring remain planned.
 
 ### Planned accepted decisions
 
 - [AD-004: Local-first privacy with Telegram boundary](decisions/AD-004-local-first-telegram-boundary.md)
-- [AD-010: Telegram long polling and durable messaging](decisions/AD-010-telegram-durable-messaging.md)
+
+AD-010 is partially implemented by the messaging migration/repository and
+remains in the preceding section until its real Bot API runtime is complete.
 
 ## 10. Quality Requirements
 
@@ -1227,9 +1238,9 @@ Quantitative evaluation gates are maintained in
 
 ### Current scaffold risks
 
-- The accepted Step 4 boundaries are not implemented yet: no messaging tables,
-  Telegram transport, gateway/worker, response renderer, health command, or
-  systemd unit exists.
+- The Step 4 messaging schema, contracts, retry policy, and PostgreSQL
+  repository are implemented. Telegram transport, gateway/worker, response
+  renderer, health command, and systemd units do not yet exist.
 - Category-review settlement is safe against a duplicate mutation but does not
   yet reconstruct its original typed result across the dispatch-to-outbox crash
   window. AD-018 makes closing that gap a worker prerequisite.

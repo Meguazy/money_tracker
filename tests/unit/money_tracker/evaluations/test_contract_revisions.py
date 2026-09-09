@@ -12,7 +12,7 @@ def test_revised_tools_never_require_an_answer_without_an_available_tool() -> No
 
     cases = [
         json.loads(line)
-        for line in Path("evals/datasets/tools-selection-and-use-it-v1.1.jsonl")
+        for line in Path("evals/datasets/tools-selection-and-use-it-v1.2.jsonl")
         .read_text()
         .splitlines()
     ]
@@ -45,6 +45,8 @@ def test_changed_historical_labels_have_a_recorded_contract_reason() -> None:
         ("routing-intent-it-v1.1", "routing-intent-it-v1.2"),
         ("categorization-purpose-it-v1", "categorization-purpose-it-v1.1"),
         ("tools-selection-and-use-it-v1", "tools-selection-and-use-it-v1.1"),
+        ("tools-selection-and-use-it-v1.1", "tools-selection-and-use-it-v1.2"),
+        ("advice-grounding-it-v1", "advice-grounding-it-v1.1"),
     ):
         previous = {
             c["case_id"]: c

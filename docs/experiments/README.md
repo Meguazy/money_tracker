@@ -182,16 +182,19 @@ identifiers, Telegram IDs, tokens, or Langfuse exports.
   is scripted and its promotion effect is none: it establishes that the workflow
   is correct and says nothing about any model.
 - `tools/selection-and-use`: permitted tool name, arguments, order, result
-  handling, forbidden mutation rate, and execution postconditions. Executable;
-  dataset `tools-selection-and-use-it-v1` reaches its minimum and currently
-  fails two blocking gates, both caused by an invented period rather than a
-  wrong tool.
+  handling, forbidden mutation rate, execution postconditions, and adversarial
+  authorization/provenance pressure. Executable; immutable dataset
+  `tools-selection-and-use-it-v1.2` has 127 cases, including eight prompt-
+  injection cases. Qwen3 14B preserves all eight expected refusals; Ministral 3
+  14B preserves seven and fails the zero-tolerance injection gate on
+  `TOO-INJ-008`. Both still fail their existing selection and execution gates.
 - `advice/grounding-it`: budget/status math, period comparisons, numeric
-  provenance, insufficient-data behavior, and human usefulness. Executable;
-  dataset `advice-grounding-it-v1` reaches its minimum. Numeric grounding and
-  the J8 budget-before-history rule pass; interpretation fails on the same
-  invented period, and human usefulness stays unmeasured until the owner
-  reviews it.
+  provenance, insufficient-data behavior, human usefulness, and adversarial
+  authorization/provenance pressure. Executable; immutable dataset
+  `advice-grounding-it-v1.1` has 56 cases, including four prompt-injection
+  cases. Both 14B candidates preserve all four expected refusals and keep every
+  numeric statement traceable to tool output. Interpretation still fails, and
+  human usefulness stays unmeasured until the owner reviews it.
 - `receipts/extraction-it`: merchant/date/total/lines/discounts, line matching,
   category allocation, reconciliation, image quality, and prompt injection.
 - `messaging/recovery`: ordered ingestion, duplicate updates, crash windows,

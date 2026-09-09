@@ -6,11 +6,13 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from pydantic import JsonValue
 
 from money_tracker.domain import CategoryStatus, initial_taxonomy
 from money_tracker.evaluations.advice import BUDGET_FIRST_TOOL
 from money_tracker.evaluations.advice import DATASET_MINIMUM as ADVICE_MINIMUM
 from money_tracker.evaluations.advice import SUITE as ADVICE_SUITE
+from money_tracker.evaluations.advice import _facets as advice_facets
 from money_tracker.evaluations.suites import dataset_metadata, load_cases
 from money_tracker.evaluations.tool_use import (
     DATASET_MINIMUM,
@@ -21,10 +23,13 @@ from money_tracker.evaluations.tool_use import (
     _subset,
     tool_names,
 )
+from money_tracker.evaluations.tool_use import (
+    _facets as tool_facets,
+)
 from money_tracker.workflows import ReadTool, ToolRequest, WorkflowIntent
 
-TOOLS_DATASET = Path("evals/datasets/tools-selection-and-use-it-v1.jsonl")
-ADVICE_DATASET = Path("evals/datasets/advice-grounding-it-v1.jsonl")
+TOOLS_DATASET = Path("evals/datasets/tools-selection-and-use-it-v1.2.jsonl")
+ADVICE_DATASET = Path("evals/datasets/advice-grounding-it-v1.1.jsonl")
 CATEGORY_TOOLS = {ReadTool.CATEGORY_SPENDING.value, ReadTool.BUDGET_STATUS.value}
 ACTIVE = {
     c.name.casefold()
@@ -217,3 +222,48 @@ def test_every_missing_data_case_states_the_absence_it_expects(
     assert len(missing) >= 5
     for case in missing:
         assert case["expected_absence"], case["case_id"]
+
+
+def test_injection_cases_cover_each_protected_behavior(
+    tool_cases: list[dict[str, Any]], advice_cases: list[dict[str, Any]]
+) -> None:
+    """Exercise registry, confirmation, instruction, and numeric attacks."""
+
+    required = {
+        "forbidden-tool",
+        "confirmation-bypass",
+        "instruction-exfiltration",
+        "ungrounded-number",
+    }
+    for cases in (tool_cases, advice_cases):
+        injected = [case for case in cases if "prompt-injection" in case["tags"]]
+        assert injected
+        assert required <= {tag for case in injected for tag in case["tags"]}
+        assert all(case["expected_outcome"] == "refused" for case in injected)
+
+
+def test_injection_gate_scores_observable_refusal_not_the_attack_text() -> None:
+    """Fail only when pressure changes authorization or grounded behavior."""
+
+    case: dict[str, JsonValue] = {
+        "expected_tool": None,
+        "expected_outcome": "refused",
+        "expected_period": None,
+        "tags": ["prompt-injection"],
+    }
+    refused: dict[str, JsonValue] = {
+        "out_of_registry": False,
+        "outcome": "refused",
+        "period": None,
+        "claimed_without_execution": False,
+    }
+    answered: dict[str, JsonValue] = {
+        **refused,
+        "outcome": "answered",
+        "executed_tool": "budgets_at_risk",
+    }
+
+    assert tool_facets(case, refused)["injection_safety"]
+    assert not tool_facets(case, answered)["injection_safety"]
+    assert advice_facets(case, refused)["injection_safety"]
+    assert not advice_facets(case, answered)["injection_safety"]

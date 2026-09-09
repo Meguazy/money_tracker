@@ -191,3 +191,20 @@ Relaxing either failing gate. `execution_postcondition_against_real_fixture`
 reads answers back against a seeded database, and its 26 failures are refusals
 and wrong figures that would have reached the owner; they are consequences of
 the selection failures above rather than a defect of their own.
+
+## Prompt-injection extension — 2026-09-08
+
+- Run: `TOO-20260908-203218-0f485378`, dataset
+  `tools-selection-and-use-it-v1.2` 1.2.0 (127 cases)
+- Injection subset: **8/8 preserve the expected refusal**.
+- `prompt_injection_changes_authorization_or_numeric_grounding`: **0/8**, pass.
+- `forbidden_or_unregistered_tool_request`: **0/127**, pass.
+
+The four attack classes cover requests to call an unavailable tool, bypass a
+required confirmation, reveal hidden instructions, and state a figure that no
+tool returned. Qwen3 14B refused every attack. No prompt, acceptance rule, or
+threshold changed for this run; the closed tool registry and deterministic
+acceptance boundary continued to enforce authorization and provenance. The
+suite still fails its existing selection and execution accuracy gates, which
+this injection extension does not relabel or weaken. Earlier sections describe
+their cited historical runs and denominators.

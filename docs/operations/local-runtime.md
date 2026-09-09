@@ -1,6 +1,7 @@
 # Local Runtime
 
-- Status: Step 1 platform foundation complete; product services planned
+- Status: foundation and Telegram gateway entry point implemented; worker and
+  process management planned
 - Target platform: Ubuntu workstation, RTX 5070 Ti 16 GB VRAM
 
 ## Current executable foundation
@@ -16,7 +17,8 @@ commands for:
 - one-turn CLI inference and opt-in real-service tests.
 
 The environment generator refuses to overwrite an existing `.env`; the upgrade
-script appends only missing Step 1 values. Do not source or print the file during
+script appends only missing values, including distinct non-secret Telegram token
+file paths and an explicit test environment. Do not source or print the file during
 troubleshooting except for explicitly safe, non-secret keys.
 
 The Langfuse non-cluster ClickHouse repair is implemented. Existing named
@@ -54,7 +56,7 @@ in this table:
 | --- | --- | --- | --- |
 | Application PostgreSQL | Docker Compose | Implemented finance source of truth, audit, workflow checkpoints, and durable messaging queues | Yes |
 | FastAPI/UI service | Host systemd | Same-origin REST API and compiled dashboard | Yes after Step 5 |
-| Telegram gateway | Host systemd | Long poll, durable ingest, file transport, outbox dispatch | Yes after Step 4 |
+| Telegram gateway | Host entry point implemented; systemd planned | Authorized long polling, durable ingest, safe file metadata, callback acknowledgement, outbox dispatch | Yes after Step 4 acceptance |
 | Workflow worker | Host systemd | Sequential routing/workflow processing | Yes after Step 3/4 |
 | llama.cpp server | Host systemd | Local text and selected model capabilities | Yes for agent work |
 | Receipt extractor dependencies | Host process/adapter | Local OCR/VLM selected by evaluation | Yes after Step 6 |
@@ -66,7 +68,7 @@ Python and llama.cpp stay on the host to keep GPU/model paths and loopback
 networking explicit. Application PostgreSQL runs separately from the Langfuse
 PostgreSQL container. Langfuse is not a startup dependency of any core service.
 
-## Planned startup order and resilience
+## Current gateway and planned startup resilience
 
 The implementation must not rely on a perfectly ordered boot. The intended
 steady-state sequence is:
@@ -83,6 +85,11 @@ Systemd units must use narrow users/permissions where practical, explicit
 working directories and environment files, restart policies, startup timeouts,
 and journald identifiers. User lingering or an equivalent boot setup is
 required if user services must start before graphical login.
+
+The `money-tracker-telegram` entry point is executable for validation, one poll,
+or continuous concurrent ingress/outbox loops. It has no inference dependency;
+its persisted offset resumes after restart. Pairing and the real test bot remain
+unavailable, so this is not yet an accepted product service.
 
 No systemd unit filenames or installation commands are documented as executable
 yet. Step 4/5 must add real checked-in unit templates, installation/removal

@@ -1,8 +1,9 @@
 # AD-010: Telegram Long Polling and Durable Messaging
 
 - Status: accepted; raw-update retention detail superseded by AD-018
-- Implementation: transaction and ordering design refined by AD-018; PostgreSQL
-  state and repository implemented, Bot API gateway and workers planned
+- Implementation: PostgreSQL messaging state/repository, Bot API adapter,
+  authorized ingress, concurrent gateway loops, and outbox delivery implemented;
+  pairing administration, workflow worker, and real test-bot acceptance pending
 - Date: 2026-09-01
 
 ## Context
@@ -33,8 +34,14 @@ Migration `20260909_0005` and `PostgresMessagingRepository` implement the
 durable half of this decision: environment-specific offsets, normalized inbox,
 claims, retries, dead letters, replay, unique logical outbox, delivery state,
 hashed one-use pairing, sole-owner bindings per bot, and scoped pending actions.
-The real Bot API adapter and process entry points remain unimplemented, so this
-is not yet evidence of a usable Telegram channel.
+`BotApiClient`, `TelegramUpdateIngestor`, `TelegramGateway`, and the
+`money-tracker-telegram` production entry point now implement the HTTPS and
+process side. Ingress and outbox delivery have independent loops; commit precedes
+callback acknowledgement and a later poll. Unit tests cover protocol parsing,
+redaction, authorization, and send/commit order, while real PostgreSQL proves
+that rejected identities create no inbox rows. The checked-in real Bot API test
+has not run because the owner has not configured a test bot, so the channel is
+not yet accepted as usable.
 
 ## Alternatives considered
 

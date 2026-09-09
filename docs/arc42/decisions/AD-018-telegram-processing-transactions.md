@@ -1,8 +1,9 @@
 # AD-018: Telegram Processing Transactions and Ordering
 
 - Status: accepted
-- Implementation: messaging contracts, retry policy, migration, and PostgreSQL
-  repository implemented; gateway, worker, rendering, and operations planned
+- Implementation: messaging contracts/repository, Bot API transport, authorized
+  ingress, and independent gateway/outbox loops implemented; worker, rendering,
+  pairing administration, operations, and real-bot acceptance pending
 - Date: 2026-09-09
 - Supersedes: the raw-update retention detail in
   [AD-010](AD-010-telegram-durable-messaging.md); all other AD-010 choices remain
@@ -161,6 +162,16 @@ five-attempt terminal boundary, and preserves source identity during replay.
 Unit tests cover the contracts and deterministic retry schedule. Nine
 `@pytest.mark.postgres` tests exercise the production adapter over the real
 PostgreSQL protocol, including a concurrent two-connection claim.
+
+The production `BotApiClient` uses explicit allowed update types, bounded
+connect/read/write timeouts, backlog-preserving webhook removal, plain-text
+sending, and safe reason codes that omit API bodies and token-bearing URLs.
+`TelegramUpdateIngestor` drops unauthorized and non-private content before
+storage. `TelegramGateway` commits a complete observed batch before callback
+acknowledgement or another poll, while a second loop leases and delivers the
+outbox independently. Thirteen gateway unit tests and one additional real
+PostgreSQL authorization test pass. The real test-bot harness is present but
+still awaits external credentials and owner interaction.
 
 ## Consequences
 

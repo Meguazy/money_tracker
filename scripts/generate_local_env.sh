@@ -25,6 +25,9 @@ model_root="${XDG_DATA_HOME:-${HOME}/.local/share}/money-tracker/models"
 backup_password_file="${XDG_CONFIG_HOME:-${HOME}/.config}/money-tracker/restic-password"
 backup_lock_file="${XDG_STATE_HOME:-${HOME}/.local/state}/money-tracker/backup.lock"
 backup_staging_parent="${XDG_CACHE_HOME:-${HOME}/.cache}/money-tracker/backup-staging"
+telegram_config_root="${XDG_CONFIG_HOME:-${HOME}/.config}/money-tracker"
+telegram_production_token_file="${telegram_config_root}/telegram-production.token"
+telegram_test_token_file="${telegram_config_root}/telegram-test.token"
 
 umask 077
 cat >"${env_file}" <<EOF
@@ -58,6 +61,10 @@ MONEY_TRACKER_POSTGRES_PASSWORD=${app_postgres_password}
 MONEY_TRACKER_DATABASE_URL=postgresql://money_tracker:${app_postgres_password}@127.0.0.1:5433/money_tracker
 MONEY_TRACKER_TEST_DATABASE_URL=postgresql://money_tracker:${app_postgres_password}@127.0.0.1:5433/money_tracker_test
 MONEY_TRACKER_RECEIPT_ARCHIVE_ROOT=${receipt_archive_root}
+
+MONEY_TRACKER_TELEGRAM_ENVIRONMENT=test
+MONEY_TRACKER_TELEGRAM_PRODUCTION_TOKEN_FILE=${telegram_production_token_file}
+MONEY_TRACKER_TELEGRAM_TEST_TOKEN_FILE=${telegram_test_token_file}
 
 MONEY_TRACKER_BACKUP_EXPECTED_DATABASE=money_tracker
 MONEY_TRACKER_BACKUP_CONFIG_FILE=${env_file}

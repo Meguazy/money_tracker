@@ -1,7 +1,9 @@
 # AD-004: Local-First Privacy with a Telegram Boundary
 
 - Status: accepted
-- Implementation: planned
+- Implementation: Bot API transport, separate token-file configuration, private-owner
+  authorization, normalized durable ingestion, and outbox delivery implemented;
+  pairing administration and real test-bot acceptance pending
 - Date: 2026-09-01
 
 ## Context
@@ -22,6 +24,17 @@ API retains unconsumed updates for at most 24 hours.
 Authorize exactly one paired Telegram owner. Never send financial content to a
 cloud model or OCR provider. Do not place image bytes, bot tokens, or Telegram
 file URLs in traces or logs.
+
+## Implementation evidence
+
+The `telegram` adapter reads exactly one explicitly selected production or test
+credential from distinct owner-only regular files, validates it with `getMe`,
+disables webhooks without dropping pending updates, and exposes only bounded
+reason codes on failure. Authorization compares private-chat sender and chat
+identities with the persisted owner binding before normalized inbox creation.
+Foreign users and groups advance the observed offset with counters only. Unit
+coverage proves redaction and authorization; the opt-in real Bot API test exists
+but has not run because no test-bot credential is configured yet.
 
 ## Alternatives considered
 

@@ -118,7 +118,7 @@ boundary is not end-to-end encrypted and must not be described as local storage.
 | Owner to administration CLI | Process arguments/stdout plus private input file | Profile-scoped receipt import with safe JSON result | Implemented Step 2 receipt-store command |
 | Application to inference | OpenAI-compatible HTTP | Messages, schemas, tool calls, model settings | Implemented basic chat |
 | Application to Langfuse | SDK over local HTTP/OTLP | Redacted graph/model observations and aggregate scores | Implemented, optional and healthy |
-| Telegram gateway to Bot API | HTTPS long polling and send methods | Updates, callback queries, messages, file metadata and downloads | Planned |
+| Telegram gateway to Bot API | HTTPS long polling and send methods | Updates, callback queries, messages, and bounded file metadata; no Step 4 file download | Implemented adapter and process entry point; real test-bot acceptance pending |
 | Browser to application API | Same-origin HTTP JSON | Finance resources, settings, reviews, analytics and operations | Planned |
 | Application to PostgreSQL | PostgreSQL protocol | Checkpoints, authoritative finance aggregates, normalized messaging offsets/inbox/outbox, pairing, actions, retries, and dead letters | Implemented foundation, finance repositories, and Step 4 messaging persistence |
 | Application to receipt archive | Private host filesystem | Fully decoded original JPEG/PNG/WebP keyed and verified by content hash; no derivatives | Local adapter/admin CLI implemented; API/worker wiring, deletion, and backup planned |
@@ -167,7 +167,7 @@ boundary is not end-to-end encrypted and must not be described as local storage.
 Money Tracker workstation
 ├── Host processes
 │   ├── FastAPI application and compiled React UI        [planned]
-│   ├── Telegram gateway                                [planned]
+│   ├── Telegram gateway                                [implemented entry point; systemd pending]
 │   ├── Sequential workflow worker                      [planned]
 │   │   └── typed dispatcher, router, and text graphs  [implemented library]
 │   └── llama.cpp/OpenAI-compatible inference           [scaffolded]
@@ -204,6 +204,10 @@ Money Tracker workstation
 | `workflows.wire` | Hold the union-shaped schemas a local model is asked to fill and convert them purely to the domain contracts | Pydantic and the `workflows` contracts; no model client or transport | No state; conversion only | Shared by every model boundary; an unstated field has an explicit variant, so a fabricated value has no shape and a split that does not reconcile is refused where it can still be repaired |
 | `workflows.two_stage` | Compose the heading and level boundaries into one category judgment, choosing the subtree before the level | The two instruction catalogs, the bound wire schemas, and the narrow model port | No state; a pure composition over two calls | Evaluation only. AD-015 is rejected on its measurement, and this component is kept so that result stays reproducible; no runtime path uses it |
 | `workflows.prompts` | Load, validate, and version the instruction catalogs each boundary is given | JSON catalogs under `prompt_data/`, the intent taxonomy, and the tool registry | No state; catalogs are read-only data | Vocabularies are derived from the taxonomy and registry, so a stale catalog is refused at load time; nothing is promoted |
+| `telegram.config` | Select one test/production bot and securely read its distinct owner-only token file | Process environment, private filesystem, messaging environment enum | No authoritative state; credential exists only in process memory | Host gateway; absolute path, owner UID, regular no-follow file, and mode 0600 required |
+| `telegram.transport` | Call official Bot API methods and reduce responses to typed values | `httpx`, bounded timeouts, messaging outbox contracts | No durable state | Host gateway only; every exception is replaced by a content-free reason code |
+| `telegram.ingestion` | Authorize one persisted private owner and normalize a complete observed batch | Telegram transport values and `MessagingRepository` | Acceptance policy only | Runs before persistence; groups/foreign users retain counters only and never trigger file lookup |
+| `telegram.gateway` | Run independent long-poll and outbox-delivery loops | Transport, ingestion service, repository, clock, retry policy | No in-memory correctness state | Production `money-tracker-telegram` entry point; no LangGraph, model, or finance repository dependency; systemd pending |
 | `development` | Validate canonical documentation and privacy-ignore invariants | Repository Markdown/YAML/filesystem | No persistent data | Service-independent development command |
 
 ### Human usefulness review runtime
@@ -279,8 +283,8 @@ catalog is promoted; every identifier carries a `candidate-` prefix.
 ### Step 4 messaging boundaries
 
 AD-018 divides the Step 4 runtime into seven replaceable blocks. The contracts,
-retry policy, and PostgreSQL repository are implemented; service and process
-blocks remain planned:
+retry policy, PostgreSQL repository, ingestion service, Bot API transport, and
+gateway process are implemented; worker and presentation blocks remain planned:
 
 | Component | Responsibility | Interface/dependencies | Data ownership | Deployment/security |
 | --- | --- | --- | --- | --- |
@@ -848,12 +852,12 @@ manual acceptance check.
 5. The owner reviews the complete draft through Telegram or the dashboard.
 6. Only an approved, reconciled draft is posted; otherwise it remains in review.
 
-### Telegram recovery and processing (persistence partially implemented)
+### Telegram recovery and processing (gateway implemented; worker planned)
 
-Migration `20260909_0005` and `PostgresMessagingRepository` implement the
-database portions of this sequence: atomic ingest, strict claims, messaging
-completion, bounded failures, replay, and durable delivery state. Gateway and
-worker process behavior remains planned and cannot yet claim the full runtime.
+The migration/repository and production gateway implement atomic ingest,
+persisted-offset resume, authorization, callback acknowledgement after commit,
+and independently leased outbox delivery. The workflow worker remains planned,
+and the sequence lacks real test-bot acceptance.
 
 1. The gateway requests the environment's persisted next offset through long
    polling and filters authorization and supported update types before work.
@@ -930,6 +934,9 @@ External backup folder/disk
 └── encrypted Restic repository
 ```
 
+The `money-tracker-telegram` host entry point exists, but no systemd unit is
+installed yet and the real test bot has not been accepted.
+
 Systemd user services use lingering, or an equivalent host setup, to recover
 without a manual application start. Each service tolerates delayed database,
 network, and inference readiness through health checks and retry policies.
@@ -999,7 +1006,7 @@ does not install an API unit because no implemented Step 4 runtime requires it.
 - Callback and free-text follow-up map to explicit pending actions and workflow
   IDs instead of assuming one global chat thread.
 
-### Telegram security and recovery contract (persistence partially implemented)
+### Telegram security and recovery contract (gateway partially implemented)
 
 - Production and test bot environments have separate tokens and offset rows. A
   process selects exactly one environment and never falls back to the other.
@@ -1203,16 +1210,16 @@ environment file.
   promoted V1 policy implemented between model parsing and registry acceptance;
   V0 remains the direct configuration rollback.
 - [AD-018: Telegram processing transactions and ordering](decisions/AD-018-telegram-processing-transactions.md):
-  reconciled Step 4 contracts, retry policy, database transaction, offset,
-  ordering, replay, and delivery-state persistence are implemented; gateway,
-  worker, renderer, and operational wiring remain planned.
+  reconciled Step 4 persistence, Bot API transport, authorized ingestion,
+  persisted-offset runtime, and outbox delivery are implemented; worker,
+  renderer, pairing administration, operational wiring, and real-bot acceptance
+  remain planned.
 
-### Planned accepted decisions
+### Partially implemented Telegram decisions
 
-- [AD-004: Local-first privacy with Telegram boundary](decisions/AD-004-local-first-telegram-boundary.md)
-
-AD-010 is partially implemented by the messaging migration/repository and
-remains in the preceding section until its real Bot API runtime is complete.
+AD-004 and AD-010 now have persistence and gateway implementation evidence.
+They remain incomplete until pairing, worker/presentation, operations, and real
+test-bot acceptance are complete.
 
 ## 10. Quality Requirements
 
@@ -1238,9 +1245,10 @@ Quantitative evaluation gates are maintained in
 
 ### Current scaffold risks
 
-- The Step 4 messaging schema, contracts, retry policy, and PostgreSQL
-  repository are implemented. Telegram transport, gateway/worker, response
-  renderer, health command, and systemd units do not yet exist.
+- The Step 4 messaging schema/repository, Telegram transport, authorized
+  ingestion, gateway entry point, and independent outbox loop are implemented.
+  The workflow worker, response renderer, pairing/health administration,
+  systemd units, and real-bot evidence do not yet exist.
 - Category-review settlement is safe against a duplicate mutation but does not
   yet reconstruct its original typed result across the dispatch-to-outbox crash
   window. AD-018 makes closing that gap a worker prerequisite.

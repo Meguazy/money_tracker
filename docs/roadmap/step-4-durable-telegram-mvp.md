@@ -2,10 +2,10 @@
 
 Part of the [delivery roadmap](../roadmap.md).
 
-Status: **In progress — durable messaging persistence implemented.** Step 3 is
-complete and EVD-004 remains the fixed text-workflow baseline. Telegram
-transport/processes, presentation, systemd units, and real test-bot evidence do
-not exist yet and are not claimed by this status.
+Status: **In progress — durable persistence and Telegram gateway
+implemented.** Step 3 and its EVD-004 baseline remain unchanged. The workflow
+worker, pairing administration, presentation, systemd units, and real test-bot
+evidence do not exist yet and are not claimed by this status.
 
 ## Repository-truth inventory
 
@@ -19,20 +19,23 @@ not exist yet and are not claimed by this status.
   minimum normalized inbox, bounded leases/retries/dead letters, unique logical
   outbox state, hashed pairing codes, owner bindings, and scoped pending
   actions. `PostgresMessagingRepository` implements their AD-018 transactions.
-- `httpx` is already a runtime dependency, but there is no Bot API adapter,
-  token configuration, gateway, worker, response renderer, or Telegram test
-  fixture.
-- Administration has profile/funding bootstrap, receipt storage, one-shot Step
-  3 dispatch, and backup commands. The repository exposes pairing, replay, and
-  content-free health contracts, but no operator command or service entry point
-  wires them yet.
+- `telegram.config`, `BotApiClient`, `TelegramUpdateIngestor`, and
+  `TelegramGateway` now provide separate credential-file selection, official
+  HTTPS methods, private-owner filtering, durable long polling, callback
+  acknowledgement, and an independent outbox loop. No workflow worker or
+  response renderer exists yet.
+- `money-tracker-telegram` is the production gateway entry point with `validate`,
+  `poll-once`, and `run`. Administration still has no owner-pairing, replay, or
+  messaging-health command, so an owner binding cannot yet be created through a
+  supported operator path.
 - Compose provides application PostgreSQL and optional Langfuse. No systemd
   unit is checked in. FastAPI is neither installed nor required by the Step 4
   runtime.
-- Unit and real-PostgreSQL messaging suites now cover normalized contracts,
-  deterministic retry, duplicate ingestion, concurrent and ordered claims,
-  retry/dead-letter/replay, durable outbox/action recovery, and pairing. The
-  Telegram test-bot fixture and end-to-end suite remain absent.
+- Thirteen gateway unit tests cover token-file security, Bot API parsing and
+  redaction, authorization, commit-before-ack, and outbox send-before-complete.
+  One additional real-PostgreSQL test proves that foreign users and groups
+  create no inbox rows. An opt-in real test-bot integration test is checked in
+  but remains unexecuted until the owner configures its credential.
 - A concrete replay gap remains: category-review settlement rejects an already
   settled proposal but does not yet guarantee reconstruction of the original
   typed terminal result after a crash before outbox creation.
@@ -82,6 +85,23 @@ printing private content or identifiers.
 - Thirteen unit tests and nine `@pytest.mark.postgres` tests passed. The
   PostgreSQL suite uses the real service and protocol; a two-connection race
   proved that only one worker receives the oldest item.
+
+## Gateway implementation evidence
+
+- Production and test select distinct absolute token files; only the selected
+  mode-0600 owner file is read, and neither token nor its URL appears in errors.
+- `BotApiClient` calls `getMe`, backlog-preserving `deleteWebhook`, long-poll
+  `getUpdates`, `getFile`, `sendMessage`, and `answerCallbackQuery` with bounded
+  timeouts and typed, redacted failures.
+- Ingestion authorizes the persisted private owner before retaining content or
+  file metadata, commits all observed dispositions with the next offset, and
+  acknowledges callbacks only after that transaction.
+- Gateway ingress and outbox loops run independently and have no model,
+  LangGraph, or finance-repository dependency. Delivery uses existing durable
+  leases and five-attempt/dead-letter transitions.
+- `uv run pytest -q tests/unit/money_tracker/telegram` passed 13 tests. The real
+  PostgreSQL authorization test passed. The real Bot API test is correctly
+  skipped until external test-bot setup; no Telegram acceptance is claimed.
 
 ## Deliverables
 

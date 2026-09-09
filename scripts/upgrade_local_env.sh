@@ -67,6 +67,20 @@ if ! has_setting MONEY_TRACKER_RECEIPT_ARCHIVE_ROOT; then
   updated=true
 fi
 
+telegram_config_root="${XDG_CONFIG_HOME:-${HOME}/.config}/money-tracker"
+if ! has_setting MONEY_TRACKER_TELEGRAM_ENVIRONMENT; then
+  printf 'MONEY_TRACKER_TELEGRAM_ENVIRONMENT=test\n' >>"${env_file}"
+  updated=true
+fi
+if ! has_setting MONEY_TRACKER_TELEGRAM_PRODUCTION_TOKEN_FILE; then
+  printf 'MONEY_TRACKER_TELEGRAM_PRODUCTION_TOKEN_FILE=%s/telegram-production.token\n' "${telegram_config_root}" >>"${env_file}"
+  updated=true
+fi
+if ! has_setting MONEY_TRACKER_TELEGRAM_TEST_TOKEN_FILE; then
+  printf 'MONEY_TRACKER_TELEGRAM_TEST_TOKEN_FILE=%s/telegram-test.token\n' "${telegram_config_root}" >>"${env_file}"
+  updated=true
+fi
+
 if ! has_setting MONEY_TRACKER_BACKUP_EXPECTED_DATABASE; then
   printf 'MONEY_TRACKER_BACKUP_EXPECTED_DATABASE=money_tracker\n' >>"${env_file}"
   updated=true

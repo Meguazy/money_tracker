@@ -26,8 +26,9 @@ environment non-destructively after reviewing its permissions:
 
     ./scripts/upgrade_local_env.sh
 
-The upgrade script appends only missing database, llama.cpp profile, receipt
-archive, and backup settings, and never changes existing values.
+The upgrade script appends only missing database, llama.cpp profile, Telegram
+credential paths/environment, receipt archive, and backup settings, and never
+changes existing values. It never creates or copies a bot token.
 
 ## Application PostgreSQL and migrations
 
@@ -114,10 +115,24 @@ The command refuses final input symlinks, directories, unsupported/oversized
 images, and unknown profiles. It prints only safe JSON metadata, not file paths
 or bytes. Retrying the same content returns the first database record.
 
+## Exercising the Telegram gateway boundary
+
+The gateway production entry point is installed, while pairing, workflow
+processing, and owner-facing rendering remain incomplete:
+
+    uv run --env-file .env money-tracker-telegram --help
+
+Test and production use separate absolute token-file settings and distinct
+persistence keys. The selected token file must be a regular owner-owned mode-0600
+file. `validate`, `poll-once`, and `run` are documented in the
+[Telegram runbook](operations/telegram.md); real execution awaits owner-provided
+test-bot configuration. The opt-in official-protocol test never accepts the
+production environment.
+
 ## Exercising text dispatch by hand
 
-There is no bot yet: the Telegram channel, durable worker, and owner-facing
-responses are Step 4. The `route` command nevertheless uses the complete Step 3
+The Telegram workflow worker and owner-facing responses are still Step 4 work.
+The `route` command nevertheless uses the complete Step 3
 entry point. It builds one normalized work unit, invokes the root router, and,
 when `--profile-id` is present, dispatches it to the selected text specialist.
 It prints safe sorted JSON containing the typed route and outcome; it never

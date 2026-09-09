@@ -23,6 +23,7 @@ class WorkflowIntent(StrEnum):
         CATEGORY_FOLLOW_UP: Continue a paused owner category review.
         CORRECTION: Replace the editable fields of an existing movement.
         UNDO: Void an existing movement without deleting it.
+        POSTING: Record a draft the owner explicitly confirmed.
         CLARIFICATION: Ask one targeted question instead of acting.
         RECEIPT: Hand an attached image to the review-only receipt workflow.
         COMMAND: Execute one supported deterministic channel command.
@@ -37,6 +38,7 @@ class WorkflowIntent(StrEnum):
     CATEGORY_FOLLOW_UP = "category_follow_up"
     CORRECTION = "correction"
     UNDO = "undo"
+    POSTING = "posting"
     CLARIFICATION = "clarification"
     RECEIPT = "receipt"
     COMMAND = "command"
@@ -50,6 +52,7 @@ MUTATING_INTENTS = frozenset(
         WorkflowIntent.REFUND,
         WorkflowIntent.CATEGORY_FOLLOW_UP,
         WorkflowIntent.CORRECTION,
+        WorkflowIntent.POSTING,
         WorkflowIntent.UNDO,
     }
 )
@@ -82,6 +85,7 @@ DETERMINISTIC_ONLY_INTENTS = frozenset(
     {
         WorkflowIntent.RECEIPT,
         WorkflowIntent.COMMAND,
+        WorkflowIntent.POSTING,
     }
 )
 """Intents a model may never select.
@@ -89,6 +93,12 @@ DETERMINISTIC_ONLY_INTENTS = frozenset(
 An attached image and a supported command are recognized by deterministic
 pre-routing. Letting a classification claim either would move a decision that
 must be 100% reproducible into a nondeterministic component.
+
+Posting is here for a stronger reason than reproducibility. It is the act that
+makes a movement count, and AD-012 reserves that judgement for the owner or for
+a gated auto-post policy. A model that could route to it would be deciding to
+record money on the owner's behalf, which is exactly the authority the draft
+state exists to withhold.
 """
 
 MODEL_ROUTABLE_INTENTS = frozenset(WorkflowIntent) - DETERMINISTIC_ONLY_INTENTS

@@ -248,6 +248,8 @@ def test_post_uses_domain_validation_and_records_versioned_audit() -> None:
         profile_id=expense.profile_id,
         expense_id=expense.id,
         expected_version=1,
+        idempotency_key="posting:channel:1",
+        request_hash="c" * 64,
         actor="owner",
         reason="approved",
     )
@@ -269,6 +271,8 @@ def test_stale_post_does_not_append_an_audit() -> None:
             profile_id=expense.profile_id,
             expense_id=expense.id,
             expected_version=999,
+            idempotency_key="posting:channel:stale",
+            request_hash="d" * 64,
             actor="owner",
             reason="stale screen",
         )
@@ -318,6 +322,8 @@ def test_void_retains_aggregate_and_appends_audit() -> None:
         profile_id=expense.profile_id,
         expense_id=expense.id,
         expected_version=1,
+        idempotency_key="posting:channel:1",
+        request_hash="c" * 64,
         actor="owner",
         reason="approved",
     )

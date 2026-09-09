@@ -20,8 +20,8 @@ from money_tracker.workflows import (
     WorkflowIntent,
 )
 
-DATASET = Path("evals/datasets/routing-intent-it-v1.1.jsonl")
-PREVIOUS = Path("evals/datasets/routing-intent-it-v1.jsonl")
+DATASET = Path("evals/datasets/routing-intent-it-v1.3.jsonl")
+PREVIOUS = Path("evals/datasets/routing-intent-it-v1.2.jsonl")
 
 
 @pytest.fixture(scope="module")
@@ -43,7 +43,7 @@ def test_the_committed_dataset_parses_and_hashes(
     )
 
     assert metadata.item_count == len(cases)
-    assert metadata.version == "1.1.0"
+    assert metadata.version == "1.3.0"
     assert len(metadata.content_hash) == 64
 
 
@@ -145,9 +145,11 @@ def test_the_dataset_reaches_its_promotion_minimum(
 def test_the_prior_version_is_carried_forward_unchanged() -> None:
     """Never rewrite a prior run's meaning when a dataset grows.
 
-    The dataset policy versions a change rather than editing in place. Every
-    1.0.0 case must therefore survive into 1.1.0 with its label, message, and
-    context intact; only the version field may differ.
+    The dataset policy versions a change rather than editing in place, so each
+    version must carry its immediate predecessor forward with every label,
+    message, and context intact; only the version field may differ. Comparing
+    against the immediate predecessor rather than against 1.0.0 is what makes
+    the check hold as the lineage grows.
     """
 
     previous, _ = load_cases(PREVIOUS)

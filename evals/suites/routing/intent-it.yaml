@@ -1,7 +1,7 @@
 suite_schema_version: "1"
 suite: routing/intent-it
 version: "1.2.0"
-dataset: ../../datasets/routing-intent-it-v1.2.jsonl
+dataset: ../../datasets/routing-intent-it-v1.3.jsonl
 runner: money-tracker-eval routing
 private_data: false
 unit_under_test: >-

@@ -643,9 +643,12 @@ that would turn a resolved draft into a stored expense remain open.
    dimension are resolved by the implemented resolvers before any aggregate
    exists, so an unreadable date or an unresolved funding source never produces
    a partially built movement.
-3. Every movement is created as a draft. The auto-post eligibility policy is
-   calibrated on the evaluation set and none is promoted, so no text message
-   may post itself.
+3. Every movement is created as a draft, and an explicit owner `Registra`
+   records it. That control is the only channel path to posting, because
+   EVD-004 qualified no automatic-post subset and a draft nobody records stays
+   invisible to every report.
+   The auto-post eligibility policy is calibrated on the evaluation set and
+   none is promoted, so no text message may post itself.
 4. When the purpose needs a new category, the draft is still assembled with its
    funding dimension resolved and its purpose dimension deliberately empty,
    accompanied by a pending proposal. AD-008 lets only owner approval extend

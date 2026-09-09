@@ -34,6 +34,7 @@ from money_tracker.workflows import (
     movement_change_message_from_state,
     movement_command_key,
     parse_with_one_repair,
+    posting_request_hash,
     prepare_expense_correction,
     render_active_categories,
     undo_request_hash,
@@ -44,6 +45,7 @@ EXTRACT_CORRECTION_NODE = "extract_correction"
 CLASSIFY_CORRECTION_CATEGORY_NODE = "classify_correction_category"
 APPLY_CORRECTION_NODE = "apply_correction"
 APPLY_UNDO_NODE = "apply_undo"
+APPLY_POSTING_NODE = "apply_posting"
 
 
 def build_movement_change_graph(
@@ -242,15 +244,54 @@ def build_movement_change_graph(
             expense_id=str(voided.id),
         )
 
+    def run_post(state: MovementChangeState) -> MovementChangeState:
+        """Record the trusted draft exactly once without model involvement.
+
+        Posting is the act that makes a movement count, so it stays as
+        deterministic as undo: no extraction, no classification, and no
+        interpretation of owner text. The owner already said which movement by
+        pressing its control.
+        """
+
+        target = _target(state)
+        if target is None:
+            return _clarify(MovementChangeReason.NO_CORRECTABLE_MOVEMENT)
+        profile_id = UUID(state["profile_id"])
+        try:
+            current = configuration.get_expense(profile_id, target)
+            posted = finance.post_expense(
+                profile_id=profile_id,
+                expense_id=target,
+                expected_version=current.version,
+                idempotency_key=movement_command_key(
+                    WorkflowIntent.POSTING,
+                    state["source_reference"],
+                ),
+                request_hash=posting_request_hash(
+                    profile_id=profile_id,
+                    expense_id=target,
+                ),
+                actor="owner",
+                reason="owner recorded a confirmed draft",
+            )
+        except AggregateNotFoundError:
+            return _clarify(MovementChangeReason.NO_CORRECTABLE_MOVEMENT)
+        except InvalidTransitionError:
+            return _clarify(MovementChangeReason.MOVEMENT_NOT_POSTABLE)
+        return MovementChangeState(
+            outcome=MovementChangeOutcome.POSTED.value,
+            expense_id=str(posted.id),
+        )
+
     def start_route(state: MovementChangeState) -> str:
-        """Select correction or undo from the trusted routed intent."""
+        """Select correction, posting, or undo from the trusted routed intent."""
 
         intent = WorkflowIntent(state["routed_intent"])
-        return (
-            EXTRACT_CORRECTION_NODE
-            if intent is WorkflowIntent.CORRECTION
-            else APPLY_UNDO_NODE
-        )
+        if intent is WorkflowIntent.CORRECTION:
+            return EXTRACT_CORRECTION_NODE
+        if intent is WorkflowIntent.POSTING:
+            return APPLY_POSTING_NODE
+        return APPLY_UNDO_NODE
 
     def continue_or_end(state: MovementChangeState, next_node: str) -> str:
         """Stop after a clarification; otherwise continue in order."""
@@ -264,11 +305,13 @@ def build_movement_change_graph(
     builder.add_node(CLASSIFY_CORRECTION_CATEGORY_NODE, run_classify_category)
     builder.add_node(APPLY_CORRECTION_NODE, run_correct)
     builder.add_node(APPLY_UNDO_NODE, run_undo)
+    builder.add_node(APPLY_POSTING_NODE, run_post)
     builder.add_conditional_edges(
         START,
         start_route,
         {
             EXTRACT_CORRECTION_NODE: EXTRACT_CORRECTION_NODE,
+            APPLY_POSTING_NODE: APPLY_POSTING_NODE,
             APPLY_UNDO_NODE: APPLY_UNDO_NODE,
         },
     )
@@ -287,6 +330,7 @@ def build_movement_change_graph(
     )
     builder.add_edge(APPLY_CORRECTION_NODE, END)
     builder.add_edge(APPLY_UNDO_NODE, END)
+    builder.add_edge(APPLY_POSTING_NODE, END)
     return builder.compile(checkpointer=checkpointer)
 
 

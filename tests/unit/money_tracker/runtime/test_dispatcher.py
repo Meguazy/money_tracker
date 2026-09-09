@@ -239,3 +239,60 @@ def test_routing_only_mode_does_not_open_a_specialist() -> None:
 
     assert result.status is DispatchStatus.ROUTED
     assert expense.calls == movement.calls == read.calls == review.calls == []
+
+
+def test_posting_callback_reaches_the_movement_specialist() -> None:
+    """Send an explicit Registra to the same trusted target resolution."""
+
+    action_id = uuid4()
+    movement_id = uuid4()
+    decision = RoutingDecision(
+        intent=WorkflowIntent.POSTING,
+        source=RoutingSource.DETERMINISTIC,
+        reason=RoutingReason.CALLBACK_ACTION,
+        callback_action=CallbackAction.POST_EXPENSE,
+        pending_action_id=action_id,
+    )
+    dispatcher, _, movement, _, _ = _dispatcher(
+        decision,
+        movement={
+            "outcome": DispatchStatus.POSTED.value,
+            "expense_id": str(movement_id),
+            "clarification_reason": None,
+        },
+    )
+    context = DispatchContext(
+        profile_id=uuid4(),
+        movement_actions=(PendingMovementAction(action_id, movement_id),),
+    )
+
+    result = dispatcher.dispatch(
+        _message(
+            "", callback_action=CallbackAction.POST_EXPENSE, pending_action_id=action_id
+        ),
+        context=context,
+    )
+
+    assert result.status is DispatchStatus.POSTED
+    assert result.expense_id == movement_id
+    assert movement.calls[0][0]["routed_intent"] == WorkflowIntent.POSTING.value
+
+
+def test_an_uncorrelated_posting_callback_records_nothing() -> None:
+    """Refuse to record whatever happens to be recent when the control is stale."""
+
+    dispatcher, _, movement, _, _ = _dispatcher(
+        RoutingDecision(
+            intent=WorkflowIntent.CLARIFICATION,
+            source=RoutingSource.DETERMINISTIC,
+            reason=RoutingReason.UNCORRELATED_CALLBACK,
+        )
+    )
+
+    result = dispatcher.dispatch(
+        _message("", callback_action=CallbackAction.POST_EXPENSE),
+        context=DispatchContext(profile_id=uuid4()),
+    )
+
+    assert result.status is DispatchStatus.CLARIFICATION
+    assert movement.calls == []

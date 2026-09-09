@@ -24,6 +24,7 @@ from money_tracker.workflows.correction import (
     UNDO_COMMAND_PREFIX,
     PreparedCorrection,
     movement_command_key,
+    posting_request_hash,
     prepare_expense_correction,
     undo_request_hash,
 )
@@ -243,6 +244,7 @@ __all__ = [
     "movement_change_message_from_state",
     "movement_command_key",
     "prepare_expense_correction",
+    "posting_request_hash",
     "undo_request_hash",
     "initial_read_state",
     "initial_review_state",

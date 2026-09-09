@@ -28,6 +28,7 @@ class DispatchStatus(StrEnum):
     AWAITING_CATEGORY_APPROVAL = "awaiting_category_approval"
     ANSWERED = "answered"
     CORRECTED = "corrected"
+    POSTED = "posted"
     VOIDED = "voided"
     APPROVED = "approved"
     REUSED = "reused"

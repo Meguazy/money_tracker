@@ -125,6 +125,28 @@ printing private content or identifiers.
   ingestion callback grammar with the rendered buttons, and one that fails if a
   new reason code reaches the owner as generic prose.
 
+## Owner posting evidence
+
+- EVD-004 qualified no automatic-post subset, so every movement is created as a
+  draft. Until now nothing in the product could record one: `post_expense` had
+  no production caller, and the channel offered only `Modifica` and `Annulla`.
+  Every Telegram movement was therefore permanently invisible to analytics,
+  budgets, and every read tool, which made the Step 4 query flow answer zero by
+  construction.
+- A draft summary now leads with `Registra`. The control disappears once the
+  movement is recorded, because there is nothing left to confirm.
+- Posting is a deterministic-only intent. A model may never route to it: AD-012
+  reserves the judgement that money counts for the owner, and a classification
+  that could reach posting would be recording spend on their behalf.
+- `post_expense` became replay-safe like correction and undo, claiming a
+  namespaced command key so a redelivered `Registra` returns the first result.
+  Real-PostgreSQL tests prove one post audit across two invocations, and that a
+  stale control on an already recorded movement writes nothing.
+- Routing dataset `routing-intent-it-v1.3` adds the posting cases, including an
+  uncorrelated control that must clarify rather than record something recent.
+  **The routing gate has not been re-run against it**, so EVD-004's reported
+  numbers do not yet cover this dataset.
+
 ## Operations implementation evidence
 
 - `health`, `dead-letters`, and `replay` print JSON carrying counts, ages, safe
@@ -210,7 +232,7 @@ printing private content or identifiers.
 - PostgreSQL inbox/outbox, persisted offset discipline, sequential worker,
   retry/backoff, dead letter, replay, and pending-action mapping.
 - Italian message summaries and inline/reply interactions for text expenses,
-  category review, modify, undo, help, and status.
+  category review, record, modify, undo, help, and status.
 - Separate production and test-bot configuration and real Telegram integration
   fixtures with owned-data cleanup.
 - Host systemd units for Telegram gateway, workflow worker, API when present,

@@ -49,6 +49,7 @@ from money_tracker.workflows.resolution import resolve_amount, resolve_occurrenc
 
 CORRECTION_COMMAND_PREFIX = "correction"
 UNDO_COMMAND_PREFIX = "undo"
+POSTING_COMMAND_PREFIX = "posting"
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,7 +66,7 @@ class PreparedCorrection:
 
 
 def movement_command_key(intent: WorkflowIntent, source_reference: str) -> str:
-    """Derive a replay-stable key for one correction or undo command.
+    """Derive a replay-stable key for one movement lifecycle command.
 
     Args:
         intent: Mutation route owning the command.
@@ -84,6 +85,7 @@ def movement_command_key(intent: WorkflowIntent, source_reference: str) -> str:
     prefixes = {
         WorkflowIntent.CORRECTION: CORRECTION_COMMAND_PREFIX,
         WorkflowIntent.UNDO: UNDO_COMMAND_PREFIX,
+        WorkflowIntent.POSTING: POSTING_COMMAND_PREFIX,
     }
     try:
         prefix = prefixes[intent]
@@ -98,6 +100,29 @@ def undo_request_hash(*, profile_id: UUID, expense_id: UUID) -> str:
     Args:
         profile_id: Trusted owner scope.
         expense_id: Stable movement to void.
+
+    Returns:
+        Lowercase SHA-256 of the canonical target representation.
+    """
+
+    canonical = json.dumps(
+        {"expense_id": str(expense_id), "profile_id": str(profile_id)},
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def posting_request_hash(*, profile_id: UUID, expense_id: UUID) -> str:
+    """Hash the complete semantics of one posting command.
+
+    Posting names only the movement it confirms, so the digest covers the same
+    two references undo does. Version and status are deliberately absent: a
+    replay must match the first attempt even though that attempt moved both.
+
+    Args:
+        profile_id: Trusted owner scope.
+        expense_id: Stable movement to record.
 
     Returns:
         Lowercase SHA-256 of the canonical target representation.

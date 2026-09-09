@@ -152,7 +152,11 @@ class WorkflowDispatcher:
             return self._dispatch_expense(message, context.profile_id, decision)
         if decision.intent in {WorkflowIntent.QUERY, WorkflowIntent.ADVICE}:
             return self._dispatch_read(message, context.profile_id, decision)
-        if decision.intent in {WorkflowIntent.CORRECTION, WorkflowIntent.UNDO}:
+        if decision.intent in {
+            WorkflowIntent.CORRECTION,
+            WorkflowIntent.POSTING,
+            WorkflowIntent.UNDO,
+        }:
             return self._dispatch_movement_change(message, context, decision)
         if decision.intent is WorkflowIntent.CATEGORY_FOLLOW_UP:
             return self._dispatch_review(message, context, decision)

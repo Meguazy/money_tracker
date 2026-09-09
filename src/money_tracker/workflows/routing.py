@@ -263,6 +263,8 @@ def _route_callback(
         intent = WorkflowIntent.CATEGORY_FOLLOW_UP
     elif action is CallbackAction.MODIFY_EXPENSE:
         intent = WorkflowIntent.CORRECTION
+    elif action is CallbackAction.POST_EXPENSE:
+        intent = WorkflowIntent.POSTING
     else:
         intent = WorkflowIntent.UNDO
     return RoutingDecision(

@@ -39,7 +39,9 @@ locally.
    evaluated confidence.
 5. Both category and payment allocations reconcile to EUR 12.00.
 6. The financial record, audit entry, and outbound response are committed once.
-7. Telegram shows amount, date, category, source, and `Modifica`/`Annulla`.
+7. Telegram shows amount, date, category, source, and, while the movement is
+   still a draft, `Registra`/`Modifica`/`Annulla`. Nothing counts toward
+   analytics or budgets until the owner records it.
 
 **Postcondition:** one posted expense affects analytics, budget, and the chosen
 funding source. Retrying the same update changes nothing.

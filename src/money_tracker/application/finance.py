@@ -76,39 +76,59 @@ class FinanceService:
         profile_id: UUID,
         expense_id: UUID,
         expected_version: int,
+        idempotency_key: str,
+        request_hash: str,
         actor: str,
         reason: str,
         receipt_approved: bool = False,
     ) -> Expense:
-        """Post a reconciled draft under optimistic concurrency.
+        """Post a reconciled draft, returning the first result on replay.
+
+        Posting is a channel command like correction and undo, so AD-018 needs
+        it to survive a redelivery: a crash between the finance commit and the
+        channel response re-dispatches it, and a second attempt must return the
+        posted movement rather than fail because the draft is gone.
 
         Args:
             profile_id: Trusted owner scope.
             expense_id: Stable aggregate identifier.
             expected_version: Version shown to the caller.
+            idempotency_key: Stable external command key for replay safety.
+            request_hash: Canonical lowercase SHA-256 of the target semantics.
             actor: Trusted application or owner actor label.
             reason: Non-sensitive audit explanation.
             receipt_approved: Explicit approval for an image-backed draft.
 
         Returns:
-            Newly posted aggregate.
+            Newly posted aggregate, or the stored result of an identical replay.
         """
 
+        replayed = self._repository.get_idempotent_expense_command(
+            profile_id=profile_id,
+            idempotency_key=idempotency_key,
+            command_type="post_expense",
+            request_hash=request_hash,
+            expense_id=expense_id,
+        )
+        if replayed is not None:
+            return replayed
         current = self._repository.get_expense(profile_id, expense_id)
         posted = current.post(
             taxonomy=self._repository.get_taxonomy(profile_id),
             funding_sources=self._repository.get_funding_sources(profile_id),
             receipt_approved=receipt_approved,
         )
-        self._replace(
+        return self._replace_idempotently(
             posted,
             expected_version=expected_version,
             prior_version=current.version,
             action="post",
+            idempotency_key=idempotency_key,
+            command_type="post_expense",
+            request_hash=request_hash,
             actor=actor,
             reason=reason,
         )
-        return posted
 
     def correct_expense(
         self,

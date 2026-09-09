@@ -163,13 +163,17 @@ def test_a_stored_movement_shows_amount_date_purpose_and_source() -> None:
         "Data: 09/09/2026\n"
         "Categoria: Cibo e accessori\n"
         "Fonte: Carta principale\n"
-        "Resta in bozza finché non viene registrata."
+        "È una bozza: premi Registra perché entri nei conti."
     )
-    assert [button.label for button in response.buttons] == ["Modifica", "Annulla"]
+    assert [button.label for button in response.buttons] == [
+        "Registra",
+        "Modifica",
+        "Annulla",
+    ]
     assert response.target is not None
     assert response.target.target_type is PendingActionTarget.MOVEMENT
     assert response.target.target_id == EXPENSE_ID
-    assert response.target.allowed_actions == ("modify", "undo")
+    assert response.target.allowed_actions == ("post", "modify", "undo")
 
 
 def test_a_local_evening_keeps_the_owner_calendar_day() -> None:
@@ -577,3 +581,38 @@ def test_a_pairing_confirmation_offers_no_controls() -> None:
     assert response.buttons == ()
     assert response.target is None
     assert "/help" in response.text
+
+
+def test_a_recorded_movement_stops_offering_to_record_it() -> None:
+    """Never invite the owner to confirm what is already in the accounts."""
+
+    response = _render(
+        DispatchOutcome(
+            routing=_routing(WorkflowIntent.POSTING),
+            status=DispatchStatus.POSTED,
+            expense_id=EXPENSE_ID,
+        ),
+        movement=_movement(status=ExpenseStatus.POSTED),
+    )
+
+    assert response.text.startswith("Movimento registrato.")
+    assert "bozza" not in response.text
+    assert [button.label for button in response.buttons] == ["Modifica", "Annulla"]
+    assert response.target is not None
+    assert response.target.allowed_actions == ("modify", "undo")
+
+
+def test_a_draft_leads_with_the_control_that_resolves_it() -> None:
+    """Put Registra first, because a draft nobody records stays invisible."""
+
+    response = _render(
+        DispatchOutcome(
+            routing=_routing(),
+            status=DispatchStatus.DRAFTED,
+            expense_id=EXPENSE_ID,
+        ),
+        movement=_movement(status=ExpenseStatus.DRAFT),
+    )
+
+    assert response.buttons[0].label == "Registra"
+    assert response.buttons[0].callback_data.endswith(":post")

@@ -74,7 +74,7 @@ class RouterState(TypedDict, total=False):
             is not the message's own action: an uncorrelated callback is
             clarified, so the message carries an action the decision does not.
         resolved_pending_action_id: Correlated pending action for a follow-up.
-        target_movement_id: Correlated movement for a correction or undo.
+        target_movement_id: Correlated movement for a lifecycle change.
     """
 
     state_version: str
@@ -401,19 +401,21 @@ def expense_message_from_state(state: ExpenseWorkflowState) -> ChannelMessage:
 
 
 class MovementChangeOutcome(StrEnum):
-    """How one correction or undo specialist run ended."""
+    """How one correction, posting, or undo specialist run ended."""
 
     CORRECTED = "corrected"
+    POSTED = "posted"
     VOIDED = "voided"
     CLARIFICATION = "clarification"
 
 
 class MovementChangeReason(StrEnum):
-    """Why a correction or undo stopped without mutating finance data."""
+    """Why a lifecycle change stopped without mutating finance data."""
 
     NO_CORRECTABLE_MOVEMENT = "no_correctable_movement"
     CORRECTION_DETAILS_REQUIRED = "correction_details_required"
     MOVEMENT_NOT_CORRECTABLE = "movement_not_correctable"
+    MOVEMENT_NOT_POSTABLE = "movement_not_postable"
 
 
 class MovementChangeState(TypedDict, total=False):
@@ -455,7 +457,7 @@ def initial_movement_change_state(
     routed_intent: WorkflowIntent,
     target_movement_id: UUID | None,
 ) -> MovementChangeState:
-    """Build initial state for a routed correction or undo.
+    """Build initial state for a routed correction, posting, or undo.
 
     Args:
         message: Normalized inbound work unit.
@@ -471,8 +473,14 @@ def initial_movement_change_state(
         ValueError: If another route is supplied.
     """
 
-    if routed_intent not in {WorkflowIntent.CORRECTION, WorkflowIntent.UNDO}:
-        raise ValueError("movement change workflow accepts correction or undo")
+    if routed_intent not in {
+        WorkflowIntent.CORRECTION,
+        WorkflowIntent.POSTING,
+        WorkflowIntent.UNDO,
+    }:
+        raise ValueError(
+            "movement change workflow accepts correction, posting, or undo"
+        )
     return MovementChangeState(
         state_version=WORKFLOW_STATE_VERSION,
         profile_id=str(profile_id),

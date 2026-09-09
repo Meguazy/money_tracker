@@ -45,6 +45,7 @@ from money_tracker.domain import (
     Taxonomy,
 )
 from money_tracker.persistence.finance import PostgresFinanceRepository
+from money_tracker.workflows import posting_request_hash
 
 TEST_DATABASE_NAME = "money_tracker_test"
 """The only database these suites may open."""
@@ -231,6 +232,11 @@ def post_expense(
         profile_id=owner.profile.id,
         expense_id=created.id,
         expected_version=created.version,
+        idempotency_key=f"posting:{reference}",
+        request_hash=posting_request_hash(
+            profile_id=owner.profile.id,
+            expense_id=created.id,
+        ),
         actor="eval",
         reason="evaluation fixture",
     )

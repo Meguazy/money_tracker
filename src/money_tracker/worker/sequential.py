@@ -88,6 +88,7 @@ _MOVEMENT_STATUSES = frozenset(
         DispatchStatus.APPROVED,
         DispatchStatus.REUSED,
         DispatchStatus.CORRECTED,
+        DispatchStatus.POSTED,
         DispatchStatus.VOIDED,
     }
 )

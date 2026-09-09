@@ -29,6 +29,7 @@ from money_tracker.domain import (
 )
 from money_tracker.persistence.database import upgrade_database
 from money_tracker.persistence.finance import PostgresFinanceRepository
+from money_tracker.workflows import posting_request_hash
 
 ROME = ZoneInfo("Europe/Rome")
 PERIOD = YearMonth(2026, 9)
@@ -110,6 +111,11 @@ def _post(
         profile_id=profile.id,
         expense_id=created.id,
         expected_version=created.version,
+        idempotency_key=f"posting:{created.id}",
+        request_hash=posting_request_hash(
+            profile_id=profile.id,
+            expense_id=created.id,
+        ),
         actor="test",
         reason="reporting fixture",
     )

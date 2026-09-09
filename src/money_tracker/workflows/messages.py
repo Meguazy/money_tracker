@@ -41,6 +41,7 @@ class CallbackAction(StrEnum):
         USE_NAMED_EXISTING: Resolve an owner-named existing category.
         REPROPOSE_CATEGORY: Reject the candidate and request a distinct one.
         CANCEL_REVIEW: Abandon the draft without creating anything.
+        POST_EXPENSE: Record a draft the owner confirmed, making it count.
         MODIFY_EXPENSE: Replace the editable fields of a movement.
         UNDO_EXPENSE: Void a movement without deleting it.
     """
@@ -50,6 +51,7 @@ class CallbackAction(StrEnum):
     USE_NAMED_EXISTING = "use_named_existing"
     REPROPOSE_CATEGORY = "repropose_category"
     CANCEL_REVIEW = "cancel_review"
+    POST_EXPENSE = "post_expense"
     MODIFY_EXPENSE = "modify_expense"
     UNDO_EXPENSE = "undo_expense"
 

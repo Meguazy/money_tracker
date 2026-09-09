@@ -54,6 +54,7 @@ _ACTION_CODES: dict[CallbackAction, str] = {
     CallbackAction.USE_NAMED_EXISTING: "named",
     CallbackAction.REPROPOSE_CATEGORY: "again",
     CallbackAction.CANCEL_REVIEW: "cancel",
+    CallbackAction.POST_EXPENSE: "post",
     CallbackAction.MODIFY_EXPENSE: "modify",
     CallbackAction.UNDO_EXPENSE: "undo",
 }
@@ -65,6 +66,7 @@ _ACTION_LABELS: dict[CallbackAction, str] = {
     CallbackAction.USE_NAMED_EXISTING: "Usa la categoria…",
     CallbackAction.REPROPOSE_CATEGORY: "Proponine un'altra",
     CallbackAction.CANCEL_REVIEW: "Annulla",
+    CallbackAction.POST_EXPENSE: "Registra",
     CallbackAction.MODIFY_EXPENSE: "Modifica",
     CallbackAction.UNDO_EXPENSE: "Annulla",
 }
@@ -89,6 +91,7 @@ _MOVEMENT_HEADERS: dict[DispatchStatus, str] = {
     DispatchStatus.APPROVED: "Categoria creata e movimento registrato.",
     DispatchStatus.REUSED: "Categoria esistente applicata e movimento registrato.",
     DispatchStatus.CORRECTED: "Movimento aggiornato.",
+    DispatchStatus.POSTED: "Movimento registrato.",
     DispatchStatus.VOIDED: "Movimento annullato.",
 }
 
@@ -155,6 +158,7 @@ _QUESTIONS: dict[str, str] = {
     ),
     "model_output_invalid": ("Non sono riuscito a interpretare la richiesta. Riprova."),
     "movement_not_correctable": ("Questo movimento non può più essere corretto."),
+    "movement_not_postable": ("Questo movimento non è più una bozza da registrare."),
     "movement_target_required": ("Dimmi quale movimento vuoi correggere o annullare."),
     "no_best_existing": ("Non ho categorie esistenti da proporti per questa spesa."),
     "no_correctable_movement": (
@@ -497,7 +501,7 @@ class TelegramResponseRenderer:
 
         if outcome.expense_id is None:
             raise ValueError("a movement summary must reference its movement")
-        actions = (CallbackAction.MODIFY_EXPENSE, CallbackAction.UNDO_EXPENSE)
+        actions = _movement_actions(movement.status)
         return OwnerResponse(
             kind=ResponseKind.MOVEMENT,
             text=self._movement_text(status, movement),
@@ -523,7 +527,7 @@ class TelegramResponseRenderer:
         if movement.funding_source_names:
             lines.append(f"Fonte: {', '.join(movement.funding_source_names)}")
         if movement.status is ExpenseStatus.DRAFT:
-            lines.append("Resta in bozza finché non viene registrata.")
+            lines.append("È una bozza: premi Registra perché entri nei conti.")
         return "\n".join(lines)
 
     @staticmethod
@@ -589,6 +593,29 @@ def _routed(outcome: DispatchOutcome) -> OwnerResponse:
         kind=ResponseKind.UNSUPPORTED,
         text=_ROUTED_TEXTS.get(outcome.routing.intent, _UNSUPPORTED_TEXT),
     )
+
+
+def _movement_actions(status: ExpenseStatus) -> tuple[CallbackAction, ...]:
+    """Offer only the controls this movement's state can still accept.
+
+    A draft leads with the control that resolves it, because a draft that is
+    never recorded is invisible to every report and is the one state the owner
+    has to act on. A recorded movement has nothing left to confirm.
+
+    Args:
+        status: Lifecycle state the movement reached.
+
+    Returns:
+        The offered branches in a stable deterministic order.
+    """
+
+    if status is ExpenseStatus.DRAFT:
+        return (
+            CallbackAction.POST_EXPENSE,
+            CallbackAction.MODIFY_EXPENSE,
+            CallbackAction.UNDO_EXPENSE,
+        )
+    return (CallbackAction.MODIFY_EXPENSE, CallbackAction.UNDO_EXPENSE)
 
 
 def _buttons(

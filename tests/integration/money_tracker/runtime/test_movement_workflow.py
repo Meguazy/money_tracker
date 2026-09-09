@@ -36,6 +36,7 @@ from money_tracker.workflows import (
     WorkflowIntent,
     canonical_request_hash,
     initial_movement_change_state,
+    posting_request_hash,
 )
 from money_tracker.workflows.candidates import (
     DEFAULT_CATEGORY_FIT_CANDIDATE,
@@ -111,6 +112,11 @@ def _bootstrap(
         profile_id=profile.id,
         expense_id=created.id,
         expected_version=created.version,
+        idempotency_key=f"posting:{created.id}",
+        request_hash=posting_request_hash(
+            profile_id=created.profile_id,
+            expense_id=created.id,
+        ),
         actor="integration",
         reason="post correction target",
     )
@@ -287,6 +293,92 @@ def test_replayed_undo_produces_zero_duplicate_writes(postgres_url: str) -> None
     assert repository.get_expense(profile.id, posted.id).version == posted.version + 1
     assert _action_count(postgres_url, posted.id, "void") == 1
     assert _expense_count(postgres_url, profile.id) == 1
+
+
+@pytest.mark.postgres
+def test_recording_an_already_recorded_movement_writes_nothing(
+    postgres_url: str,
+) -> None:
+    """Answer a stale Registra with a reason instead of a second post."""
+
+    repository, profile, posted = _bootstrap(postgres_url)
+    before = _action_count(postgres_url, posted.id, "post")
+    state = initial_movement_change_state(
+        _message(f"integration:posting-stale:{uuid4()}", ""),
+        profile_id=profile.id,
+        routed_intent=WorkflowIntent.POSTING,
+        target_movement_id=posted.id,
+    )
+
+    result = _graph(repository, ScriptedModel()).invoke(state)
+
+    assert result["outcome"] == MovementChangeOutcome.CLARIFICATION.value
+    assert result["clarification_reason"] == (
+        MovementChangeReason.MOVEMENT_NOT_POSTABLE.value
+    )
+    assert _action_count(postgres_url, posted.id, "post") == before
+
+
+@pytest.mark.postgres
+def test_replayed_posting_records_the_movement_exactly_once(
+    postgres_url: str,
+) -> None:
+    """Let a redelivered Registra return the first result, not a second write."""
+
+    repository, profile, _ = _bootstrap(postgres_url)
+    draft = _draft(repository, profile)
+    reference = f"integration:posting-replay:{uuid4()}"
+    state = initial_movement_change_state(
+        _message(reference, ""),
+        profile_id=profile.id,
+        routed_intent=WorkflowIntent.POSTING,
+        target_movement_id=draft.id,
+    )
+    graph = _graph(repository, ScriptedModel())
+
+    first = graph.invoke(state)
+    second = graph.invoke(state)
+
+    assert first["outcome"] == MovementChangeOutcome.POSTED.value
+    assert first["expense_id"] == second["expense_id"] == str(draft.id)
+    assert second["outcome"] == MovementChangeOutcome.POSTED.value
+    assert repository.get_expense(profile.id, draft.id).status is ExpenseStatus.POSTED
+    assert _action_count(postgres_url, draft.id, "post") == 1
+
+
+def _draft(
+    repository: PostgresFinanceRepository,
+    profile: Profile,
+) -> Expense:
+    """Store one reconciled draft awaiting the owner's confirmation."""
+
+    taxonomy = repository.get_taxonomy(profile.id)
+    category = taxonomy.resolve_active("Cibo e accessori")
+    source = repository.get_funding_sources(profile.id)[0]
+    reference = f"integration:draft:{uuid4()}"
+    expense = Expense(
+        id=uuid4(),
+        profile_id=profile.id,
+        amount=Money(2600),
+        occurred_at=datetime(2026, 9, 8, 9, tzinfo=UTC),
+        description="benzina",
+        merchant=None,
+        status=ExpenseStatus.DRAFT,
+        category_allocations=(
+            CategoryAllocation(category.id, Money(2600), "integration-fixture"),
+        ),
+        payment_allocations=(PaymentAllocation(source.id, Money(2600)),),
+        source_reference=reference,
+        idempotency_key=reference,
+    )
+    return FinanceService(
+        repository, clock=SystemClock(), ids=UUID4Generator()
+    ).create_expense(
+        expense,
+        request_hash=canonical_request_hash(expense),
+        actor="integration",
+        reason="posting fixture",
+    )
 
 
 def _audit_count(postgres_url: str, profile_id: UUID) -> int:

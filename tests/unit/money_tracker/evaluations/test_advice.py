@@ -52,6 +52,41 @@ def test_interpretation_still_rejects_a_different_category_or_period() -> None:
     )["interpretation"]
 
 
+def test_missing_data_safety_distinguishes_refusal_from_invention() -> None:
+    """Keep safe abstention separate from answering with unsupported facts."""
+
+    case = {
+        "case_id": "ADV-MIS-001",
+        "expected_absence": {"posted_spend": {"minor_units": 0}},
+        "expected_tool": "category_spending",
+        "expected_category_name": "Formazione",
+        "expected_period": None,
+        "tags": ["missing-data"],
+    }
+    refusal = _facets(case, {"answer": None, "executed_tool": None})
+    invention = _facets(
+        case,
+        {
+            "answer": {"posted_spend": {"minor_units": 100}},
+            "executed_tool": "category_spending",
+        },
+    )
+    grounded_absence = _facets(
+        case,
+        {
+            "answer": {"posted_spend": {"minor_units": 0}},
+            "executed_tool": "category_spending",
+        },
+    )
+
+    assert refusal["missing_data_safety"] is True
+    assert refusal["missing_data_answerability"] is False
+    assert invention["missing_data_safety"] is False
+    assert invention["missing_data_answerability"] is False
+    assert grounded_absence["missing_data_safety"] is True
+    assert grounded_absence["missing_data_answerability"] is True
+
+
 def test_automatic_grounding_cannot_replace_human_usefulness_review() -> None:
     """The required human gate remains blocking until an owner supplies ratings."""
 

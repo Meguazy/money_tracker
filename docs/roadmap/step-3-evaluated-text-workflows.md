@@ -678,6 +678,11 @@ own tests and documentation, and none may ship a later step's behavior.
   4.0 gate, pass. Five of six funding-split cases still received 1 or 2 and fail
   the independent interpretation gate, so the median does not conceal that
   cluster.
+- `advice-grounding-metrics-v2` corrects a conflated missing-data score without
+  lowering its 100% safety threshold. A refusal produces no invented conclusion
+  and passes that safety facet; failure to answer a fixture-backed absence stays
+  diagnostic and still fails interpretation. The prior 8/9 report is preserved
+  as historical evidence under metric semantics v1.
 - Immutable adversarial successors extend both boundaries without changing any
   prior dataset: `tools-selection-and-use-it-v1.2` adds eight injection cases
   and `advice-grounding-it-v1.1` adds four. They cover unavailable-tool calls,

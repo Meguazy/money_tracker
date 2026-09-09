@@ -205,3 +205,18 @@ Every future row must identify:
   split received 5. Human usefulness cannot override that independently
   blocking 46/52 interpretation result.
 - This records no threshold change and promotes no model or prompt.
+
+## Step 3 threshold disposition and missing-data semantics — 2026-09-09
+
+- Owner decision: do not lower the four failing Qwen thresholds; attempt a
+  versioned deterministic repair and retain a direct rollback path.
+- Fresh evidence: `TOO-20260909-101133-04d24021` and
+  `ADV-20260909-092956-f95a0288`. The owner-observed funding failures are
+  product-visible semantic errors and remain unacceptable despite the passing
+  aggregate usefulness median.
+- Metric correction: `advice-grounding-metrics-v2` keeps
+  `missing_data_avoids_invented_conclusion` at 100% but counts a refusal with no
+  answer as safe abstention. `answerable_missing_data_result` reports whether
+  the fixture-backed absence was actually returned, and interpretation remains
+  independently blocking. The v1 8/9 result is retained in its published run.
+- This changes no dataset, label, threshold, prompt default, or promotion.

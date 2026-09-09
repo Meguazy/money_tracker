@@ -108,6 +108,9 @@ BUDGET_FIRST_TOOL = "budgets_at_risk"
 HUMAN_USEFULNESS_RUBRIC_VERSION = "human-usefulness-v1"
 """Owner-review rubric recorded beside every advice run."""
 
+ADVICE_METRIC_SEMANTICS_VERSION = "advice-grounding-metrics-v2"
+"""Version separating missing-data safety from answerability."""
+
 HumanUsefulnessReviewer = Callable[[str, Sequence[HumanReviewItem]], Mapping[str, int]]
 """Callable that collects a complete owner review for one exact run."""
 
@@ -156,9 +159,11 @@ def _facets(
         )
 
     if "missing-data" in cast(list[JsonValue], case.get("tags", [])):
-        facets["missing_data"] = isinstance(answer, dict) and _subset(
+        absence_reported = isinstance(answer, dict) and _subset(
             cast(Mapping[str, JsonValue], case["expected_absence"]), answer
         )
+        facets["missing_data_answerability"] = absence_reported
+        facets["missing_data_safety"] = answer is None or absence_reported
 
     if case.get("budget_before_history") is True:
         facets["budget_first"] = observed.get("tool") == BUDGET_FIRST_TOOL
@@ -235,10 +240,16 @@ def _metrics(
             threshold=0.98,
         ),
         _metric(
-            "missing_data",
+            "missing_data_safety",
             scored,
             name="missing_data_avoids_invented_conclusion",
             threshold=1.0,
+        ),
+        _metric(
+            "missing_data_answerability",
+            scored,
+            name="answerable_missing_data_result",
+            threshold=None,
         ),
         _metric(
             "budget_first",
@@ -563,6 +574,7 @@ def run_advice_suite(
             ),
             "human_usefulness_rubric_version": HUMAN_USEFULNESS_RUBRIC_VERSION,
             "human_usefulness_required_cases": len(review_case_ids),
+            "metric_semantics_version": ADVICE_METRIC_SEMANTICS_VERSION,
             "dataset_minimum": DATASET_MINIMUM,
             "latency_measurement": latency_measurement_configuration(),
             "taxonomy_version": TAXONOMY_VERSION,

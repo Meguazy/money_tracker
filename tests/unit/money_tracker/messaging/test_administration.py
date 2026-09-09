@@ -12,6 +12,7 @@ import pytest
 from money_tracker.messaging import (
     DEFAULT_PAIRING_LIFETIME,
     TELEGRAM_UPDATE_RETENTION,
+    BotEnvironment,
     DeadLetter,
     MessagingAdministration,
     MessagingHealth,
@@ -45,12 +46,20 @@ class _Repository:
 
     def __init__(self) -> None:
         self.stored: list[dict[str, Any]] = []
+        self.ensured: list[tuple[str, Any]] = []
         self.limits: list[int] = []
         self.replayed: list[tuple[UUID, datetime]] = []
+
+    def ensure_bot(self, bot_key: str, **values: Any) -> None:
+        """Record the persistence scope the pairing code needs."""
+
+        self.ensured.append((bot_key, values["environment"]))
 
     def create_pairing_code(self, **values: Any) -> None:
         """Record one stored pairing code."""
 
+        if not self.ensured:
+            raise LookupError("bot key is not initialized")
         self.stored.append(values)
 
     def health(self, bot_key: str) -> MessagingHealth:
@@ -98,6 +107,7 @@ def test_only_the_hash_of_a_generated_code_is_stored() -> None:
     pairing = _service(repository).create_pairing_code(
         bot_key="telegram-test",
         profile_id=PROFILE,
+        environment=BotEnvironment.TEST,
     )
 
     stored = repository.stored[0]
@@ -115,6 +125,7 @@ def test_a_code_expires_after_the_requested_lifetime() -> None:
     pairing = _service(repository).create_pairing_code(
         bot_key="telegram-test",
         profile_id=PROFILE,
+        environment=BotEnvironment.TEST,
         lifetime=timedelta(minutes=2),
     )
 
@@ -130,6 +141,7 @@ def test_the_default_lifetime_is_short() -> None:
     pairing = _service(repository).create_pairing_code(
         bot_key="telegram-test",
         profile_id=PROFILE,
+        environment=BotEnvironment.TEST,
     )
 
     assert pairing.expires_at == NOW + DEFAULT_PAIRING_LIFETIME
@@ -141,8 +153,16 @@ def test_two_codes_are_never_the_same() -> None:
 
     service = _service(_Repository())
 
-    first = service.create_pairing_code(bot_key="telegram-test", profile_id=PROFILE)
-    second = service.create_pairing_code(bot_key="telegram-test", profile_id=PROFILE)
+    first = service.create_pairing_code(
+        bot_key="telegram-test",
+        profile_id=PROFILE,
+        environment=BotEnvironment.TEST,
+    )
+    second = service.create_pairing_code(
+        bot_key="telegram-test",
+        profile_id=PROFILE,
+        environment=BotEnvironment.TEST,
+    )
 
     assert first.code != second.code
     assert len(first.code) >= 20
@@ -155,6 +175,7 @@ def test_a_code_that_expires_immediately_is_refused() -> None:
         _service(_Repository()).create_pairing_code(
             bot_key="telegram-test",
             profile_id=PROFILE,
+            environment=BotEnvironment.TEST,
             lifetime=timedelta(0),
         )
 
@@ -233,3 +254,18 @@ def test_a_clock_that_moved_backwards_reports_no_negative_gap() -> None:
     gap = downtime_gap(_health(), now=NOW - timedelta(hours=1))
 
     assert gap == timedelta(0)
+
+
+def test_pairing_creates_the_bot_scope_it_needs() -> None:
+    """Let pairing be the first thing done with a bot, before the gateway runs."""
+
+    repository = _Repository()
+
+    _service(repository).create_pairing_code(
+        bot_key="telegram-test",
+        profile_id=PROFILE,
+        environment=BotEnvironment.TEST,
+    )
+
+    assert repository.ensured == [("telegram-test", BotEnvironment.TEST)]
+    assert repository.stored[0]["bot_key"] == "telegram-test"

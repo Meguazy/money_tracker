@@ -103,7 +103,11 @@ def _pair(
         repository,
         clock=_SystemClock(),
         ids=UUID4Generator(),
-    ).create_pairing_code(bot_key=settings.bot_key, profile_id=profiles[0])
+    ).create_pairing_code(
+        bot_key=settings.bot_key,
+        profile_id=profiles[0],
+        environment=settings.environment,
+    )
     return {
         "environment": settings.environment.value,
         "expires_at": pairing.expires_at.isoformat(),

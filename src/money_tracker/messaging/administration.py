@@ -14,7 +14,11 @@ from datetime import datetime, timedelta
 from typing import Protocol
 from uuid import UUID
 
-from money_tracker.messaging.contracts import DeadLetter, MessagingHealth
+from money_tracker.messaging.contracts import (
+    BotEnvironment,
+    DeadLetter,
+    MessagingHealth,
+)
 from money_tracker.messaging.ports import MessagingRepository
 
 DEFAULT_PAIRING_LIFETIME = timedelta(minutes=10)
@@ -89,9 +93,16 @@ class MessagingAdministration:
         *,
         bot_key: str,
         profile_id: UUID,
+        environment: BotEnvironment,
         lifetime: timedelta = DEFAULT_PAIRING_LIFETIME,
     ) -> PairingCode:
         """Generate and store one short-lived, one-use pairing code.
+
+        The bot's persistence scope is created first when it does not exist.
+        Pairing is the first thing an operator does with a new bot, before the
+        gateway has ever run, so requiring the scope to already be there would
+        make the documented setup order impossible. Doing it here also refuses
+        a bot key that belongs to the other environment.
 
         Any earlier unused code for the same bot is revoked, so exactly one
         code can ever be live. A bot that already has an owner is refused
@@ -100,6 +111,7 @@ class MessagingAdministration:
         Args:
             bot_key: Bot and environment persistence scope.
             profile_id: Profile the resulting owner binding will own.
+            environment: Environment this bot key must belong to.
             lifetime: How long the code stays acceptable.
 
         Returns:
@@ -107,12 +119,14 @@ class MessagingAdministration:
 
         Raises:
             ValueError: If the lifetime is not positive.
-            MessagingConflictError: If the bot already has an owner binding.
+            MessagingConflictError: If the bot key belongs to another
+                environment, or the bot already has an owner binding.
         """
 
         if lifetime <= timedelta(0):
             raise ValueError("a pairing code must have a positive lifetime")
         now = self._clock.now()
+        self._repository.ensure_bot(bot_key, environment=environment, now=now)
         code = secrets.token_urlsafe(_CODE_BYTES)
         expires_at = now + lifetime
         self._repository.create_pairing_code(

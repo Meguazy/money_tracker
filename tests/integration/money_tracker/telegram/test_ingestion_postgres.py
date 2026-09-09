@@ -156,7 +156,11 @@ def test_owner_pairing_works_end_to_end_without_retaining_the_code(
         repository,
         clock=_FixedClock(),
         ids=_Ids(),
-    ).create_pairing_code(bot_key=bot_key, profile_id=profile_id)
+    ).create_pairing_code(
+        bot_key=bot_key,
+        profile_id=profile_id,
+        environment=BotEnvironment.TEST,
+    )
     ingestor = TelegramUpdateIngestor(repository)
 
     report = ingestor.ingest(
@@ -218,7 +222,11 @@ def test_a_spent_pairing_code_cannot_bind_a_second_owner(
         repository,
         clock=_FixedClock(),
         ids=_Ids(),
-    ).create_pairing_code(bot_key=bot_key, profile_id=profile_id)
+    ).create_pairing_code(
+        bot_key=bot_key,
+        profile_id=profile_id,
+        environment=BotEnvironment.TEST,
+    )
     ingestor = TelegramUpdateIngestor(repository)
     ingestor.ingest(
         bot_key=bot_key,

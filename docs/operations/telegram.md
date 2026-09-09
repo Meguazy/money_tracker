@@ -125,8 +125,10 @@ from becoming a way into your finances.
 
 1. Make sure the profile exists (`money-tracker-admin` creates it) and the
    database is migrated.
-2. Generate a code. It is printed once and stored only as a SHA-256, so if you
-   lose it, generate another rather than looking for it:
+2. Generate a code. This also creates the bot's persistence scope, so it works
+   on a bot the gateway has never run for. The code is printed once and stored
+   only as a SHA-256, so if you lose it, generate another rather than looking
+   for it:
 
        uv run --env-file .env money-tracker-telegram pair
 

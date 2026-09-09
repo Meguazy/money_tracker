@@ -188,3 +188,20 @@ Every future row must identify:
   no automatic-post subset to which either obligation applies. Every movement
   remains a draft for owner confirmation, as the product baseline permits.
 - This records no threshold change and promotes no model, prompt, or policy.
+
+## Step 3 human usefulness disposition — 2026-09-09
+
+- Owner decision: complete the advice usefulness review in Step 3 rather than
+  defer it to Step 5.
+- Evidence: Qwen3 14B run `ADV-20260909-092956-f95a0288`, immutable dataset
+  `advice-grounding-it-v1.1` 1.1.0 with content hash
+  `8f02096a061864e238f4c034bbfec02be9f6f06d5967d6dd062146a5e85eaa2f`,
+  `candidate-tool-selection-it-v5`, and rubric `human-usefulness-v1`.
+- Measured value: 52 of 52 applicable cases received an owner score; the median
+  is 4.0 against the unchanged threshold of at least 4.0, so the gate passes.
+  Score distribution: 1: 4, 2: 2, 3: 1, 4: 23, 5: 22.
+- Residual evidence: five of six funding-split cases fail automated
+  interpretation and received owner scores 1 or 2; the sole correct overall
+  split received 5. Human usefulness cannot override that independently
+  blocking 46/52 interpretation result.
+- This records no threshold change and promotes no model or prompt.

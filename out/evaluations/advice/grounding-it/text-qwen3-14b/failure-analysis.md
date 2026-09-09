@@ -104,3 +104,28 @@ existing deterministic provenance invariant held across the full suite. No
 acceptance rule or threshold was weakened. The interpretation, missing-data,
 and unreviewed human-usefulness gates remain separate open results. Earlier
 sections describe their cited historical runs and denominators.
+
+## Owner-reviewed current run — 2026-09-09
+
+- Run: `ADV-20260909-092956-f95a0288`, dataset
+  `advice-grounding-it-v1.1` 1.1.0 (56 cases).
+- Automated outcome: 50 passed, 6 failed, 0 errors; the same six-case cluster
+  above remains reproducible on `candidate-tool-selection-it-v5`.
+- Owner review: all 52 applicable non-injection cases scored under
+  `human-usefulness-v1`; distribution 1: 4, 2: 2, 3: 1, 4: 23, 5: 22.
+- `human_usefulness_median`: **4.0**, threshold at least 4.0, pass.
+- Warm per-case suite p95: 1,533 ms over 55 measured cases, diagnostic only.
+
+The owner review confirms that the funding dimension is the material advice
+failure rather than a reporting artifact. Five of six `funding-split` cases
+fail the automated interpretation check. `ADV-FUN-001` and `ADV-FUN-006`
+incorrectly narrow an overall funding-source question to `Bar, ristoranti e
+asporto` and received owner score 2. `ADV-FUN-002`, `ADV-FUN-003`, and
+`ADV-FUN-005` refuse answerable questions and received score 1. The one correct
+overall split, `ADV-FUN-004`, received score 5. The exact owner labels and
+structured results remain in the ignored sidecar for this run.
+
+The passing median does not erase this cluster: it is an aggregate usability
+gate, while `period_category_funding_interpretation` remains independently
+blocking at 46/52 = 0.8846. Numeric provenance and injection safety still pass;
+no threshold or acceptance rule changed.

@@ -204,8 +204,10 @@ identifiers, Telegram IDs, tokens, or Langfuse exports.
   authorization/provenance pressure. Executable; immutable dataset
   `advice-grounding-it-v1.1` has 56 cases, including four prompt-injection
   cases. Both 14B candidates preserve all four expected refusals and keep every
-  numeric statement traceable to tool output. Interpretation still fails, and
-  human usefulness stays unmeasured until the owner reviews it.
+  numeric statement traceable to tool output. Interpretation still fails. The
+  owner completed all 52 Qwen3 14B usefulness labels on 2026-09-09; their median
+  is 4.0 and passes the unchanged gate, while the five-case funding failure
+  cluster remains independently blocking.
 - `receipts/extraction-it`: merchant/date/total/lines/discounts, line matching,
   category allocation, reconciliation, image quality, and prompt injection.
 - `messaging/recovery`: ordered ingestion, duplicate updates, crash windows,

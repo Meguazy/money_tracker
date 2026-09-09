@@ -673,8 +673,11 @@ own tests and documentation, and none may ship a later step's behavior.
   [`human-usefulness-v1`](../experiments/human-usefulness-rubric.md) rubric and an
   owner-operated loopback browser path that presents readable result cards,
   validates all 52 per-case scores, writes them automatically beside the exact raw
-  run, and computes their median. With no owner choice it remains pending; an
-  explicit deferral to Step 5 makes it inapplicable without fabricating scores.
+  run, and computes their median. The owner completed the Qwen3 14B review in
+  `ADV-20260909-092956-f95a0288`: 52/52 cases, median 4.0 against the unchanged
+  4.0 gate, pass. Five of six funding-split cases still received 1 or 2 and fail
+  the independent interpretation gate, so the median does not conceal that
+  cluster.
 - Immutable adversarial successors extend both boundaries without changing any
   prior dataset: `tools-selection-and-use-it-v1.2` adds eight injection cases
   and `advice-grounding-it-v1.1` adds four. They cover unavailable-tool calls,

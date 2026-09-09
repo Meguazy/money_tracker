@@ -1,7 +1,7 @@
 # AD-010: Telegram Long Polling and Durable Messaging
 
-- Status: accepted
-- Implementation: planned
+- Status: accepted; raw-update retention detail superseded by AD-018
+- Implementation: transaction and ordering design refined by AD-018; code planned
 - Date: 2026-09-01
 
 ## Context
@@ -22,6 +22,11 @@ Persist responses in a transactional outbox. Retry transient failures five
 times with backoff, then move the message to a visible dead-letter state that
 can be replayed. Financial commands carry idempotency keys. Pair one private-chat
 owner through a short-lived local code and reject all other users and groups.
+
+[AD-018](AD-018-telegram-processing-transactions.md) replaces raw-payload
+retention with minimum normalized fields and refines the transaction boundaries,
+strict head-of-line ordering, pending-action scope, replay result, and external
+delivery guarantee. Long polling and the other choices above remain accepted.
 
 ## Alternatives considered
 

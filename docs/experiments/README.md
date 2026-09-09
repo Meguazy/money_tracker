@@ -1,6 +1,6 @@
 # Experiments and Evaluations
 
-- Status: accepted process; Step 1 executable foundation complete
+- Status: accepted process; Step 3 text configuration promoted by EVD-004
 - Executable infrastructure: capability runner, dataset-backed workflow suite
   runner, and deterministic local reports
 - Decision authority: [Evaluation Matrix](evaluation-matrix.md) and
@@ -8,10 +8,11 @@
 - Human advice review: [Human usefulness rubric](human-usefulness-rubric.md)
 - Current hardware shortlist:
   [Local Model Shortlist - 2026-09-01](local-model-shortlist-2026-09-01.md)
-- Active Step 3 recovery:
+- Historical Step 3 recovery:
   [Text workflow evaluation recovery — 2026-09-08](text-workflow-recovery-2026-09-08.md).
-  The historical results below precede the uncommitted union-schema candidates.
-  No candidate is promoted; missing observations cannot satisfy a blocking gate.
+  The historical results below precede the promoted union-schema candidates.
+  EVD-004 is the current text-role decision; missing observations still cannot
+  satisfy a blocking gate for another role.
 - Capability screening:
   [Local Model Capability Results - 2026-09-02](local-model-capability-results-2026-09-02.md)
   and its extension,

@@ -120,8 +120,8 @@ input:
       --text '/status' --minimum-confidence 0.8
 
 Free text reaches local inference, so start `scripts/run_llama_server.sh` first.
-`--minimum-confidence` is required because no production routing bar is
-promoted. The following only reports routing because it supplies no profile:
+`--minimum-confidence` remains explicit; the EVD-004 production value is 0.5.
+The following only reports routing because it supplies no profile:
 
     uv run --env-file .env money-tracker-admin route \
       --text 'Ho speso 12 euro per i croccantini dei gatti' \
@@ -292,8 +292,9 @@ The launcher binds to loopback, requires the configured local API key, offloads
 model layers, enables Flash Attention, uses one inference slot, uses the
 embedded Jinja chat template, attaches the optional vision projector, and
 defaults to an 8K context with reasoning disabled. Override `LLAMA_PARALLEL` or
-`LLAMA_REASONING` only in a recorded experiment. No model is approved until
-the relevant evaluation gates pass.
+`LLAMA_REASONING` only in a recorded experiment. The Qwen3 14B text profile is
+approved only with the exact EVD-004 configuration; vision and receipt roles
+remain unapproved until their relevant gates pass.
 
 ## Capability evaluation
 

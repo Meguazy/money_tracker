@@ -5,14 +5,20 @@ do not rewrite historical outcomes when a later experiment supersedes them.
 
 ## Current production baseline
 
-- Text model: no evaluated production model selected.
-- Structured-output method: no capability-gated method selected.
-- Routing/category/tool prompts: no V1 production prompt. Unpromoted candidate
-  router, extraction, and category-fit instructions exist in code under
-  `CANDIDATE_` names and `candidate-` version identifiers so a runtime cannot
-  mistake them for a promoted configuration. Two candidate-quality gaps are
-  known against the screened Qwen3 14B profile and remain open for the pinned
-  suites to measure rather than to tune by hand:
+- Text model: EVD-004 promotes profile `text-qwen3-14b` and
+  `Qwen3-14B-Q5_K_M.gguf` for Step 3 text workflows.
+- Structured-output method: the promoted strict union-shaped boundaries use the
+  exact llama.cpp and schema versions pinned by EVD-004.
+- Routing/category/tool prompts: router v6, extraction v6, category-fit v6, and
+  tool-selection v5 are the V1 production defaults, with routing confidence 0.5
+  and `explicit-finance-scope-v1`. `model-only-v0` is the direct
+  read-selection rollback. There is no promoted auto-post subset or receipt
+  model.
+
+The following paragraphs retain the historical pre-promotion evidence rather
+than rewriting it after EVD-004. At that point, candidate instructions existed
+under `CANDIDATE_` names and `candidate-` version identifiers, and two
+candidate-quality gaps remained open:
   - `candidate-extraction-it-v2` is now measured by `ingestion-expense-it-v1`
     (170 cases) and fails three blocking gates. It is accurate on everything a
     message states: amounts, occurrence dates, split parts, polarity, and

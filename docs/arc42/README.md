@@ -21,15 +21,16 @@ budgets, wallet balances, charts, and operational controls.
 
 The approved V1 scope is defined in
 [Vision and Requirements](../product/vision-and-requirements.md). The current
-repository contains the completed Step 1 platform foundation and the current
-Step 2 finance increment: pure domain contracts, the accepted seeded taxonomy,
-authoritative finance tables, transactional expense, wallet, and budget
-repository operations, and audited pending category-proposal submission. It
-also registers and versions content-addressed receipt review metadata, but has
-no Telegram adapter, web application, receipt extraction pipeline, media-store
-API/worker wiring, backup, or product review entry point. Strict version-one
-finance wire schemas exist without a running HTTP endpoint. A safe local
-receipt-media adapter is wired through a minimal administration CLI.
+repository contains the completed platform, finance-domain, persistence, and
+evaluated text-workflow steps. EVD-004 promotes Qwen3 14B, router v6,
+extraction v6, category-fit v6, tool-selection v5, routing confidence 0.5, and
+`explicit-finance-scope-v1`. The transport-neutral dispatcher, persistent
+specialist checkpoints, finance repositories, private receipt-media adapter,
+and verified encrypted backup are implemented. Step 4 design is reconciled in
+AD-018, but the repository does not yet contain messaging tables, a Telegram
+adapter, a workflow worker, owner-facing response rendering, or systemd units.
+The web application and receipt extraction pipeline remain assigned to later
+roadmap steps.
 
 ### Quality goals
 
@@ -256,7 +257,7 @@ catalog is promoted; every identifier carries a `candidate-` prefix.
 | Finance domain (core implemented) | Enforce money, expense/refund, allocation, budget, category and wallet invariants | Pure value objects and domain policies | No infrastructure state | Python application; no framework imports |
 | Application services (expense/wallet/budget, proposal submission and settlement, and receipt registration/review implemented) | Execute validated commands and queries transactionally | Narrow repository ports, clock, ID and future media ports | Command/content idempotency, versioning, review boundary, and audit semantics | Future FastAPI/worker host processes; profile scope injected; product receipt review remains workflow-owned |
 | Finance repositories (expense/wallet/budget/proposal/versioned receipt metadata implemented) | Persist authoritative domain records and analytics projections | PostgreSQL protocol through explicit repository contracts | Finance schema implemented; proposal decisions and receipt deletion open | Dedicated application database; least-privilege credentials; optimistic versions and source locks protect concurrent mutations; no media payloads |
-| Messaging inbox/outbox | Receive, order, retry, dead-letter, replay and dispatch transport work | PostgreSQL and Telegram adapter | Raw updates, offsets, delivery attempts, result references | Gateway and worker; bot token never stored in rows |
+| Messaging persistence (planned) | Receive, order, lease, retry, dead-letter, replay, correlate, and dispatch transport work | Narrow application port and PostgreSQL | Minimum normalized inbox data, offsets, typed results, logical outbox, pairing, pending actions, and attempt metadata | Gateway and worker; no raw update payload or bot token in rows |
 | Workflow runtime (dispatcher, router, and Step 3 text specialists implemented) | Route one normalized work unit and execute exactly one bounded specialist | Typed dispatcher outcome, LangGraph, model gateway, application services, checkpointer | Small per-graph versioned workflow state only; authoritative domain data stays in repositories | Administration CLI today and sequential worker in Step 4; no media, credentials, or service objects in checkpoints |
 | Receipt service | Validate media, invoke extractor, reconcile lines, prepare review | Implemented media-store port, planned extractor, finance service | Receipt metadata, extraction versions, review state | Private filesystem; untrusted image boundary; orchestration planned |
 | Analytics service | Compute time, category, budget and funding summaries | Read repositories and deterministic calendar policies | No separate authoritative data | FastAPI and read-only agent tools |
@@ -267,12 +268,31 @@ catalog is promoted; every identifier carries a `candidate-` prefix.
 | Component | Responsibility | Interfaces/dependencies | Data ownership | Deployment/security |
 | --- | --- | --- | --- | --- |
 | Workflow dispatcher, root router, and text specialists (implemented) | Route one intent and coordinate expense/refund, correction/undo, category review, query, or advice | Typed normalized work unit/outcome, versioned schemas, scoped tool registries, trusted correlations | Namespaced checkpoint references and workflow IDs; no domain ownership | Administration CLI now, worker later; mutation paths call replay-safe application services |
-| Telegram adapter | Pair owner, long poll, download media and send/edit responses | Telegram Bot API and messaging services | No authoritative finance data | Separate host service; private chats only |
+| Telegram Bot API transport (planned) | Validate the bot, long poll, obtain file metadata, acknowledge callbacks, and deliver outbox messages | Bounded HTTPS client and messaging services | No authoritative finance data or correctness state | Gateway host service; separate production/test token selected from a private environment file |
 | FastAPI adapter | Expose versioned REST resources and health/operations endpoints | Application services | No independent data | Loopback, allowed Host/Origin, CSRF protection |
 | React dashboard | Display and edit finance, review, budget, wallet and operational state | Same-origin REST API | Browser session/UI state only | Compiled static assets; no secrets |
 | Local model gateway | Provide typed chat, schema and tool capabilities | OpenAI-compatible local endpoint | No persistent domain data | Replaceable host inference process |
 | Receipt extractor adapter | Produce a versioned structured receipt draft | Selected local OCR/VLM pipeline | No authoritative data until validated | Local-only; selection remains evaluation-gated |
 | Langfuse adapter | Record redacted traces and experiment scores | Local Langfuse SDK | Observability copies, not source of truth | Optional development/evaluation profile |
+
+### Step 4 messaging boundaries
+
+AD-018 divides the planned Step 4 runtime into seven replaceable blocks:
+
+| Component | Responsibility | Interface/dependencies | Data ownership | Deployment/security |
+| --- | --- | --- | --- | --- |
+| `messaging.contracts` | Define normalized inbox, outbox, pairing, pending-action, retry, dead-letter, and health values | Pure Python contracts and time/identifier values | No infrastructure state | Shared host library; contains no Bot API token or raw update |
+| `messaging.service` | Authorize/normalize ingestion and coordinate claim, dispatch completion, retry, replay, and delivery transitions | Messaging repository port, response renderer, and dispatcher port | Application policy only | Gateway/worker/admin host processes; owner scope comes only from binding records |
+| `persistence.messaging` | Implement the AD-018 transactions and uniqueness/lease rules | psycopg and the dedicated application PostgreSQL | Entire `messaging` schema | Least-privilege application role; content is private and included in authoritative backup |
+| `telegram.transport` | Implement the official HTTPS Bot API methods with bounded timeouts and redacted failures | `httpx` and configured Bot API base URL/token | No durable state | Gateway only; production/test configuration is mutually exclusive |
+| `telegram.gateway` | Run independent ingress and outbox loops | Bot API transport and messaging service | No in-memory correctness state | systemd host service; no model or finance repository dependency |
+| `worker` | Translate one claimed row to `ChannelMessage`, construct `DispatchContext`, call the Step 3 dispatcher, and finalize messaging state | Messaging/finance read ports and `WorkflowDispatcher.dispatch` | No authoritative state | systemd host service; no token or Telegram client |
+| `presentation.telegram` | Render typed workflow outcomes and controls in Italian | Dispatch outcome plus bounded display projections | No state | Worker library; never exposes tool names, raw evaluation JSON, or internal IDs |
+
+The gateway and worker have separate failure domains. The gateway remains able to
+commit updates when llama.cpp or any workflow specialist is unavailable. The
+worker never imports a Telegram transport type; the normalized
+`ChannelMessage` is the only value crossing into the Step 3 workflow boundary.
 
 Detailed finance concepts and the initial taxonomy live in
 [Domain and Taxonomy](../product/domain-and-taxonomy.md).
@@ -295,7 +315,9 @@ survey's missing-budget data, and explicit refusal of balance requests. Query
 still excludes the survey; advice still excludes the single-budget lookup.
 Category v7 renders explicit parent paths, independent of repository row order.
 The administrative expense path and evaluations share candidate definitions.
-All candidates remain experimental and all movements remain drafts.
+That corrective snapshot was experimental. EVD-004 now promotes the selected
+configuration; all movements still remain drafts because no auto-post subset
+qualified.
 
 ## 6. Runtime View
 
@@ -825,15 +847,25 @@ manual acceptance check.
 
 ### Planned Telegram recovery and processing
 
-1. The gateway requests the earliest unconfirmed batch through long polling.
-2. It inserts raw updates under unique `update_id` values and commits.
-3. Only then does it request the next offset, confirming prior Telegram updates.
-4. The worker locks the oldest eligible inbox record and processes one at a
-   time. A waiting human workflow does not block unrelated later messages.
-5. Transient failures retry five times with backoff. Exhausted messages become
-   dead-letter records visible for manual replay.
-6. Domain changes and response outbox records commit atomically. The Telegram
-   dispatcher sends outstanding responses independently.
+1. The gateway requests the environment's persisted next offset through long
+   polling and filters authorization and supported update types before work.
+2. One PostgreSQL transaction inserts minimum normalized accepted updates under
+   `(bot_environment, update_id)` uniqueness and advances the offset beyond
+   every observed update. The next poll acknowledges only that commit.
+3. The worker leases only the oldest non-terminal record. A future retry or
+   live lease deliberately blocks later rows; an owner-waiting workflow is
+   complete once its question and pending action are durable.
+4. The worker translates the row to `ChannelMessage`, builds trusted
+   correlations from repositories, and calls only `WorkflowDispatcher.dispatch`.
+5. Finance writes use their existing replay-safe application transactions. The
+   typed result, unique logical outbox row, pending action, and inbox completion
+   then commit in one messaging transaction. A crash between them redispatches
+   the same source identity and reconstructs the prior mutation result.
+6. Five transient failures lead to a visible dead letter. Manual replay keeps
+   the source identity and never rewinds the Telegram offset.
+7. The independent outbox loop records delivery attempts and Telegram message
+   correlation. A lost Bot API response may duplicate physical delivery, but
+   cannot create a second logical response or finance mutation.
 
 ### Planned insight request
 
@@ -875,7 +907,7 @@ profile services pass their health checks.
 ```text
 Ubuntu workstation
 ├── systemd host services
-│   ├── money-tracker-api       -> 127.0.0.1, same-origin API and UI
+│   ├── money-tracker-api       -> 127.0.0.1, same-origin API and UI [Step 5]
 │   ├── money-tracker-telegram  -> Telegram HTTPS API
 │   ├── money-tracker-worker    -> application PostgreSQL and local models
 │   └── llama-server            -> 127.0.0.1 OpenAI-compatible API
@@ -893,6 +925,9 @@ External backup folder/disk
 Systemd user services use lingering, or an equivalent host setup, to recover
 without a manual application start. Each service tolerates delayed database,
 network, and inference readiness through health checks and retry policies.
+
+Step 4 installs the Telegram gateway, workflow worker, and llama.cpp units; it
+does not install an API unit because no implemented Step 4 runtime requires it.
 
 ## 8. Cross-Cutting Concepts
 
@@ -947,13 +982,39 @@ network, and inference readiness through health checks and retry policies.
 - Every external update and financial command has a stable idempotency key.
   Movement creation, correction, and undo derive separate namespaced keys from
   the durable inbound record, so a redelivery claims the same key and the
-  repository returns the first result. The accompanying request digest covers what the owner asked for
+  repository returns the first result. The accompanying request digest covers
+  what the owner asked for
   and excludes lifecycle status, version, and generated identifiers, and
   normalizes the occurrence instant to UTC so the same moment expressed with a
   different offset matches. A redelivery must therefore replay the stored
   record unchanged, its channel timestamp included.
 - Callback and free-text follow-up map to explicit pending actions and workflow
   IDs instead of assuming one global chat thread.
+
+### Telegram security and recovery contract (planned)
+
+- Production and test bot environments have separate tokens and offset rows. A
+  process selects exactly one environment and never falls back to the other.
+- Authorization happens before inbox creation, media lookup, workflow dispatch,
+  or finance reads. Unsupported and unauthorized updates advance the observed
+  offset without retaining private payload content.
+- The sole owner binding requires an unexpired one-use hash-verified pairing
+  code in a private chat. Groups, channels, and foreign users cannot create
+  workflow work or receive finance content.
+- The gateway stores only normalized fields required for recovery. Bot tokens,
+  token-bearing URLs, raw updates, usernames, and unnecessary file metadata are
+  absent from rows, logs, traces, fixtures, and health output.
+- Persisted offset recovery never rewinds domain work. Replay selects an inbox
+  item and preserves its source identity; it does not alter Telegram
+  acknowledgement state.
+- A measured gap of more than 24 hours marks health degraded and queues a
+  generic possible-loss warning. Recovery can request manual resend but cannot
+  identify or reconstruct expired updates.
+- Leases recover abandoned processing and delivery claims after process death.
+  Five failed attempts produce visible inbound or outbound dead letters; safe
+  operator actions are inspect, retry eligibility, or explicit replay.
+- The authoritative backup includes messaging state through the PostgreSQL dump.
+  No separate queue snapshot or in-memory state is required for recovery.
 
 ### Configuration and secrets
 
@@ -1133,6 +1194,9 @@ environment file.
 - [AD-017: Versioned deterministic read-selection policy](decisions/AD-017-versioned-read-selection-policy.md):
   promoted V1 policy implemented between model parsing and registry acceptance;
   V0 remains the direct configuration rollback.
+- [AD-018: Telegram processing transactions and ordering](decisions/AD-018-telegram-processing-transactions.md):
+  reconciled Step 4 component, transaction, offset, ordering, replay, and
+  delivery guarantees are accepted; implementation remains planned.
 
 ### Planned accepted decisions
 
@@ -1163,22 +1227,20 @@ Quantitative evaluation gates are maintained in
 
 ### Current scaffold risks
 
-- The finance domain, schema, taxonomy seed, expense/wallet/budget repository
-  operations, pending proposal submission, versioned receipt review, and the
-  private receipt archive adapter are only a partial Step 2 implementation.
-  Proposal/category decisions, receipt extraction/deletion,
-  API/worker media wiring, broader administrative bootstrap, backup, and
-  restore remain open.
-- The product graph is stateless and has one unconstrained assistant node,
-  although the replaceable PostgreSQL checkpoint adapter is available.
-- Three pinned llama.cpp/GGUF profiles have passed every applicable Step 1
-  technical capability gate with exact runtime metadata. None is yet promoted
-  to a product role because the Step 3 behavioral evaluation gates remain open.
-- Application data is not yet covered by the accepted Restic backup/restore
-  process; persistent personal finance data must not be encouraged before its
-  roadmap gate.
-- Existing inference integration and E2E tests remain opt-in smoke checks with
-  weak behavioral assertions.
+- The accepted Step 4 boundaries are not implemented yet: no messaging tables,
+  Telegram transport, gateway/worker, response renderer, health command, or
+  systemd unit exists.
+- Category-review settlement is safe against a duplicate mutation but does not
+  yet reconstruct its original typed result across the dispatch-to-outbox crash
+  window. AD-018 makes closing that gap a worker prerequisite.
+- EVD-004 promotes the Qwen3 14B text configuration, but no automatic-post
+  subset qualifies. Ordinary existing-category movements remain drafts until a
+  later explicit owner or dashboard action posts them.
+- The encrypted authoritative backup and isolated restore drill are implemented,
+  but automatic scheduling, off-device secret verification, and a clean-machine
+  restore remain later release work.
+- Real Telegram and complete channel E2E evidence remain absent until a separate
+  test bot and owner interaction are available.
 
 ### Target architecture risks
 

@@ -22,7 +22,7 @@ the step document, which is the only place any of them is written down.
 | [1](roadmap/step-1-platform-and-evaluation.md) | Healthy platform and evaluation foundation | Complete (2026-09-02) |
 | [2](roadmap/step-2-finance-domain-and-persistence.md) | Deterministic finance domain and persistence | Complete (2026-09-02) |
 | [3](roadmap/step-3-evaluated-text-workflows.md) | Evaluated text workflows | Complete (2026-09-09) |
-| [4](roadmap/step-4-durable-telegram-mvp.md) | Durable Telegram MVP | Planned |
+| [4](roadmap/step-4-durable-telegram-mvp.md) | Durable Telegram MVP | In progress — design reconciled with repository truth |
 | [5](roadmap/step-5-dashboard-and-advice.md) | Local dashboard, budgets, analytics, and advice | Planned |
 | [6](roadmap/step-6-evaluated-receipt-workflow.md) | Evaluated receipt workflow | Planned |
 | [7](roadmap/step-7-hardening-and-release.md) | Operational hardening and personal V1 release | Planned |

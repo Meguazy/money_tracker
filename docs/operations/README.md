@@ -1,7 +1,6 @@
 # Operations Guide
 
-- Status: Step 1 platform foundation and Step 2 finance core complete;
-  product operations planned
+- Status: Steps 1–3 complete; Step 4 durable Telegram implementation in progress
 - Current executable operations: local inference/CLI, dedicated application
   PostgreSQL, migrations/checkpoint bootstrap, optional healthy Langfuse, and
   capability evaluation, profile-scoped receipt storage, and one-shot Step 3
@@ -10,7 +9,7 @@
   expense, wallet, budget, pending category-proposal, and versioned receipt-review
   repository operations, a safe local receipt-media adapter, and verified
   encrypted backup with an isolated restore drill
-- Planned operations: Telegram, systemd services, backup scheduling and
+- Planned operations: Telegram, workflow worker, systemd services, backup scheduling and
   clean-machine restore, web API, workflow worker receipt wiring, and media
   deletion
 
@@ -55,13 +54,16 @@ the referenced file or entry point exists in the repository.
   administration CLI, single Step 3 workflow dispatcher, capability runner,
   and optional Langfuse callbacks exist.
 - The dedicated application PostgreSQL is healthy, independently persistent,
-  least-privileged, and separate from the Langfuse database. It now owns the
-  Step 2 finance schema, while messaging product tables remain planned.
+  least-privileged, and separate from the Langfuse database. It owns the
+  authoritative finance schema and persistent workflow checkpoints; messaging
+  product tables remain planned.
 - Langfuse 4.26.0 and every dependency are pinned by digest. The non-cluster
   repair and health checks pass with the pre-existing volumes preserved.
 - Installed model paths remain workstation-owned and outside the repository.
-  Three pinned profiles pass the Step 1 capability screen, but no model is
-  promoted to a product role.
+  EVD-004 promotes `text-qwen3-14b` with `Qwen3-14B-Q5_K_M.gguf`, router v6,
+  extraction v6, category-fit v6, tool-selection v5, routing confidence 0.5,
+  and `explicit-finance-scope-v1`. `model-only-v0` remains the direct
+  read-selection rollback; no receipt model is promoted.
 - Expense, wallet, budget, pending-proposal, and content-idempotent receipt
   metadata operations exist. Receipt review/approval transitions are versioned,
   audited, and concurrency-safe; proposal decisions and receipt extraction or

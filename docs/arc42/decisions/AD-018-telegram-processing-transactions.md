@@ -4,8 +4,8 @@
 - Implementation: messaging contracts/repository, category-review replay, Bot
   API transport, authorized ingress, gateway/outbox loops, Italian response
   rendering, the sequential worker, one-use owner pairing, operator
-  health/replay/resend commands, and host service units implemented; real-bot
-  acceptance pending
+  health/replay/resend/latency commands, and host service units implemented;
+  real-bot acceptance pending
 - Date: 2026-09-09
 - Supersedes: the raw-update retention detail in
   [AD-010](AD-010-telegram-durable-messaging.md); all other AD-010 choices remain
@@ -214,11 +214,12 @@ another proves every stable reason code has an owner-facing question.
 Twenty-four unit tests cover rendering, digest stability, and refusal of
 missing display data.
 
-Operator commands cover health, both dead-letter queues, inbox replay, and
-outbox resend. Their output carries counts, ages, safe identifiers, and reason
-codes but no message content. Inbox replay is scoped by the selected bot key
-and inbox UUID and preserves the source reference so an item that already
-mutated finance returns its first result. Outbox resend is likewise bot-scoped,
+Operator commands cover health, content-free text latency, both dead-letter
+queues, inbox replay, and outbox resend. Their output carries counts, ages,
+safe identifiers, and reason codes but no message content. Inbox replay is
+scoped by the selected bot key and inbox UUID and preserves the source
+reference so an item that already mutated finance returns its first result.
+Outbox resend is likewise bot-scoped,
 keeps the same logical response row, records the manual replay count, and resets
 only its bounded automatic-attempt cycle. Because Telegram offers no send
 idempotency key, the command is explicit and its runbook warns that an

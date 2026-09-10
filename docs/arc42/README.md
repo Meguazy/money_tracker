@@ -1264,8 +1264,8 @@ environment file.
   backup/restore implemented; API/worker wiring and deletion planned.
 - [AD-016: Explicit workflow dispatcher](decisions/AD-016-explicit-workflow-dispatcher.md):
   transport-neutral typed outcome, explicit router-to-specialist composition,
-  trusted action correlation, and administration CLI wiring implemented;
-  durable worker and channel presentation planned.
+  trusted action correlation, administration CLI wiring, durable worker, and
+  channel presentation implemented.
 - [AD-017: Versioned deterministic read-selection policy](decisions/AD-017-versioned-read-selection-policy.md):
   promoted V1 policy implemented between model parsing and registry acceptance;
   V0 remains the direct configuration rollback.
@@ -1273,8 +1273,8 @@ environment file.
   reconciled Step 4 persistence, Bot API transport, authorized ingestion,
   persisted-offset runtime, outbox delivery, Italian response rendering, the
   sequential worker, one-use owner pairing, and operator
-  health/replay/resend commands are implemented; real-bot acceptance remains
-  outstanding.
+  health/replay/resend/latency commands are implemented; real-bot acceptance
+  remains outstanding.
 
 ### Partially implemented Telegram decisions
 

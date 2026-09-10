@@ -1,9 +1,8 @@
 # AD-016: Explicit Workflow Dispatcher
 
 - Status: accepted
-- Implementation: implemented for every Step 3 text specialist; Telegram,
-  receipt processing, commands, and owner-facing presentation remain Step 4 or
-  later work.
+- Implementation: implemented for every Step 3 text specialist and the durable
+  Telegram worker/channel presentation; receipt processing remains later work.
 - Date: 2026-09-08
 - Supersedes: nothing. Refines
   [AD-006](AD-006-bounded-agent-workflows.md) and provides the call boundary for

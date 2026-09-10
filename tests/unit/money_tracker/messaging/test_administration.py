@@ -48,7 +48,7 @@ class _Repository:
         self.stored: list[dict[str, Any]] = []
         self.ensured: list[tuple[str, Any]] = []
         self.limits: list[int] = []
-        self.replayed: list[tuple[UUID, datetime]] = []
+        self.replayed: list[tuple[str, UUID, datetime]] = []
 
     def ensure_bot(self, bot_key: str, **values: Any) -> None:
         """Record the persistence scope the pairing code needs."""
@@ -83,10 +83,12 @@ class _Repository:
             ),
         )
 
-    def replay_inbox(self, inbox_id: UUID, *, now: datetime) -> None:
+    def replay_inbox(
+        self, bot_key: str, inbox_id: UUID, *, now: datetime
+    ) -> None:
         """Record one replay request."""
 
-        self.replayed.append((inbox_id, now))
+        self.replayed.append((bot_key, inbox_id, now))
 
 
 def _service(repository: _Repository) -> MessagingAdministration:
@@ -227,9 +229,9 @@ def test_replay_names_the_selected_item_and_the_instant() -> None:
     repository = _Repository()
     inbox_id = UUID("00000000-0000-0000-0000-0000000000d1")
 
-    _service(repository).replay(inbox_id)
+    _service(repository).replay("telegram-test", inbox_id)
 
-    assert repository.replayed == [(inbox_id, NOW)]
+    assert repository.replayed == [("telegram-test", inbox_id, NOW)]
 
 
 def test_a_bot_that_never_polled_reports_no_downtime() -> None:

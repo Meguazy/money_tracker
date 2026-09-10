@@ -86,8 +86,10 @@ class MessagingRepository(Protocol):
     ) -> UUID:
         """Commit typed result, logical response, correlations, and completion."""
 
-    def replay_inbox(self, inbox_id: UUID, *, now: datetime) -> None:
-        """Return one dead letter to pending without changing source identity."""
+    def replay_inbox(
+        self, bot_key: str, inbox_id: UUID, *, now: datetime
+    ) -> None:
+        """Replay one dead letter only inside the selected bot scope."""
 
     def dead_letters(self, bot_key: str, *, limit: int) -> tuple[DeadLetter, ...]:
         """List failed work items an operator may inspect and replay."""

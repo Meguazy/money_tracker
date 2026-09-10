@@ -194,7 +194,8 @@ Every operator command prints JSON and none of them print message content:
 whether an owner is paired, and whether the last poll is old enough that
 Telegram may have discarded updates. `dead-letters` lists what failed with its
 identity, attempts, and reason code, which is where the `--inbox-id` for a
-replay comes from.
+replay comes from. The environment selected by `.env` scopes both commands; a
+UUID listed by another bot environment is rejected without changing that row.
 
 Replay preserves the source reference, so the finance command keys the work
 unit already derived stay the same. An item that had already committed a

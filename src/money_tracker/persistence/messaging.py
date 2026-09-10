@@ -332,8 +332,10 @@ class PostgresMessagingRepository:
                 raise MessagingLeaseError("inbox lease is no longer current")
         return outbox_id
 
-    def replay_inbox(self, inbox_id: UUID, *, now: datetime) -> None:
-        """Return exactly one dead letter to pending with stable source identity."""
+    def replay_inbox(
+        self, bot_key: str, inbox_id: UUID, *, now: datetime
+    ) -> None:
+        """Replay one dead letter only inside the selected bot scope."""
 
         require_aware(now, field="now")
         with self._connect() as connection:
@@ -341,8 +343,8 @@ class PostgresMessagingRepository:
                 "UPDATE messaging.telegram_inbox SET status = 'pending', "
                 "attempt_count = 0, replay_count = replay_count + 1, "
                 "next_attempt_at = %s, last_error_code = NULL "
-                "WHERE id = %s AND status = 'dead_letter'",
-                (now, inbox_id),
+                "WHERE id = %s AND bot_key = %s AND status = 'dead_letter'",
+                (now, inbox_id, bot_key),
             )
             if result.rowcount != 1:
                 raise MessagingConflictError(

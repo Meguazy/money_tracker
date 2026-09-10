@@ -169,7 +169,7 @@ class MessagingAdministration:
 
         return self._repository.dead_letters(bot_key, limit=limit)
 
-    def replay(self, inbox_id: UUID) -> None:
+    def replay(self, bot_key: str, inbox_id: UUID) -> None:
         """Return one dead letter to the queue with its identity intact.
 
         Replay preserves the source reference, so the finance command keys the
@@ -178,13 +178,16 @@ class MessagingAdministration:
         applying a second one, which is what makes this safe to offer at all.
 
         Args:
+            bot_key: Bot and environment persistence scope selected by config.
             inbox_id: Dead letter an operator chose to retry.
 
         Raises:
             MessagingConflictError: If the item is not a dead letter.
         """
 
-        self._repository.replay_inbox(inbox_id, now=self._clock.now())
+        self._repository.replay_inbox(
+            bot_key, inbox_id, now=self._clock.now()
+        )
 
 
 def downtime_gap(health: MessagingHealth, *, now: datetime) -> timedelta | None:

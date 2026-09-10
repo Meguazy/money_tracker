@@ -896,8 +896,9 @@ real test bot has been through it, and no systemd unit starts the processes.
    rendered response must reconstruct too, so its text and controls are derived
    only from the outcome and committed state; live queue figures would make a
    recovery collide with its own first response.
-6. Five transient failures lead to a visible dead letter. Manual replay keeps
-   the source identity and never rewinds the Telegram offset.
+6. Five transient failures lead to a visible dead letter. Manual replay is
+   constrained by the configured bot environment plus inbox ID, keeps the
+   source identity, and never rewinds the Telegram offset.
 7. The independent outbox loop records delivery attempts and Telegram message
    correlation. A lost Bot API response may duplicate physical delivery, but
    cannot create a second logical response or finance mutation.
@@ -1054,7 +1055,8 @@ does not install an API unit because no implemented Step 4 runtime requires it.
   token-bearing URLs, raw updates, usernames, and unnecessary file metadata are
   absent from rows, logs, traces, fixtures, and health output.
 - Persisted offset recovery never rewinds domain work. Replay selects an inbox
-  item and preserves its source identity; it does not alter Telegram
+  item only within the configured bot environment and preserves its source
+  identity; it does not alter Telegram
   acknowledgement state.
 - A measured gap of more than 24 hours marks health degraded and queues a
   generic possible-loss warning. Recovery can request manual resend but cannot

@@ -99,8 +99,10 @@ Claiming increments the attempt count and gives the worker a bounded lease. A
 transient failure schedules deterministic bounded backoff. The fifth failed
 attempt becomes a visible dead letter. A permanent validation or authorization
 failure becomes a dead letter immediately. Manual replay clears only retry
-state on the selected safe inbox item, preserves its source reference and
-finance command identities, and never rewinds the Telegram offset.
+state on the selected safe inbox item within the bot environment selected by
+configuration, preserves its source reference and finance command identities,
+and never rewinds the Telegram offset. An inbox UUID from another environment
+is indistinguishable from a missing or non-dead-letter item.
 
 Workflow dispatch and finance mutation cannot share a transaction with the
 current independently connected application services. Correctness therefore
@@ -196,8 +198,9 @@ missing display data.
 
 Operator commands cover health, dead letters, and replay. Their output carries
 counts, ages, safe identifiers, and reason codes but no message content, and
-replay preserves the source reference so a replayed item that already mutated
-finance returns its first result. A downtime warning is keyed by the instant
+replay is scoped by both the selected bot key and inbox UUID, and preserves
+the source reference so a replayed item that already mutated finance returns
+its first result. A downtime warning is keyed by the instant
 the gap started, so restarting inside one outage produces one message.
 
 `MessagingAdministration` generates one short-lived code per bot, revoking any

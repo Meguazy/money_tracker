@@ -312,7 +312,7 @@ def test_exhausted_failure_replays_with_same_source_identity(
         now += timedelta(seconds=2)
     assert repository.health(bot_key).inbox_dead_letters == 1
 
-    repository.replay_inbox(update.id, now=now)
+    repository.replay_inbox(bot_key, update.id, now=now)
     replay = repository.claim_next_inbox(
         bot_key,
         now=now,
@@ -605,7 +605,19 @@ def test_dead_letters_are_listable_and_replayable_without_content(
     assert update.text is not None
     assert update.text not in str(item)
 
-    repository.replay_inbox(item.id, now=_NOW + timedelta(seconds=3))
+    foreign_bot_key = f"production-{uuid4().hex}"
+    repository.ensure_bot(
+        foreign_bot_key, environment=BotEnvironment.PRODUCTION, now=_NOW
+    )
+    with pytest.raises(MessagingConflictError):
+        repository.replay_inbox(
+            foreign_bot_key, item.id, now=_NOW + timedelta(seconds=3)
+        )
+    assert repository.dead_letters(bot_key, limit=10) == (item,)
+
+    repository.replay_inbox(
+        bot_key, item.id, now=_NOW + timedelta(seconds=3)
+    )
 
     assert repository.dead_letters(bot_key, limit=10) == ()
     replayed = repository.claim_next_inbox(

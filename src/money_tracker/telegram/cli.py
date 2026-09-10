@@ -194,6 +194,7 @@ def _dead_letters(
 
 
 def _replay(
+    bot_key: str,
     repository: PostgresMessagingRepository,
     inbox_id: UUID | None,
 ) -> dict[str, object]:
@@ -209,7 +210,7 @@ def _replay(
         repository,
         clock=_SystemClock(),
         ids=UUID4Generator(),
-    ).replay(inbox_id)
+    ).replay(bot_key, inbox_id)
     return {"inbox_id": str(inbox_id), "status": "queued"}
 
 
@@ -239,7 +240,11 @@ def main(argv: Sequence[str] | None = None) -> None:
             print(json.dumps(_dead_letters(settings, repository), indent=2))
             return
         if args.command == "replay":
-            print(json.dumps(_replay(repository, args.inbox_id), indent=2))
+            print(
+                json.dumps(
+                    _replay(settings.bot_key, repository, args.inbox_id), indent=2
+                )
+            )
             return
         token = settings.read_token()
         with BotApiClient(token, settings) as transport:

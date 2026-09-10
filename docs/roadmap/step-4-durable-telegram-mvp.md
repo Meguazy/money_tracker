@@ -154,8 +154,9 @@ printing private content or identifiers.
 - `health`, `dead-letters`, and `replay` print JSON carrying counts, ages, safe
   identifiers, and reason codes, and no message content. A real-PostgreSQL test
   proves a failed item is listable, that its owner text does not appear in the
-  projection, and that replaying it returns the same source reference to the
-  queue with its replay counter incremented.
+  projection, that replaying it returns the same source reference to the queue
+  with its replay counter incremented, and that a test-bot command cannot replay
+  a production-bot row even when given its UUID.
 - Both long-running processes classify why they stopped: exit code 1 for
   something an operator must change, 2 for an unreachable dependency. The units
   set `RestartPreventExitStatus=1`, so a missing credential stops visibly

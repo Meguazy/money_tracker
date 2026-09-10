@@ -253,8 +253,12 @@ backoff and the Bot API `retry_after` hint. The worker classifies its own
 failures: an unreachable local model or a losing concurrent mutation is
 retried, while a missing record, a rejected domain rule, or a conflicting
 logical response becomes a dead letter immediately rather than consuming five
-attempts. Operator replay and health commands remain planned, so a dead letter
-is currently visible only through the database.
+attempts. A recoverable failure queues one stable Italian notice that says an
+automatic retry is pending; a terminal failure queues a distinct notice that
+asks the owner not to resend while an operator recovers it. Neither notice
+contains the reason code or owner content. The state change and notice commit
+in one PostgreSQL transaction. Use the implemented `health`, `dead-letters`,
+and `replay` commands above for recovery.
 
 Outbound replies use the transactional outbox and its independent gateway loop.
 Telegram does not provide a general exactly-once `sendMessage` contract, so a

@@ -241,9 +241,10 @@ class PostgresMessagingRepository:
         error_code: str,
         transient: bool,
         retry_at: datetime | None,
+        response: OutboxMessageDraft,
         now: datetime,
     ) -> None:
-        """Schedule a bounded retry or move an inbox claim to dead letter."""
+        """Commit a bounded retry or dead letter with its owner notice."""
 
         self._validate_failure(error_code, retry_at=retry_at, now=now)
         retry = transient and claim.attempt_count < MAX_AUTOMATIC_ATTEMPTS
@@ -251,7 +252,15 @@ class PostgresMessagingRepository:
             raise ValueError("transient failure requires a retry timestamp")
         status = InboxStatus.RETRY if retry else InboxStatus.DEAD_LETTER
         next_attempt = retry_at if retry else now
+        if response.bot_key != claim.update.bot_key:
+            raise ValueError("failure response crosses the inbox bot scope")
+        if response.telegram_chat_id != claim.update.telegram_chat_id:
+            raise ValueError("failure response crosses the inbox chat scope")
+        if response.inbox_id != claim.update.id:
+            raise ValueError("failure response must target its inbox item")
         with self._connect() as connection:
+            self._require_inbox_lease(connection, claim)
+            self._insert_or_verify_outbox(connection, response, now)
             result = connection.execute(
                 "UPDATE messaging.telegram_inbox SET status = %s, "
                 "next_attempt_at = %s, claim_token = NULL, claimed_until = NULL, "

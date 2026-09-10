@@ -561,6 +561,21 @@ def test_a_downtime_warning_names_when_the_gap_started() -> None:
     assert notice.buttons == ()
 
 
+def test_processing_failure_messages_are_safe_and_actionable() -> None:
+    """Distinguish automatic retry from the manual dead-letter path."""
+
+    renderer = TelegramResponseRenderer()
+    recoverable = renderer.failure(terminal=False)
+    terminal = renderer.failure(terminal=True)
+
+    assert recoverable.kind is ResponseKind.RECOVERABLE_FAILURE
+    assert "Riproverò automaticamente" in recoverable.text
+    assert terminal.kind is ResponseKind.TERMINAL_FAILURE
+    assert "recupero manuale" in terminal.text
+    assert recoverable.buttons == terminal.buttons == ()
+    assert "model" not in recoverable.text.lower() + terminal.text.lower()
+
+
 def test_two_renders_of_one_outage_are_identical() -> None:
     """Let a restart inside the same outage reuse its logical response."""
 

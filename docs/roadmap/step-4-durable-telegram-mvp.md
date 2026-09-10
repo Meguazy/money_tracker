@@ -157,6 +157,12 @@ printing private content or identifiers.
   projection, that replaying it returns the same source reference to the queue
   with its replay counter incremented, and that a test-bot command cannot replay
   a production-bot row even when given its UUID.
+- Recoverable and terminal worker failures now create distinct concise Italian
+  responses. Their stable outbox identity and retry or dead-letter transition
+  commit atomically; repeated attempts reuse one recoverable notice, and no
+  internal reason or owner content enters it. Unit tests cover both messages and
+  real-PostgreSQL tests prove the terminal notice is claimable with the dead
+  letter while the original text is absent.
 - Both long-running processes classify why they stopped: exit code 1 for
   something an operator must change, 2 for an unreachable dependency. The units
   set `RestartPreventExitStatus=1`, so a missing credential stops visibly

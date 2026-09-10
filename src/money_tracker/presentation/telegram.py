@@ -230,6 +230,8 @@ class ResponseKind(StrEnum):
         STATUS: Answer to the status command.
         UNSUPPORTED: Acknowledgement of a route V1 does not serve yet.
         CLARIFICATION: One targeted question after a run that wrote nothing.
+        RECOVERABLE_FAILURE: Notice that automatic processing will retry.
+        TERMINAL_FAILURE: Notice that operator recovery is required.
     """
 
     MOVEMENT = "movement"
@@ -243,6 +245,8 @@ class ResponseKind(StrEnum):
     STATUS = "status"
     UNSUPPORTED = "unsupported"
     CLARIFICATION = "clarification"
+    RECOVERABLE_FAILURE = "recoverable_failure"
+    TERMINAL_FAILURE = "terminal_failure"
 
 
 def pairing_confirmation() -> OwnerResponse:
@@ -430,6 +434,32 @@ class TelegramResponseRenderer:
         the worker injects it as the presentation port AD-018 keeps separate
         from dispatch, so another channel can supply its own implementation.
     """
+
+    def failure(self, *, terminal: bool) -> OwnerResponse:
+        """Render a content-free processing failure for the owner.
+
+        Args:
+            terminal: Whether automatic retries are exhausted or impossible.
+
+        Returns:
+            A stable control-free notice that reveals no internal reason code.
+        """
+
+        if terminal:
+            return OwnerResponse(
+                kind=ResponseKind.TERMINAL_FAILURE,
+                text=(
+                    "Non sono riuscito a elaborare questo messaggio. "
+                    "È in attesa di recupero manuale: non inviarlo di nuovo."
+                ),
+            )
+        return OwnerResponse(
+            kind=ResponseKind.RECOVERABLE_FAILURE,
+            text=(
+                "C'è stato un problema temporaneo. Riproverò automaticamente: "
+                "non inviare di nuovo il messaggio."
+            ),
+        )
 
     def render(
         self,

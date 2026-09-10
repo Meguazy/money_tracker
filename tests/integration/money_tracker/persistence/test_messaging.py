@@ -6,7 +6,7 @@ import hashlib
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from threading import Barrier
-from uuid import UUID, uuid4
+from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 import pytest
 from psycopg import connect
@@ -117,6 +117,26 @@ def _response(
         content_hash=hashlib.sha256(text.encode()).hexdigest(),
         buttons=(OutboundButton(label="Modifica", callback_data="modify:integration"),),
         inbox_id=inbox_id,
+    )
+
+
+def _failure_response(
+    update: NormalizedTelegramUpdate, *, terminal: bool
+) -> OutboxMessageDraft:
+    """Build the stable owner notice committed with a failed inbox claim."""
+
+    kind = "terminal_failure" if terminal else "recoverable_failure"
+    text = "Notifica di errore senza contenuto privato"
+    return OutboxMessageDraft(
+        id=uuid5(NAMESPACE_URL, f"money-tracker:outbox:{update.id}:{kind}"),
+        bot_key=update.bot_key,
+        telegram_chat_id=update.telegram_chat_id,
+        logical_key=f"inbox:{update.id}:response:{kind}",
+        response_kind=kind,
+        text=text,
+        content_hash=hashlib.sha256(text.encode()).hexdigest(),
+        inbox_id=update.id,
+        reply_to_message_id=update.telegram_message_id,
     )
 
 
@@ -248,6 +268,7 @@ def test_retry_blocks_later_update_then_dead_letter_unblocks_it(
         error_code="model_unavailable",
         transient=True,
         retry_at=retry_at,
+        response=_failure_response(claim.update, terminal=False),
         now=_NOW + timedelta(minutes=1, seconds=1),
     )
 
@@ -272,6 +293,7 @@ def test_retry_blocks_later_update_then_dead_letter_unblocks_it(
         error_code="invalid_work",
         transient=False,
         retry_at=None,
+        response=_failure_response(retried.update, terminal=True),
         now=retry_at + timedelta(seconds=1),
     )
     next_claim = repository.claim_next_inbox(
@@ -307,6 +329,7 @@ def test_exhausted_failure_replays_with_same_source_identity(
             error_code="transient_dependency",
             transient=True,
             retry_at=now + timedelta(seconds=2),
+            response=_failure_response(claim.update, terminal=attempt == 5),
             now=now,
         )
         now += timedelta(seconds=2)
@@ -506,6 +529,7 @@ def test_environment_and_log_safe_failure_metadata_reject_conflicts(
             error_code="HTTP body contained private message",
             transient=False,
             retry_at=None,
+            response=_failure_response(claim.update, terminal=True),
             now=_NOW + timedelta(minutes=1, seconds=1),
         )
 
@@ -592,6 +616,7 @@ def test_dead_letters_are_listable_and_replayable_without_content(
         error_code="model_unavailable",
         transient=False,
         retry_at=None,
+        response=_failure_response(claim.update, terminal=True),
         now=_NOW + timedelta(seconds=2),
     )
 
@@ -604,6 +629,15 @@ def test_dead_letters_are_listable_and_replayable_without_content(
     assert item.source_reference == update.source_reference
     assert update.text is not None
     assert update.text not in str(item)
+    notice = repository.claim_next_outbox(
+        bot_key,
+        now=_NOW + timedelta(seconds=3),
+        lease=timedelta(minutes=1),
+        claim_token=uuid4(),
+    )
+    assert notice is not None
+    assert notice.message.response_kind == "terminal_failure"
+    assert update.text not in notice.message.text
 
     foreign_bot_key = f"production-{uuid4().hex}"
     repository.ensure_bot(

@@ -412,23 +412,8 @@ class SequentialWorker:
         """Persist result, response, correlation, and completion together."""
 
         update = claim.update
-        response_id = _response_id(update.id, response.kind)
-        draft = OutboxMessageDraft(
-            id=response_id,
-            bot_key=update.bot_key,
-            telegram_chat_id=update.telegram_chat_id,
-            logical_key=f"inbox:{update.id}:response:{response.kind.value}",
-            response_kind=response.kind.value,
-            text=response.text,
-            content_hash=response.content_hash,
-            buttons=response.buttons,
-            inbox_id=update.id,
-            # A callback answers a message the bot itself sent, so only owner
-            # text is worth threading a reply onto.
-            reply_to_message_id=(
-                update.telegram_message_id if update.callback_action is None else None
-            ),
-        )
+        draft = self._response_draft(claim, response)
+        response_id = draft.id
         pending_action = None
         if response.target is not None:
             pending_action = PendingActionDraft(
@@ -457,20 +442,49 @@ class SequentialWorker:
             response.kind.value,
         )
 
+    @staticmethod
+    def _response_draft(
+        claim: InboxClaim, response: OwnerResponse
+    ) -> OutboxMessageDraft:
+        """Give one rendered response its replay-stable durable identity."""
+
+        update = claim.update
+        return OutboxMessageDraft(
+            id=_response_id(update.id, response.kind),
+            bot_key=update.bot_key,
+            telegram_chat_id=update.telegram_chat_id,
+            logical_key=f"inbox:{update.id}:response:{response.kind.value}",
+            response_kind=response.kind.value,
+            text=response.text,
+            content_hash=response.content_hash,
+            buttons=response.buttons,
+            inbox_id=update.id,
+            # A callback answers a message the bot itself sent, so only owner
+            # text is worth threading a reply onto.
+            reply_to_message_id=(
+                update.telegram_message_id if update.callback_action is None else None
+            ),
+        )
+
     def _fail(self, claim: InboxClaim, error_code: str, *, transient: bool) -> None:
         """Schedule the bounded retry, or make the item a visible dead letter."""
 
         now = self._clock.now()
+        terminal = not transient or self._retry_policy.exhausted(
+            claim.attempt_count
+        )
         retry_at = None
-        if transient and not self._retry_policy.exhausted(claim.attempt_count):
+        if not terminal:
             retry_at = self._retry_policy.retry_at(
                 now, attempt_count=claim.attempt_count
             )
+        response = self._renderer.failure(terminal=terminal)
         self._repository.fail_inbox(
             claim,
             error_code=error_code,
             transient=transient,
             retry_at=retry_at,
+            response=self._response_draft(claim, response),
             now=now,
         )
         _LOGGER.warning(

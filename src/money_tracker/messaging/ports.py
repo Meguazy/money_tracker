@@ -69,9 +69,10 @@ class MessagingRepository(Protocol):
         error_code: str,
         transient: bool,
         retry_at: datetime | None,
+        response: OutboxMessageDraft,
         now: datetime,
     ) -> None:
-        """Schedule a retry or make the claimed item a dead letter."""
+        """Commit retry or dead letter together with its logical owner notice."""
 
     def complete_inbox(
         self,

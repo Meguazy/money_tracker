@@ -96,10 +96,12 @@ complete for that inbound item after its pending action and question are
 durable, so it does not block later updates.
 
 Claiming increments the attempt count and gives the worker a bounded lease. A
-transient failure schedules deterministic bounded backoff. The fifth failed
-attempt becomes a visible dead letter. A permanent validation or authorization
-failure becomes a dead letter immediately. Manual replay clears only retry
-state on the selected safe inbox item within the bot environment selected by
+transient failure schedules deterministic bounded backoff. The first
+recoverable failure and every terminal failure insert an idempotent,
+content-free owner notice in the same transaction as the retry or dead-letter
+transition. The fifth failed attempt becomes a visible dead letter. A permanent
+validation or authorization failure becomes a dead letter immediately.
+Manual replay clears only retry state on the selected safe inbox item within the bot environment selected by
 configuration, preserves its source reference and finance command identities,
 and never rewinds the Telegram offset. An inbox UUID from another environment
 is indistinguishable from a missing or non-dead-letter item.
@@ -187,7 +189,8 @@ and nine real-PostgreSQL application tests cover reconstruction,
 competing-decision conflict, and stable re-proposal.
 
 `presentation.telegram` renders every dispatch status, including the four read
-tools, the paused review branches, and both channel commands. Its content is a
+tools and the paused review branches, plus recoverable and terminal processing
+failures and both channel commands. Its content is a
 function of the outcome and committed state alone, which is what lets a
 recovered work item re-render the response its logical key already names.
 Controls carry a short bounded code rather than the longer branch name; a
@@ -197,8 +200,8 @@ Twenty-four unit tests cover rendering, digest stability, and refusal of
 missing display data.
 
 Operator commands cover health, dead letters, and replay. Their output carries
-counts, ages, safe identifiers, and reason codes but no message content, and
-replay is scoped by both the selected bot key and inbox UUID, and preserves
+counts, ages, safe identifiers, and reason codes but no message content. Replay
+is scoped by both the selected bot key and inbox UUID and preserves
 the source reference so a replayed item that already mutated finance returns
 its first result. A downtime warning is keyed by the instant
 the gap started, so restarting inside one outage produces one message.
@@ -215,8 +218,10 @@ a second holder of the same code binds nothing.
 resolves a callback or reply against its active mapping before that
 correlation may enter `DispatchContext`, dispatches once, and commits the typed
 result, the uniquely keyed response, any new mapping, and completion together.
-Outbox and pending-action identifiers are derived from the inbox row rather
-than generated, which is what lets a re-dispatched item land on the response
+Normal, recoverable-failure, and terminal-failure outbox identifiers are
+derived from the inbox row and response kind rather than generated. Retry or
+dead-letter state and its owner notice commit together. Pending-action
+identifiers are also derived from the inbox row, which is what lets a re-dispatched item land on the response
 its logical key already names; a real-PostgreSQL test kills the process before
 the terminal transaction and proves exactly one response survives. A
 clarification deliberately leaves the resolved mapping active, because

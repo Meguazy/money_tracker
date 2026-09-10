@@ -551,7 +551,25 @@ def test_an_unavailable_model_is_retried_rather_than_discarded() -> None:
     assert failure["error_code"] == "model_unavailable"
     assert failure["transient"] is True
     assert failure["retry_at"] == NOW + timedelta(seconds=2)
+    response = failure["response"]
+    assert response.response_kind == ResponseKind.RECOVERABLE_FAILURE.value
+    assert response.logical_key == (
+        f"inbox:{INBOX_ID}:response:recoverable_failure"
+    )
     assert repository.completions == []
+
+
+def test_retried_failure_reuses_one_logical_owner_notice() -> None:
+    """Collapse repeated transient failures onto one outbox identity."""
+
+    first = _bound(claim=_claim(attempt_count=1))
+    second = _bound(claim=_claim(attempt_count=2))
+    error = ModelConnectionError("llama.cpp is down")
+
+    _worker(first, _Dispatcher(error)).process_once()
+    _worker(second, _Dispatcher(error)).process_once()
+
+    assert first.failures[0]["response"] == second.failures[0]["response"]
 
 
 def test_the_last_attempt_becomes_a_visible_dead_letter() -> None:
@@ -562,7 +580,9 @@ def test_the_last_attempt_becomes_a_visible_dead_letter() -> None:
 
     _worker(repository, dispatcher).process_once()
 
-    assert repository.failures[0]["retry_at"] is None
+    failure = repository.failures[0]
+    assert failure["retry_at"] is None
+    assert failure["response"].response_kind == ResponseKind.TERMINAL_FAILURE.value
 
 
 def test_a_missing_record_is_a_dead_letter_without_retrying() -> None:
@@ -576,6 +596,7 @@ def test_a_missing_record_is_a_dead_letter_without_retrying() -> None:
     failure = repository.failures[0]
     assert failure["error_code"] == "referenced_record_missing"
     assert failure["transient"] is False
+    assert failure["response"].response_kind == ResponseKind.TERMINAL_FAILURE.value
 
 
 def test_a_conflicting_logical_response_is_a_dead_letter() -> None:

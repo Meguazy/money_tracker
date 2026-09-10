@@ -142,6 +142,20 @@ printing private content or identifiers.
   revocation is durable work committed with the response that supersedes the
   controls. A clarification deliberately revokes nothing, since it asks the
   owner to use the controls they already have.
+- A correction no longer rewrites the movement's description, as an interim
+  measure against silent falsification. The correction path reuses the
+  extraction contract and prompt written for creating a movement, where
+  `description` is required, so a message that is an instruction rather than a
+  purchase leaves the model nothing else to return: correcting an amount with
+  "correggi l'importo a 35 euro" replaced a real description with that
+  sentence. The owner then sees a plausible summary and has no reason to look.
+  No suite would have caught it, because the ingestion dataset scores amount,
+  time, merchant, polarity, and funding and has never scored the description.
+  Suspending the rewrite costs the case where the owner does restate the
+  purpose. Restoring it needs a correction contract whose absent description
+  means unchanged, which is a new model-visible boundary that AD-012 puts
+  behind an evaluation run, a dataset that does not yet exist, and a promotion
+  decision.
 - `Annulla` now has a transition on the state every movement starts in. It
   sent `undo`, which voids, and voiding reverses something that already
   counted; a draft never did, so the domain refused it and the owner got a

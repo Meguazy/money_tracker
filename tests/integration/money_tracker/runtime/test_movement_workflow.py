@@ -195,7 +195,20 @@ def _category_fit() -> str:
 def test_correction_resolves_and_replaces_the_complete_movement(
     postgres_url: str,
 ) -> None:
-    """Correct a posted movement through both boundaries and real PostgreSQL."""
+    """Correct a posted movement through both boundaries and real PostgreSQL.
+
+    The description is deliberately preserved even here, where the owner does
+    restate the purpose. This path reuses the extraction contract written for
+    creating a movement, which requires a description, so an instruction like
+    "correggi l'importo a 35 euro" produced that sentence as the description
+    and silently falsified the record.
+
+    Suspending the rewrite costs the case below and keeps the record honest
+    until a correction contract exists whose absent description means
+    unchanged. That contract is a new model-visible boundary and AD-012 puts it
+    behind an evaluation run, so this assertion is what should change when the
+    boundary is promoted.
+    """
 
     repository, profile, original = _bootstrap(postgres_url)
     model = ScriptedModel([_correction_extraction(), _category_fit()])
@@ -216,7 +229,7 @@ def test_correction_resolves_and_replaces_the_complete_movement(
     corrected = repository.get_expense(profile.id, original.id)
     assert result["outcome"] == MovementChangeOutcome.CORRECTED.value
     assert corrected.amount == Money(1500)
-    assert corrected.description == "croccantini e sabbia"
+    assert corrected.description == original.description
     assert corrected.occurred_at == original.occurred_at
     assert corrected.payment_allocations[0].amount == Money(1500)
     assert corrected.status is ExpenseStatus.POSTED

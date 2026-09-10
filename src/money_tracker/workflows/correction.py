@@ -170,9 +170,24 @@ def prepare_expense_correction(
     """Resolve a correction into one complete replacement aggregate.
 
     Omitted amount, time, merchant, and funding fields preserve the stored
-    values. Description and category come from the same evaluated boundaries
-    used to create a movement, so the replacement remains a full validated
-    aggregate rather than a database patch.
+    values, and so does the description. Category comes from the same evaluated
+    boundary used to create a movement, so the replacement remains a full
+    validated aggregate rather than a database patch.
+
+    The description is preserved unconditionally as an interim measure. This
+    path reuses the extraction schema and prompt written for creating a
+    movement, where `description` is required, so the model must return
+    something for a message that is an instruction rather than a purchase.
+    Correcting an amount with "correggi l'importo a 35 euro" therefore replaced
+    a real description with the instruction itself and silently falsified the
+    record; the owner sees a plausible summary and has no reason to look.
+
+    Correcting a description again needs an extraction contract of its own,
+    where every field is optional and absent means unchanged. That is a new
+    model-visible boundary, so AD-012 puts it behind an evaluation run and a
+    promotion decision. Note that no suite would have caught this: the
+    ingestion dataset scores amount, time, merchant, polarity, and funding, and
+    has never scored the description at all.
 
     Args:
         current: Authoritative movement selected by trusted runtime context.
@@ -219,7 +234,7 @@ def prepare_expense_correction(
     corrected = current.corrected(
         amount=amount,
         occurred_at=occurred_at,
-        description=extraction.description,
+        description=current.description,
         merchant=current.merchant
         if extraction.merchant is None
         else extraction.merchant,

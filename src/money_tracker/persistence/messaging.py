@@ -996,6 +996,52 @@ class PostgresMessagingRepository:
             oldest_outbox_at=outbox["oldest"],
         )
 
+    def text_delivery_latencies(
+        self,
+        bot_key: str,
+        *,
+        since: datetime,
+        limit: int,
+    ) -> tuple[int, ...]:
+        """Return successful text input-to-send durations in acceptance order.
+
+        Failure notices and media work are excluded. A retry may create both a
+        recoverable notice and a final response for one inbox item, so filtering
+        response kinds is required to count the completed workflow once.
+
+        Args:
+            bot_key: Bot and environment persistence scope.
+            since: Inclusive accepted-at lower bound.
+            limit: Maximum successful workflow responses to return.
+
+        Returns:
+            Millisecond durations ordered by accepted input.
+
+        Raises:
+            ValueError: If the limit is not positive or since is naive.
+        """
+
+        validate_bot_key(bot_key)
+        require_aware(since, field="since")
+        if limit <= 0:
+            raise ValueError("latency sample limit must be positive")
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT round(extract(epoch FROM (o.sent_at - i.accepted_at)) "
+                "* 1000)::bigint AS latency_ms "
+                "FROM messaging.telegram_inbox AS i "
+                "JOIN messaging.telegram_outbox AS o ON o.inbox_id = i.id "
+                "WHERE i.bot_key = %s AND i.accepted_at >= %s "
+                "AND i.text_content IS NOT NULL AND NOT i.has_image "
+                "AND i.status = 'completed' AND o.status = 'sent' "
+                "AND o.response_kind NOT IN "
+                "('recoverable_failure', 'terminal_failure') "
+                "AND o.sent_at >= i.accepted_at "
+                "ORDER BY i.accepted_at, i.update_id LIMIT %s",
+                (bot_key, since, limit),
+            ).fetchall()
+        return tuple(cast(int, row["latency_ms"]) for row in rows)
+
     @staticmethod
     def _owner_binding(row: DictRow) -> OwnerBinding:
         """Map an owner binding row to its validated contract."""

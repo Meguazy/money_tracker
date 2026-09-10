@@ -8,6 +8,7 @@ which is why they may read live state that a logical response never can.
 from __future__ import annotations
 
 import hashlib
+import math
 import secrets
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -28,6 +29,7 @@ TELEGRAM_UPDATE_RETENTION = timedelta(hours=24)
 
 _CODE_BYTES = 16
 _DEAD_LETTER_LIMIT = 50
+_LATENCY_SAMPLE_LIMIT = 200
 
 
 class Clock(Protocol):
@@ -59,6 +61,25 @@ class PairingCode:
 
     code: str
     expires_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class TextLatencyReport:
+    """Content-free warm text delivery latency summary.
+
+    Attributes:
+        sample_count: Successful text workflows found in the selected window.
+        warmup_excluded: Number of earliest successes removed before p95.
+        warm_sample_count: Samples used by the warm p95.
+        warm_p95_ms: Nearest-rank warm p95, or None without a warm sample.
+        maximum_ms: Slowest warm sample, or None without a warm sample.
+    """
+
+    sample_count: int
+    warmup_excluded: int
+    warm_sample_count: int
+    warm_p95_ms: int | None
+    maximum_ms: int | None
 
 
 class MessagingAdministration:
@@ -223,6 +244,53 @@ class MessagingAdministration:
 
         self._repository.replay_outbox(bot_key, outbox_id, now=self._clock.now())
 
+    def text_latency_report(
+        self,
+        bot_key: str,
+        *,
+        since: datetime,
+        limit: int = _LATENCY_SAMPLE_LIMIT,
+    ) -> TextLatencyReport:
+        """Summarize warm owner-input to Bot-API-send latency.
+
+        The first successful observation is a warm-up and is excluded. The
+        remaining p95 uses nearest-rank selection, matching the evaluation
+        convention without exposing message text, identities, or timestamps.
+
+        Args:
+            bot_key: Bot and environment persistence scope.
+            since: Inclusive start of the acceptance sample window.
+            limit: Maximum successful workflows to include.
+
+        Returns:
+            Counts and warm latency statistics with no private content.
+        """
+
+        durations = self._repository.text_delivery_latencies(
+            bot_key,
+            since=since,
+            limit=limit,
+        )
+        warmup_excluded = min(1, len(durations))
+        warm = durations[warmup_excluded:]
+        if not warm:
+            return TextLatencyReport(
+                sample_count=len(durations),
+                warmup_excluded=warmup_excluded,
+                warm_sample_count=0,
+                warm_p95_ms=None,
+                maximum_ms=None,
+            )
+        ordered = sorted(warm)
+        rank = math.ceil(0.95 * len(ordered))
+        return TextLatencyReport(
+            sample_count=len(durations),
+            warmup_excluded=warmup_excluded,
+            warm_sample_count=len(warm),
+            warm_p95_ms=ordered[rank - 1],
+            maximum_ms=ordered[-1],
+        )
+
 
 def downtime_gap(health: MessagingHealth, *, now: datetime) -> timedelta | None:
     """Return how long the gateway was not listening, when that is knowable.
@@ -248,5 +316,6 @@ __all__ = [
     "TELEGRAM_UPDATE_RETENTION",
     "MessagingAdministration",
     "PairingCode",
+    "TextLatencyReport",
     "downtime_gap",
 ]

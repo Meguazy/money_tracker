@@ -5,6 +5,7 @@ from money_tracker.messaging.administration import (
     TELEGRAM_UPDATE_RETENTION,
     MessagingAdministration,
     PairingCode,
+    TextLatencyReport,
     downtime_gap,
 )
 from money_tracker.messaging.contracts import (
@@ -54,6 +55,7 @@ __all__ = [
     "PendingActionDraft",
     "PendingActionStatus",
     "PairingCode",
+    "TextLatencyReport",
     "downtime_gap",
     "PendingActionTarget",
     "RetryPolicy",

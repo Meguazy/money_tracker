@@ -13,7 +13,11 @@ from uuid import uuid4
 import pytest
 from psycopg import connect
 
-from money_tracker.messaging import BotEnvironment, OutboxMessageDraft
+from money_tracker.messaging import (
+    BotEnvironment,
+    NormalizedTelegramUpdate,
+    OutboxMessageDraft,
+)
 from money_tracker.persistence.database import upgrade_database
 from money_tracker.persistence.messaging import PostgresMessagingRepository
 
@@ -186,3 +190,102 @@ def test_production_cli_lists_and_resends_one_redacted_outbox_dead_letter(
             (response.id,),
         ).fetchone()
     assert state == ("pending", 0, 1)
+
+
+def test_production_cli_reports_warm_text_delivery_p95(
+    postgres_url: str,
+) -> None:
+    """Measure accepted input to durable Bot API send through the real CLI."""
+
+    upgrade_database(postgres_url)
+    repository = PostgresMessagingRepository(postgres_url)
+    bot_key = "telegram-test"
+    repository.ensure_bot(bot_key, environment=BotEnvironment.TEST, now=_NOW)
+    durations = (4_000, 2_500)
+    for position, duration_ms in enumerate(durations):
+        accepted_at = _NOW + timedelta(minutes=position)
+        update = NormalizedTelegramUpdate(
+            id=uuid4(),
+            bot_key=bot_key,
+            update_id=100 + position,
+            telegram_user_id=1001,
+            telegram_chat_id=1001,
+            telegram_message_id=110 + position,
+            received_at=accepted_at,
+            accepted_at=accepted_at,
+            text=f"Synthetic latency sample {position}",
+        )
+        repository.commit_ingest_batch(
+            bot_key=bot_key,
+            expected_offset=repository.polling_offset(bot_key),
+            observed_update_ids=(update.update_id,),
+            accepted_updates=(update,),
+            rejected_count=0,
+            unsupported_count=0,
+            now=accepted_at,
+        )
+        inbox = repository.claim_next_inbox(
+            bot_key,
+            now=accepted_at + timedelta(seconds=1),
+            lease=timedelta(minutes=1),
+            claim_token=uuid4(),
+        )
+        assert inbox is not None
+        text = "Synthetic owner response"
+        response = OutboxMessageDraft(
+            id=uuid4(),
+            bot_key=bot_key,
+            telegram_chat_id=1001,
+            logical_key=f"integration:latency:{position}",
+            response_kind="draft",
+            text=text,
+            content_hash=hashlib.sha256(text.encode()).hexdigest(),
+            inbox_id=update.id,
+        )
+        repository.complete_inbox(
+            inbox,
+            workflow_status="drafted",
+            workflow_result={"kind": "drafted"},
+            response=response,
+            pending_action=None,
+            consumed_action_id=None,
+            now=accepted_at + timedelta(seconds=1),
+        )
+        outbox = repository.claim_next_outbox(
+            bot_key,
+            now=accepted_at + timedelta(seconds=1),
+            lease=timedelta(minutes=1),
+            claim_token=uuid4(),
+        )
+        assert outbox is not None
+        repository.complete_outbox(
+            outbox,
+            telegram_message_id=120 + position,
+            now=accepted_at + timedelta(milliseconds=duration_ms),
+        )
+
+    completed = subprocess.run(
+        [
+            str(Path(".venv/bin/money-tracker-telegram").resolve()),
+            "latency",
+            "--since",
+            _NOW.isoformat(),
+        ],
+        check=False,
+        capture_output=True,
+        env=_environment(postgres_url),
+        text=True,
+        timeout=10,
+    )
+
+    assert completed.returncode == 0
+    assert completed.stderr == ""
+    assert json.loads(completed.stdout) == {
+        "environment": "test",
+        "maximum_ms": 2_500,
+        "measurement": "accepted_at_to_bot_api_send_commit",
+        "sample_count": 2,
+        "warm_p95_ms": 2_500,
+        "warm_sample_count": 1,
+        "warmup_excluded": 1,
+    }

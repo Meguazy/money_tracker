@@ -187,8 +187,8 @@ unsupported or oversized file metadata, empty work, and overlong callback data.
 worker transition, serializes per-bot claims through the offset row, recovers
 expired leases, blocks later work behind an ineligible head row, applies the
 five-attempt terminal boundary, and preserves source identity during replay.
-Twenty-seven unit tests cover the messaging contracts, administration, and
-deterministic retry schedule. Thirteen `@pytest.mark.postgres` repository
+Twenty-nine unit tests cover the messaging contracts, administration, and
+deterministic retry schedule. Fourteen `@pytest.mark.postgres` repository
 tests exercise the production adapter over the real PostgreSQL protocol,
 including a concurrent two-connection claim, forward migration with an
 existing outbox row, and bot-scoped outbox resend. A separate real-process test
@@ -225,6 +225,16 @@ idempotency key, the command is explicit and its runbook warns that an
 ambiguous earlier send can cause a duplicate physical message. A downtime
 warning is keyed by the instant
 the gap started, so restarting inside one outage produces one message.
+
+NFR-PER-001 uses the durable acceptance and delivery boundaries already owned
+by this decision: inbox `accepted_at` to outbox `sent_at` after
+`sendMessage` returns successfully. Only completed, non-media text work and
+non-failure responses count. The first success in the selected window is
+excluded as warm-up; nearest-rank p95 is computed over the remainder. This is a
+repeatable proxy for owner-visible latency, not proof that a particular mobile
+client rendered the notification at that instant. The content-free
+`latency --since` command reports sample size, maximum, and warm p95 but does
+not decide whether a very small sample is sufficient acceptance evidence.
 
 `MessagingAdministration` generates one short-lived code per bot, revoking any
 earlier live one, and returns the clear value exactly once for operator

@@ -193,3 +193,12 @@ class MessagingRepository(Protocol):
 
     def health(self, bot_key: str) -> MessagingHealth:
         """Return content-free queue, offset, action, and dead-letter state."""
+
+    def text_delivery_latencies(
+        self,
+        bot_key: str,
+        *,
+        since: datetime,
+        limit: int,
+    ) -> tuple[int, ...]:
+        """Return successful text input-to-send durations in acceptance order."""

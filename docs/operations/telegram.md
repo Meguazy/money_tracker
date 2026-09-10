@@ -213,6 +213,8 @@ Every operator command prints JSON and none of them print message content:
     uv run --env-file .env money-tracker-telegram dead-letters
     uv run --env-file .env money-tracker-telegram replay --inbox-id <uuid>
     uv run --env-file .env money-tracker-telegram resend --outbox-id <uuid>
+    uv run --env-file .env money-tracker-telegram latency \
+      --since 2026-09-10T08:00:00+00:00
 
 `health` reports queue depths, the oldest waiting item, the persisted offset,
 whether an owner is paired, and whether the last poll is old enough that
@@ -239,6 +241,65 @@ five-attempt delivery cycle. Use it only after checking the transport failure:
 Telegram has no caller idempotency key for `sendMessage`, so an earlier
 ambiguous success can make the owner see the physical response twice. Resending
 cannot repeat the finance write.
+
+## Real test-bot acceptance and latency
+
+Do this only with the test bot selected, after rotating the exposed diagnostic
+credential, applying migrations, pairing the private owner, and starting the
+three host services. Record a UTC start instant immediately before the sample:
+
+    date --utc +%Y-%m-%dT%H:%M:%S%:z
+
+From the paired private account, exercise text expense and `Registra`,
+category review across a worker restart, `Modifica` followed by a direct reply
+to its question, `Annulla`, query, advice, `/help`, and `/status`. Confirm
+that a foreign private account and a group receive no financial response. For
+that authorization check, stop the worker briefly, compare `health` before and
+after the foreign observations, and require the inbox counts to remain
+unchanged; then restart the worker. Repeat an already accepted update only
+through the documented replay path and verify that finance and logical outbox
+counts do not increase unexpectedly.
+
+Use this lightweight monitor while the owner performs the actions:
+
+    watch -n 2 'uv run --env-file .env money-tracker-telegram health'
+
+After the sample, use the recorded start instant:
+
+    uv run --env-file .env money-tracker-telegram latency \
+      --since START_INSTANT
+
+The report measures each successful non-media text input from durable
+`accepted_at` to `sent_at`, recorded only after Telegram accepts
+`sendMessage`. It excludes failure notices and the first successful workflow
+as warm-up, then computes nearest-rank p95. Record the workstation, commit,
+Qwen profile/GGUF, prompts, policy, sample count, warm sample count, p95,
+maximum, and any retries. The requirement remains p95 at most 30,000 ms. Bot
+API acceptance is the repeatable owner-visible proxy; actual client rendering
+and notification delay are not observable and must be listed as limitations.
+
+For the workstation restart check, send two distinguishable test messages in a
+recorded chat order, stop the worker before it claims them, confirm two pending
+items with `health`, reboot once, and confirm the services become active and
+the responses arrive in that same order.
+Do not repeatedly poll the machine while the owner is performing the reboot.
+
+## Step 4 rollback
+
+Stop ingress and processing first:
+
+    systemctl --user stop money-tracker-telegram.service
+    systemctl --user stop money-tracker-worker.service
+
+Preserve the database and token files. Do not downgrade messaging migrations:
+their downgrade paths intentionally refuse loss of inbox, outbox, replay, and
+pairing history. If the current Step 4 runtime must be withdrawn, keep those
+services disabled and deploy the prior reviewed application commit only when it
+is schema-compatible. Otherwise restore a verified pre-upgrade backup into an
+isolated database, validate it, and then switch the runtime forward. Re-enabling
+the gateway resumes from the persisted offset; it must never be reset as a
+rollback shortcut. A suspected token compromise follows the rotation procedure
+below regardless of application rollback.
 
 ## Running as host services
 

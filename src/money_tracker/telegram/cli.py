@@ -52,6 +52,7 @@ def _parser() -> argparse.ArgumentParser:
             "poll-once",
             "pair",
             "health",
+            "latency",
             "dead-letters",
             "replay",
             "resend",
@@ -73,7 +74,36 @@ def _parser() -> argparse.ArgumentParser:
         type=UUID,
         help="delivery dead letter to return to the queue, required by resend",
     )
+    parser.add_argument(
+        "--since",
+        type=_aware_datetime,
+        help="inclusive aware ISO-8601 start time, required by latency",
+    )
     return parser
+
+
+def _aware_datetime(value: str) -> datetime:
+    """Parse one timezone-aware ISO-8601 command argument.
+
+    Args:
+        value: User-supplied timestamp, optionally ending in Z.
+
+    Returns:
+        Parsed aware datetime.
+
+    Raises:
+        argparse.ArgumentTypeError: If the value is invalid or timezone-naive.
+    """
+
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(
+            "--since must be an aware ISO-8601 timestamp"
+        ) from error
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise argparse.ArgumentTypeError("--since must be an aware ISO-8601 timestamp")
+    return parsed
 
 
 def _pair(
@@ -168,6 +198,35 @@ def _health(
             ),
         },
         "owner_paired": repository.owner_binding(settings.bot_key) is not None,
+    }
+
+
+def _latency(
+    settings: TelegramSettings,
+    repository: PostgresMessagingRepository,
+    since: datetime | None,
+) -> dict[str, object]:
+    """Report content-free warm text delivery latency.
+
+    Raises:
+        SystemExit: If the sample window has no explicit start.
+    """
+
+    if since is None:
+        raise SystemExit("latency requires --since with an aware ISO-8601 timestamp")
+    report = MessagingAdministration(
+        repository,
+        clock=_SystemClock(),
+        ids=UUID4Generator(),
+    ).text_latency_report(settings.bot_key, since=since)
+    return {
+        "environment": settings.environment.value,
+        "maximum_ms": report.maximum_ms,
+        "measurement": "accepted_at_to_bot_api_send_commit",
+        "sample_count": report.sample_count,
+        "warm_p95_ms": report.warm_p95_ms,
+        "warm_sample_count": report.warm_sample_count,
+        "warmup_excluded": report.warmup_excluded,
     }
 
 
@@ -275,6 +334,9 @@ def main(argv: Sequence[str] | None = None) -> None:
             return
         if args.command == "health":
             print(json.dumps(_health(settings, repository), indent=2))
+            return
+        if args.command == "latency":
+            print(json.dumps(_latency(settings, repository, args.since), indent=2))
             return
         if args.command == "dead-letters":
             print(json.dumps(_dead_letters(settings, repository), indent=2))

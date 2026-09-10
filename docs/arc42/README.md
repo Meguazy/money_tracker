@@ -296,7 +296,7 @@ administration and health commands are all implemented:
 | Component | Responsibility | Interface/dependencies | Data ownership | Deployment/security |
 | --- | --- | --- | --- | --- |
 | `messaging.contracts` | Define normalized inbox, outbox, pairing, pending-action, retry, dead-letter, and health values | Pure Python contracts and time/identifier values | No infrastructure state | Shared host library; contains no Bot API token or raw update |
-| `messaging.service` (ingestion, pairing, and worker implemented) | Authorize/normalize ingestion, consume one-use pairing, and coordinate claim, dispatch completion, retry, replay, and delivery transitions | Messaging repository port, response renderer, and dispatch port | Application policy only | Gateway/worker/admin host processes; owner scope comes only from binding records, and a pairing code is never retained in clear |
+| `messaging.service` (ingestion, pairing, and worker implemented) | Authorize/normalize ingestion, consume one-use pairing, coordinate claim/dispatch/retry/replay/delivery, and summarize content-free text latency | Messaging repository port, response renderer, dispatch port, and durable acceptance/send timestamps | Application policy only | Gateway/worker/admin host processes; owner scope comes only from binding records, pairing codes are never retained in clear, and latency output contains no messages or identities |
 | `persistence.messaging` | Implement the AD-018 transactions and uniqueness/lease rules | psycopg and the dedicated application PostgreSQL | Entire `messaging` schema | Least-privilege application role; content is private and included in authoritative backup |
 | `telegram.transport` | Implement the official HTTPS Bot API methods with bounded timeouts and redacted failures | `httpx` and configured Bot API base URL/token | No durable state | Gateway only; production/test configuration is mutually exclusive |
 | `telegram.gateway` | Run independent ingress and outbox loops | Bot API transport and messaging service | No in-memory correctness state | systemd host service; no model or finance repository dependency |
@@ -913,7 +913,14 @@ started the processes yet.
    response is listed without content and can be explicitly resent by its
    bot-scoped outbox ID. This retains the logical row, records a replay cycle,
    and starts a fresh bounded attempt budget; the operator accepts that an
-   ambiguous earlier send may make the physical message appear twice.
+  ambiguous earlier send may make the physical message appear twice.
+
+NFR-PER-001 is measured from the durable inbox acceptance instant through the
+successful Bot API send commit. The operator selects an explicit time window;
+the first successful non-media text workflow is excluded as warm-up and the
+remaining sample uses nearest-rank p95. Telegram client rendering time is not
+observable through the Bot API and is recorded as a limitation rather than
+silently included in the claim.
 
 ### Planned insight request
 

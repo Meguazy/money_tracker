@@ -52,6 +52,7 @@ class _Repository:
         self.outbox_limits: list[int] = []
         self.replayed: list[tuple[str, UUID, datetime]] = []
         self.resent: list[tuple[str, UUID, datetime]] = []
+        self.latencies = (9_999, 1_000, 2_000, 3_000, 4_000)
 
     def ensure_bot(self, bot_key: str, **values: Any) -> None:
         """Record the persistence scope the pairing code needs."""
@@ -112,6 +113,13 @@ class _Repository:
         """Record one manual delivery retry request."""
 
         self.resent.append((bot_key, outbox_id, now))
+
+    def text_delivery_latencies(
+        self, bot_key: str, *, since: datetime, limit: int
+    ) -> tuple[int, ...]:
+        """Return synthetic successful text workflow durations."""
+
+        return self.latencies[:limit]
 
 
 def _service(repository: _Repository) -> MessagingAdministration:
@@ -279,6 +287,39 @@ def test_resend_names_one_selected_outbox_dead_letter() -> None:
     _service(repository).resend("telegram-test", outbox_id)
 
     assert repository.resent == [("telegram-test", outbox_id, NOW)]
+
+
+def test_text_latency_excludes_warmup_and_uses_nearest_rank_p95() -> None:
+    """Summarize only warm durations without exposing individual messages."""
+
+    report = _service(_Repository()).text_latency_report(
+        "telegram-test",
+        since=NOW - timedelta(minutes=1),
+    )
+
+    assert report.sample_count == 5
+    assert report.warmup_excluded == 1
+    assert report.warm_sample_count == 4
+    assert report.warm_p95_ms == 4_000
+    assert report.maximum_ms == 4_000
+
+
+def test_text_latency_does_not_report_p95_from_warmup_alone() -> None:
+    """Avoid presenting one cold observation as a warm distribution."""
+
+    repository = _Repository()
+    repository.latencies = (9_999,)
+
+    report = _service(repository).text_latency_report(
+        "telegram-test",
+        since=NOW - timedelta(minutes=1),
+    )
+
+    assert report.sample_count == 1
+    assert report.warmup_excluded == 1
+    assert report.warm_sample_count == 0
+    assert report.warm_p95_ms is None
+    assert report.maximum_ms is None
 
 
 def test_a_bot_that_never_polled_reports_no_downtime() -> None:

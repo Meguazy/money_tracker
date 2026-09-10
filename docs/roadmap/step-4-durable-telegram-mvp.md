@@ -33,8 +33,9 @@ the end-to-end latency measurement remain missing.
 - `money-tracker-telegram` is the production gateway entry point with
   `validate`, `pair`, `poll-once`, and `run`. `money-tracker-worker` is the
   separate processing entry point with `process-once` and `run`. `health`,
-  `dead-letters`, `replay`, and `resend` cover operator inspection and
-  recovery for both work and delivery failures.
+  `dead-letters`, `replay`, `resend`, and `latency` cover operator
+  inspection, recovery for both failure queues, and the content-free
+  NFR-PER-001 measurement.
 - `deploy/systemd/` holds user-service templates for the gateway, the worker,
   and llama.cpp, rendered for a checkout by `scripts/install_systemd_units.sh`.
   They use direct locked-virtualenv entry points, checkout-correct documentation
@@ -76,7 +77,7 @@ are deliberately narrow:
 | Sequential worker | Process one claimed work unit through `WorkflowDispatcher.dispatch` | Lease lifecycle and typed outcome handoff only |
 | Response renderer | Render typed outcomes plus repository-read display data | Italian text and bounded controls, no persistence or transport |
 | Gateway runtime | Run independent polling and outbox loops | Process lifecycle; no in-memory correctness state |
-| Administration/health | Generate pairing, report health, list dead letters, replay one inbox item, or resend one outbox item | Operator policy and safe output, no private message rendering |
+| Administration/health | Generate pairing, report health and text latency, list dead letters, replay one inbox item, or resend one outbox item | Operator policy and safe output, no private message rendering |
 
 The gateway atomically inserts authorized normalized rows and advances its
 environment-specific next offset. The worker claims only the first non-terminal
@@ -105,7 +106,7 @@ printing private content or identifiers.
 - `PostgresMessagingRepository` commits ingest-plus-offset and
   result-plus-outbox-plus-action transitions atomically, serializes claims per
   bot, recovers expired leases, and exposes content-free health counts.
-- Twenty-seven messaging unit tests and thirteen
+- Twenty-nine messaging unit tests and fourteen
   `@pytest.mark.postgres` repository tests passed. The
   PostgreSQL suite uses the real service and protocol; a two-connection race
   proved that only one worker receives the oldest item.
@@ -171,6 +172,12 @@ printing private content or identifiers.
   entry point against PostgreSQL, proves `dead-letters` omits the stored
   response text, invokes `resend --outbox-id`, and observes the same row
   pending with its replay counter incremented.
+- The same production entry point implements
+  `latency --since <aware-ISO-8601>`. It selects successful non-media text
+  inbox/outbox pairs, measures accepted input to committed Bot API send,
+  excludes the earliest success as warm-up, and reports nearest-rank p95
+  without content or identifiers. Unit, real-PostgreSQL, and subprocess tests
+  verify the method. The real workstation sample and result remain missing.
 - Recoverable and terminal worker failures now create distinct concise Italian
   responses. Their stable outbox identity and retry or dead-letter transition
   commit atomically; repeated attempts reuse one recoverable notice, and no

@@ -774,3 +774,57 @@ def test_a_notice_that_claims_an_inbox_item_is_refused(
             _response(bot_key=bot_key, inbox_id=update.id),
             now=_NOW,
         )
+
+
+def test_text_delivery_latencies_use_committed_inbox_and_outbox_times(
+    postgres_url: str,
+) -> None:
+    """Measure successful text work without reading its content."""
+
+    repository, bot_key = _repository(postgres_url)
+    durations = (2_000, 3_500)
+    for position, duration_ms in enumerate(durations):
+        accepted_at = _NOW + timedelta(minutes=position)
+        update = _update(bot_key, 80 + position, accepted_at=accepted_at)
+        _ingest(repository, bot_key, update)
+        inbox = repository.claim_next_inbox(
+            bot_key,
+            now=accepted_at + timedelta(seconds=1),
+            lease=timedelta(minutes=1),
+            claim_token=uuid4(),
+        )
+        assert inbox is not None
+        repository.complete_inbox(
+            inbox,
+            workflow_status="drafted",
+            workflow_result={"kind": "drafted"},
+            response=_response(
+                bot_key=bot_key,
+                inbox_id=update.id,
+                logical_key=f"latency:{position}",
+            ),
+            pending_action=None,
+            consumed_action_id=None,
+            now=accepted_at + timedelta(seconds=1),
+        )
+        outbox = repository.claim_next_outbox(
+            bot_key,
+            now=accepted_at + timedelta(seconds=1),
+            lease=timedelta(minutes=1),
+            claim_token=uuid4(),
+        )
+        assert outbox is not None
+        repository.complete_outbox(
+            outbox,
+            telegram_message_id=90 + position,
+            now=accepted_at + timedelta(milliseconds=duration_ms),
+        )
+
+    assert (
+        repository.text_delivery_latencies(
+            bot_key,
+            since=_NOW,
+            limit=10,
+        )
+        == durations
+    )

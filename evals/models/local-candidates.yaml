@@ -56,6 +56,15 @@ artifacts:
       local_path: vision/qwen3.5-9b/mmproj-BF16.gguf
       bytes: 921705024
       sha256: 853698ce7aa6c7ba732478bad280240969ddf7b0fcbf93900046f63903a83383
+  qwen38_27b:
+    repository: unsloth/Qwen3.8-27B-GGUF
+    source_repository: Qwen/Qwen3.8-27B
+    revision: 4ca720788d1e01f1bff70c033e0d0028fd02e502
+    file: Qwen3.8-27B-UD-IQ4_XS.gguf
+    local_path: text/qwen3.8-27b/Qwen3.8-27B-UD-IQ4_XS.gguf
+    bytes: 14252845984
+    sha256: 40fac4050e940397dbf13087afd50f4734a11805bf9d65ef8ddd7483470e6199
+    quantization: UD-IQ4_XS
   gemma4_12b:
     repository: google/gemma-4-12B-it-qat-q4_0-gguf
     revision: 29d097773436b69ff9feafd636ab4cf873786537
@@ -86,6 +95,9 @@ profiles:
   - id: text-gemma4-12b
     modality: text
     artifact: gemma4_12b
+  - id: text-qwen38-27b
+    modality: text
+    artifact: qwen38_27b
   - id: vision-qwen35-9b
     modality: vision
     artifact: qwen35_9b

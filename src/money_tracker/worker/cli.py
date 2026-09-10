@@ -13,7 +13,6 @@ import logging
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
-from threading import Event
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from psycopg import Error as PsycopgError
@@ -35,7 +34,7 @@ from money_tracker.persistence.database import (
 from money_tracker.persistence.finance import PostgresFinanceRepository
 from money_tracker.persistence.messaging import PostgresMessagingRepository
 from money_tracker.presentation import TelegramResponseRenderer
-from money_tracker.process_exit import exit_code_for, failure_reason
+from money_tracker.process_exit import exit_code_for, failure_reason, shutdown_event
 from money_tracker.runtime import (
     LocalStructuredOutputModel,
     build_workflow_dispatcher,
@@ -218,10 +217,15 @@ def _run_forever(worker: SequentialWorker) -> None:
     into a durable retry or dead letter, so the loop keeps going. Only a broken
     dependency propagates, because a supervisor restarting the process is the
     honest response to a database or credential problem.
+
+    A stop request is honored between work units rather than inside one, so the
+    unit the worker already claimed reaches its terminal transaction instead of
+    being replayed after its lease expires.
     """
 
     _LOGGER.info("Sequential workflow worker started")
-    stop = Event()
+    stop = shutdown_event()
     while not stop.is_set():
         if not worker.process_once():
             stop.wait(_IDLE_SECONDS)
+    _LOGGER.info("Sequential workflow worker stopped")

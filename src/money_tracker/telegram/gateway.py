@@ -209,11 +209,19 @@ class TelegramGateway:
         _LOGGER.info("Telegram outbox delivery committed")
         return True
 
-    def run_forever(self) -> None:
-        """Run ingress and delivery concurrently with shared failure shutdown."""
+    def run_forever(self, stop: Event | None = None) -> None:
+        """Run ingress and delivery concurrently with shared failure shutdown.
+
+        Args:
+            stop: Shutdown request owned by the caller, which is where signal
+                handlers must be installed. Both loops check it between
+                iterations, so a stop is honored after the current long poll or
+                delivery rather than inside it. Defaults to a private event,
+                leaving failure the only way the loops end.
+        """
 
         self.prepare()
-        stop = Event()
+        stop = Event() if stop is None else stop
         with ThreadPoolExecutor(
             max_workers=2,
             thread_name_prefix="money-tracker-telegram",

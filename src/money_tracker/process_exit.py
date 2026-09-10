@@ -1,4 +1,4 @@
-"""Machine-readable exit codes for the long-running host processes.
+"""How the long-running host processes stop, and why.
 
 AD-018 leaves health and recovery to operator commands and process exit codes
 until the Step 5 control plane exists, so a supervisor has to be able to tell
@@ -6,11 +6,18 @@ two failures apart without reading logs. A missing credential and an
 unreachable database both stop the process, but restarting helps only one of
 them: the other would restart forever, hiding a problem the operator has to
 fix. The systemd units use these codes to make exactly that distinction.
+
+The same module owns the deliberate stop, because a planned shutdown is the
+third way one of these processes ends and the units depend on it behaving
+differently from either failure.
 """
 
 from __future__ import annotations
 
+import signal
 from enum import IntEnum
+from threading import Event
+from types import FrameType
 
 from langchain_core.exceptions import ModelConnectionError
 from psycopg import Error as PsycopgError
@@ -79,4 +86,36 @@ def failure_reason(error: BaseException) -> str:
     return "configuration_invalid"
 
 
-__all__ = ["ExitCode", "exit_code_for", "failure_reason"]
+def shutdown_event() -> Event:
+    """Install handlers that ask the caller's loop to stop between units.
+
+    The units stop their services with SIGINT and systemd sends SIGTERM at the
+    end of `TimeoutStopSec`. Python's default SIGINT handler raises
+    `KeyboardInterrupt` wherever execution happens to be, which abandons a
+    claimed work unit mid-flight and leaves its lease held until it expires: a
+    planned stop then takes the same path as a crash, and the stop timeout has
+    nothing to wait for. Setting an event instead lets the loop finish what it
+    already claimed and return normally, so the process exits `ExitCode.OK`
+    exactly as the operations table promises.
+
+    Returns:
+        An event set once the supervisor asks the process to stop.
+
+    Raises:
+        ValueError: If called from anywhere but the main thread, where Python
+            forbids installing handlers.
+    """
+
+    stop = Event()
+
+    def _request_stop(number: int, frame: FrameType | None) -> None:
+        """Record the request without doing work inside a signal handler."""
+
+        stop.set()
+
+    for received in (signal.SIGINT, signal.SIGTERM):
+        signal.signal(received, _request_stop)
+    return stop
+
+
+__all__ = ["ExitCode", "exit_code_for", "failure_reason", "shutdown_event"]

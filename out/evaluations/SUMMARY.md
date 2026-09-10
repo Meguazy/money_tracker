@@ -19,6 +19,7 @@ directory, and the raw manifests stay under the ignored
 | `routing/intent-it` | text-ministral3-14b | `candidate-router-it-v6` | routing-intent-it-v1.2 1.2.0 | 206 | pass | none | `ROU-20260909-151213-4506ae99` |
 | `routing/intent-it` | text-qwen3-14b | `candidate-router-it-v6` | routing-intent-it-v1.2 1.2.0 | 206 | pass | none | `ROU-20260909-145350-b1919d44` |
 | `routing/intent-it` | text-qwen35-9b | `candidate-router-it-v5` | routing-intent-it-v1.1 1.1.0 | 201 | **fail** | `macro_f1`, `write_input_routed_as_read_only`, `ambiguous_safely_clarified` | `ROU-20260908-132224-33ae272c` |
+| `routing/intent-it` | text-qwen38-27b | `candidate-router-it-v6` | routing-intent-it-v1.2 1.2.0 | 206 | **fail** | `write_input_routed_as_read_only` | `ROU-20260910-205621-da2e5cfe` |
 | `tools/selection-and-use` | text-gemma4-12b | `candidate-tool-selection-it-v5` | tools-selection-and-use-it-v1.1 1.1.0 | 119 | **fail** | `expected_permitted_tool_and_arguments`, `execution_postcondition_against_real_fixture` | `TOO-20260908-171805-33c02284` |
 | `tools/selection-and-use` | text-gpt-oss-20b | `candidate-tool-selection-it-v5` | tools-selection-and-use-it-v1.1 1.1.0 | 119 | **fail** | `expected_permitted_tool_and_arguments`, `execution_postcondition_against_real_fixture` | `TOO-20260908-172508-407b85f4` |
 | `tools/selection-and-use` | text-ministral3-14b | `candidate-tool-selection-it-v5` | tools-selection-and-use-it-v1.2 1.2.0 | 127 | **fail** | `expected_permitted_tool_and_arguments`, `execution_postcondition_against_real_fixture` | `TOO-20260909-103851-7097b75a` |
@@ -28,7 +29,7 @@ directory, and the raw manifests stay under the ignored
 | `workflow/category-review-it` | text-qwen3-14b | — | category-review-it-v1 1.0.0 | 37 | pass | none | `REV-20260909-150839-7a1a525f` |
 | `workflow/category-review-it` | text-qwen35-9b | — | category-review-it-v1 1.0.0 | 37 | pass | none | `REV-20260908-133410-93b58641` |
 
-More than one candidate appears above: text-gemma4-12b, text-gpt-oss-20b, text-ministral3-14b, text-qwen3-14b, text-qwen35-9b. Two rows are comparable only where they share a dataset and an instruction candidate; a row measured on different instructions reports a different experiment, not a worse model.
+More than one candidate appears above: text-gemma4-12b, text-gpt-oss-20b, text-ministral3-14b, text-qwen3-14b, text-qwen35-9b, text-qwen38-27b. Two rows are comparable only where they share a dataset and an instruction candidate; a row measured on different instructions reports a different experiment, not a worse model.
 
 ## Capability screens
 
@@ -45,3 +46,4 @@ promote. A screen gates nothing on its own.
 | text-qwen3-14b | text | capabilities-local-model 1.2.0 | **fail** | `optional_field_omission` (failed) | `CAP-20260908-120220-2577040e` |
 | text-qwen35-9b | text | capabilities-local-model 1.2.0 | pass | none | `CAP-20260908-131914-9cde6793` |
 | vision-qwen35-9b | vision | capabilities-local-model 1.1.0 | pass | none | `CAP-20260902-084311-cb222924` |
+| text-qwen38-27b | text | capabilities-local-model 1.2.0 | pass | none | `CAP-20260910-204639-3f30d59b` |

@@ -60,6 +60,62 @@ therefore a second vision run under another name. Text profiles now carry no
 projector, and the Ministral text runs recorded on 2026-09-08 were produced
 before the correction, with the projector loaded.
 
+## Addendum 2026-09-10: Qwen3.8 27B at IQ4_XS fits and is screened
+
+The exclusion above rests on an arithmetic premise, not on parameter count: a
+"roughly 16 GB quantized weight" plus a dense 27B KV cache does not fit. Both
+halves of that premise are false for `Qwen3.8-27B-UD-IQ4_XS.gguf`, and the
+candidate is now declared as `text-qwen38-27b`.
+
+The weight is 13.27 GiB rather than roughly 16 GB. More importantly the
+architecture is hybrid: `qwen35.full_attention_interval = 4`, so 16 of the 64
+blocks hold a KV cache and the other 48 carry a recurrent state whose size does
+not grow with the context. At the target 8,192-token context the KV cache is
+512 MiB, against roughly 2 GiB for a dense model of the same parameter count.
+The recurrent state adds about 145 MiB and is constant. llama.cpp also ignores
+block 64, the `nextn` multi-token-prediction layer, which the packaging includes
+but the server does not allocate.
+
+Fit was measured rather than inferred, at the pinned target configuration with
+no concession: 8,192 context, f16 KV cache, all layers on GPU, flash attention
+on, concurrency 1. The server loaded and served the capability suite with a peak
+of 15,355 MiB of the 16,303 MiB available, leaving 475 to 545 MiB free while a
+desktop session held about 1.4 GiB. It generated at 41 to 47 tokens per second
+and evaluated prompts at 300 to 1,080 tokens per second, which is what full GPU
+residency looks like; nothing spilled to CPU.
+
+The margin is real but thin, and it is the reason no vision profile is declared
+over these weights. Adding the 0.87 GiB projector would not leave enough for the
+image tensors, and a catalogued profile that cannot run is a claim the catalog
+should not carry. The projector is therefore not installed and not declared.
+
+The candidate passes the 1.2.0 capability screen on every required probe. Two of
+those probes are the constraint that decided Step 3, and this is where the
+result is worth reading rather than summarising:
+
+| Candidate | `optional_field_omission` | `required_nullable` | `optional_absent` | `union_output` |
+| --- | --- | ---: | ---: | --- |
+| text-qwen3-14b (promoted) | failed | 0.7500 | 0.4118 | passed |
+| text-ministral3-14b | passed | 1.0000 | 0.7059 | failed |
+| text-qwen35-9b | passed | 0.9706 | 0.3676 | passed |
+| text-qwen38-27b | passed | 1.0000 | 0.9412 | passed |
+
+Under `required_nullable` the candidate left all 68 silent slots empty and
+captured all 36 stated ones, with no fabricated value. Under `optional_absent`,
+the shape on which every other candidate collapses, it reached 0.9412; that is
+below the 0.95 threshold, so the shape does not pass on its own and
+`required_nullable` remains the boundary shape to use. Union output passes
+mechanically in both shapes with no foreign field and both variants reachable.
+Variant-selection accuracy is 0.875, recorded as a diagnostic because
+categorization/purpose-it owns that gate.
+
+Nothing is promoted by this run. A capability screen establishes that a
+boundary shape may be used, not that a candidate is accurate enough for a role,
+and the product suites have not been run against these weights. The screen does
+establish one thing worth stating plainly: on suite 1.2.0 the promoted text
+model fails `optional_field_omission`, and only `text-qwen35-9b` and
+`text-qwen38-27b` pass every blocking gate.
+
 ## Local installation layout
 
 Weights are workstation-owned and are never committed. Installed candidates go
@@ -82,6 +138,11 @@ kept beside the weights it belongs to. See
 - [Official Qwen3.5 9B source](https://huggingface.co/Qwen/Qwen3.5-9B) is paired
   with the [Unsloth GGUF conversion](https://huggingface.co/unsloth/Qwen3.5-9B-GGUF);
   this third-party quantization boundary is explicit and must be evaluated.
+- [Official Qwen3.8 27B source](https://huggingface.co/Qwen/Qwen3.8-27B)
+  publishes no first-party GGUF at this size, so it is paired with the
+  [Unsloth GGUF conversion](https://huggingface.co/unsloth/Qwen3.8-27B-GGUF);
+  this is the same third-party quantization boundary as Qwen3.5 9B and must be
+  evaluated as such.
 - [Google's Gemma 4 12B guide](https://developers.googleblog.com/gemma-4-12b-the-developer-guide/)
   and [official QAT GGUF repository](https://huggingface.co/google/gemma-4-12B-it-qat-q4_0-gguf)
   position the model as local and multimodal.
@@ -96,6 +157,12 @@ KV cache and runtime allocations at the target context. Smaller candidates can
 be added later when a failure mode justifies them; widening the list before the
 first controlled comparison would increase evaluation cost without improving
 the initial coverage.
+
+This exclusion has since been revisited for one artifact and one artifact only.
+See [Addendum 2026-09-10](#addendum-2026-09-10-qwen38-27b-at-iq4_xs-fits-and-is-screened).
+It stands for every other candidate of this size: what the addendum revisits is
+the arithmetic, which a hybrid-attention artifact changes and a dense one of the
+same size does not.
 
 ## Evaluation plan
 

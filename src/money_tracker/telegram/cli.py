@@ -21,7 +21,11 @@ from money_tracker.messaging import (
 from money_tracker.persistence.database import database_url_from_env
 from money_tracker.persistence.finance import PostgresFinanceRepository
 from money_tracker.persistence.messaging import PostgresMessagingRepository
-from money_tracker.process_exit import exit_code_for, failure_reason
+from money_tracker.process_exit import (
+    exit_code_for,
+    failure_reason,
+    shutdown_event,
+)
 from money_tracker.telegram.config import TelegramSettings
 from money_tracker.telegram.gateway import TelegramGateway
 from money_tracker.telegram.ingestion import TelegramUpdateIngestor
@@ -392,7 +396,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                     )
                 )
                 return
-            gateway.run_forever()
+            gateway.run_forever(shutdown_event())
     except (
         LookupError,
         PsycopgError,

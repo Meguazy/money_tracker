@@ -196,6 +196,17 @@ printing private content or identifiers.
   instead of restarting forever, while a database that starts late converges on
   its own. Eleven unit tests cover the classification and the safety of the
   printed reason.
+- A requested stop is now the third way these processes end, and the first real
+  restart showed it was missing: neither entry point installed a signal handler,
+  so `SIGINT` — the units' own `KillSignal` — raised `KeyboardInterrupt`
+  wherever execution happened to be. A planned stop therefore abandoned the
+  claimed work unit, left its lease held until expiry, took the crash-recovery
+  path, and gave `TimeoutStopSec` nothing to wait for. `shutdown_event`
+  installs `SIGINT`/`SIGTERM` handlers that set an event both loops check
+  between iterations, so the worker finishes the unit it claimed and the
+  gateway finishes its current poll or delivery, then each returns and exits
+  zero as the operations table promises. Two unit tests cover both signals, and
+  real restarts of both services now log a clean stop with no traceback.
 - Rendered unit files pass `systemd-analyze verify`, and all three now start
   under the real user manager. The first real start exposed what static
   analysis cannot see: `CapabilityBoundingSet=`, `PrivateDevices=`,

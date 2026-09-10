@@ -52,6 +52,9 @@ operator CLI.
 
 Step 4 implements hardened user-service templates for Telegram ingress/outbox,
 the sequential workflow worker, and llama.cpp, plus a checkout-aware installer.
+It also supplies a tested hidden-input credential installer that atomically
+writes only the selected production or test token file without logging its
+path or value.
 The Python services execute the locked virtualenv entry points directly; all
 three use read-only filesystem views and empty capability sets, while llama.cpp
 retains device visibility for GPU acceleration. Template rendering passes

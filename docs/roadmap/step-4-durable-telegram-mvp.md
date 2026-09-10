@@ -202,8 +202,9 @@ printing private content or identifiers.
   unpaired case, the never-polled case, and the repeated restart.
 - Token rotation stays a manual BotFather procedure by decision: revoking a
   token has no Bot API method behind it, so a helper could automate only the
-  file swap while implying the risky half was handled. `validate` verifies the
-  replacement before the gateway starts with it.
+  revocation half. The tested `store_telegram_token.sh` helper safely performs
+  only the local hidden-input, atomic mode-0600 file swap and says so;
+  `validate` verifies the replacement before the gateway starts with it.
 
 ## Pairing implementation evidence
 

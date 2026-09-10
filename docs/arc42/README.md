@@ -302,6 +302,7 @@ administration and health commands are all implemented:
 | `telegram.gateway` | Run independent ingress and outbox loops | Bot API transport and messaging service | No in-memory correctness state | systemd host service; no model or finance repository dependency |
 | `worker` (implemented) | Translate one claimed row to `ChannelMessage`, construct `DispatchContext`, call the Step 3 dispatcher, and finalize messaging state | Messaging/finance read ports and a narrow dispatch port | No authoritative state; derives outbox and pending-action identity from the inbox row so a recovery reproduces them; a modification clarification creates a durable successor reply mapping for the selected movement | systemd host service; no token or Telegram client |
 | `presentation.telegram` (implemented) | Render typed workflow outcomes, controls, and the pairing confirmation in Italian | Dispatch outcome plus bounded display projections | No state | Worker and gateway library; never exposes tool names, raw evaluation JSON, or internal IDs; content depends only on committed state so a replayed render is identical |
+| `store_telegram_token.sh` (implemented) | Install or rotate exactly one selected Bot API credential | Hidden standard input and non-executed `.env` path settings; no Bot API call | Atomically replaces the selected owner-only token file | Manual host operation; refuses shared paths, unsafe targets, foreign ownership, and non-private configuration, and prints neither path nor value |
 
 The gateway and worker have separate failure domains. The gateway remains able to
 commit updates when llama.cpp or any workflow specialist is unavailable. The
@@ -1053,10 +1054,13 @@ does not install an API unit because no implemented Step 4 runtime requires it.
 - Callback and free-text follow-up map to explicit pending actions and workflow
   IDs instead of assuming one global chat thread.
 
-### Telegram security and recovery contract (gateway partially implemented)
+### Telegram security and recovery contract (implemented, acceptance pending)
 
 - Production and test bot environments have separate tokens and offset rows. A
   process selects exactly one environment and never falls back to the other.
+  The credential installer accepts hidden standard input, treats `.env` as
+  data, refuses shared/unsafe paths, and atomically writes a mode-0600 file
+  without printing its value or location.
 - Authorization happens before inbox creation, media lookup, workflow dispatch,
   or finance reads. Unsupported and unauthorized updates advance the observed
   offset without retaining private payload content.

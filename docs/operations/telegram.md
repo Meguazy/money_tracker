@@ -80,6 +80,16 @@ between test and production. `scripts/generate_local_env.sh` writes non-secret
 default paths and selects test; `scripts/upgrade_local_env.sh` appends only
 missing keys.
 
+Store or replace a credential through hidden standard input; never put the
+token in the command itself:
+
+    scripts/store_telegram_token.sh test
+
+Use `production` only for the separate production bot. The script parses
+`.env` as data instead of sourcing it, requires distinct absolute paths,
+refuses unsafe existing targets, writes through an owner-only temporary file,
+and atomically installs mode 0600 content. It prints neither token nor path.
+
 The production entry point supports:
 
     uv run --env-file .env money-tracker-telegram validate
@@ -244,6 +254,28 @@ enable lingering so the services survive logout, then enable each unit. The
 installer refuses a missing `.env` or locked production entry point before
 writing any unit.
 
+Enable and start the three services after migration, credential validation,
+and pairing:
+
+    systemctl --user enable --now money-tracker-llama.service
+    systemctl --user enable --now money-tracker-telegram.service
+    systemctl --user enable --now money-tracker-worker.service
+
+Normal lifecycle and inspection commands are:
+
+    systemctl --user stop money-tracker-worker.service
+    systemctl --user start money-tracker-worker.service
+    systemctl --user restart money-tracker-telegram.service
+    systemctl --user is-active money-tracker-llama.service
+    systemctl --user is-active money-tracker-telegram.service
+    systemctl --user is-active money-tracker-worker.service
+    systemctl --user status money-tracker-worker.service
+    journalctl --user -u money-tracker-worker.service --since today
+
+Repeat the service name as needed for the gateway or llama.cpp. Logs must
+contain only the bounded diagnostics described below; never attach an
+unreviewed journal to a ticket.
+
 The units are user services because the application owns no system-wide
 resource. They set an owner-only umask, drop all capabilities, restrict
 namespaces and address families, expose home and the system read-only, and use
@@ -324,7 +356,9 @@ confirms the new token before you start the gateway with it.
 1. Stop the Telegram gateway to avoid ambiguous credentials:
    `systemctl --user stop money-tracker-telegram.service`.
 2. Revoke/regenerate the token in BotFather.
-3. Store the new token privately; do not print or commit it.
+3. Store the new token with
+   `scripts/store_telegram_token.sh test` (or `production` for the production
+   bot); do not print or commit it.
 4. Verify the new credential without starting the loops:
    `uv run --env-file .env money-tracker-telegram validate`.
 5. Restart the gateway and check `health` for the owner binding and backlog.

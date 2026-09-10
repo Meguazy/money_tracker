@@ -28,7 +28,11 @@ file URLs in traces or logs.
 ## Implementation evidence
 
 The `telegram` adapter reads exactly one explicitly selected production or test
-credential from distinct owner-only regular files, validates it with `getMe`,
+credential from distinct owner-only regular files. The local
+`store_telegram_token.sh` helper reads hidden standard input, parses
+configuration without executing it, rejects shared or unsafe paths, and
+atomically replaces only the selected mode-0600 file. The adapter validates the
+credential with `getMe`,
 disables webhooks without dropping pending updates, and exposes only bounded
 reason codes on failure. Authorization compares private-chat sender and chat
 identities with the persisted owner binding before normalized inbox creation.

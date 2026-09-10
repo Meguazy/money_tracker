@@ -56,10 +56,15 @@ It also supplies a tested hidden-input credential installer that atomically
 writes only the selected production or test token file without logging its
 path or value.
 The Python services execute the locked virtualenv entry points directly; all
-three use read-only filesystem views and empty capability sets, while llama.cpp
-retains device visibility for GPU acceleration. Template rendering passes
-`systemd-analyze verify`; offline exposure is 3.5 for gateway and worker and
-3.8 for llama.cpp. Real manager/reboot qualification is still pending. Daily
+three use read-only filesystem views, while llama.cpp additionally retains
+device visibility for GPU acceleration. Capability-dropping directives are
+deliberately absent: an unprivileged user manager cannot apply them, and a
+unit that declares them fails to execute with `218/CAPABILITIES` instead of
+being hardened. Template rendering passes `systemd-analyze verify` and the
+units start under the real user manager; measured exposure of what runs is 7.0
+for all three, where the earlier 3.5/3.8 figures scored templates that could
+not start. Reboot qualification is still pending, and further hardening is
+Step 7 work that must be qualified by starting a unit rather than scoring it. Daily
 backup scheduling, off-device recovery-secret verification, and the
 clean-machine restore drill remain planned for Step 7.
 

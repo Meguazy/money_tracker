@@ -196,12 +196,25 @@ printing private content or identifiers.
   instead of restarting forever, while a database that starts late converges on
   its own. Eleven unit tests cover the classification and the safety of the
   printed reason.
-- Rendered unit files pass `systemd-analyze verify`. Offline security analysis
-  reports exposure 3.5 for gateway and worker and 3.8 for llama.cpp; the prior
-  templates measured 8.8, 8.8, and 9.2. The installer has been exercised into
-  an isolated XDG directory, where every `Documentation=`, environment, and
-  executable path resolved. Real manager startup and reboot remain acceptance
-  work.
+- Rendered unit files pass `systemd-analyze verify`, and all three now start
+  under the real user manager. The first real start exposed what static
+  analysis cannot see: `CapabilityBoundingSet=`, `PrivateDevices=`,
+  `ProtectClock=`, `ProtectKernelLogs=`, and `ProtectKernelModules=` all
+  require `CAP_SETPCAP`, which an unprivileged user manager does not hold, so
+  every unit failed to execute with `218/CAPABILITIES`. Both `verify` and
+  `security` score a unit's configuration rather than its ability to run, and
+  the earlier 3.5/3.5/3.8 exposure figures described templates that could not
+  start at all. The five directives are removed and named in the units so they
+  are not reintroduced. Measured exposure for what actually runs is 7.0 MEDIUM
+  for each of the three; the read-only system and home views, private tmp,
+  `NoNewPrivileges`, address-family and namespace restrictions, and native
+  syscall architecture are enforced. Closing the remaining gap belongs to
+  [Step 7](step-7-hardening-and-release.md), which owns hardening, because
+  every further directive has to be qualified by starting the unit rather than
+  by scoring it. The installer has been exercised into an isolated XDG
+  directory, where every `Documentation=`, environment, and executable path
+  resolved. llama.cpp has been started through its unit and answered its health
+  endpoint. Reboot recovery remains acceptance work.
 - The gateway warns the owner when it resumes after longer than the Bot API
   keeps undelivered updates. The warning names when it last listened rather
   than an elapsed duration, and is keyed by that instant, so restarting inside

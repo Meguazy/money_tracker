@@ -19,17 +19,20 @@ RestartSec=10
 RestartPreventExitStatus=1
 KillSignal=SIGINT
 TimeoutStopSec=30
+# Every directive below is one a user manager can actually apply. Dropping
+# bounding-set capabilities needs CAP_SETPCAP, which an unprivileged user
+# manager does not have, so CapabilityBoundingSet=, PrivateDevices=,
+# ProtectClock=, ProtectKernelLogs=, and ProtectKernelModules= make the unit
+# fail to execute with 218/CAPABILITIES rather than hardening it. They are
+# deliberately absent; do not reintroduce them without moving to a system
+# unit. `systemd-analyze verify` and `security` both score a unit's
+# configuration and cannot catch this, so a change here has to be started.
 NoNewPrivileges=true
 UMask=0077
-CapabilityBoundingSet=
 LockPersonality=true
-PrivateDevices=true
 PrivateTmp=true
-ProtectClock=true
 ProtectControlGroups=true
 ProtectHome=read-only
-ProtectKernelLogs=true
-ProtectKernelModules=true
 ProtectKernelTunables=true
 ProtectSystem=strict
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6

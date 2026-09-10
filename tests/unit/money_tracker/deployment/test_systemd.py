@@ -14,14 +14,10 @@ _SERVICES = tuple(sorted(_UNIT_ROOT.glob("*.service")))
 _COMMON_HARDENING = (
     "NoNewPrivileges=true",
     "UMask=0077",
-    "CapabilityBoundingSet=",
     "LockPersonality=true",
     "PrivateTmp=true",
-    "ProtectClock=true",
     "ProtectControlGroups=true",
     "ProtectHome=read-only",
-    "ProtectKernelLogs=true",
-    "ProtectKernelModules=true",
     "ProtectKernelTunables=true",
     "ProtectSystem=strict",
     "RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6",
@@ -29,6 +25,13 @@ _COMMON_HARDENING = (
     "RestrictRealtime=true",
     "RestrictSUIDSGID=true",
     "SystemCallArchitectures=native",
+)
+_UNSUPPORTED_BY_USER_MANAGER = (
+    "CapabilityBoundingSet=",
+    "PrivateDevices=",
+    "ProtectClock=",
+    "ProtectKernelLogs=",
+    "ProtectKernelModules=",
 )
 
 
@@ -44,6 +47,30 @@ def test_every_service_has_checkout_safe_docs_and_hardening(unit: Path) -> None:
     assert "ReadWritePaths=__MONEY_TRACKER_ROOT__" not in text
     for setting in _COMMON_HARDENING:
         assert setting in text
+
+
+@pytest.mark.parametrize("unit", _SERVICES, ids=lambda path: path.stem)
+def test_no_service_declares_hardening_a_user_manager_cannot_apply(
+    unit: Path,
+) -> None:
+    """Keep every unit startable by the unprivileged manager that owns it.
+
+    Dropping bounding-set capabilities requires `CAP_SETPCAP`. A user manager
+    has none, so each directive below stops the unit with `218/CAPABILITIES`
+    before `ExecStart` ever runs. `systemd-analyze verify` and `security` score
+    configuration rather than execution and report such a unit as unusually
+    well hardened, which is how these reached the repository in the first
+    place.
+    """
+
+    directives = tuple(
+        line.strip()
+        for line in unit.read_text().splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    )
+
+    for setting in _UNSUPPORTED_BY_USER_MANAGER:
+        assert not [line for line in directives if line.startswith(setting)]
 
 
 @pytest.mark.parametrize(
@@ -62,11 +89,15 @@ def test_python_services_use_locked_environment_entrypoints(
 
     assert "EnvironmentFile=__MONEY_TRACKER_ROOT__/.env" in text
     assert f"ExecStart=__MONEY_TRACKER_ROOT__/.venv/bin/{entrypoint}" in text
-    assert "PrivateDevices=true" in text
 
 
 def test_llama_service_retains_device_access_for_local_acceleration() -> None:
-    """Harden llama.cpp without hiding the GPU devices it may need."""
+    """Keep the GPU nodes visible to the process that needs them.
+
+    Device isolation is unavailable to every unit here, so this states the
+    intent that survives: llama.cpp must never acquire it even if a system
+    unit later makes it possible for the other two.
+    """
 
     text = (_UNIT_ROOT / "money-tracker-llama.service").read_text()
 

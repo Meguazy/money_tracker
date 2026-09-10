@@ -17,16 +17,16 @@ RestartSec=15
 RestartPreventExitStatus=2
 KillSignal=SIGINT
 TimeoutStopSec=30
+# See the gateway unit: capability-dropping directives cannot be applied by an
+# unprivileged user manager and stop the unit with 218/CAPABILITIES instead of
+# hardening it. This unit also keeps host devices visible, because the GPU
+# nodes are what make local inference fast enough for NFR-PER-001.
 NoNewPrivileges=true
 UMask=0077
-CapabilityBoundingSet=
 LockPersonality=true
 PrivateTmp=true
-ProtectClock=true
 ProtectControlGroups=true
 ProtectHome=read-only
-ProtectKernelLogs=true
-ProtectKernelModules=true
 ProtectKernelTunables=true
 ProtectSystem=strict
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6

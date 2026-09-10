@@ -13,12 +13,14 @@ from psycopg.types.json import Jsonb
 
 from money_tracker.messaging.contracts import (
     BotEnvironment,
+    ControlRevocationDraft,
     DeadLetter,
     InboxClaim,
     InboxStatus,
     MessagingHealth,
     NormalizedTelegramUpdate,
     OutboundButton,
+    OutboundWork,
     OutboxClaim,
     OutboxDeadLetter,
     OutboxMessageDraft,
@@ -34,6 +36,8 @@ from money_tracker.messaging.contracts import (
 )
 
 MAX_AUTOMATIC_ATTEMPTS = 5
+OUTBOX_SEND_MESSAGE = "send_message"
+OUTBOX_REVOKE_CONTROLS = "revoke_controls"
 _ERROR_CODE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
@@ -288,14 +292,26 @@ class PostgresMessagingRepository:
         pending_action: PendingActionDraft | None,
         consumed_action_id: UUID | None,
         now: datetime,
+        revocations: tuple[ControlRevocationDraft, ...] = (),
     ) -> UUID:
-        """Commit result, logical response, correlation, and completion together."""
+        """Commit result, logical response, correlation, and completion together.
+
+        Revocations ride the same transaction because they exist only as a
+        consequence of this response: a new summary is what makes the controls
+        on an older one wrong. Committing them separately would allow a summary
+        the owner can act on twice.
+        """
 
         require_aware(now, field="now")
         if not workflow_status.strip():
             raise ValueError("workflow status cannot be blank")
         if response.bot_key != claim.update.bot_key:
             raise ValueError("outbox response crosses the inbox bot scope")
+        for revocation in revocations:
+            if revocation.bot_key != claim.update.bot_key:
+                raise ValueError("revocation crosses the inbox bot scope")
+            if revocation.telegram_chat_id != response.telegram_chat_id:
+                raise ValueError("revocation crosses the response chat scope")
         if response.inbox_id not in {None, claim.update.id}:
             raise ValueError("outbox response targets another inbox item")
         if pending_action is not None and (
@@ -323,6 +339,8 @@ class PostgresMessagingRepository:
                 if result.rowcount != 1:
                     raise MessagingConflictError("pending action is not active")
             outbox_id = self._insert_or_verify_outbox(connection, response, now)
+            for revocation in revocations:
+                self._insert_or_verify_revocation(connection, revocation, now)
             if pending_action is not None:
                 self._insert_or_verify_action(connection, pending_action, now)
             result = connection.execute(
@@ -1022,6 +1040,11 @@ class PostgresMessagingRepository:
         recoverable notice and a final response for one inbox item, so filtering
         response kinds is required to count the completed workflow once.
 
+        Control revocations are excluded for the same reason and matter more:
+        one work unit can queue several, they are delivered after the answer
+        the owner is waiting for, and counting them would silently add slower
+        samples that no owner ever waited on.
+
         Args:
             bot_key: Bot and environment persistence scope.
             since: Inclusive accepted-at lower bound.
@@ -1047,11 +1070,12 @@ class PostgresMessagingRepository:
                 "WHERE i.bot_key = %s AND i.accepted_at >= %s "
                 "AND i.text_content IS NOT NULL AND NOT i.has_image "
                 "AND i.status = 'completed' AND o.status = 'sent' "
+                "AND o.operation = %s "
                 "AND o.response_kind NOT IN "
                 "('recoverable_failure', 'terminal_failure') "
                 "AND o.sent_at >= i.accepted_at "
                 "ORDER BY i.accepted_at, i.update_id LIMIT %s",
-                (bot_key, since, limit),
+                (bot_key, since, OUTBOX_SEND_MESSAGE, limit),
             ).fetchall()
         return tuple(cast(int, row["latency_ms"]) for row in rows)
 
@@ -1089,8 +1113,26 @@ class PostgresMessagingRepository:
 
     @staticmethod
     def _outbox_claim(row: DictRow) -> OutboxClaim:
-        """Map a locked outbox row to a transport-neutral delivery claim."""
+        """Map a locked outbox row to transport-neutral outbound work."""
 
+        message: OutboundWork
+        if row["operation"] == OUTBOX_REVOKE_CONTROLS:
+            message = ControlRevocationDraft(
+                id=row["id"],
+                bot_key=row["bot_key"],
+                telegram_chat_id=row["telegram_chat_id"],
+                logical_key=row["logical_key"],
+                target_message_id=row["target_message_id"],
+                content_hash=row["content_hash"],
+                inbox_id=row["inbox_id"],
+            )
+            return OutboxClaim(
+                message=message,
+                status=OutboxStatus(row["status"]),
+                attempt_count=row["attempt_count"],
+                claim_token=row["claim_token"],
+                claimed_until=row["claimed_until"],
+            )
         buttons = tuple(
             OutboundButton(
                 label=cast(str, button["label"]),
@@ -1175,6 +1217,104 @@ class PostgresMessagingRepository:
                 "logical outbox identity has different response content"
             )
         return cast(UUID, row["id"])
+
+    @staticmethod
+    def _insert_or_verify_revocation(
+        connection: Connection[DictRow],
+        revocation: ControlRevocationDraft,
+        now: datetime,
+    ) -> UUID:
+        """Insert one revocation or verify an exact idempotent replay.
+
+        The logical key names the target message, so a replayed work unit
+        queues the same revocation rather than a second one, exactly as a
+        replayed response reuses its logical row.
+        """
+
+        inserted = connection.execute(
+            "INSERT INTO messaging.telegram_outbox "
+            "(id, bot_key, inbox_id, telegram_chat_id, logical_key, operation, "
+            "response_kind, text_content, target_message_id, content_hash, "
+            "next_attempt_at, created_at) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, '', %s, %s, %s, %s) "
+            "ON CONFLICT (bot_key, logical_key) DO NOTHING RETURNING id",
+            (
+                revocation.id,
+                revocation.bot_key,
+                revocation.inbox_id,
+                revocation.telegram_chat_id,
+                revocation.logical_key,
+                OUTBOX_REVOKE_CONTROLS,
+                OUTBOX_REVOKE_CONTROLS,
+                revocation.target_message_id,
+                revocation.content_hash,
+                now,
+                now,
+            ),
+        ).fetchone()
+        if inserted is not None:
+            return cast(UUID, inserted["id"])
+        row = connection.execute(
+            "SELECT id, operation, telegram_chat_id, target_message_id, content_hash "
+            "FROM messaging.telegram_outbox WHERE bot_key = %s AND logical_key = %s",
+            (revocation.bot_key, revocation.logical_key),
+        ).fetchone()
+        expected = (
+            revocation.id,
+            OUTBOX_REVOKE_CONTROLS,
+            revocation.telegram_chat_id,
+            revocation.target_message_id,
+            revocation.content_hash,
+        )
+        if row is None or tuple(row.values()) != expected:
+            raise MessagingConflictError(
+                "logical outbox identity has different revocation content"
+            )
+        return cast(UUID, row["id"])
+
+    def delivered_control_messages(
+        self,
+        *,
+        bot_key: str,
+        movement_id: UUID,
+        excluding_outbox_id: UUID,
+    ) -> tuple[int, ...]:
+        """Return delivered summaries still offering controls for one movement.
+
+        Only sent rows have a Telegram identifier to edit, and only rows that
+        carried buttons ever showed controls worth removing. The response just
+        committed is excluded because it is the one that is still correct.
+
+        Args:
+            bot_key: Selected bot persistence scope.
+            movement_id: Movement whose earlier summaries are superseded.
+            excluding_outbox_id: Response that supersedes them.
+
+        Returns:
+            Ascending Telegram message identifiers to revoke.
+        """
+
+        validate_bot_key(bot_key)
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT DISTINCT outbox.telegram_message_id AS message_id "
+                "FROM messaging.telegram_pending_actions AS action "
+                "JOIN messaging.telegram_outbox AS outbox "
+                "ON outbox.id = action.outbox_id "
+                "WHERE action.bot_key = %s AND action.target_type = 'movement' "
+                "AND action.target_id = %s AND outbox.status = 'sent' "
+                "AND outbox.operation = %s "
+                "AND jsonb_array_length(outbox.buttons) > 0 "
+                "AND outbox.id <> %s "
+                "ORDER BY message_id",
+                (
+                    bot_key,
+                    movement_id,
+                    OUTBOX_SEND_MESSAGE,
+                    excluding_outbox_id,
+                ),
+            ).fetchall()
+        return tuple(cast(int, row["message_id"]) for row in rows)
 
     @staticmethod
     def _insert_or_verify_action(

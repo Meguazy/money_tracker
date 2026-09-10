@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import Protocol, cast
 
 import httpx
 
-from money_tracker.messaging import OutboxMessageDraft
+from money_tracker.messaging import ControlRevocationDraft, OutboxMessageDraft
 from money_tracker.telegram.config import TelegramSettings
 from money_tracker.telegram.contracts import (
     BotIdentity,
@@ -17,6 +18,7 @@ from money_tracker.telegram.contracts import (
     TelegramSentMessage,
 )
 
+_LOGGER = logging.getLogger(__name__)
 _ALLOWED_UPDATES = ("message", "callback_query")
 _IMAGE_MEDIA_TYPES = {"image/jpeg", "image/png", "image/webp"}
 
@@ -68,6 +70,9 @@ class TelegramTransport(Protocol):
 
     def send_message(self, message: OutboxMessageDraft) -> TelegramSentMessage:
         """Deliver one durable logical outbox message."""
+
+    def revoke_controls(self, revocation: ControlRevocationDraft) -> None:
+        """Remove the inline controls from one delivered summary."""
 
     def answer_callback_query(self, callback_query_id: str) -> None:
         """Stop the callback indicator after durable ingestion."""
@@ -231,6 +236,41 @@ class BotApiClient:
         return TelegramSentMessage(
             _integer(result.get("message_id"), code="invalid_send")
         )
+
+    def revoke_controls(self, revocation: ControlRevocationDraft) -> None:
+        """Remove the inline controls from one already delivered summary.
+
+        Omitting `reply_markup` from `editMessageReplyMarkup` clears the
+        keyboard. Telegram rejects the call with 400 when there is nothing to
+        change, which happens on any retry after an ambiguous first attempt,
+        and likewise when the owner has deleted the message or it has aged out
+        of what a bot may edit.
+
+        Every one of those means the controls are already gone or unreachable,
+        so a permanent rejection completes the work instead of failing it.
+        Retrying cannot change the answer, and a dead letter here would put
+        cosmetic cleanup in the queue that exists to make failed finance work
+        visible. Transient failures still retry on the ordinary schedule.
+
+        Args:
+            revocation: Durable revocation claim naming its target message.
+        """
+
+        try:
+            self._request(
+                "editMessageReplyMarkup",
+                {
+                    "chat_id": revocation.telegram_chat_id,
+                    "message_id": revocation.target_message_id,
+                },
+            )
+        except TelegramTransportError as error:
+            if error.transient:
+                raise
+            _LOGGER.info(
+                "Telegram control revocation had no effect code=%s",
+                error.code,
+            )
 
     def answer_callback_query(self, callback_query_id: str) -> None:
         """Acknowledge a callback only after its update is durable.

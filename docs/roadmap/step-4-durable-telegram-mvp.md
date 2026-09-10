@@ -21,9 +21,10 @@ the end-to-end latency measurement remain missing.
 - Migration `20260909_0005` creates environment-specific offsets, the
   minimum normalized inbox, bounded leases/retries/dead letters, unique logical
   outbox state, hashed pairing codes, owner bindings, and scoped pending
-  actions. Forward-only migration `20260910_0006` adds manual outbox replay
-  accounting. `PostgresMessagingRepository` implements their AD-018
-  transactions.
+  actions. Forward-only migrations `20260910_0006` and `20260910_0007` add
+  manual outbox replay accounting and the second outbound operation that
+  revokes superseded controls. `PostgresMessagingRepository` implements their
+  AD-018 transactions.
 - `telegram.config`, `BotApiClient`, `TelegramUpdateIngestor`, and
   `TelegramGateway` now provide separate credential-file selection, official
   HTTPS methods, private-owner filtering, durable long polling, callback
@@ -99,8 +100,9 @@ printing private content or identifiers.
 
 - `messaging.contracts` and `messaging.retry` keep queue state transport-neutral,
   serializable, bounded, and free of Bot API credentials or raw updates.
-- Migrations `20260909_0005` and `20260910_0006` own six messaging tables
-  and manual outbox replay accounting; both refuse destructive downgrade.
+- Migrations `20260909_0005`, `20260910_0006`, and `20260910_0007` own six
+  messaging tables, manual outbox replay accounting, and the outbox operation
+  that revokes superseded controls; all three refuse destructive downgrade.
   Stable uniqueness covers bot/update, source reference, logical response,
   pairing hash, and the per-bot owner binding.
 - `PostgresMessagingRepository` commits ingest-plus-offset and
@@ -128,6 +130,18 @@ printing private content or identifiers.
   purpose, and funding source with `Modifica`/`Annulla`; the paused review with
   only the branches AD-008 still allows; all four read tools; both channel
   commands; and one owner question for every stable clarification code.
+- A replaced summary no longer keeps live controls. The owner keeps every
+  message in their chat, so recording a draft left the original summary
+  offering `Registra`, `Modifica`, and `Annulla` for a movement that had since
+  changed; a real owner pressed the older one and got a clarification. The
+  step document already claimed the control disappears once the movement is
+  recorded, which was true only of the new message. Forward-only migration
+  `20260910_0007` gives the outbox a second operation, `revoke_controls`, and
+  the gateway clears the keyboard with `editMessageReplyMarkup`. The worker
+  cannot make that call itself, because it holds no Bot API credential, so the
+  revocation is durable work committed with the response that supersedes the
+  controls. A clarification deliberately revokes nothing, since it asks the
+  owner to use the controls they already have.
 - `Annulla` now has a transition on the state every movement starts in. It
   sent `undo`, which voids, and voiding reverses something that already
   counted; a draft never did, so the domain refused it and the owner got a

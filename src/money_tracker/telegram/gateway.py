@@ -11,6 +11,7 @@ from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from money_tracker.messaging import (
     TELEGRAM_UPDATE_RETENTION,
+    ControlRevocationDraft,
     MessagingRepository,
     OutboxMessageDraft,
     RetryPolicy,
@@ -153,10 +154,15 @@ class TelegramGateway:
         return report
 
     def deliver_outbox_once(self) -> bool:
-        """Attempt the oldest eligible response through the official transport.
+        """Attempt the oldest eligible outbound work through the transport.
+
+        The queue carries two operations. Sending a response learns its
+        Telegram identifier from the call; revoking the controls on an earlier
+        summary already knows the message it edits, so the same identifier is
+        what the completed row records in both cases.
 
         Returns:
-            True only when one logical response was durably marked sent.
+            True only when one unit of outbound work was durably completed.
         """
 
         now = self._clock.now()
@@ -172,8 +178,13 @@ class TelegramGateway:
         )
         if claim is None:
             return False
+        work = claim.message
         try:
-            sent = self._transport.send_message(claim.message)
+            if isinstance(work, ControlRevocationDraft):
+                self._transport.revoke_controls(work)
+                delivered = work.target_message_id
+            else:
+                delivered = self._transport.send_message(work).telegram_message_id
         except TelegramTransportError as error:
             retry_at = None
             if error.transient and not self._retry_policy.exhausted(
@@ -203,7 +214,7 @@ class TelegramGateway:
             return False
         self._repository.complete_outbox(
             claim,
-            telegram_message_id=sent.telegram_message_id,
+            telegram_message_id=delivered,
             now=self._clock.now(),
         )
         _LOGGER.info("Telegram outbox delivery committed")

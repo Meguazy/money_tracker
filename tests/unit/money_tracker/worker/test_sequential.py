@@ -187,6 +187,8 @@ class _Repository:
     completions: list[dict[str, Any]] = field(default_factory=list)
     failures: list[dict[str, Any]] = field(default_factory=list)
     resolved: list[dict[str, Any]] = field(default_factory=list)
+    superseded: tuple[int, ...] = ()
+    superseded_queries: list[dict[str, Any]] = field(default_factory=list)
     complete_error: Exception | None = None
 
     def claim_next_inbox(self, bot_key: str, **_: Any) -> InboxClaim | None:
@@ -220,6 +222,12 @@ class _Repository:
         self.completions.append({"claim": claim, **values})
         response: OutboxMessageDraft = values["response"]
         return response.id
+
+    def delivered_control_messages(self, **values: Any) -> tuple[int, ...]:
+        """Return the earlier summaries a new one supersedes."""
+
+        self.superseded_queries.append(values)
+        return self.superseded
 
     def fail_inbox(self, claim: InboxClaim, **values: Any) -> None:
         """Record the retry or dead-letter transition."""

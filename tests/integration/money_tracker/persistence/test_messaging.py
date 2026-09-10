@@ -13,6 +13,7 @@ from psycopg import connect
 
 from money_tracker.messaging import (
     BotEnvironment,
+    ControlRevocationDraft,
     NormalizedTelegramUpdate,
     OutboundButton,
     OutboxMessageDraft,
@@ -862,3 +863,201 @@ def test_text_delivery_latencies_use_committed_inbox_and_outbox_times(
         )
         == durations
     )
+
+
+@pytest.mark.postgres
+def test_a_new_summary_revokes_the_controls_on_the_one_it_replaces(
+    postgres_url: str,
+) -> None:
+    """Stop offering the same movement two sets of live buttons.
+
+    The owner keeps every summary in their chat. Without this the older one
+    still offers `Registra`, `Modifica` and `Annulla` for a movement that has
+    since changed, and pressing it acts on a description that is no longer
+    true.
+    """
+
+    repository, bot_key = _repository(postgres_url)
+    profile_id = uuid4()
+    movement_id = uuid4()
+    _insert_profile(postgres_url, profile_id)
+
+    first = _update(bot_key, 90)
+    _ingest(repository, bot_key, first)
+    claim = repository.claim_next_inbox(
+        bot_key,
+        now=_NOW + timedelta(minutes=1),
+        lease=timedelta(minutes=1),
+        claim_token=uuid4(),
+    )
+    assert claim is not None
+    summary = _response(bot_key=bot_key, inbox_id=first.id, logical_key="summary:one")
+    repository.complete_inbox(
+        claim,
+        workflow_status="drafted",
+        workflow_result={"kind": "expense", "status": "drafted"},
+        response=summary,
+        pending_action=PendingActionDraft(
+            id=uuid4(),
+            bot_key=bot_key,
+            profile_id=profile_id,
+            telegram_user_id=1001,
+            telegram_chat_id=1001,
+            outbox_id=summary.id,
+            target_type=PendingActionTarget.MOVEMENT,
+            target_id=movement_id,
+            allowed_actions=("post", "modify", "undo"),
+        ),
+        consumed_action_id=None,
+        now=_NOW + timedelta(minutes=1, seconds=1),
+    )
+    delivery = repository.claim_next_outbox(
+        bot_key,
+        now=_NOW + timedelta(minutes=2),
+        lease=timedelta(minutes=1),
+        claim_token=uuid4(),
+    )
+    assert delivery is not None
+    repository.complete_outbox(
+        delivery,
+        telegram_message_id=555,
+        now=_NOW + timedelta(minutes=2, seconds=1),
+    )
+
+    superseded = repository.delivered_control_messages(
+        bot_key=bot_key,
+        movement_id=movement_id,
+        excluding_outbox_id=uuid4(),
+    )
+    assert superseded == (555,)
+
+    second = _update(bot_key, 91)
+    _ingest(repository, bot_key, second)
+    claim = repository.claim_next_inbox(
+        bot_key,
+        now=_NOW + timedelta(minutes=3),
+        lease=timedelta(minutes=1),
+        claim_token=uuid4(),
+    )
+    assert claim is not None
+    replacement = _response(
+        bot_key=bot_key, inbox_id=second.id, logical_key="summary:two"
+    )
+    revocation = ControlRevocationDraft(
+        id=uuid4(),
+        bot_key=bot_key,
+        telegram_chat_id=1001,
+        logical_key=f"inbox:{second.id}:revoke:555",
+        target_message_id=555,
+        content_hash=hashlib.sha256(b"revoke:1001:555").hexdigest(),
+        inbox_id=second.id,
+    )
+    repository.complete_inbox(
+        claim,
+        workflow_status="posted",
+        workflow_result={"kind": "expense", "status": "posted"},
+        response=replacement,
+        pending_action=None,
+        consumed_action_id=None,
+        now=_NOW + timedelta(minutes=3, seconds=1),
+        revocations=(revocation,),
+    )
+
+    restarted = PostgresMessagingRepository(postgres_url)
+    queued = []
+    for minute in (4, 5):
+        work = restarted.claim_next_outbox(
+            bot_key,
+            now=_NOW + timedelta(minutes=minute),
+            lease=timedelta(minutes=1),
+            claim_token=uuid4(),
+        )
+        assert work is not None
+        queued.append(work.message)
+        restarted.complete_outbox(
+            work,
+            telegram_message_id=getattr(work.message, "target_message_id", 556),
+            now=_NOW + timedelta(minutes=minute, seconds=1),
+        )
+
+    revoked = [item for item in queued if isinstance(item, ControlRevocationDraft)]
+    assert len(revoked) == 1
+    assert revoked[0].target_message_id == 555
+    assert revoked[0].logical_key == revocation.logical_key
+    assert restarted.health(bot_key).outbox_dead_letters == 0
+
+
+@pytest.mark.postgres
+def test_a_revocation_is_queued_once_and_never_measured_as_latency(
+    postgres_url: str,
+) -> None:
+    """Keep replay idempotent and the NFR-PER-001 sample about owner answers.
+
+    A revocation is delivered after the answer the owner waited for, and one
+    work unit can queue several, so counting them would quietly add slower
+    samples nobody experienced.
+    """
+
+    repository, bot_key = _repository(postgres_url)
+    profile_id = uuid4()
+    _insert_profile(postgres_url, profile_id)
+    update = _update(bot_key, 92)
+    _ingest(repository, bot_key, update)
+    claim = repository.claim_next_inbox(
+        bot_key,
+        now=_NOW + timedelta(minutes=1),
+        lease=timedelta(minutes=1),
+        claim_token=uuid4(),
+    )
+    assert claim is not None
+    response = _response(bot_key=bot_key, inbox_id=update.id, logical_key="answer")
+    revocation = ControlRevocationDraft(
+        id=uuid4(),
+        bot_key=bot_key,
+        telegram_chat_id=1001,
+        logical_key=f"inbox:{update.id}:revoke:777",
+        target_message_id=777,
+        content_hash=hashlib.sha256(b"revoke:1001:777").hexdigest(),
+        inbox_id=update.id,
+    )
+    arguments = {
+        "workflow_status": "posted",
+        "workflow_result": {"kind": "expense", "status": "posted"},
+        "response": response,
+        "pending_action": None,
+        "consumed_action_id": None,
+        "now": _NOW + timedelta(minutes=1, seconds=1),
+        "revocations": (revocation, revocation),
+    }
+
+    repository.complete_inbox(claim, **arguments)
+
+    assert (
+        _count(
+            postgres_url,
+            "SELECT count(*) FROM messaging.telegram_outbox "
+            "WHERE operation = 'revoke_controls'",
+        )
+        == 1
+    )
+
+    for minute in (2, 3):
+        work = repository.claim_next_outbox(
+            bot_key,
+            now=_NOW + timedelta(minutes=minute),
+            lease=timedelta(minutes=1),
+            claim_token=uuid4(),
+        )
+        assert work is not None
+        repository.complete_outbox(
+            work,
+            telegram_message_id=getattr(work.message, "target_message_id", 778),
+            now=_NOW + timedelta(minutes=minute, seconds=30),
+        )
+
+    latencies = repository.text_delivery_latencies(
+        bot_key,
+        since=_NOW,
+        limit=10,
+    )
+    assert len(latencies) == 1

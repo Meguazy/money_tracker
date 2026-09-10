@@ -24,6 +24,7 @@ crossing back out is the typed outcome.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import re
 from dataclasses import dataclass
@@ -46,8 +47,10 @@ from money_tracker.domain import (
     Taxonomy,
 )
 from money_tracker.messaging import (
+    ControlRevocationDraft,
     InboxClaim,
     MessagingRepository,
+    NormalizedTelegramUpdate,
     OutboxMessageDraft,
     PendingAction,
     PendingActionDraft,
@@ -417,7 +420,14 @@ class SequentialWorker:
         draft = self._response_draft(claim, response)
         response_id = draft.id
         pending_action = None
+        revocations: tuple[ControlRevocationDraft, ...] = ()
         if response.target is not None:
+            if response.target.target_type is PendingActionTarget.MOVEMENT:
+                revocations = self._revocations(
+                    update=update,
+                    movement_id=response.target.target_id,
+                    response_id=response_id,
+                )
             pending_action = PendingActionDraft(
                 id=_action_id(update.id),
                 bot_key=update.bot_key,
@@ -454,11 +464,62 @@ class SequentialWorker:
             pending_action=pending_action,
             consumed_action_id=_consumed(correlation, outcome),
             now=self._clock.now(),
+            revocations=revocations,
         )
         _LOGGER.info(
             "Worker committed work unit outcome=%s response=%s",
             outcome.status.value,
             response.kind.value,
+        )
+
+    def _revocations(
+        self,
+        *,
+        update: NormalizedTelegramUpdate,
+        movement_id: UUID,
+        response_id: UUID,
+    ) -> tuple[ControlRevocationDraft, ...]:
+        """Retire the controls on every earlier summary of one movement.
+
+        A new summary states what the movement is now and carries the controls
+        that still apply, which makes the buttons on its predecessors wrong
+        rather than merely old. Leaving them offers the owner the same actions
+        twice on contradictory descriptions of one movement.
+
+        This runs only for a replacement summary. A clarification deliberately
+        leaves the previous controls alone, because it asks the owner to use
+        them, which is the same reason `_consumed` spares its mapping.
+
+        Args:
+            update: Normalized inbound item this response answers.
+            movement_id: Movement the new summary describes.
+            response_id: Response that supersedes the earlier ones.
+
+        Returns:
+            One replay-stable revocation per superseded delivered summary.
+        """
+
+        superseded = self._repository.delivered_control_messages(
+            bot_key=update.bot_key,
+            movement_id=movement_id,
+            excluding_outbox_id=response_id,
+        )
+        return tuple(
+            ControlRevocationDraft(
+                id=uuid5(
+                    NAMESPACE_URL,
+                    f"money-tracker:revoke:{update.id}:{message_id}",
+                ),
+                bot_key=update.bot_key,
+                telegram_chat_id=update.telegram_chat_id,
+                logical_key=f"inbox:{update.id}:revoke:{message_id}",
+                target_message_id=message_id,
+                content_hash=hashlib.sha256(
+                    f"revoke:{update.telegram_chat_id}:{message_id}".encode()
+                ).hexdigest(),
+                inbox_id=update.id,
+            )
+            for message_id in superseded
         )
 
     @staticmethod

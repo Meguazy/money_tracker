@@ -8,6 +8,7 @@ from uuid import UUID
 
 from money_tracker.messaging.contracts import (
     BotEnvironment,
+    ControlRevocationDraft,
     DeadLetter,
     InboxClaim,
     MessagingHealth,
@@ -85,8 +86,18 @@ class MessagingRepository(Protocol):
         pending_action: PendingActionDraft | None,
         consumed_action_id: UUID | None,
         now: datetime,
+        revocations: tuple[ControlRevocationDraft, ...] = (),
     ) -> UUID:
         """Commit typed result, logical response, correlations, and completion."""
+
+    def delivered_control_messages(
+        self,
+        *,
+        bot_key: str,
+        movement_id: UUID,
+        excluding_outbox_id: UUID,
+    ) -> tuple[int, ...]:
+        """Return delivered summaries still offering controls for one movement."""
 
     def replay_inbox(self, bot_key: str, inbox_id: UUID, *, now: datetime) -> None:
         """Replay one dead letter only inside the selected bot scope."""

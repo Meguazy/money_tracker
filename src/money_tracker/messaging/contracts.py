@@ -250,6 +250,44 @@ class OutboxMessageDraft:
 
 
 @dataclass(frozen=True, slots=True)
+class ControlRevocationDraft:
+    """One idempotent request to strip the controls off a delivered summary.
+
+    This is its own contract rather than an emptier `OutboxMessageDraft`,
+    because the two have opposite invariants: a response must carry owner
+    text and learns its Telegram identifier only after delivery, while a
+    revocation carries no text and names its target up front. Widening the
+    response contract to admit blank text would remove the check that keeps an
+    empty message from ever reaching the owner.
+    """
+
+    id: UUID
+    bot_key: str
+    telegram_chat_id: int
+    logical_key: str
+    target_message_id: int
+    content_hash: str
+    inbox_id: UUID | None = None
+
+    def __post_init__(self) -> None:
+        """Validate stable identity and a concrete revocation target."""
+
+        validate_bot_key(self.bot_key)
+        if self.telegram_chat_id <= 0:
+            raise ValueError("outbox chat identifier must be positive")
+        if not self.logical_key.strip():
+            raise ValueError("outbox requires logical identity")
+        if self.target_message_id <= 0:
+            raise ValueError("revocation target must be positive")
+        if _SHA256.fullmatch(self.content_hash) is None:
+            raise ValueError("outbox content hash must be lowercase SHA-256")
+
+
+OutboundWork = OutboxMessageDraft | ControlRevocationDraft
+"""Either durable outbound operation the gateway delivery loop performs."""
+
+
+@dataclass(frozen=True, slots=True)
 class PendingActionDraft:
     """Durable trusted mapping from a visible interaction to its target."""
 
@@ -279,9 +317,9 @@ class PendingActionDraft:
 
 @dataclass(frozen=True, slots=True)
 class OutboxClaim:
-    """Leased logical message ready for the Bot API sender."""
+    """Leased outbound work ready for the Bot API sender."""
 
-    message: OutboxMessageDraft
+    message: OutboundWork
     status: OutboxStatus
     attempt_count: int
     claim_token: UUID

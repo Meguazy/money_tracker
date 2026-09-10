@@ -123,14 +123,28 @@ uses a recoverable two-phase application protocol:
 2. require every mutating specialist to return the same terminal result when
    that source reference is replayed, including category-review settlement;
 3. in one messaging transaction, persist the typed terminal result, insert the
-   uniquely keyed logical outbox response and any pending-action mapping, then
-   mark the inbox item complete.
+   uniquely keyed logical outbox response, any pending-action mapping, and any
+   revocation of controls the new response supersedes, then mark the inbox item
+   complete.
 
 A crash before step 3 re-dispatches the same command. Finance idempotency and
 workflow checkpoints return or reconstruct the prior mutation; the outbox
 unique key `inbox:<inbox-id>:response:<response-kind>` then creates one logical
 response. A finance mutation is never compensated merely because presentation
 or delivery failed.
+
+The outbox therefore carries two operations rather than one. Sending a response
+learns its Telegram identifier from the call; revoking the controls on an
+earlier summary names the message it edits up front. Revocations commit with
+the response that supersedes them, because a new summary is exactly what makes
+the earlier buttons wrong, and committing them apart would leave a movement the
+owner can act on twice through contradictory descriptions. They are excluded
+from the NFR-PER-001 sample: one work unit may queue several, and they are
+delivered after the answer the owner was waiting for. A permanent Bot API
+rejection completes a revocation instead of failing it, because it means the
+controls are already gone or unreachable and retrying cannot change that;
+dead-lettering cosmetic cleanup would dilute the queue that exists to make
+failed finance work visible.
 
 Outbox sending uses a separate lease and five bounded attempts. A successful
 Bot API result stores the Telegram message identity and activates any reply

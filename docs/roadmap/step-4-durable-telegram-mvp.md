@@ -135,17 +135,19 @@ printing private content or identifiers.
   construction.
 - A draft summary now leads with `Registra`. The control disappears once the
   movement is recorded, because there is nothing left to confirm.
-- Posting is a deterministic-only intent. A model may never route to it: AD-012
-  reserves the judgement that money counts for the owner, and a classification
-  that could reach posting would be recording spend on their behalf.
+- Posting is an explicit normalized callback action, not a model-visible intent.
+  The deterministic pre-router sends `post_expense` through the existing
+  movement-lifecycle specialist while retaining the callback action in small,
+  serializable graph state. AD-012 therefore continues to reserve the judgement
+  that money counts for the owner; the promoted router schema cannot request it.
 - `post_expense` became replay-safe like correction and undo, claiming a
   namespaced command key so a redelivered `Registra` returns the first result.
   Real-PostgreSQL tests prove one post audit across two invocations, and that a
   stale control on an already recorded movement writes nothing.
-- Routing dataset `routing-intent-it-v1.3` adds the posting cases, including an
-  uncorrelated control that must clarify rather than record something recent.
-  **The routing gate has not been re-run against it**, so EVD-004's reported
-  numbers do not yet cover this dataset.
+- The active routing suite still names the promoted
+  `routing-intent-it-v1.2` dataset. Unit coverage exercises the deterministic
+  posting callback and pins every model-visible enum value, so Step 4 adds no
+  unevaluated route to the EVD-004 boundary.
 
 ## Operations implementation evidence
 

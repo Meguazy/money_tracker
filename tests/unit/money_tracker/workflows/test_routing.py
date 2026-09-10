@@ -109,6 +109,7 @@ def test_every_category_review_branch_routes_to_the_review_workflow(
     ("action", "expected"),
     [
         (CallbackAction.MODIFY_EXPENSE, WorkflowIntent.CORRECTION),
+        (CallbackAction.POST_EXPENSE, WorkflowIntent.CORRECTION),
         (CallbackAction.UNDO_EXPENSE, WorkflowIntent.UNDO),
     ],
 )
@@ -116,7 +117,7 @@ def test_movement_callbacks_route_to_their_own_workflow(
     action: CallbackAction,
     expected: WorkflowIntent,
 ) -> None:
-    """Keep modify and undo distinct from category review."""
+    """Keep lifecycle callbacks distinct from category review."""
 
     decision = pre_route(_message(callback_action=action, pending_action_id=uuid4()))
 

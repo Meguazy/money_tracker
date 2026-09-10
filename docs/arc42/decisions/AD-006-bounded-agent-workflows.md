@@ -137,16 +137,20 @@ command key: an identical replay returns its first result, a competing branch
 conflicts, and the settling handler turns both into the same already-settled
 question.
 
-The correction and undo specialists are implemented. Correction reuses the
+The correction, explicit owner posting, and undo lifecycle paths are
+implemented. Correction reuses the
 evaluated extraction and category-fit boundaries, then a framework-independent
 function prepares the complete replacement against repository-owned current
-state. Undo has no model node. Both application mutations claim a namespaced
-command key in the same PostgreSQL transaction as the replacement and audit,
+state. Undo and owner posting have no model node. Posting remains a normalized
+callback action carried through the correction specialist route rather than
+extending the model-visible intent enum. All application mutations claim a
+namespaced command key in the same PostgreSQL transaction as the replacement
+and audit,
 so replaying a completed invocation returns the first result even when the
 domain transition is no longer valid to apply a second time. A category
 proposal during correction clarifies rather than bypassing the owner-only
-authority in AD-008. State contains only message text, boundary JSON, reason
-codes, and stable profile/movement references.
+authority in AD-008. State contains only message text, normalized callback values, boundary JSON,
+reason codes, and stable profile/movement references.
 
 The read-only query and advice routes are implemented as one bounded loop with
 a single model decision. Each route owns a scoped registry of named tools whose

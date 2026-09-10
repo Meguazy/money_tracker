@@ -588,7 +588,7 @@ def test_a_recorded_movement_stops_offering_to_record_it() -> None:
 
     response = _render(
         DispatchOutcome(
-            routing=_routing(WorkflowIntent.POSTING),
+            routing=_routing(WorkflowIntent.CORRECTION),
             status=DispatchStatus.POSTED,
             expense_id=EXPENSE_ID,
         ),

@@ -30,6 +30,7 @@ from money_tracker.persistence.database import upgrade_database
 from money_tracker.persistence.finance import PostgresFinanceRepository
 from money_tracker.runtime import build_movement_change_graph
 from money_tracker.workflows import (
+    CallbackAction,
     ChannelMessage,
     MovementChangeOutcome,
     MovementChangeReason,
@@ -144,13 +145,19 @@ def _graph(
     )
 
 
-def _message(reference: str, text: str) -> ChannelMessage:
+def _message(
+    reference: str,
+    text: str,
+    *,
+    callback_action: CallbackAction | None = None,
+) -> ChannelMessage:
     """Build one normalized durable work unit."""
 
     return ChannelMessage(
         source_reference=reference,
         received_at=datetime(2026, 9, 8, 12, tzinfo=UTC),
         text=text,
+        callback_action=callback_action,
     )
 
 
@@ -304,9 +311,13 @@ def test_recording_an_already_recorded_movement_writes_nothing(
     repository, profile, posted = _bootstrap(postgres_url)
     before = _action_count(postgres_url, posted.id, "post")
     state = initial_movement_change_state(
-        _message(f"integration:posting-stale:{uuid4()}", ""),
+        _message(
+            f"integration:posting-stale:{uuid4()}",
+            "",
+            callback_action=CallbackAction.POST_EXPENSE,
+        ),
         profile_id=profile.id,
-        routed_intent=WorkflowIntent.POSTING,
+        routed_intent=WorkflowIntent.CORRECTION,
         target_movement_id=posted.id,
     )
 
@@ -329,9 +340,9 @@ def test_replayed_posting_records_the_movement_exactly_once(
     draft = _draft(repository, profile)
     reference = f"integration:posting-replay:{uuid4()}"
     state = initial_movement_change_state(
-        _message(reference, ""),
+        _message(reference, "", callback_action=CallbackAction.POST_EXPENSE),
         profile_id=profile.id,
-        routed_intent=WorkflowIntent.POSTING,
+        routed_intent=WorkflowIntent.CORRECTION,
         target_movement_id=draft.id,
     )
     graph = _graph(repository, ScriptedModel())

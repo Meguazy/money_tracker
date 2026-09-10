@@ -20,6 +20,7 @@ from money_tracker.application import AggregateNotFoundError, FinanceService
 from money_tracker.domain import CategoryStatus, InvalidTransitionError
 from money_tracker.runtime.expense_graph import ProfileConfigurationReader
 from money_tracker.workflows import (
+    CallbackAction,
     CategoryFit,
     ExpenseExtraction,
     ExpensePolarity,
@@ -34,6 +35,7 @@ from money_tracker.workflows import (
     movement_change_message_from_state,
     movement_command_key,
     parse_with_one_repair,
+    posting_command_key,
     posting_request_hash,
     prepare_expense_correction,
     render_active_categories,
@@ -263,10 +265,7 @@ def build_movement_change_graph(
                 profile_id=profile_id,
                 expense_id=target,
                 expected_version=current.version,
-                idempotency_key=movement_command_key(
-                    WorkflowIntent.POSTING,
-                    state["source_reference"],
-                ),
+                idempotency_key=posting_command_key(state["source_reference"]),
                 request_hash=posting_request_hash(
                     profile_id=profile_id,
                     expense_id=target,
@@ -286,11 +285,11 @@ def build_movement_change_graph(
     def start_route(state: MovementChangeState) -> str:
         """Select correction, posting, or undo from the trusted routed intent."""
 
+        if state.get("callback_action") == CallbackAction.POST_EXPENSE.value:
+            return APPLY_POSTING_NODE
         intent = WorkflowIntent(state["routed_intent"])
         if intent is WorkflowIntent.CORRECTION:
             return EXTRACT_CORRECTION_NODE
-        if intent is WorkflowIntent.POSTING:
-            return APPLY_POSTING_NODE
         return APPLY_UNDO_NODE
 
     def continue_or_end(state: MovementChangeState, next_node: str) -> str:

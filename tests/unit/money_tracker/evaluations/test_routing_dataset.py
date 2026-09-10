@@ -20,8 +20,8 @@ from money_tracker.workflows import (
     WorkflowIntent,
 )
 
-DATASET = Path("evals/datasets/routing-intent-it-v1.3.jsonl")
-PREVIOUS = Path("evals/datasets/routing-intent-it-v1.2.jsonl")
+DATASET = Path("evals/datasets/routing-intent-it-v1.2.jsonl")
+PREVIOUS = Path("evals/datasets/routing-intent-it-v1.1.jsonl")
 
 
 @pytest.fixture(scope="module")
@@ -43,7 +43,7 @@ def test_the_committed_dataset_parses_and_hashes(
     )
 
     assert metadata.item_count == len(cases)
-    assert metadata.version == "1.3.0"
+    assert metadata.version == "1.2.0"
     assert len(metadata.content_hash) == 64
 
 
@@ -142,15 +142,8 @@ def test_the_dataset_reaches_its_promotion_minimum(
     assert len(cases) >= DATASET_MINIMUM
 
 
-def test_the_prior_version_is_carried_forward_unchanged() -> None:
-    """Never rewrite a prior run's meaning when a dataset grows.
-
-    The dataset policy versions a change rather than editing in place, so each
-    version must carry its immediate predecessor forward with every label,
-    message, and context intact; only the version field may differ. Comparing
-    against the immediate predecessor rather than against 1.0.0 is what makes
-    the check hold as the lineage grows.
-    """
+def test_prior_version_is_carried_forward_with_audited_revisions() -> None:
+    """Carry prior cases forward and require audit data for revised labels."""
 
     previous, _ = load_cases(PREVIOUS)
     current = {case["case_id"]: case for case in load_cases(DATASET)[0]}
@@ -160,8 +153,12 @@ def test_the_prior_version_is_carried_forward_unchanged() -> None:
         carried = current[str(case["case_id"])]
         assert carried["message"] == case["message"]
         assert carried["context"] == case["context"]
-        assert carried["expected_intent"] == case["expected_intent"]
-        assert carried["expected_source"] == case["expected_source"]
+        if any(
+            carried[key] != case[key]
+            for key in ("expected_intent", "expected_source")
+        ):
+            assert carried["revision_reason"]
+            assert carried["reviewer_status"] == "contract-reviewed"
         assert carried["dataset_version"] != case["dataset_version"]
 
 

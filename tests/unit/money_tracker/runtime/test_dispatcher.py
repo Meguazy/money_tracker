@@ -247,7 +247,7 @@ def test_posting_callback_reaches_the_movement_specialist() -> None:
     action_id = uuid4()
     movement_id = uuid4()
     decision = RoutingDecision(
-        intent=WorkflowIntent.POSTING,
+        intent=WorkflowIntent.CORRECTION,
         source=RoutingSource.DETERMINISTIC,
         reason=RoutingReason.CALLBACK_ACTION,
         callback_action=CallbackAction.POST_EXPENSE,
@@ -275,7 +275,8 @@ def test_posting_callback_reaches_the_movement_specialist() -> None:
 
     assert result.status is DispatchStatus.POSTED
     assert result.expense_id == movement_id
-    assert movement.calls[0][0]["routed_intent"] == WorkflowIntent.POSTING.value
+    assert movement.calls[0][0]["routed_intent"] == WorkflowIntent.CORRECTION.value
+    assert movement.calls[0][0]["callback_action"] == CallbackAction.POST_EXPENSE.value
 
 
 def test_an_uncorrelated_posting_callback_records_nothing() -> None:

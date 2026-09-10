@@ -261,10 +261,8 @@ def _route_callback(
         return clarify(RoutingReason.UNCORRELATED_CALLBACK, RoutingSource.DETERMINISTIC)
     if action in CATEGORY_REVIEW_ACTIONS:
         intent = WorkflowIntent.CATEGORY_FOLLOW_UP
-    elif action is CallbackAction.MODIFY_EXPENSE:
+    elif action in {CallbackAction.MODIFY_EXPENSE, CallbackAction.POST_EXPENSE}:
         intent = WorkflowIntent.CORRECTION
-    elif action is CallbackAction.POST_EXPENSE:
-        intent = WorkflowIntent.POSTING
     else:
         intent = WorkflowIntent.UNDO
     return RoutingDecision(

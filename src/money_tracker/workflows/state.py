@@ -427,7 +427,8 @@ class MovementChangeState(TypedDict, total=False):
         source_reference: Stable inbound work reference used for idempotency.
         received_at: ISO channel timestamp anchoring relative dates.
         text: Owner correction text, or empty text for an explicit undo action.
-        routed_intent: Correction or undo.
+        routed_intent: Correction or undo specialist route.
+        callback_action: Explicit normalized lifecycle action, when present.
         target_movement_id: Runtime-resolved movement reference, when available.
         extraction_json: Correction extraction carried across resume.
         category_fit_json: Correction purpose judgment carried across resume.
@@ -442,6 +443,7 @@ class MovementChangeState(TypedDict, total=False):
     received_at: str
     text: str
     routed_intent: str
+    callback_action: str | None
     target_movement_id: str | None
     extraction_json: str | None
     category_fit_json: str | None
@@ -457,7 +459,7 @@ def initial_movement_change_state(
     routed_intent: WorkflowIntent,
     target_movement_id: UUID | None,
 ) -> MovementChangeState:
-    """Build initial state for a routed correction, posting, or undo.
+    """Build initial state for a routed correction or undo specialist.
 
     Args:
         message: Normalized inbound work unit.
@@ -473,14 +475,13 @@ def initial_movement_change_state(
         ValueError: If another route is supplied.
     """
 
-    if routed_intent not in {
-        WorkflowIntent.CORRECTION,
-        WorkflowIntent.POSTING,
-        WorkflowIntent.UNDO,
-    }:
-        raise ValueError(
-            "movement change workflow accepts correction, posting, or undo"
-        )
+    if routed_intent not in {WorkflowIntent.CORRECTION, WorkflowIntent.UNDO}:
+        raise ValueError("movement change workflow accepts correction or undo")
+    if (
+        message.callback_action is CallbackAction.POST_EXPENSE
+        and routed_intent is not WorkflowIntent.CORRECTION
+    ):
+        raise ValueError("posting callback requires the correction specialist route")
     return MovementChangeState(
         state_version=WORKFLOW_STATE_VERSION,
         profile_id=str(profile_id),
@@ -488,6 +489,11 @@ def initial_movement_change_state(
         received_at=message.received_at.isoformat(),
         text=message.normalized_text,
         routed_intent=routed_intent.value,
+        callback_action=(
+            message.callback_action.value
+            if message.callback_action is not None
+            else None
+        ),
         target_movement_id=_optional_str(target_movement_id),
         extraction_json=None,
         category_fit_json=None,

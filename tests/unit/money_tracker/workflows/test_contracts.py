@@ -41,6 +41,29 @@ def test_contract_version_is_pinned() -> None:
     assert ROUTER_CONTRACT_VERSION == "v1"
 
 
+def test_promoted_intent_schema_stays_unchanged() -> None:
+    """Keep EVD-004 valid by pinning every model-visible intent value."""
+
+    intent_schema = RouteClassification.model_json_schema()["$defs"][
+        "WorkflowIntent"
+    ]
+
+    assert intent_schema["enum"] == [
+        "expense",
+        "refund",
+        "query",
+        "advice",
+        "category_follow_up",
+        "correction",
+        "undo",
+        "clarification",
+        "receipt",
+        "command",
+        "non_finance",
+        "unsupported",
+    ]
+
+
 def test_classification_accepts_a_complete_decision() -> None:
     """Parse a well-formed decision with evidence and explicit unknowns."""
 

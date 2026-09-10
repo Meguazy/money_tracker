@@ -154,7 +154,6 @@ class WorkflowDispatcher:
             return self._dispatch_read(message, context.profile_id, decision)
         if decision.intent in {
             WorkflowIntent.CORRECTION,
-            WorkflowIntent.POSTING,
             WorkflowIntent.UNDO,
         }:
             return self._dispatch_movement_change(message, context, decision)

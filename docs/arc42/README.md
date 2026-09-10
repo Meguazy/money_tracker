@@ -553,7 +553,10 @@ is a nondeterministic suggestion that deterministic policy then re-checks.
    reference, an optional free-text reply reference, and whether image media is
    attached. It carries no transport credential, raw update payload, or bytes.
 2. Deterministic pre-routing applies a total precedence order. An explicit
-   interface decision wins because the owner already chose. Image media
+   interface decision wins because the owner already chose. Its normalized
+   callback action remains separate from the intent enum exposed to the model;
+   in particular, `post_expense` reaches the movement-lifecycle specialist
+   without changing the EVD-004 router schema. Image media
    outranks its own caption, so a caption can never turn a review-only receipt
    into a posting path. A supported command outranks free text. Blank remaining
    input is clarified without spending an inference call.
@@ -644,7 +647,10 @@ that would turn a resolved draft into a stored expense remain open.
    exists, so an unreadable date or an unresolved funding source never produces
    a partially built movement.
 3. Every movement is created as a draft, and an explicit owner `Registra`
-   records it. That control is the only channel path to posting, because
+   records it. `Registra` is a deterministic callback action carried by the
+   correction route into the shared lifecycle specialist; it is not a
+   model-routable intent. That control is the only channel path to posting,
+   because
    EVD-004 qualified no automatic-post subset and a draft nobody records stays
    invisible to every report.
    The auto-post eligibility policy is calibrated on the evaluation set and

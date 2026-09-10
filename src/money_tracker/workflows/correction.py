@@ -85,13 +85,35 @@ def movement_command_key(intent: WorkflowIntent, source_reference: str) -> str:
     prefixes = {
         WorkflowIntent.CORRECTION: CORRECTION_COMMAND_PREFIX,
         WorkflowIntent.UNDO: UNDO_COMMAND_PREFIX,
-        WorkflowIntent.POSTING: POSTING_COMMAND_PREFIX,
     }
     try:
         prefix = prefixes[intent]
     except KeyError as error:
         raise ValueError("movement command key requires correction or undo") from error
     return f"{prefix}:{reference}"
+
+
+def posting_command_key(source_reference: str) -> str:
+    """Derive a replay-stable key for an explicit owner posting action.
+
+    Posting is a normalized callback action, not a model-routable workflow
+    intent. Keeping its command namespace independent preserves both the
+    promoted router schema and finance-write idempotency.
+
+    Args:
+        source_reference: Stable reference to the inbound work unit.
+
+    Returns:
+        A posting command key namespaced independently from corrections.
+
+    Raises:
+        ValueError: If the reference is blank.
+    """
+
+    reference = source_reference.strip()
+    if not reference:
+        raise ValueError("posting command key requires a source reference")
+    return f"{POSTING_COMMAND_PREFIX}:{reference}"
 
 
 def undo_request_hash(*, profile_id: UUID, expense_id: UUID) -> str:

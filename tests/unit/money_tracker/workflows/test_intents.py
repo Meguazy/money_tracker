@@ -34,20 +34,13 @@ def test_read_only_and_inert_intents_cannot_mutate_finance_data() -> None:
     assert WorkflowIntent.UNSUPPORTED not in MUTATING_INTENTS
     assert WorkflowIntent.CLARIFICATION not in MUTATING_INTENTS
     assert WorkflowIntent.RECEIPT not in MUTATING_INTENTS
-    assert WorkflowIntent.POSTING in MUTATING_INTENTS
 
 
 def test_model_may_not_select_a_deterministic_route() -> None:
-    """Reserve image, command, and posting routing for the deterministic half.
-
-    Posting is here for a different reason than the other two. Image and
-    command routing are withheld because they must be reproducible; posting is
-    withheld because it is the act that makes money count, and AD-012 leaves
-    that judgement to the owner rather than to a classification.
-    """
+    """Reserve image and command routing for reproducible pre-routing."""
 
     assert DETERMINISTIC_ONLY_INTENTS == frozenset(
-        {WorkflowIntent.RECEIPT, WorkflowIntent.COMMAND, WorkflowIntent.POSTING}
+        {WorkflowIntent.RECEIPT, WorkflowIntent.COMMAND}
     )
     assert MODEL_ROUTABLE_INTENTS.isdisjoint(DETERMINISTIC_ONLY_INTENTS)
     assert MODEL_ROUTABLE_INTENTS | DETERMINISTIC_ONLY_INTENTS == frozenset(

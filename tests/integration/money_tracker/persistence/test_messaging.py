@@ -188,6 +188,33 @@ def test_migration_creates_minimal_normalized_messaging_tables(
     assert not {"raw_update", "payload", "token", "download_url"} & columns
 
 
+def test_outbox_recovery_migration_preserves_existing_messages(
+    postgres_url: str,
+) -> None:
+    """Add replay accounting without replacing a durable logical response."""
+
+    upgrade_database(postgres_url, "20260909_0005")
+    repository = PostgresMessagingRepository(postgres_url)
+    bot_key = f"test-{uuid4().hex}"
+    repository.ensure_bot(bot_key, environment=BotEnvironment.TEST, now=_NOW)
+    response = _response(
+        bot_key=bot_key,
+        inbox_id=None,
+        logical_key="migration:outbox-recovery",
+    )
+    repository.enqueue_notice(response, now=_NOW)
+
+    upgrade_database(postgres_url)
+
+    with connect(postgres_url) as connection:
+        state = connection.execute(
+            "SELECT id, status, replay_count, text_content "
+            "FROM messaging.telegram_outbox WHERE id = %s",
+            (response.id,),
+        ).fetchone()
+    assert state == (response.id, "pending", 0, response.text)
+
+
 def test_ingest_deduplicates_redelivery_and_advances_offset_atomically(
     postgres_url: str,
 ) -> None:
@@ -593,6 +620,41 @@ def test_outbox_retry_is_bounded_and_becomes_visible_dead_letter(
         )
         is None
     )
+    listed = repository.outbox_dead_letters(bot_key, limit=10)
+    assert len(listed) == 1
+    item = listed[0]
+    assert item.id == outbox.message.id
+    assert item.attempt_count == 5
+    assert item.replay_count == 0
+    assert item.last_error_code == "telegram_unavailable"
+    assert outbox.message.text not in str(item)
+
+    foreign_bot_key = f"production-{uuid4().hex}"
+    repository.ensure_bot(
+        foreign_bot_key, environment=BotEnvironment.PRODUCTION, now=_NOW
+    )
+    with pytest.raises(MessagingConflictError):
+        repository.replay_outbox(foreign_bot_key, item.id, now=now)
+    assert repository.outbox_dead_letters(bot_key, limit=10) == (item,)
+
+    repository.replay_outbox(bot_key, item.id, now=now)
+
+    assert repository.outbox_dead_letters(bot_key, limit=10) == ()
+    replayed = repository.claim_next_outbox(
+        bot_key,
+        now=now + timedelta(seconds=1),
+        lease=timedelta(seconds=30),
+        claim_token=uuid4(),
+    )
+    assert replayed is not None
+    assert replayed.message.id == item.id
+    assert replayed.attempt_count == 1
+    with connect(postgres_url) as connection:
+        state = connection.execute(
+            "SELECT replay_count FROM messaging.telegram_outbox WHERE id = %s",
+            (item.id,),
+        ).fetchone()
+    assert state == (1,)
 
 
 @pytest.mark.postgres
@@ -649,9 +711,7 @@ def test_dead_letters_are_listable_and_replayable_without_content(
         )
     assert repository.dead_letters(bot_key, limit=10) == (item,)
 
-    repository.replay_inbox(
-        bot_key, item.id, now=_NOW + timedelta(seconds=3)
-    )
+    repository.replay_inbox(bot_key, item.id, now=_NOW + timedelta(seconds=3))
 
     assert repository.dead_letters(bot_key, limit=10) == ()
     replayed = repository.claim_next_inbox(

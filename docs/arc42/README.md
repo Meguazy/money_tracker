@@ -30,8 +30,9 @@ and verified encrypted backup are implemented. Step 4 design is reconciled in
 AD-018; its normalized messaging schema, contracts, retry policy, PostgreSQL
 repository, Bot API transport, authorized ingestion, gateway process, Italian
 response renderer, sequential workflow worker, one-use owner pairing, operator
-health and replay commands, and host service units are implemented. What is
-missing is evidence: nothing has been run against a real Telegram bot.
+health, replay, and resend commands, and host service units are implemented.
+Bot API validation is real; owner-driven workflow and restart evidence remain
+missing.
 The web application and receipt extraction pipeline remain assigned to later
 roadmap steps.
 
@@ -899,11 +900,16 @@ started the processes yet.
    recovery collide with its own first response.
 6. A retry or dead-letter transition atomically creates a stable Italian owner
    notice without its internal reason code. Five transient failures lead to a
-   visible dead letter. Manual replay is constrained by the configured bot environment plus inbox ID, keeps the
-   source identity, and never rewinds the Telegram offset.
+   visible dead letter. Manual replay is constrained by the configured bot
+   environment plus inbox ID, keeps the source identity, and never rewinds the
+   Telegram offset.
 7. The independent outbox loop records delivery attempts and Telegram message
    correlation. A lost Bot API response may duplicate physical delivery, but
-   cannot create a second logical response or finance mutation.
+   cannot create a second logical response or finance mutation. An exhausted
+   response is listed without content and can be explicitly resent by its
+   bot-scoped outbox ID. This retains the logical row, records a replay cycle,
+   and starts a fresh bounded attempt budget; the operator accepts that an
+   ambiguous earlier send may make the physical message appear twice.
 
 ### Planned insight request
 
@@ -1252,8 +1258,9 @@ environment file.
 - [AD-018: Telegram processing transactions and ordering](decisions/AD-018-telegram-processing-transactions.md):
   reconciled Step 4 persistence, Bot API transport, authorized ingestion,
   persisted-offset runtime, outbox delivery, Italian response rendering, the
-  sequential worker, one-use owner pairing, and operator health/replay commands
-  are implemented; real-bot acceptance remains outstanding.
+  sequential worker, one-use owner pairing, and operator
+  health/replay/resend commands are implemented; real-bot acceptance remains
+  outstanding.
 
 ### Partially implemented Telegram decisions
 
@@ -1286,7 +1293,7 @@ Quantitative evaluation gates are maintained in
 ### Current scaffold risks
 
 - The complete Step 4 runtime is implemented: messaging persistence, Telegram
-  transport/gateway, worker, Italian presentation, pairing/health/replay, and
+  transport/gateway, worker, Italian presentation, pairing/health/replay/resend, and
   hardened host unit templates. Bot API validation is real; owner-driven
   workflows, installed-service restart/reboot recovery, fault injection at all
   boundaries, and end-to-end latency evidence remain open.

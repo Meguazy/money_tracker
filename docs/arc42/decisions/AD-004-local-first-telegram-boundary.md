@@ -33,8 +33,10 @@ disables webhooks without dropping pending updates, and exposes only bounded
 reason codes on failure. Authorization compares private-chat sender and chat
 identities with the persisted owner binding before normalized inbox creation.
 Foreign users and groups advance the observed offset with counters only. Unit
-coverage proves redaction and authorization; the opt-in real Bot API test exists
-but has not run because no test-bot credential is configured yet.
+coverage proves redaction and authorization; the opt-in real Bot API test has
+passed against the real test bot without sending owner content. The
+credential used during initial diagnostics must be rotated before owner
+acceptance because it appeared in terminal output.
 
 ## Alternatives considered
 

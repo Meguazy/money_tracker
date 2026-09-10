@@ -54,6 +54,7 @@ def _parser() -> argparse.ArgumentParser:
             "health",
             "dead-letters",
             "replay",
+            "resend",
             "validate",
         ),
         help=(
@@ -66,6 +67,11 @@ def _parser() -> argparse.ArgumentParser:
         "--inbox-id",
         type=UUID,
         help="dead letter to return to the queue, required by replay",
+    )
+    parser.add_argument(
+        "--outbox-id",
+        type=UUID,
+        help="delivery dead letter to return to the queue, required by resend",
     )
     return parser
 
@@ -171,11 +177,13 @@ def _dead_letters(
 ) -> dict[str, object]:
     """List failed work items with identity and reason but no content."""
 
-    items = MessagingAdministration(
+    administration = MessagingAdministration(
         repository,
         clock=_SystemClock(),
         ids=UUID4Generator(),
-    ).dead_letters(settings.bot_key)
+    )
+    items = administration.dead_letters(settings.bot_key)
+    outbox_items = administration.outbox_dead_letters(settings.bot_key)
     return {
         "dead_letters": [
             {
@@ -188,6 +196,17 @@ def _dead_letters(
                 "update_id": item.update_id,
             }
             for item in items
+        ],
+        "outbox_dead_letters": [
+            {
+                "attempt_count": item.attempt_count,
+                "created_at": item.created_at.isoformat(),
+                "last_error_code": item.last_error_code,
+                "outbox_id": str(item.id),
+                "replay_count": item.replay_count,
+                "response_kind": item.response_kind,
+            }
+            for item in outbox_items
         ],
         "environment": settings.environment.value,
     }
@@ -212,6 +231,27 @@ def _replay(
         ids=UUID4Generator(),
     ).replay(bot_key, inbox_id)
     return {"inbox_id": str(inbox_id), "status": "queued"}
+
+
+def _resend(
+    bot_key: str,
+    repository: PostgresMessagingRepository,
+    outbox_id: UUID | None,
+) -> dict[str, object]:
+    """Return one operator-selected delivery dead letter to the queue.
+
+    Raises:
+        SystemExit: If no delivery dead letter was named.
+    """
+
+    if outbox_id is None:
+        raise SystemExit("resend requires --outbox-id from the dead-letters command")
+    MessagingAdministration(
+        repository,
+        clock=_SystemClock(),
+        ids=UUID4Generator(),
+    ).resend(bot_key, outbox_id)
+    return {"outbox_id": str(outbox_id), "status": "queued"}
 
 
 def main(argv: Sequence[str] | None = None) -> None:
@@ -243,6 +283,13 @@ def main(argv: Sequence[str] | None = None) -> None:
             print(
                 json.dumps(
                     _replay(settings.bot_key, repository, args.inbox_id), indent=2
+                )
+            )
+            return
+        if args.command == "resend":
+            print(
+                json.dumps(
+                    _resend(settings.bot_key, repository, args.outbox_id), indent=2
                 )
             )
             return

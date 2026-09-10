@@ -20,6 +20,7 @@ from money_tracker.messaging.contracts import (
     NormalizedTelegramUpdate,
     OutboundButton,
     OutboxClaim,
+    OutboxDeadLetter,
     OutboxMessageDraft,
     OutboxStatus,
     OwnerBinding,
@@ -341,9 +342,7 @@ class PostgresMessagingRepository:
                 raise MessagingLeaseError("inbox lease is no longer current")
         return outbox_id
 
-    def replay_inbox(
-        self, bot_key: str, inbox_id: UUID, *, now: datetime
-    ) -> None:
+    def replay_inbox(self, bot_key: str, inbox_id: UUID, *, now: datetime) -> None:
         """Replay one dead letter only inside the selected bot scope."""
 
         require_aware(now, field="now")
@@ -557,6 +556,63 @@ class PostgresMessagingRepository:
             )
             for row in rows
         )
+
+    def outbox_dead_letters(
+        self, bot_key: str, *, limit: int
+    ) -> tuple[OutboxDeadLetter, ...]:
+        """List failed logical responses without content or Telegram identity.
+
+        Args:
+            bot_key: Bot and environment persistence scope.
+            limit: Maximum rows to return.
+
+        Returns:
+            Delivery dead letters ordered by their original creation time.
+
+        Raises:
+            ValueError: If the limit is not positive.
+        """
+
+        validate_bot_key(bot_key)
+        if limit <= 0:
+            raise ValueError("dead letter limit must be positive")
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT id, response_kind, attempt_count, replay_count, "
+                "last_error_code, created_at "
+                "FROM messaging.telegram_outbox "
+                "WHERE bot_key = %s AND status = 'dead_letter' "
+                "ORDER BY created_at, id LIMIT %s",
+                (bot_key, limit),
+            ).fetchall()
+        return tuple(
+            OutboxDeadLetter(
+                id=cast(UUID, row["id"]),
+                response_kind=cast(str, row["response_kind"]),
+                attempt_count=cast(int, row["attempt_count"]),
+                replay_count=cast(int, row["replay_count"]),
+                last_error_code=cast("str | None", row["last_error_code"]),
+                created_at=cast(datetime, row["created_at"]),
+            )
+            for row in rows
+        )
+
+    def replay_outbox(self, bot_key: str, outbox_id: UUID, *, now: datetime) -> None:
+        """Return one scoped delivery dead letter to a fresh attempt cycle."""
+
+        validate_bot_key(bot_key)
+        require_aware(now, field="now")
+        with self._connect() as connection:
+            result = connection.execute(
+                "UPDATE messaging.telegram_outbox SET status = 'pending', "
+                "attempt_count = 0, replay_count = replay_count + 1, "
+                "next_attempt_at = %s, claim_token = NULL, claimed_until = NULL, "
+                "last_error_code = NULL "
+                "WHERE id = %s AND bot_key = %s AND status = 'dead_letter'",
+                (now, outbox_id, bot_key),
+            )
+            if result.rowcount != 1:
+                raise MessagingConflictError("only an outbox dead letter can be resent")
 
     def enqueue_notice(self, notice: OutboxMessageDraft, *, now: datetime) -> UUID:
         """Queue one owner message that no inbound work unit asked for.
@@ -912,6 +968,7 @@ class PostgresMessagingRepository:
                 "SELECT count(*) FILTER (WHERE status = 'pending') AS pending, "
                 "count(*) FILTER (WHERE status = 'retry') AS retrying, "
                 "count(*) FILTER (WHERE status = 'dead_letter') AS dead, "
+                "coalesce(sum(replay_count), 0) AS replay_count, "
                 "min(created_at) FILTER (WHERE status IN "
                 "('pending', 'sending', 'retry')) AS oldest "
                 "FROM messaging.telegram_outbox WHERE bot_key = %s",

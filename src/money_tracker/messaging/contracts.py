@@ -385,6 +385,36 @@ class DeadLetter:
 
 
 @dataclass(frozen=True, slots=True)
+class OutboxDeadLetter:
+    """Content-free projection of one failed logical outbound message.
+
+    Attributes:
+        id: Stable outbox identifier used for an explicit manual resend.
+        response_kind: Bounded presentation kind useful for diagnosis.
+        attempt_count: Delivery attempts in the exhausted automatic cycle.
+        replay_count: Manual resend cycles already requested by an operator.
+        last_error_code: Safe bounded reason recorded by the final attempt.
+        created_at: When the logical response was first committed.
+    """
+
+    id: UUID
+    response_kind: str
+    attempt_count: int
+    replay_count: int
+    last_error_code: str | None
+    created_at: datetime
+
+    def __post_init__(self) -> None:
+        """Validate content-free delivery failure metadata."""
+
+        require_aware(self.created_at, field="created_at")
+        if not self.response_kind.strip():
+            raise ValueError("outbox dead letter requires a response kind")
+        if self.attempt_count < 0 or self.replay_count < 0:
+            raise ValueError("outbox dead letter counters cannot be negative")
+
+
+@dataclass(frozen=True, slots=True)
 class MessagingHealth:
     """Content-free messaging state summary for operations."""
 

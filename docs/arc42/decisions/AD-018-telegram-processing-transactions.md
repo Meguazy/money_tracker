@@ -4,7 +4,7 @@
 - Implementation: messaging contracts/repository, category-review replay, Bot
   API transport, authorized ingress, gateway/outbox loops, Italian response
   rendering, the sequential worker, one-use owner pairing, operator
-  health/replay commands, and host service units implemented; real-bot
+  health/replay/resend commands, and host service units implemented; real-bot
   acceptance pending
 - Date: 2026-09-09
 - Supersedes: the raw-update retention detail in
@@ -171,17 +171,22 @@ API keeps undelivered updates, since no local state can recover that gap.
 
 ## Implementation evidence
 
-Migration `20260909_0005` creates the offset, inbox, outbox, pairing, binding,
-and pending-action tables with database checks and stable uniqueness. The
+Migrations `20260909_0005` and `20260910_0006` create the offset, inbox,
+outbox, pairing, binding, and pending-action tables plus durable manual outbox
+replay accounting, with database checks and stable uniqueness. The
 transport-neutral `messaging` contracts reject unsafe identifiers, naive time,
 unsupported or oversized file metadata, empty work, and overlong callback data.
 `PostgresMessagingRepository` owns one transaction per ingest batch or terminal
 worker transition, serializes per-bot claims through the offset row, recovers
 expired leases, blocks later work behind an ineligible head row, applies the
 five-attempt terminal boundary, and preserves source identity during replay.
-Unit tests cover the contracts and deterministic retry schedule. Nine
-`@pytest.mark.postgres` tests exercise the production adapter over the real
-PostgreSQL protocol, including a concurrent two-connection claim.
+Twenty-seven unit tests cover the messaging contracts, administration, and
+deterministic retry schedule. Thirteen `@pytest.mark.postgres` repository
+tests exercise the production adapter over the real PostgreSQL protocol,
+including a concurrent two-connection claim, forward migration with an
+existing outbox row, and bot-scoped outbox resend. A separate real-process test
+exercises `dead-letters` and `resend` through the installed production
+entry point.
 
 Category-review approval, reuse, cancellation, and re-proposal use one
 proposal-wide command key. The claim commits in the same finance transaction as
@@ -202,11 +207,16 @@ another proves every stable reason code has an owner-facing question.
 Twenty-four unit tests cover rendering, digest stability, and refusal of
 missing display data.
 
-Operator commands cover health, dead letters, and replay. Their output carries
-counts, ages, safe identifiers, and reason codes but no message content. Replay
-is scoped by both the selected bot key and inbox UUID and preserves
-the source reference so a replayed item that already mutated finance returns
-its first result. A downtime warning is keyed by the instant
+Operator commands cover health, both dead-letter queues, inbox replay, and
+outbox resend. Their output carries counts, ages, safe identifiers, and reason
+codes but no message content. Inbox replay is scoped by the selected bot key
+and inbox UUID and preserves the source reference so an item that already
+mutated finance returns its first result. Outbox resend is likewise bot-scoped,
+keeps the same logical response row, records the manual replay count, and resets
+only its bounded automatic-attempt cycle. Because Telegram offers no send
+idempotency key, the command is explicit and its runbook warns that an
+ambiguous earlier send can cause a duplicate physical message. A downtime
+warning is keyed by the instant
 the gap started, so restarting inside one outage produces one message.
 
 `MessagingAdministration` generates one short-lived code per bot, revoking any

@@ -4,7 +4,7 @@
 - Current executable operations: local inference/CLI, dedicated application
   PostgreSQL, migrations/checkpoint bootstrap, optional healthy Langfuse,
   capability evaluation, profile-scoped receipt storage, one-shot Step 3
-  dispatch, durable Telegram gateway/worker, pairing, health/replay, and
+  dispatch, durable Telegram gateway/worker, pairing, health/replay/resend, and
   checked-in host service units
 - Implemented Step 2: authoritative finance schema and transactional
   expense, wallet, budget, pending category-proposal, and versioned receipt-review

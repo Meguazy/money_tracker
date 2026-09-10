@@ -13,6 +13,7 @@ from money_tracker.messaging.contracts import (
     MessagingHealth,
     NormalizedTelegramUpdate,
     OutboxClaim,
+    OutboxDeadLetter,
     OutboxMessageDraft,
     OwnerBinding,
     PendingAction,
@@ -87,13 +88,19 @@ class MessagingRepository(Protocol):
     ) -> UUID:
         """Commit typed result, logical response, correlations, and completion."""
 
-    def replay_inbox(
-        self, bot_key: str, inbox_id: UUID, *, now: datetime
-    ) -> None:
+    def replay_inbox(self, bot_key: str, inbox_id: UUID, *, now: datetime) -> None:
         """Replay one dead letter only inside the selected bot scope."""
 
     def dead_letters(self, bot_key: str, *, limit: int) -> tuple[DeadLetter, ...]:
         """List failed work items an operator may inspect and replay."""
+
+    def outbox_dead_letters(
+        self, bot_key: str, *, limit: int
+    ) -> tuple[OutboxDeadLetter, ...]:
+        """List failed logical responses without owner content or identities."""
+
+    def replay_outbox(self, bot_key: str, outbox_id: UUID, *, now: datetime) -> None:
+        """Return one delivery dead letter to a fresh automatic attempt cycle."""
 
     def enqueue_notice(self, notice: OutboxMessageDraft, *, now: datetime) -> UUID:
         """Queue one owner message that no inbound work unit asked for."""

@@ -18,6 +18,7 @@ from money_tracker.messaging.contracts import (
     BotEnvironment,
     DeadLetter,
     MessagingHealth,
+    OutboxDeadLetter,
 )
 from money_tracker.messaging.ports import MessagingRepository
 
@@ -185,9 +186,42 @@ class MessagingAdministration:
             MessagingConflictError: If the item is not a dead letter.
         """
 
-        self._repository.replay_inbox(
-            bot_key, inbox_id, now=self._clock.now()
-        )
+        self._repository.replay_inbox(bot_key, inbox_id, now=self._clock.now())
+
+    def outbox_dead_letters(
+        self,
+        bot_key: str,
+        *,
+        limit: int = _DEAD_LETTER_LIMIT,
+    ) -> tuple[OutboxDeadLetter, ...]:
+        """List failed logical responses without exposing their content.
+
+        Args:
+            bot_key: Bot and environment persistence scope.
+            limit: Maximum rows to return.
+
+        Returns:
+            Delivery failures carrying stable identity and safe metadata only.
+        """
+
+        return self._repository.outbox_dead_letters(bot_key, limit=limit)
+
+    def resend(self, bot_key: str, outbox_id: UUID) -> None:
+        """Return one delivery dead letter to a fresh bounded attempt cycle.
+
+        Telegram cannot deduplicate sendMessage calls. An operator must
+        therefore request this explicitly after deciding that another physical
+        message is preferable to leaving an ambiguous delivery unresolved.
+
+        Args:
+            bot_key: Bot and environment persistence scope selected by config.
+            outbox_id: Delivery dead letter selected by the operator.
+
+        Raises:
+            MessagingConflictError: If the item is not an outbox dead letter.
+        """
+
+        self._repository.replay_outbox(bot_key, outbox_id, now=self._clock.now())
 
 
 def downtime_gap(health: MessagingHealth, *, now: datetime) -> timedelta | None:

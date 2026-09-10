@@ -46,8 +46,9 @@ boundaries. The Step 2 migrations add authoritative finance tables, deferred
 reconciliation constraints, immutable audit/wallet rows, taxonomy bootstrap,
 and expense idempotency/version state. Step 4 migration `20260909_0005` adds
 normalized Telegram offsets/inbox/outbox, bounded processing and delivery
-attempts, dead letters, pairing, owner bindings, and pending actions. It stores
-no raw Bot API update or token-bearing URL.
+attempts, dead letters, pairing, owner bindings, and pending actions. Migration
+`20260910_0006` adds manual outbox replay accounting while preserving each
+logical response. Neither stores a raw Bot API update or token-bearing URL.
 
 The foundation downgrade is intentionally guarded and the finance migration
 refuses destructive downgrade. The command below is now usable only when the

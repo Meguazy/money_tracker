@@ -16,6 +16,7 @@ from money_tracker.messaging import (
     DeadLetter,
     MessagingAdministration,
     MessagingHealth,
+    OutboxDeadLetter,
     downtime_gap,
 )
 
@@ -48,7 +49,9 @@ class _Repository:
         self.stored: list[dict[str, Any]] = []
         self.ensured: list[tuple[str, Any]] = []
         self.limits: list[int] = []
+        self.outbox_limits: list[int] = []
         self.replayed: list[tuple[str, UUID, datetime]] = []
+        self.resent: list[tuple[str, UUID, datetime]] = []
 
     def ensure_bot(self, bot_key: str, **values: Any) -> None:
         """Record the persistence scope the pairing code needs."""
@@ -83,12 +86,32 @@ class _Repository:
             ),
         )
 
-    def replay_inbox(
-        self, bot_key: str, inbox_id: UUID, *, now: datetime
-    ) -> None:
+    def replay_inbox(self, bot_key: str, inbox_id: UUID, *, now: datetime) -> None:
         """Record one replay request."""
 
         self.replayed.append((bot_key, inbox_id, now))
+
+    def outbox_dead_letters(
+        self, bot_key: str, *, limit: int
+    ) -> tuple[OutboxDeadLetter, ...]:
+        """Return one synthetic delivery failure and record the limit."""
+
+        self.outbox_limits.append(limit)
+        return (
+            OutboxDeadLetter(
+                id=UUID("00000000-0000-0000-0000-0000000000d2"),
+                response_kind="draft",
+                attempt_count=5,
+                replay_count=1,
+                last_error_code="telegram_unavailable",
+                created_at=NOW,
+            ),
+        )
+
+    def replay_outbox(self, bot_key: str, outbox_id: UUID, *, now: datetime) -> None:
+        """Record one manual delivery retry request."""
+
+        self.resent.append((bot_key, outbox_id, now))
 
 
 def _service(repository: _Repository) -> MessagingAdministration:
@@ -232,6 +255,30 @@ def test_replay_names_the_selected_item_and_the_instant() -> None:
     _service(repository).replay("telegram-test", inbox_id)
 
     assert repository.replayed == [("telegram-test", inbox_id, NOW)]
+
+
+def test_outbox_dead_letters_expose_only_safe_delivery_metadata() -> None:
+    """List delivery identity and counters without message or chat content."""
+
+    repository = _Repository()
+
+    items = _service(repository).outbox_dead_letters("telegram-test")
+
+    assert items[0].response_kind == "draft"
+    assert items[0].last_error_code == "telegram_unavailable"
+    assert repository.outbox_limits == [50]
+    assert "Risposta" not in str(items[0])
+
+
+def test_resend_names_one_selected_outbox_dead_letter() -> None:
+    """Start a new bounded delivery cycle only for the chosen message."""
+
+    repository = _Repository()
+    outbox_id = UUID("00000000-0000-0000-0000-0000000000d2")
+
+    _service(repository).resend("telegram-test", outbox_id)
+
+    assert repository.resent == [("telegram-test", outbox_id, NOW)]
 
 
 def test_a_bot_that_never_polled_reports_no_downtime() -> None:

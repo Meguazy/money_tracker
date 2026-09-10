@@ -55,10 +55,12 @@ conflicts without a second finance write.
 Roadmap Step 4 migration `20260909_0005` adds environment-scoped offsets,
 minimum normalized inbox rows, bounded claim/retry/dead-letter state, unique
 logical outbox messages, hashed one-use pairing, owner bindings, and scoped
-pending actions. `PostgresMessagingRepository` implements the AD-018 transaction
-boundaries and strict head-of-line claims. Real PostgreSQL tests cover duplicate
-ingestion, competing claims, ordered retries, exhaustion, safe replay, durable
-outbox/action recovery, environment separation, and pairing.
+pending actions. Migration `20260910_0006` adds durable manual outbox replay
+accounting without replacing existing messages. `PostgresMessagingRepository`
+implements the AD-018 transaction boundaries and strict head-of-line claims.
+Real PostgreSQL tests cover duplicate ingestion, competing claims, ordered
+retries, exhaustion, scoped inbox replay and outbox resend, forward migration,
+durable action recovery, environment separation, and pairing.
 Existing real PostgreSQL tests continue to cover finance migration, constraints,
 rollback, restart persistence, identical retry, stale versions, and concurrent
 expense and wallet writers, including concurrent receipt review transitions.

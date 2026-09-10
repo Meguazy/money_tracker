@@ -2,11 +2,14 @@
 
 - Status: Bot API adapter, secure configuration, durable polling, private-owner
   filtering, outbox delivery, Italian response rendering, the sequential
-  workflow worker, one-use owner pairing, operator health/replay commands, and
-  host service units are implemented; real test-bot acceptance remains pending
-- Bot created: no
+  workflow worker, one-use owner pairing, operator health/replay/resend
+  commands, and host service units are implemented; real test-bot acceptance
+  remains pending
+- Bot created: test bot only
 - Production token configured: no
-- Test bot configured: no
+- Test bot configured: the prior credential passed transport validation but
+  must be rotated before owner acceptance because it appeared in terminal
+  output during initial diagnostics
 
 Telegram is the sole approved external runtime data boundary. Bot messages and
 receipt images transit and may be retained by Telegram; bot chats are not
@@ -27,9 +30,9 @@ in order and commits owner-facing responses. Run both: the gateway owns the
 Telegram connection, the worker owns finance processing, and neither can stand
 in for the other.
 
-The path is complete end to end, but nothing in it has been run against a real
-Telegram bot yet. Treat the first pairing as the start of acceptance testing,
-not as a routine setup step, and use the test bot for it.
+The code path exists end to end. Transport validation has run against the real
+test bot, but no owner workflow has. Treat pairing after token rotation as the
+start of acceptance testing, not as routine setup, and use the test bot for it.
 
 Both processes classify why they stopped, so a supervisor can tell a problem
 that a restart fixes from one that it hides:
@@ -85,8 +88,9 @@ The production entry point supports:
 
 `validate` calls `getMe` and emits only environment/status. Gateway startup
 also removes any webhook with `drop_pending_updates=false` before long polling.
-Only message and callback-query updates are requested. The real credential test
-is opt-in and currently unexecuted:
+Only message and callback-query updates are requested. The opt-in real
+credential test has passed `getMe` and backlog-preserving webhook removal
+without sending owner content:
 
     RUN_TELEGRAM_INTEGRATION_TESTS=1 uv run --env-file .env pytest -q \
       tests/integration/money_tracker/telegram/test_real_bot_api.py
@@ -101,7 +105,7 @@ product design targets, not current executable entry points. Their final list
 must match production behavior and be registered through BotFather or the Bot
 API in Step 4.
 
-## Planned owner pairing
+## Pairing protocol
 
 1. The local setup operation verifies the configured bot and creates a
    short-lived pairing code.
@@ -189,24 +193,33 @@ Every operator command prints JSON and none of them print message content:
     uv run --env-file .env money-tracker-telegram health
     uv run --env-file .env money-tracker-telegram dead-letters
     uv run --env-file .env money-tracker-telegram replay --inbox-id <uuid>
+    uv run --env-file .env money-tracker-telegram resend --outbox-id <uuid>
 
 `health` reports queue depths, the oldest waiting item, the persisted offset,
 whether an owner is paired, and whether the last poll is old enough that
-Telegram may have discarded updates. `dead-letters` lists what failed with its
-identity, attempts, and reason code, which is where the `--inbox-id` for a
-replay comes from. The environment selected by `.env` scopes both commands; a
-UUID listed by another bot environment is rejected without changing that row.
+Telegram may have discarded updates. `dead-letters` lists both failed work
+and failed logical responses with identity, attempts, replay count, and reason
+code. Use `--inbox-id` to replay work and `--outbox-id` to resend a
+response. The environment selected by `.env` scopes both actions; a UUID from
+another bot environment is rejected without changing that row.
 If required relations are missing, `health` exits with code 1 and prints only
 `Telegram gateway failed: database_schema_invalid`; apply the checked-in
 migrations with `uv run --env-file .env money-tracker-db bootstrap`, then rerun
-`health`. An unreachable database instead reports `database_unavailable` with
-exit code 2 so systemd retries it.
+`health`. This includes a database missing the outbox recovery migration, not
+only an empty schema. An unreachable database instead reports
+`database_unavailable` with exit code 2 so systemd retries it.
 
 Replay preserves the source reference, so the finance command keys the work
 unit already derived stay the same. An item that had already committed a
 mutation before failing therefore returns its first result instead of applying
 a second one. That is what makes replay safe to offer at all, and it is why
 replay never rewinds the Telegram offset.
+
+`resend` preserves the existing logical outbox row and starts a fresh bounded
+five-attempt delivery cycle. Use it only after checking the transport failure:
+Telegram has no caller idempotency key for `sendMessage`, so an earlier
+ambiguous success can make the owner see the physical response twice. Resending
+cannot repeat the finance write.
 
 ## Running as host services
 
@@ -270,7 +283,7 @@ automatic retry is pending; a terminal failure queues a distinct notice that
 asks the owner not to resend while an operator recovers it. Neither notice
 contains the reason code or owner content. The state change and notice commit
 in one PostgreSQL transaction. Use the implemented `health`, `dead-letters`,
-and `replay` commands above for recovery.
+`replay`, and explicit `resend` commands above for recovery.
 
 Outbound replies use the transactional outbox and its independent gateway loop.
 Telegram does not provide a general exactly-once `sendMessage` contract, so a
@@ -306,7 +319,7 @@ confirms the new token before you start the gateway with it.
 4. Verify the new credential without starting the loops:
    `uv run --env-file .env money-tracker-telegram validate`.
 5. Restart the gateway and check `health` for the owner binding and backlog.
-5. Search redacted logs/artifacts for accidental exposure and rotate again if
+6. Search redacted logs/artifacts for accidental exposure and rotate again if
    any copy may remain.
 
 If the token ever appears in Git, chat with an AI, a trace, or a public support

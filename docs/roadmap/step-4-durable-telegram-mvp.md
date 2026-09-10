@@ -4,8 +4,8 @@ Part of the [delivery roadmap](../roadmap.md).
 
 Status: **In progress — every deliverable is implemented and none is
 accepted.** Durable persistence, the gateway, response rendering, the
-sequential worker, one-use owner pairing, operator health and replay commands,
-and host service units are all in the repository. Step 3 and its EVD-004
+sequential worker, one-use owner pairing, operator health, replay, and resend
+commands, and host service units are all in the repository. Step 3 and its EVD-004
 baseline remain unchanged. Bot API validation has run against the real test
 bot, but no owner-driven workflow has. Acceptance, restart/reboot proof, and
 the end-to-end latency measurement remain missing.
@@ -18,10 +18,12 @@ the end-to-end latency measurement remain missing.
 - Application services and `PostgresFinanceRepository` own finance writes,
   audit, optimistic concurrency, command idempotency, category review, and
   reporting. Telegram code must not mutate their tables directly.
-- Migration `20260909_0005` now creates environment-specific offsets, the
+- Migration `20260909_0005` creates environment-specific offsets, the
   minimum normalized inbox, bounded leases/retries/dead letters, unique logical
   outbox state, hashed pairing codes, owner bindings, and scoped pending
-  actions. `PostgresMessagingRepository` implements their AD-018 transactions.
+  actions. Forward-only migration `20260910_0006` adds manual outbox replay
+  accounting. `PostgresMessagingRepository` implements their AD-018
+  transactions.
 - `telegram.config`, `BotApiClient`, `TelegramUpdateIngestor`, and
   `TelegramGateway` now provide separate credential-file selection, official
   HTTPS methods, private-owner filtering, durable long polling, callback
@@ -31,7 +33,8 @@ the end-to-end latency measurement remain missing.
 - `money-tracker-telegram` is the production gateway entry point with
   `validate`, `pair`, `poll-once`, and `run`. `money-tracker-worker` is the
   separate processing entry point with `process-once` and `run`. `health`,
-  `dead-letters`, and `replay` cover operator inspection and recovery.
+  `dead-letters`, `replay`, and `resend` cover operator inspection and
+  recovery for both work and delivery failures.
 - `deploy/systemd/` holds user-service templates for the gateway, the worker,
   and llama.cpp, rendered for a checkout by `scripts/install_systemd_units.sh`.
   They use direct locked-virtualenv entry points, checkout-correct documentation
@@ -69,11 +72,11 @@ are deliberately narrow:
 | --- | --- | --- |
 | Bot API transport | Typed validate/webhook/poll/file/send/callback operations | HTTP lifecycle and redacted Bot API errors only |
 | Update ingestion | Normalize, authorize, pair, and commit one observed batch | Acceptance policy, not queues or finance data |
-| Messaging repository | Ingest batch, claim/complete/fail/replay, claim/send/fail outbox, resolve actions, report health | Offset, inbox/outbox, retries, dead letters, binding, pairing, pending actions |
+| Messaging repository | Ingest batch, claim/complete/fail/replay, claim/send/fail/resend outbox, resolve actions, report health | Offset, inbox/outbox, retries, dead letters, manual replay counts, binding, pairing, pending actions |
 | Sequential worker | Process one claimed work unit through `WorkflowDispatcher.dispatch` | Lease lifecycle and typed outcome handoff only |
 | Response renderer | Render typed outcomes plus repository-read display data | Italian text and bounded controls, no persistence or transport |
 | Gateway runtime | Run independent polling and outbox loops | Process lifecycle; no in-memory correctness state |
-| Administration/health | Generate pairing, report health, list dead letters, replay one item | Operator policy and safe output, no private message rendering |
+| Administration/health | Generate pairing, report health, list dead letters, replay one inbox item, or resend one outbox item | Operator policy and safe output, no private message rendering |
 
 The gateway atomically inserts authorized normalized rows and advances its
 environment-specific next offset. The worker claims only the first non-terminal
@@ -95,13 +98,15 @@ printing private content or identifiers.
 
 - `messaging.contracts` and `messaging.retry` keep queue state transport-neutral,
   serializable, bounded, and free of Bot API credentials or raw updates.
-- Migration `20260909_0005` owns six messaging tables and refuses destructive
-  downgrade. Stable uniqueness covers bot/update, source reference, logical
-  response, pairing hash, and the per-bot owner binding.
+- Migrations `20260909_0005` and `20260910_0006` own six messaging tables
+  and manual outbox replay accounting; both refuse destructive downgrade.
+  Stable uniqueness covers bot/update, source reference, logical response,
+  pairing hash, and the per-bot owner binding.
 - `PostgresMessagingRepository` commits ingest-plus-offset and
   result-plus-outbox-plus-action transitions atomically, serializes claims per
   bot, recovers expired leases, and exposes content-free health counts.
-- Thirteen unit tests and nine `@pytest.mark.postgres` tests passed. The
+- Twenty-seven messaging unit tests and thirteen
+  `@pytest.mark.postgres` repository tests passed. The
   PostgreSQL suite uses the real service and protocol; a two-connection race
   proved that only one worker receives the oldest item.
 
@@ -156,12 +161,16 @@ printing private content or identifiers.
 
 ## Operations implementation evidence
 
-- `health`, `dead-letters`, and `replay` print JSON carrying counts, ages, safe
-  identifiers, and reason codes, and no message content. A real-PostgreSQL test
-  proves a failed item is listable, that its owner text does not appear in the
-  projection, that replaying it returns the same source reference to the queue
-  with its replay counter incremented, and that a test-bot command cannot replay
-  a production-bot row even when given its UUID.
+- `health`, `dead-letters`, `replay`, and `resend` print JSON carrying
+  counts, ages, safe identifiers, and reason codes, and no message content.
+  Real-PostgreSQL tests prove both failure queues are listable without owner
+  text, both manual actions stay inside the selected bot scope, inbox replay
+  preserves its finance source identity, and outbox resend keeps the original
+  logical row while starting a fresh bounded delivery cycle.
+- A real subprocess test drives the installed `money-tracker-telegram`
+  entry point against PostgreSQL, proves `dead-letters` omits the stored
+  response text, invokes `resend --outbox-id`, and observes the same row
+  pending with its replay counter incremented.
 - Recoverable and terminal worker failures now create distinct concise Italian
   responses. Their stable outbox identity and retry or dead-letter transition
   commit atomically; repeated attempts reuse one recoverable notice, and no
@@ -170,9 +179,10 @@ printing private content or identifiers.
   letter while the original text is absent.
 - Both production entry points catch psycopg schema errors and print only
   `database_schema_invalid`, with no traceback, SQL, URL, or relation metadata.
-  Two real-process integration tests prove the behavior against the isolated
-  empty PostgreSQL database; the same `health` command was exercised against
-  the current down-level local database.
+  Three real-process cases prove the behavior against an isolated empty
+  PostgreSQL database and a database stopped at messaging revision 0005; the
+  same `health` command was exercised against the current down-level local
+  database.
 - Both long-running processes classify why they stopped: exit code 1 for
   something an operator must change, 2 for an unreachable dependency. The units
   set `RestartPreventExitStatus=1`, so a missing credential stops visibly
@@ -247,9 +257,10 @@ printing private content or identifiers.
 - Gateway ingress and outbox loops run independently and have no model,
   LangGraph, or finance-repository dependency. Delivery uses existing durable
   leases and five-attempt/dead-letter transitions.
-- `uv run pytest -q tests/unit/money_tracker/telegram` passed 13 tests. The real
-  PostgreSQL authorization test passed. The real Bot API test is correctly
-  skipped until external test-bot setup; no Telegram acceptance is claimed.
+- `uv run pytest -q tests/unit/money_tracker/telegram` passed 26 tests. The real
+  PostgreSQL authorization test passed. The real Bot API test passed `getMe`
+  and backlog-preserving webhook removal without owner content; this is
+  transport evidence, not Telegram workflow acceptance.
 
 ## Deliverables
 

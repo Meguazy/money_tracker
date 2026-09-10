@@ -31,18 +31,25 @@ retention with minimum normalized fields and refines the transaction boundaries,
 strict head-of-line ordering, pending-action scope, replay result, and external
 delivery guarantee. Long polling and the other choices above remain accepted.
 
-Migration `20260909_0005` and `PostgresMessagingRepository` implement the
+Migrations `20260909_0005` and `20260910_0006`, with
+`PostgresMessagingRepository`, implement the
 durable half of this decision: environment-specific offsets, normalized inbox,
 claims, retries, dead letters, replay, unique logical outbox, delivery state,
-hashed one-use pairing, sole-owner bindings per bot, and scoped pending actions.
+manual delivery replay accounting, hashed one-use pairing, sole-owner bindings
+per bot, and scoped pending actions. An explicit outbox resend preserves the
+logical row and starts a fresh bounded attempt cycle; because a prior
+`sendMessage` result may be ambiguous, the operator must accept the risk of a
+duplicate physical Telegram message.
 `BotApiClient`, `TelegramUpdateIngestor`, `TelegramGateway`, and the
 `money-tracker-telegram` production entry point now implement the HTTPS and
 process side. Ingress and outbox delivery have independent loops; commit precedes
 callback acknowledgement and a later poll. Unit tests cover protocol parsing,
 redaction, authorization, and send/commit order, while real PostgreSQL proves
 that rejected identities create no inbox rows. The checked-in real Bot API test
-has not run because the owner has not configured a test bot, so the channel is
-not yet accepted as usable.
+has passed `getMe` and backlog-preserving webhook removal without sending
+owner content. The channel is not yet accepted as usable: the exposed
+diagnostic credential must first be rotated, then the owner-driven workflows
+must pass.
 
 ## Alternatives considered
 

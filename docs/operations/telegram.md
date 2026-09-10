@@ -233,6 +233,24 @@ migrations with `uv run --env-file .env money-tracker-db bootstrap`, then rerun
 only an empty schema. An unreachable database instead reports
 `database_unavailable` with exit code 2 so systemd retries it.
 
+Step 4 readiness is deliberately a set of local checks rather than the
+not-yet-implemented Step 5 HTTP control plane:
+
+| Condition | Command or signal | Ready interpretation |
+| --- | --- | --- |
+| Database and schema | `uv run --env-file .env money-tracker-telegram health` | Exit zero; a schema error exits 1 and an unreachable database exits 2. |
+| Telegram transport and credential | `uv run --env-file .env money-tracker-telegram validate` | Exit zero after a real Bot API `getMe`; run after rotation, never by exposing the token. |
+| Gateway ingestion | `systemctl --user is-active money-tracker-telegram.service` plus advancing `last_poll_at` in `health` | The process is active and successful polls continue. |
+| Sequential worker | `systemctl --user is-active money-tracker-worker.service` plus inbox counts/age in `health` | The process is active and an eligible backlog drains in order. |
+| Durable outbox | `outbox` in `health` | Pending/retrying counts and oldest age do not grow unexpectedly. |
+| Dead letters | `dead_letters` in `health`, then `dead-letters` for safe identities/reasons | Both counts are zero in normal operation; a nonzero count is a visible failure, not healthy work. |
+| Local model | `curl --fail --silent --show-error http://127.0.0.1:8080/health` | The llama.cpp health endpoint returns success; its failure does not make Telegram ingestion unready. |
+
+Process liveness alone is never readiness. In particular, an active gateway
+with a stale `last_poll_at`, or an active worker with a growing eligible inbox,
+needs investigation. The model and worker may be unavailable while the
+database and gateway remain ready to commit incoming updates.
+
 Replay preserves the source reference, so the finance command keys the work
 unit already derived stay the same. An item that had already committed a
 mutation before failing therefore returns its first result instead of applying

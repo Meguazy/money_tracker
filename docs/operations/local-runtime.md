@@ -102,7 +102,16 @@ Checked-in unit templates live in `deploy/systemd/`, and
 followed by deleting the rendered file. A boot/restart recovery test on real
 hardware is still outstanding and is part of Step 4 acceptance.
 
-## Target health model
+## Implemented Step 4 checks and target health model
+
+Step 4 exposes content-free database, queue, offset, outbox, and dead-letter
+state through `money-tracker-telegram health`; a real Bot API transport probe
+through `money-tracker-telegram validate`; gateway, worker, and model process
+liveness through their systemd user units; and llama.cpp readiness through its
+loopback `/health` endpoint. The exact command matrix and combined
+interpretation are in the [Telegram runbook](telegram.md#inspecting-and-recovering-the-queue).
+No single HTTP aggregation endpoint is claimed before the Step 5 control plane.
+The broader dependency behavior remains:
 
 | Dependency state | Expected behavior |
 | --- | --- |

@@ -4,13 +4,14 @@
 - Current executable operations: local inference/CLI, dedicated application
   PostgreSQL, migrations/checkpoint bootstrap, optional healthy Langfuse,
   capability evaluation, profile-scoped receipt storage, one-shot Step 3
-  dispatch, and the Telegram validate/poll/run gateway entry point
+  dispatch, durable Telegram gateway/worker, pairing, health/replay, and
+  checked-in host service units
 - Implemented Step 2: authoritative finance schema and transactional
   expense, wallet, budget, pending category-proposal, and versioned receipt-review
   repository operations, a safe local receipt-media adapter, and verified
   encrypted backup with an isolated restore drill
-- Planned operations: Telegram pairing and real-bot acceptance, workflow worker,
-  systemd services, backup scheduling and clean-machine restore, web API,
+- Planned operations: owner-driven real-bot acceptance, real service/workstation
+  restart evidence, backup scheduling and clean-machine restore, web API,
   workflow-worker receipt wiring, and media deletion
 
 These guides describe accepted operational behavior and the controls future
@@ -56,9 +57,9 @@ the referenced file or entry point exists in the repository.
 - The dedicated application PostgreSQL is healthy, independently persistent,
   least-privileged, and separate from the Langfuse database. It owns the
   authoritative finance schema, persistent workflow checkpoints, and the
-  normalized Step 4 messaging tables/repository. The Telegram gateway process
-  entry point exists; pairing, worker, health/replay administration, and
-  real-bot acceptance remain planned.
+  normalized Step 4 messaging tables/repository. The Telegram gateway and sequential worker entry points, one-use pairing,
+  health, scoped dead-letter replay, Italian response rendering, and host unit
+  templates exist. Real owner workflow and restart acceptance remain pending.
 - Langfuse 4.26.0 and every dependency are pinned by digest. The non-cluster
   repair and health checks pass with the pre-existing volumes preserved.
 - Installed model paths remain workstation-owned and outside the repository.
@@ -78,8 +79,10 @@ the referenced file or entry point exists in the repository.
   owner-selected external repository that the environment generator leaves as a
   deliberate placeholder. No scheduling timer, off-device secret check, or
   clean-machine drill exists yet.
-- No configured/accepted Telegram test bot, pairing administration,
-  API/dashboard, workflow worker, media deletion, or systemd unit exists yet.
+- A real test-bot credential has passed `getMe` and backlog-preserving webhook
+  validation on this workstation. No owner-driven end-to-end workflow, installed
+  service restart/reboot proof, API/dashboard, media deletion, or receipt
+  extraction exists yet.
 
 ## When to update these guides
 

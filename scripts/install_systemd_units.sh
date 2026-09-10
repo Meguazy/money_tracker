@@ -16,9 +16,10 @@ if ! command -v systemctl >/dev/null 2>&1; then
   exit 2
 fi
 
-uv_binary="${UV_BINARY:-$(command -v uv || true)}"
-if [[ -z "${uv_binary}" ]] || [[ ! -x "${uv_binary}" ]]; then
-  echo "uv was not found. Install it, or set UV_BINARY to its absolute path." >&2
+if [[ ! -x "${repo_root}/.venv/bin/money-tracker-telegram" ]] ||
+   [[ ! -x "${repo_root}/.venv/bin/money-tracker-worker" ]]; then
+  echo "The locked virtual environment is missing production entry points." >&2
+  echo "Run: uv sync --locked --all-groups" >&2
   exit 2
 fi
 
@@ -34,7 +35,6 @@ for template in "${unit_source}"/*.service; do
   unit_name="$(basename "${template}")"
   sed \
     -e "s|__MONEY_TRACKER_ROOT__|${repo_root}|g" \
-    -e "s|__UV_BINARY__|${uv_binary}|g" \
     "${template}" >"${unit_target}/${unit_name}"
   installed+=("${unit_name}")
 done

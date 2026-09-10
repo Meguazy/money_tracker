@@ -265,10 +265,10 @@ catalog is promoted; every identifier carries a `candidate-` prefix.
 | Component | Responsibility | Narrow interfaces/dependencies | Data ownership | Deployment/security |
 | --- | --- | --- | --- | --- |
 | Finance domain (core implemented) | Enforce money, expense/refund, allocation, budget, category and wallet invariants | Pure value objects and domain policies | No infrastructure state | Python application; no framework imports |
-| Application services (expense/wallet/budget, proposal submission and settlement, and receipt registration/review implemented) | Execute validated commands and queries transactionally | Narrow repository ports, clock, ID and future media ports | Command/content idempotency, versioning, review boundary, and audit semantics | Future FastAPI/worker host processes; profile scope injected; product receipt review remains workflow-owned |
-| Finance repositories (expense/wallet/budget/proposal/versioned receipt metadata implemented) | Persist authoritative domain records and analytics projections | PostgreSQL protocol through explicit repository contracts | Finance schema implemented; proposal decisions and receipt deletion open | Dedicated application database; least-privilege credentials; optimistic versions and source locks protect concurrent mutations; no media payloads |
-| Messaging persistence (implemented) | Receive, order, lease, retry, dead-letter, replay, correlate, and complete transport work | `MessagingRepository` port, psycopg, and PostgreSQL | Minimum normalized inbox data, offsets, typed results, logical outbox, pairing, pending actions, and attempt metadata | Shared future gateway/worker/admin adapter; no raw update payload, token, or token-bearing URL in rows |
-| Workflow runtime (dispatcher, router, and Step 3 text specialists implemented) | Route one normalized work unit and execute exactly one bounded specialist | Typed dispatcher outcome, LangGraph, model gateway, application services, checkpointer | Small per-graph versioned workflow state only; authoritative domain data stays in repositories | Administration CLI today and sequential worker in Step 4; no media, credentials, or service objects in checkpoints |
+| Application services (expense/wallet/budget, proposal submission and settlement, and receipt registration/review implemented) | Execute validated commands and queries transactionally | Narrow repository ports, clock, ID and future media ports | Command/content idempotency, versioning, review boundary, and audit semantics | Future FastAPI and implemented worker host processes; profile scope injected; product receipt review remains workflow-owned |
+| Finance repositories (expense/wallet/budget/proposal/versioned receipt metadata implemented) | Persist authoritative domain records and analytics projections | PostgreSQL protocol through explicit repository contracts | Finance schema implemented; receipt deletion open | Dedicated application database; least-privilege credentials; optimistic versions and source locks protect concurrent mutations; no media payloads |
+| Messaging persistence (implemented) | Receive, order, lease, retry, dead-letter, replay, correlate, and complete transport work | `MessagingRepository` port, psycopg, and PostgreSQL | Minimum normalized inbox data, offsets, typed results, logical outbox, pairing, pending actions, and attempt metadata | Shared gateway/worker/admin adapter; no raw update payload, token, or token-bearing URL in rows |
+| Workflow runtime (dispatcher, router, and Step 3 text specialists implemented) | Route one normalized work unit and execute exactly one bounded specialist | Typed dispatcher outcome, LangGraph, model gateway, application services, checkpointer | Small per-graph versioned workflow state only; authoritative domain data stays in repositories | Administration CLI and sequential worker; no media, credentials, or service objects in checkpoints |
 | Receipt service | Validate media, invoke extractor, reconcile lines, prepare review | Implemented media-store port, planned extractor, finance service | Receipt metadata, extraction versions, review state | Private filesystem; untrusted image boundary; orchestration planned |
 | Analytics service | Compute time, category, budget and funding summaries | Read repositories and deterministic calendar policies | No separate authoritative data | FastAPI and read-only agent tools |
 | Backup service (implemented, unscheduled) | Create consistent encrypted backups and verify restores | `pg_dump`, Restic, receipt/configuration paths | Backup snapshots in owner repository | Owner-invoked today; systemd timer and clean-machine qualification planned; recovery secret stored off-device |
@@ -277,8 +277,8 @@ catalog is promoted; every identifier carries a `candidate-` prefix.
 
 | Component | Responsibility | Interfaces/dependencies | Data ownership | Deployment/security |
 | --- | --- | --- | --- | --- |
-| Workflow dispatcher, root router, and text specialists (implemented) | Route one intent and coordinate expense/refund, correction/undo, category review, query, or advice | Typed normalized work unit/outcome, versioned schemas, scoped tool registries, trusted correlations | Namespaced checkpoint references and workflow IDs; no domain ownership | Administration CLI now, worker later; mutation paths call replay-safe application services |
-| Telegram Bot API transport (planned) | Validate the bot, long poll, obtain file metadata, acknowledge callbacks, and deliver outbox messages | Bounded HTTPS client and messaging services | No authoritative finance data or correctness state | Gateway host service; separate production/test token selected from a private environment file |
+| Workflow dispatcher, root router, and text specialists (implemented) | Route one intent and coordinate expense/refund, correction/undo, category review, query, or advice | Typed normalized work unit/outcome, versioned schemas, scoped tool registries, trusted correlations | Namespaced checkpoint references and workflow IDs; no domain ownership | Administration CLI and worker; mutation paths call replay-safe application services |
+| Telegram Bot API transport (implemented) | Validate the bot, long poll, obtain file metadata, acknowledge callbacks, and deliver outbox messages | Bounded HTTPS client and messaging services | No authoritative finance data or correctness state | Gateway host service; separate production/test token selected from a private environment file |
 | FastAPI adapter | Expose versioned REST resources and health/operations endpoints | Application services | No independent data | Loopback, allowed Host/Origin, CSRF protection |
 | React dashboard | Display and edit finance, review, budget, wallet and operational state | Same-origin REST API | Browser session/UI state only | Compiled static assets; no secrets |
 | Local model gateway | Provide typed chat, schema and tool capabilities | OpenAI-compatible local endpoint | No persistent domain data | Replaceable host inference process |
@@ -872,8 +872,9 @@ manual acceptance check.
 ### Telegram recovery and processing (implemented, not yet accepted)
 
 The migration/repository, production gateway, response renderer, sequential
-worker, and pairing implement every step below. What is missing is evidence: no
-real test bot has been through it, and no systemd unit starts the processes.
+worker, and pairing implement every step below. Bot API validation has passed against the real test bot without sending owner
+content. No complete owner workflow has been accepted, and no systemd unit has
+started the processes yet.
 
 0. An operator generates one short-lived code and the owner sends it as a
    private `/pair`. The code is consumed, the sole owner binding is created,
@@ -1229,8 +1230,8 @@ environment file.
   EVD-004 Step 3 text-role promotion implemented; later roles remain gated.
 - [AD-013: Host runtime and encrypted backup](decisions/AD-013-local-runtime-and-backup.md):
   Compose topology, encrypted Restic backup, verification, retention, and the
-  isolated restore drill implemented; systemd units, scheduling, and the
-  clean-machine restore remain planned.
+  isolated restore drill and Step 4 host unit templates implemented; scheduling,
+  real restart qualification, and the clean-machine restore remain planned.
 - [AD-011: Evaluation-gated receipt extraction](decisions/AD-011-receipt-extraction.md):
   private original-media boundary implemented; extractor evaluation and review
   workflow planned.
@@ -1284,10 +1285,11 @@ Quantitative evaluation gates are maintained in
 
 ### Current scaffold risks
 
-- The Step 4 messaging schema/repository, Telegram transport, authorized
-  ingestion, gateway entry point, and independent outbox loop are implemented.
-  The workflow worker, response renderer, pairing/health administration,
-  systemd units, and real-bot evidence do not yet exist.
+- The complete Step 4 runtime is implemented: messaging persistence, Telegram
+  transport/gateway, worker, Italian presentation, pairing/health/replay, and
+  hardened host unit templates. Bot API validation is real; owner-driven
+  workflows, installed-service restart/reboot recovery, fault injection at all
+  boundaries, and end-to-end latency evidence remain open.
 - EVD-004 promotes the Qwen3 14B text configuration, but no automatic-post
   subset qualifies. Ordinary existing-category movements remain drafts until a
   later explicit owner or dashboard action posts them.

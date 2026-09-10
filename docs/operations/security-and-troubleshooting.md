@@ -138,10 +138,10 @@ Before changing state:
 | --- | --- | --- |
 | Langfuse web becomes unhealthy again | Inspect web/worker/ClickHouse logs and confirm the pinned non-cluster flag remains effective. | Delete volumes or force migration state. |
 | CLI cannot reach model | Verify configured loopback endpoint, llama-server process, model path, build/GPU compatibility, and health response. | Print the full `.env` or replace locked dependencies ad hoc. |
-| Telegram gateway receives nothing (pairing/acceptance pending) | Verify token via redacted `getMe`, no webhook, gateway/network health, persisted offset, and paired owner. | Regenerate/delete the bot before checking delivery mode and logs. |
+| Telegram gateway receives nothing | Verify token via redacted `getMe`, no webhook, gateway/network health, persisted offset, and paired owner. | Regenerate/delete the bot before checking delivery mode and logs. |
 | Same Telegram update appears again | Check inbox unique key and whether offset advanced only after commit. | Delete duplicate rows or re-run mutation without its original idempotency key. |
-| Worker retries indefinitely (planned) | Verify five-attempt transition, dependency state, typed error class, and dead-letter record. | Skip the record by mutating offsets or mark it successful manually. |
-| Expense appears twice (planned critical incident) | Stop the workflow worker, preserve database/log evidence, compare source update/command keys and audit entries. | Delete one row before identifying invariant/idempotency failure. |
+| Worker retries indefinitely | Verify five-attempt transition, dependency state, typed error class, and dead-letter record. | Skip the record by mutating offsets or mark it successful manually. |
+| Expense appears twice (critical incident) | Stop the workflow worker, preserve database/log evidence, compare source update/command keys and audit entries. | Delete one row before identifying invariant/idempotency failure. |
 | Budget/chart total differs (planned) | Compare posted category allocations, occurrence timezone, refund/void status, and parent roll-up. | Add parent expense totals to receipt-line totals. |
 | Receipt will not reconcile (planned) | Inspect visible line totals, discount/rounding, payment split, and unexplained difference. | Force posted status or invent a balancing line silently. |
 | Unauthorized bot access (critical incident) | Stop gateway, rotate token if exposed, preserve redacted source IDs/audit, verify owner mapping. | Reply with finance data or expose which user is authorized. |

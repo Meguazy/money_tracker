@@ -50,8 +50,15 @@ staging and again at the destination. Real Restic and PostgreSQL integration
 tests cover the create/status/restore cycle through both the service and the
 operator CLI.
 
-Host systemd services, daily scheduling, off-device recovery-secret
-verification, and the clean-machine restore drill remain planned for Step 7.
+Step 4 implements hardened user-service templates for Telegram ingress/outbox,
+the sequential workflow worker, and llama.cpp, plus a checkout-aware installer.
+The Python services execute the locked virtualenv entry points directly; all
+three use read-only filesystem views and empty capability sets, while llama.cpp
+retains device visibility for GPU acceleration. Template rendering passes
+`systemd-analyze verify`; offline exposure is 3.5 for gateway and worker and
+3.8 for llama.cpp. Real manager/reboot qualification is still pending. Daily
+backup scheduling, off-device recovery-secret verification, and the
+clean-machine restore drill remain planned for Step 7.
 
 ## Consequences
 

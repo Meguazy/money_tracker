@@ -1,7 +1,7 @@
 # Local Runtime
 
-- Status: foundation and Telegram gateway entry point implemented; worker and
-  process management planned
+- Status: foundation, Telegram gateway/worker, and checked-in process
+  management implemented; real restart acceptance pending
 - Target platform: Ubuntu workstation, RTX 5070 Ti 16 GB VRAM
 
 ## Current executable foundation
@@ -41,7 +41,7 @@ The promoted read-selection policy is `explicit-finance-scope-v1`. Select
 `model-only-v0` for the direct rollback without changing prompts, schemas, or
 data.
 
-The command is one-shot and emits safe JSON. It is not the planned worker: it
+The command is one-shot and emits safe JSON. It is not the durable worker: it
 does not ingest Telegram updates, own an inbox/outbox, retry delivery, or render
 owner-facing messages. A model-dependent work unit fails with the launcher hint
 when local inference is unavailable; deterministic routing-only input does not
@@ -56,9 +56,9 @@ in this table:
 | --- | --- | --- | --- |
 | Application PostgreSQL | Docker Compose | Implemented finance source of truth, audit, workflow checkpoints, and durable messaging queues | Yes |
 | FastAPI/UI service | Host systemd | Same-origin REST API and compiled dashboard | Yes after Step 5 |
-| Telegram gateway | Host systemd user service | Authorized long polling, durable ingest, safe file metadata, callback acknowledgement, outbox dispatch | Yes after Step 4 acceptance |
-| Workflow worker | Host systemd | Sequential routing/workflow processing | Yes after Step 3/4 |
-| llama.cpp server | Host systemd | Local text and selected model capabilities | Yes for agent work |
+| Telegram gateway | Host systemd user service | Implemented authorized long polling, durable ingest, safe file metadata, callback acknowledgement, outbox dispatch | Yes after Step 4 acceptance |
+| Workflow worker | Host systemd user service | Implemented sequential routing/workflow processing | Yes after Step 4 acceptance |
+| llama.cpp server | Host systemd user service | Implemented unit for local promoted text inference | Yes for agent work |
 | Receipt extractor dependencies | Host process/adapter | Local OCR/VLM selected by evaluation | Yes after Step 6 |
 | Receipt archive adapter | Host library/private filesystem | Implemented decoded-image validation and content-addressed original retention; admin CLI wired, API/worker planned | Yes once receipt ingestion is exposed |
 | Langfuse stack | Optional Compose profile | Implemented local traces and aggregate experiment scores | No |
@@ -68,9 +68,9 @@ Python and llama.cpp stay on the host to keep GPU/model paths and loopback
 networking explicit. Application PostgreSQL runs separately from the Langfuse
 PostgreSQL container. Langfuse is not a startup dependency of any core service.
 
-## Current gateway and planned startup resilience
+## Current gateway and startup resilience
 
-The implementation must not rely on a perfectly ordered boot. The intended
+The implemented services do not rely on a perfectly ordered boot. The intended
 steady-state sequence is:
 
 1. Docker daemon and application PostgreSQL become available.
@@ -81,16 +81,19 @@ steady-state sequence is:
 5. FastAPI serves health, operations, and UI when implemented.
 6. Langfuse starts only when the operator selects development/evaluation mode.
 
-Systemd units must use narrow users/permissions where practical, explicit
-working directories and environment files, restart policies, startup timeouts,
-and journald identifiers. User lingering or an equivalent boot setup is
+The checked-in systemd user units use explicit working directories and
+environment files, bounded stop timeouts, dependency-sensitive restart codes,
+owner-only umasks, empty capability sets, restricted namespaces and address
+families, read-only home/system views, and the locked virtualenv entry points.
+The llama unit deliberately retains device visibility for local GPU inference. User lingering or an equivalent boot setup is
 required if user services must start before graphical login.
 
 The `money-tracker-telegram` entry point is executable for validation, owner
 pairing, one poll, continuous ingress/outbox loops, and operator health, dead
 letter, and replay inspection. It has no inference dependency; its persisted
 offset resumes after restart. `money-tracker-worker` processes the durable
-inbox in a separate process. The real test bot remains unused, so this is not
+inbox in a separate process. The real test bot has passed transport-only
+validation but has not been driven through an owner workflow, so this is not
 yet an accepted product service.
 
 Checked-in unit templates live in `deploy/systemd/`, and
@@ -140,8 +143,10 @@ example without putting user choices into source constants.
 - Create and verify a pre-upgrade authoritative backup.
 - Apply migrations before starting code that requires the new schema. The
   Telegram and worker entry points report `database_schema_invalid` without a
-  traceback and stop with exit code 1 until `uv run --env-file .env
-  money-tracker-db bootstrap` succeeds.
+  traceback and stop with exit code 1 until the following succeeds:
+
+      uv run --env-file .env money-tracker-db bootstrap
+
 - Keep the prior pinned application/model/container configuration available for
   rollback when compatible.
 - Never upgrade mobile image tags implicitly at boot.

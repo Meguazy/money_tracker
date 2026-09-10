@@ -214,13 +214,20 @@ Install the checked-in unit templates for this checkout:
 
     scripts/install_systemd_units.sh
 
-This renders `deploy/systemd/*.service` with the repository path and the `uv`
-binary, writes them to `~/.config/systemd/user/`, and reloads the user manager.
+This renders `deploy/systemd/*.service` with the repository path and direct
+entry points from the locked `.venv`, writes them to
+`~/.config/systemd/user/`, and reloads the user manager.
 It installs without starting, and prints the remaining steps: pair the owner,
-enable lingering so the services survive logout, then enable each unit.
+enable lingering so the services survive logout, then enable each unit. The
+installer refuses a missing `.env` or locked production entry point before
+writing any unit.
 
 The units are user services because the application owns no system-wide
-resource. They are not ordered against Docker: a user unit cannot depend on the
+resource. They set an owner-only umask, drop all capabilities, restrict
+namespaces and address families, expose home and the system read-only, and use
+the checkout-specific operations file in `Documentation=`. Telegram and worker
+also hide host devices; llama.cpp retains them for GPU acceleration. They are
+not ordered against Docker: a user unit cannot depend on the
 system Docker service, so a database that starts late is handled by the exit
 codes above instead. The worker is deliberately not ordered after the gateway
 either, since their failure domains are separate on purpose.

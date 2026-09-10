@@ -6,8 +6,9 @@ Status: **In progress — every deliverable is implemented and none is
 accepted.** Durable persistence, the gateway, response rendering, the
 sequential worker, one-use owner pairing, operator health and replay commands,
 and host service units are all in the repository. Step 3 and its EVD-004
-baseline remain unchanged. What is missing is evidence: no exit criterion below
-is satisfied, because nothing here has been run against a real Telegram bot.
+baseline remain unchanged. Bot API validation has run against the real test
+bot, but no owner-driven workflow has. Acceptance, restart/reboot proof, and
+the end-to-end latency measurement remain missing.
 
 ## Repository-truth inventory
 
@@ -24,23 +25,27 @@ is satisfied, because nothing here has been run against a real Telegram bot.
 - `telegram.config`, `BotApiClient`, `TelegramUpdateIngestor`, and
   `TelegramGateway` now provide separate credential-file selection, official
   HTTPS methods, private-owner filtering, durable long polling, callback
-  acknowledgement, and an independent outbox loop. No workflow worker or
-  response renderer exists yet.
+  acknowledgement, and an independent
+  outbox loop. The separate sequential worker and Italian response renderer
+  consume only durable normalized work.
 - `money-tracker-telegram` is the production gateway entry point with
   `validate`, `pair`, `poll-once`, and `run`. `money-tracker-worker` is the
   separate processing entry point with `process-once` and `run`. `health`,
   `dead-letters`, and `replay` cover operator inspection and recovery.
 - `deploy/systemd/` holds user-service templates for the gateway, the worker,
   and llama.cpp, rendered for a checkout by `scripts/install_systemd_units.sh`.
-  No unit has been enabled against a real bot.
-- Compose provides application PostgreSQL and optional Langfuse. No systemd
-  unit is checked in. FastAPI is neither installed nor required by the Step 4
-  runtime.
+  They use direct locked-virtualenv entry points, checkout-correct documentation
+  links, dependency-aware restart codes, and hardened user-service sandboxes. No
+  unit has been enabled against a real bot.
+- Compose provides application PostgreSQL and optional Langfuse. The three
+  systemd unit templates above are checked in; FastAPI is neither installed nor
+  required by the Step 4 runtime.
 - Thirteen gateway unit tests cover token-file security, Bot API parsing and
   redaction, authorization, commit-before-ack, and outbox send-before-complete.
   One additional real-PostgreSQL test proves that foreign users and groups
-  create no inbox rows. An opt-in real test-bot integration test is checked in
-  but remains unexecuted until the owner configures its credential.
+  create no inbox rows. The opt-in real test-bot integration test has passed
+  `getMe` and backlog-preserving webhook removal; it sends no owner message, so
+  it is transport evidence rather than product acceptance.
 - Category-review decisions now claim one proposal-wide finance idempotency
   key in the settlement transaction. Identical approval, reuse, cancellation,
   and re-proposal commands return the first stored result; competing branches
@@ -174,6 +179,12 @@ printing private content or identifiers.
   instead of restarting forever, while a database that starts late converges on
   its own. Eleven unit tests cover the classification and the safety of the
   printed reason.
+- Rendered unit files pass `systemd-analyze verify`. Offline security analysis
+  reports exposure 3.5 for gateway and worker and 3.8 for llama.cpp; the prior
+  templates measured 8.8, 8.8, and 9.2. The installer has been exercised into
+  an isolated XDG directory, where every `Documentation=`, environment, and
+  executable path resolved. Real manager startup and reboot remain acceptance
+  work.
 - The gateway warns the owner when it resumes after longer than the Bot API
   keeps undelivered updates. The warning names when it last listened rather
   than an elapsed duration, and is keyed by that instant, so restarting inside

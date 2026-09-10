@@ -1,6 +1,6 @@
 [Unit]
 Description=Money Tracker local llama.cpp inference server
-Documentation=file://%h/money-tracker/docs/operations/local-runtime.md
+Documentation=file://__MONEY_TRACKER_ROOT__/docs/operations/local-runtime.md
 After=network-online.target
 Wants=network-online.target
 
@@ -18,6 +18,22 @@ RestartPreventExitStatus=2
 KillSignal=SIGINT
 TimeoutStopSec=30
 NoNewPrivileges=true
+UMask=0077
+CapabilityBoundingSet=
+LockPersonality=true
+PrivateTmp=true
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHome=read-only
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+SystemCallArchitectures=native
 
 [Install]
 WantedBy=default.target

@@ -8,13 +8,19 @@ Wants=network-online.target
 Type=simple
 WorkingDirectory=__MONEY_TRACKER_ROOT__
 # The launcher reads the shell environment rather than .env, so the unit
-# supplies it. Its own exit code 2 already means "operator must fix the model
-# configuration", which matches the convention the Python entry points use.
+# supplies it. Its own exit code 2 means "operator must fix the model
+# configuration", matching the convention the Python entry points use.
 EnvironmentFile=__MONEY_TRACKER_ROOT__/.env
 ExecStart=__MONEY_TRACKER_ROOT__/scripts/run_llama_server.sh
 Restart=always
 RestartSec=15
-RestartPreventExitStatus=2
+# Both statuses are listed because llama.cpp does not share that convention:
+# it exits 1 when it cannot bind its port, which is as much an operator
+# problem as a missing model and restarts forever if it is not prevented. An
+# occupied 8080 produced 54 restarts before this was set. Abnormal termination
+# by signal is not an exit status and still restarts, which is the case that
+# actually deserves one.
+RestartPreventExitStatus=1 2
 KillSignal=SIGINT
 TimeoutStopSec=30
 # See the gateway unit: capability-dropping directives cannot be applied by an

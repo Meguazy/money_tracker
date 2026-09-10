@@ -195,7 +195,13 @@ printing private content or identifiers.
   set `RestartPreventExitStatus=1`, so a missing credential stops visibly
   instead of restarting forever, while a database that starts late converges on
   its own. Eleven unit tests cover the classification and the safety of the
-  printed reason.
+  printed reason. llama.cpp does not share that convention and needed
+  `RestartPreventExitStatus=1 2`: it exits 1 when it cannot bind its port,
+  which no restart ever frees. A first real run against an occupied 8080
+  produced 54 restarts in a row before this was corrected. Abnormal
+  termination by signal is not an exit status, so the case that genuinely
+  deserves a restart still gets one, and a parametrized test now pins each
+  unit's policy.
 - A requested stop is now the third way these processes end, and the first real
   restart showed it was missing: neither entry point installed a signal handler,
   so `SIGINT` — the units' own `KillSignal` — raised `KeyboardInterrupt`

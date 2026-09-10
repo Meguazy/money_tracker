@@ -262,3 +262,26 @@ def test_token_store_rejects_shared_production_and_test_paths(
     assert completed.returncode == 1
     assert not production.exists()
     assert "must use different files" in completed.stderr
+
+
+@pytest.mark.parametrize(
+    ("name", "prevented"),
+    [
+        ("money-tracker-telegram.service", "1"),
+        ("money-tracker-worker.service", "1"),
+        ("money-tracker-llama.service", "1 2"),
+    ],
+)
+def test_each_unit_refuses_to_restart_what_an_operator_must_fix(
+    name: str, prevented: str
+) -> None:
+    """Stop visibly instead of looping on a failure a restart cannot clear.
+
+    The Python entry points own their exit codes and use 1 for that. llama.cpp
+    does not: it exits 1 when its port is taken, which restarting never frees.
+    Leaving that out produced 54 restarts in a row against an occupied 8080.
+    """
+
+    text = (_UNIT_ROOT / name).read_text()
+
+    assert f"RestartPreventExitStatus={prevented}\n" in text

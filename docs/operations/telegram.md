@@ -1,15 +1,16 @@
 # Telegram Operations
 
-- Status: Bot API adapter, secure configuration, durable polling, private-owner
-  filtering, outbox delivery, Italian response rendering, the sequential
-  workflow worker, one-use owner pairing, operator health/replay/resend
-  commands, and host service units are implemented; real test-bot acceptance
-  remains pending
+- Status: implemented and in owner acceptance. Every text workflow, owner
+  authorization, and the latency requirement have passed against the real test
+  bot with all three services under the user manager. Fault injection, the
+  reboot proof, and the recorded evidence entry remain
 - Bot created: test bot only
 - Production token configured: no
-- Test bot configured: the prior credential passed transport validation but
-  must be rotated before owner acceptance because it appeared in terminal
-  output during initial diagnostics
+- Test bot configured: yes. The exposed diagnostic credential was revoked in
+  BotFather and replaced on 2026-09-10; `validate` passed against the
+  replacement, and the running gateway's journal contains no token-shaped run
+  and no Bot API URL
+- Owner paired: yes, one private owner bound through the one-use code
 
 Telegram is the sole approved external runtime data boundary. Bot messages and
 receipt images transit and may be retained by Telegram; bot chats are not

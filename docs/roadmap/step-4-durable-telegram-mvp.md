@@ -2,13 +2,37 @@
 
 Part of the [delivery roadmap](../roadmap.md).
 
-Status: **In progress — every deliverable is implemented and none is
-accepted.** Durable persistence, the gateway, response rendering, the
-sequential worker, one-use owner pairing, operator health, replay, and resend
-commands, and host service units are all in the repository. Step 3 and its EVD-004
-baseline remain unchanged. Bot API validation has run against the real test
-bot, but no owner-driven workflow has. Acceptance, restart/reboot proof, and
-the end-to-end latency measurement remain missing.
+Status: **In progress — owner acceptance is under way and three exit criteria
+remain.** Step 3 and its EVD-004 baseline remain unchanged.
+
+Accepted against the real test bot on 2026-09-10 and 2026-09-11, on the
+promoted `text-qwen3-14b` profile with all three services under the user
+manager:
+
+- the token was rotated after its exposure, and `validate` passed against the
+  replacement;
+- one-use owner pairing bound the private owner. The clear code never reached a
+  durable row, only its SHA-256 was stored, and the confirmation arrived
+  through the outbox;
+- text expense, `Registra` and its idempotency, query, `Modifica` with a direct
+  reply, correction, `Annulla` on both a draft and a posted movement, advice,
+  `/help`, and `/status` all completed through the production entry points;
+- unauthorized observations produced four rejections, zero inbox rows, zero
+  responses, zero finance rows, and no stored pairing code;
+- warm text latency measured p95 5,770 ms over ten samples against the 30,000 ms
+  requirement of NFR-PER-001;
+- the journal carried no token-shaped run and no Bot API URL.
+
+Still missing: deliberate fault injection, the workstation reboot proof, and
+the recorded evidence entry. Nine defects were found by running the product
+rather than by reading it, and each is described in the sections below with the
+commit that fixed it. Two of them — stale controls on a superseded summary, and
+a movement that ends leaving its old buttons live — were found by the owner
+looking at the screen, and no test would have caught either.
+
+An earlier session's run against `money_tracker_acceptance` on 2026-09-09 is
+not evidence: it executed while implementation commits were landing, predates
+every fix listed here, and is the session in which the credential was exposed.
 
 ## Repository-truth inventory
 

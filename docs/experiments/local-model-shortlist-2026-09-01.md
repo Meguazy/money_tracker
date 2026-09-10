@@ -60,7 +60,7 @@ therefore a second vision run under another name. Text profiles now carry no
 projector, and the Ministral text runs recorded on 2026-09-08 were produced
 before the correction, with the projector loaded.
 
-## Addendum 2026-09-10: Qwen3.8 27B at IQ4_XS fits and is screened
+## Addendum 2026-09-10: Qwen3.8 27B at IQ4_XS fits and is measured
 
 The exclusion above rests on an arithmetic premise, not on parameter count: a
 "roughly 16 GB quantized weight" plus a dense 27B KV cache does not fit. Both
@@ -110,11 +110,45 @@ Variant-selection accuracy is 0.875, recorded as a diagnostic because
 categorization/purpose-it owns that gate.
 
 Nothing is promoted by this run. A capability screen establishes that a
-boundary shape may be used, not that a candidate is accurate enough for a role,
-and the product suites have not been run against these weights. The screen does
-establish one thing worth stating plainly: on suite 1.2.0 the promoted text
-model fails `optional_field_omission`, and only `text-qwen35-9b` and
-`text-qwen38-27b` pass every blocking gate.
+boundary shape may be used, not that a candidate is accurate enough for a role.
+The screen does establish one thing worth stating plainly: on suite 1.2.0 the
+promoted text model fails `optional_field_omission`, and only `text-qwen35-9b`
+and `text-qwen38-27b` pass every blocking gate.
+
+The six product suites were then run in one sweep, `20260910-225231`, and they
+do not carry the screen's advantage over. The candidate wins the one suite with
+headroom left and loses three by small margins:
+
+| Suite | text-qwen3-14b (promoted) | text-qwen38-27b |
+| --- | --- | --- |
+| routing/intent-it | pass | **fail** by one case of 67 |
+| ingestion/expense-it | pass, every gate at 1.0 | pass, every gate at 1.0 |
+| categorization/purpose-it | pass, agreement 0.8693 | **pass, agreement 0.9216** |
+| tools/selection-and-use | pass | **fail**, 94/99 postconditions |
+| advice/grounding-it | pass | **fail**, two gates, one unmeasured |
+| workflow/category-review-it | pass | pass (scripted model port) |
+
+Categorization is the result worth keeping. It was the promoted candidate's
+narrowest blocking gate anywhere — 0.8693 against a 0.85 threshold — and this
+candidate reaches 0.9216, cutting label errors from 20 of 153 to 12 while
+holding false-proposal and duplicate rates at the same values over more
+proposals offered. Ingestion is a tie because both are at the ceiling; routing,
+tools and advice go to the promoted candidate by one, five and three cases.
+
+Every safety-shaped gate is clean across all six suites: no read-only input
+routed to a write, no forbidden or unregistered tool, no authorization or
+timezone chosen by the model, no claimed execution without a tool result, no
+figure untraceable to an executed tool, exact arithmetic, and no effect from any
+prompt-injection case. Where this candidate loses, it loses on accuracy.
+
+The cost is latency, and it is uneven rather than uniform. Warm p95 is 1860 ms
+against 1909 ms on tools, 1977 against 1853 on advice, but 3648 against 1171 on
+categorization. Summed over the boundaries an expense message crosses, the model
+calls come to about 13.7 seconds against 6.9. NFR-PER-001 allows 30 seconds for
+a text response, so the budget holds at roughly half rather than a quarter.
+
+Per-suite analyses of the three failures are recorded beside the scores, in
+`out/evaluations/{routing/intent-it,tools/selection-and-use,advice/grounding-it}/text-qwen38-27b/failure-analysis.md`.
 
 ## Local installation layout
 
@@ -159,7 +193,7 @@ first controlled comparison would increase evaluation cost without improving
 the initial coverage.
 
 This exclusion has since been revisited for one artifact and one artifact only.
-See [Addendum 2026-09-10](#addendum-2026-09-10-qwen38-27b-at-iq4_xs-fits-and-is-screened).
+See [Addendum 2026-09-10](#addendum-2026-09-10-qwen38-27b-at-iq4_xs-fits-and-is-measured).
 It stands for every other candidate of this size: what the addendum revisits is
 the arithmetic, which a hybrid-attention artifact changes and a dense one of the
 same size does not.

@@ -58,9 +58,7 @@ def test_python_services_use_locked_environment_entrypoints(
     text = (_UNIT_ROOT / name).read_text()
 
     assert "EnvironmentFile=__MONEY_TRACKER_ROOT__/.env" in text
-    assert (
-        f"ExecStart=__MONEY_TRACKER_ROOT__/.venv/bin/{entrypoint}" in text
-    )
+    assert f"ExecStart=__MONEY_TRACKER_ROOT__/.venv/bin/{entrypoint}" in text
     assert "PrivateDevices=true" in text
 
 

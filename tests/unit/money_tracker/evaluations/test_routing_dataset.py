@@ -154,8 +154,7 @@ def test_prior_version_is_carried_forward_with_audited_revisions() -> None:
         assert carried["message"] == case["message"]
         assert carried["context"] == case["context"]
         if any(
-            carried[key] != case[key]
-            for key in ("expected_intent", "expected_source")
+            carried[key] != case[key] for key in ("expected_intent", "expected_source")
         ):
             assert carried["revision_reason"]
             assert carried["reviewer_status"] == "contract-reviewed"

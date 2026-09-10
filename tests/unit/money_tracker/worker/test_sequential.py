@@ -553,9 +553,7 @@ def test_an_unavailable_model_is_retried_rather_than_discarded() -> None:
     assert failure["retry_at"] == NOW + timedelta(seconds=2)
     response = failure["response"]
     assert response.response_kind == ResponseKind.RECOVERABLE_FAILURE.value
-    assert response.logical_key == (
-        f"inbox:{INBOX_ID}:response:recoverable_failure"
-    )
+    assert response.logical_key == (f"inbox:{INBOX_ID}:response:recoverable_failure")
     assert repository.completions == []
 
 

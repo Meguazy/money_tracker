@@ -44,9 +44,7 @@ def test_contract_version_is_pinned() -> None:
 def test_promoted_intent_schema_stays_unchanged() -> None:
     """Keep EVD-004 valid by pinning every model-visible intent value."""
 
-    intent_schema = RouteClassification.model_json_schema()["$defs"][
-        "WorkflowIntent"
-    ]
+    intent_schema = RouteClassification.model_json_schema()["$defs"]["WorkflowIntent"]
 
     assert intent_schema["enum"] == [
         "expense",

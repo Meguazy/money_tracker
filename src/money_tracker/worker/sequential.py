@@ -470,9 +470,7 @@ class SequentialWorker:
         """Schedule the bounded retry, or make the item a visible dead letter."""
 
         now = self._clock.now()
-        terminal = not transient or self._retry_policy.exhausted(
-            claim.attempt_count
-        )
+        terminal = not transient or self._retry_policy.exhausted(claim.attempt_count)
         retry_at = None
         if not terminal:
             retry_at = self._retry_policy.retry_at(

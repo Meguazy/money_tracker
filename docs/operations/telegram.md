@@ -151,6 +151,15 @@ not sending another code.
 Never paste a pairing code into a shared channel, an issue, or a log. It is a
 short-lived credential for your own finance data.
 
+## Correcting a movement
+
+Press `Modifica` on the movement summary. The bot asks which facts should
+change; reply directly to that new question with the corrected amount, date,
+description, or funding source. The question owns a durable mapping to the
+movement selected by the button, so a gateway or worker restart between the
+question and the reply does not retarget the correction to a newer movement.
+The original summary controls remain valid while the clarification is open.
+
 ## Running the two processes
 
 The gateway and the worker are separate processes on purpose. The gateway keeps

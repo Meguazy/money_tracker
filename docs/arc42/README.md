@@ -300,7 +300,7 @@ administration and health commands are all implemented:
 | `persistence.messaging` | Implement the AD-018 transactions and uniqueness/lease rules | psycopg and the dedicated application PostgreSQL | Entire `messaging` schema | Least-privilege application role; content is private and included in authoritative backup |
 | `telegram.transport` | Implement the official HTTPS Bot API methods with bounded timeouts and redacted failures | `httpx` and configured Bot API base URL/token | No durable state | Gateway only; production/test configuration is mutually exclusive |
 | `telegram.gateway` | Run independent ingress and outbox loops | Bot API transport and messaging service | No in-memory correctness state | systemd host service; no model or finance repository dependency |
-| `worker` (implemented) | Translate one claimed row to `ChannelMessage`, construct `DispatchContext`, call the Step 3 dispatcher, and finalize messaging state | Messaging/finance read ports and a narrow dispatch port | No authoritative state; derives outbox and pending-action identity from the inbox row so a recovery reproduces them | systemd host service; no token or Telegram client |
+| `worker` (implemented) | Translate one claimed row to `ChannelMessage`, construct `DispatchContext`, call the Step 3 dispatcher, and finalize messaging state | Messaging/finance read ports and a narrow dispatch port | No authoritative state; derives outbox and pending-action identity from the inbox row so a recovery reproduces them; a modification clarification creates a durable successor reply mapping for the selected movement | systemd host service; no token or Telegram client |
 | `presentation.telegram` (implemented) | Render typed workflow outcomes, controls, and the pairing confirmation in Italian | Dispatch outcome plus bounded display projections | No state | Worker and gateway library; never exposes tool names, raw evaluation JSON, or internal IDs; content depends only on committed state so a replayed render is identical |
 
 The gateway and worker have separate failure domains. The gateway remains able to
@@ -891,6 +891,9 @@ started the processes yet.
    complete once its question and pending action are durable.
 4. The worker translates the row to `ChannelMessage`, builds trusted
    correlations from repositories, and calls only `WorkflowDispatcher.dispatch`.
+   If `Modifica` needs replacement details, its clarification commits a new
+   pending mapping; delivery binds that question's message ID to the movement,
+   so a reply after restart cannot drift to a newer write.
 5. Finance writes use their existing replay-safe application transactions. The
    typed result, unique logical outbox row, pending action, and inbox completion
    then commit in one messaging transaction. A crash between them redispatches

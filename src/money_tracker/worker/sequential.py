@@ -67,10 +67,12 @@ from money_tracker.presentation import (
 )
 from money_tracker.runtime.review_graph import review_question
 from money_tracker.workflows import (
+    CallbackAction,
     ChannelMessage,
     DispatchContext,
     DispatchOutcome,
     DispatchStatus,
+    MovementChangeReason,
     PendingMovementAction,
     RoutingContext,
     StructuredOutputError,
@@ -427,6 +429,23 @@ class SequentialWorker:
                 target_id=response.target.target_id,
                 allowed_actions=response.target.allowed_actions,
             )
+        elif _needs_modification_reply(
+            callback_data=update.callback_action,
+            correlation=correlation,
+            outcome=outcome,
+        ):
+            assert correlation.action is not None
+            pending_action = PendingActionDraft(
+                id=_action_id(update.id),
+                bot_key=update.bot_key,
+                profile_id=profile_id,
+                telegram_user_id=telegram_user_id,
+                telegram_chat_id=update.telegram_chat_id,
+                outbox_id=response_id,
+                target_type=PendingActionTarget.MOVEMENT,
+                target_id=correlation.action.target_id,
+                allowed_actions=("modify",),
+            )
         self._repository.complete_inbox(
             claim,
             workflow_status=outcome.status.value,
@@ -507,6 +526,44 @@ def _consumed(correlation: _Correlation, outcome: DispatchOutcome) -> UUID | Non
     if outcome.status is DispatchStatus.CLARIFICATION:
         return None
     return correlation.action.id
+
+
+def _needs_modification_reply(
+    *,
+    callback_data: str | None,
+    correlation: _Correlation,
+    outcome: DispatchOutcome,
+) -> bool:
+    """Decide whether a clarification must remain tied to one movement.
+
+    The first Modify press contains no replacement facts, so the movement graph
+    asks for them. The clarification becomes the message the owner naturally
+    replies to; persisting a new mapping for that response keeps the selected
+    movement stable across restarts and across any newer writes.
+
+    Args:
+        callback_data: Stored bounded control value from the claimed work item.
+        correlation: Trusted pending action resolved before dispatch.
+        outcome: Typed dispatcher result to be rendered and committed.
+
+    Returns:
+        True only for the expected first-step modification clarification.
+    """
+
+    if (
+        callback_data is None
+        or correlation.action is None
+        or correlation.action.target_type is not PendingActionTarget.MOVEMENT
+        or outcome.status is not DispatchStatus.CLARIFICATION
+        or outcome.clarification_reason
+        != MovementChangeReason.CORRECTION_DETAILS_REQUIRED.value
+    ):
+        return False
+    match = _CALLBACK.fullmatch(callback_data)
+    return (
+        match is not None
+        and action_for_code(match.group(2)) is CallbackAction.MODIFY_EXPENSE
+    )
 
 
 def _action_id(inbox_id: UUID) -> UUID:

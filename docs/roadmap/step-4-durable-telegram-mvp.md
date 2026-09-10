@@ -235,11 +235,16 @@ printing private content or identifiers.
   kills the process after the finance commit but before the messaging
   transaction, releases the row, and proves the re-dispatched item retains one
   `post` audit mutation and one logical response.
-- Five real-PostgreSQL tests cover the complete terminal transaction, immediate
+- A `Modifica` callback that lacks replacement details commits its
+  clarification with a successor reply mapping for the selected movement. A
+  real-PostgreSQL test delivers that question, recreates the repository, and
+  proves the Telegram reply message ID still resolves the same movement.
+- Six real-PostgreSQL tests cover the complete terminal transaction, immediate
   deliverability of the committed response, the crash window, head-of-line
-  ordering behind a retrying row, and consumption of an answered correlation.
-  Eighteen unit tests cover translation, correlation, failure classification,
-  the bounded attempt budget, and lease loss.
+  ordering behind a retrying row, consumption of an answered correlation, and
+  modification follow-up across restart. Twenty unit tests cover translation,
+  correlation, failure classification, the bounded attempt budget, and lease
+  loss.
 - The dispatch assembly is rebuilt per work unit, because the read-selection
   policy receives the active category names at build time and an approved
   review changes them between two messages.

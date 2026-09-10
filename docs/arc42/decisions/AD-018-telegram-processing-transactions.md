@@ -95,6 +95,13 @@ dead-letter row releases the next row. A workflow waiting for an owner is
 complete for that inbound item after its pending action and question are
 durable, so it does not block later updates.
 
+A `Modifica` callback intentionally completes with a clarification because
+the button carries no replacement facts. That clarification and a successor
+pending-action mapping commit together. Outbox delivery attaches the new
+Telegram message ID to the same stable movement target, so a reply to the
+question resolves exactly that movement after a process restart; the original
+summary controls remain valid until a terminal action consumes them.
+
 Claiming increments the attempt count and gives the worker a bounded lease. A
 transient failure schedules deterministic bounded backoff. The first
 recoverable failure and every terminal failure insert an idempotent,
@@ -243,6 +250,10 @@ its logical key already names; a real-PostgreSQL test kills the process before
 the terminal transaction and proves exactly one response survives. A
 clarification deliberately leaves the resolved mapping active, because
 consuming it would leave the message the owner is holding inert.
+For the first `Modifica` clarification, the same terminal messaging
+transaction also creates a successor reply mapping tied to the selected
+movement. A real-PostgreSQL test delivers that question, recreates the
+repository, and resolves its Telegram reply ID back to the original movement.
 
 The Telegram and worker production entry points catch every psycopg error and
 print a stable reason without traceback or database metadata. Real subprocess

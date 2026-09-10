@@ -36,6 +36,7 @@ from money_tracker.messaging import (
     InboxClaim,
     NormalizedTelegramUpdate,
     OutboxMessageDraft,
+    PendingActionTarget,
 )
 from money_tracker.persistence.database import (
     bootstrap_checkpointer,
@@ -539,6 +540,82 @@ def test_a_callback_consumes_the_correlation_it_answered(
         "SELECT status FROM messaging.telegram_pending_actions WHERE id = %s",
         (action_id,),
     ) == [("consumed",)]
+
+
+def test_modify_follow_up_keeps_its_movement_mapping_across_restart(
+    postgres_url: str,
+) -> None:
+    """Resolve a reply to the clarification against the selected movement."""
+
+    finance, messaging, profile, bot_key = _bootstrap(postgres_url)
+    movement = _movement(finance, profile, "integration:worker:modify")
+    _ingest(messaging, bot_key, 20)
+    clock = _Clock()
+    _worker(
+        finance,
+        messaging,
+        bot_key,
+        _Dispatcher(_outcome(DispatchStatus.POSTED, expense_id=movement.id)),
+        clock,
+    ).process_once()
+    summary = messaging.claim_next_outbox(
+        bot_key,
+        now=clock.now(),
+        lease=timedelta(minutes=1),
+        claim_token=uuid4(),
+    )
+    assert summary is not None
+    messaging.complete_outbox(summary, telegram_message_id=71, now=clock.now())
+    action_id = _rows(
+        postgres_url,
+        "SELECT id FROM messaging.telegram_pending_actions "
+        "WHERE bot_key = %s AND telegram_message_id = 71",
+        (bot_key,),
+    )[0][0]
+    _ingest_callback(messaging, bot_key, 21, f"a:{action_id}:modify")
+    bootstrap_checkpointer(postgres_url)
+
+    with open_postgres_checkpointer(postgres_url) as checkpointer:
+        dispatcher = _CurrentTaxonomyDispatcher(
+            repository=finance,
+            model=LocalStructuredOutputModel(),
+            ids=UUID4Generator(),
+            checkpointer=checkpointer,
+        )
+        assert _worker(
+            finance,
+            messaging,
+            bot_key,
+            dispatcher,
+            clock,
+        ).process_once()
+
+    clarification = messaging.claim_next_outbox(
+        bot_key,
+        now=clock.now(),
+        lease=timedelta(minutes=1),
+        claim_token=uuid4(),
+    )
+    assert clarification is not None
+    assert clarification.message.text == (
+        "Dimmi cosa cambiare: importo, data, descrizione o fonte."
+    )
+    messaging.complete_outbox(
+        clarification,
+        telegram_message_id=72,
+        now=clock.now(),
+    )
+
+    restarted = PostgresMessagingRepository(postgres_url)
+    follow_up = restarted.resolve_reply_action(
+        bot_key=bot_key,
+        telegram_user_id=1001,
+        telegram_chat_id=1001,
+        telegram_message_id=72,
+    )
+    assert follow_up is not None
+    assert follow_up.target_type is PendingActionTarget.MOVEMENT
+    assert follow_up.target_id == movement.id
 
 
 class _Failing:

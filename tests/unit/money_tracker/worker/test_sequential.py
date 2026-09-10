@@ -505,6 +505,32 @@ def test_a_clarification_keeps_the_controls_the_owner_already_has() -> None:
     assert committed["response"].response_kind == ResponseKind.CLARIFICATION.value
 
 
+def test_modify_clarification_creates_a_restart_safe_reply_mapping() -> None:
+    """Tie requested correction details to the movement the owner selected."""
+
+    action = _pending_action(PendingActionTarget.MOVEMENT, EXPENSE_ID)
+    repository = _bound(
+        claim=_claim(_update(text=None, callback_action=f"a:{action.id}:modify")),
+        action=action,
+    )
+    dispatcher = _Dispatcher(
+        _outcome(
+            DispatchStatus.CLARIFICATION,
+            clarification_reason="correction_details_required",
+        )
+    )
+
+    _worker(repository, dispatcher).process_once()
+
+    committed = repository.completions[0]
+    follow_up: PendingActionDraft = committed["pending_action"]
+    assert committed["consumed_action_id"] is None
+    assert follow_up.target_type is PendingActionTarget.MOVEMENT
+    assert follow_up.target_id == EXPENSE_ID
+    assert follow_up.allowed_actions == ("modify",)
+    assert follow_up.outbox_id == committed["response"].id
+
+
 def test_a_reply_names_the_movement_it_answers() -> None:
     """Correct the movement the owner replied to, not merely the newest one."""
 

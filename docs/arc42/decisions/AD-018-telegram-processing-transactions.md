@@ -217,7 +217,11 @@ ingestor and prove that the binding, the consumed code, and the queued
 confirmation appear while the inbox retains only the owner's ordinary message;
 a second holder of the same code binds nothing.
 
-`SequentialWorker` implements the two-phase protocol. It leases the head row,
+`SequentialWorker` implements the two-phase protocol. A real-PostgreSQL
+fault-injection test drives a deterministic posting callback through the
+production dispatcher composition, interrupts the first attempt after the
+finance commit and before the messaging commit, then proves replay leaves one
+`post` audit mutation and one logical outbox response. It leases the head row,
 resolves a callback or reply against its active mapping before that
 correlation may enter `DispatchContext`, dispatches once, and commits the typed
 result, the uniquely keyed response, any new mapping, and completion together.

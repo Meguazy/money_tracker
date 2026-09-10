@@ -1,10 +1,9 @@
 """Real PostgreSQL tests for the durable claim-dispatch-commit protocol.
 
-The model boundary is the one thing these tests script. Everything the worker
-is responsible for -- ordering, leases, the single terminal transaction, and
-recovery after a crash between the finance write and the messaging write --
-runs against the real database over the real protocol, because that is where
-the AD-018 guarantees actually live.
+Most cases script typed dispatch outcomes to isolate worker mechanics. The
+finance-write crash case instead uses the production dispatcher composition on
+the deterministic posting path, so the application service, finance repository,
+checkpoint saver, and messaging repository all run over the real database.
 """
 
 from __future__ import annotations
@@ -38,11 +37,17 @@ from money_tracker.messaging import (
     NormalizedTelegramUpdate,
     OutboxMessageDraft,
 )
-from money_tracker.persistence.database import upgrade_database
+from money_tracker.persistence.database import (
+    bootstrap_checkpointer,
+    open_postgres_checkpointer,
+    upgrade_database,
+)
 from money_tracker.persistence.finance import PostgresFinanceRepository
 from money_tracker.persistence.messaging import PostgresMessagingRepository
 from money_tracker.presentation import TelegramResponseRenderer
-from money_tracker.worker import SequentialWorker
+from money_tracker.runtime import LocalStructuredOutputModel
+from money_tracker.worker import SequentialWorker, WorkflowDispatchPort
+from money_tracker.worker.cli import _CurrentTaxonomyDispatcher
 from money_tracker.workflows import (
     ChannelMessage,
     DispatchContext,
@@ -192,8 +197,10 @@ def _movement(
     finance: PostgresFinanceRepository,
     profile: Profile,
     reference: str,
+    *,
+    status: ExpenseStatus = ExpenseStatus.POSTED,
 ) -> Expense:
-    """Store one posted movement the worker can summarize."""
+    """Store one movement the worker can summarize or mutate."""
 
     sources = finance.get_funding_sources(profile.id)
     category = finance.get_taxonomy(profile.id).categories[0]
@@ -204,7 +211,7 @@ def _movement(
         occurred_at=_NOW,
         description="croccantini per i gatti",
         merchant=None,
-        status=ExpenseStatus.POSTED,
+        status=status,
         category_allocations=(
             CategoryAllocation(
                 category_id=category.id,
@@ -289,7 +296,7 @@ def _worker(
     finance: PostgresFinanceRepository,
     messaging: PostgresMessagingRepository,
     bot_key: str,
-    dispatcher: _Dispatcher,
+    dispatcher: WorkflowDispatchPort,
     clock: _Clock,
 ) -> SequentialWorker:
     """Assemble the production worker over the real durable boundaries."""
@@ -379,28 +386,69 @@ def test_a_committed_response_is_immediately_deliverable(
 def test_a_crash_before_the_messaging_commit_creates_one_response(
     postgres_url: str,
 ) -> None:
-    """Recover the same logical response instead of a second one."""
+    """Replay a committed finance write into one logical response."""
 
     finance, messaging, profile, bot_key = _bootstrap(postgres_url)
-    crashing = _CrashingMessagingRepository(postgres_url)
-    movement = _movement(finance, profile, "integration:worker:3")
-    (update,) = _ingest(messaging, bot_key, 12)
+    movement = _movement(
+        finance,
+        profile,
+        "integration:worker:3",
+        status=ExpenseStatus.DRAFT,
+    )
     clock = _Clock()
-    dispatcher = _Dispatcher(_outcome(DispatchStatus.DRAFTED, expense_id=movement.id))
-    worker = _worker(finance, crashing, bot_key, dispatcher, clock)
+    _ingest(messaging, bot_key, 12)
+    _worker(
+        finance,
+        messaging,
+        bot_key,
+        _Dispatcher(_outcome(DispatchStatus.DRAFTED, expense_id=movement.id)),
+        clock,
+    ).process_once()
+    action_id = _rows(
+        postgres_url,
+        "SELECT id FROM messaging.telegram_pending_actions WHERE bot_key = %s",
+        (bot_key,),
+    )[0][0]
+    update = _ingest_callback(messaging, bot_key, 13, f"a:{action_id}:post")
+    crashing = _CrashingMessagingRepository(postgres_url)
+    bootstrap_checkpointer(postgres_url)
 
-    with pytest.raises(ConnectionResetError):
-        worker.process_once()
-    clock.advance(600)
-    _release(postgres_url, update.id)
-    assert worker.process_once() is True
+    with open_postgres_checkpointer(postgres_url) as checkpointer:
+        dispatcher = _CurrentTaxonomyDispatcher(
+            repository=finance,
+            model=LocalStructuredOutputModel(),
+            ids=UUID4Generator(),
+            checkpointer=checkpointer,
+        )
+        worker = _worker(finance, crashing, bot_key, dispatcher, clock)
+        with pytest.raises(ConnectionResetError):
+            worker.process_once()
+        assert (
+            finance.get_expense(profile.id, movement.id).status is ExpenseStatus.POSTED
+        )
+        assert _rows(
+            postgres_url,
+            "SELECT action FROM finance.audit_events "
+            "WHERE aggregate_id = %s AND action = 'post'",
+            (movement.id,),
+        ) == [("post",)]
+
+        clock.advance(600)
+        _release(postgres_url, update.id)
+        assert worker.process_once() is True
 
     outbox = _rows(
         postgres_url,
         "SELECT id FROM messaging.telegram_outbox WHERE inbox_id = %s",
         (update.id,),
     )
-    assert len(dispatcher.calls) == 2
+    assert finance.get_expense(profile.id, movement.id).status is ExpenseStatus.POSTED
+    assert _rows(
+        postgres_url,
+        "SELECT action FROM finance.audit_events "
+        "WHERE aggregate_id = %s AND action = 'post'",
+        (movement.id,),
+    ) == [("post",)]
     assert len(outbox) == 1
 
 

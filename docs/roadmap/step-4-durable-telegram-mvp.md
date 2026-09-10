@@ -221,9 +221,10 @@ printing private content or identifiers.
   correlation, so routing clarifies instead of applying an old decision to a
   new target.
 - Outbox and pending-action identifiers are derived from the inbox row. A real
-  PostgreSQL test kills the process between the finance write and the messaging
-  transaction, releases the row, and proves the re-dispatched item produces one
-  logical response rather than a second.
+  PostgreSQL test uses the production dispatcher composition to post a draft,
+  kills the process after the finance commit but before the messaging
+  transaction, releases the row, and proves the re-dispatched item retains one
+  `post` audit mutation and one logical response.
 - Five real-PostgreSQL tests cover the complete terminal transaction, immediate
   deliverability of the committed response, the crash window, head-of-line
   ordering behind a retrying row, and consumption of an answered correlation.

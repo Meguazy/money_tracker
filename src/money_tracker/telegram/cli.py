@@ -9,7 +9,7 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from uuid import UUID
 
-from psycopg import OperationalError
+from psycopg import Error as PsycopgError
 
 from money_tracker.application.runtime import UUID4Generator
 from money_tracker.logging_safety import configure_safe_logging
@@ -286,7 +286,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             gateway.run_forever()
     except (
         LookupError,
-        OperationalError,
+        PsycopgError,
         RuntimeError,
         ValueError,
     ) as error:

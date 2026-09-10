@@ -163,6 +163,11 @@ printing private content or identifiers.
   internal reason or owner content enters it. Unit tests cover both messages and
   real-PostgreSQL tests prove the terminal notice is claimable with the dead
   letter while the original text is absent.
+- Both production entry points catch psycopg schema errors and print only
+  `database_schema_invalid`, with no traceback, SQL, URL, or relation metadata.
+  Two real-process integration tests prove the behavior against the isolated
+  empty PostgreSQL database; the same `health` command was exercised against
+  the current down-level local database.
 - Both long-running processes classify why they stopped: exit code 1 for
   something an operator must change, 2 for an unreachable dependency. The units
   set `RestartPreventExitStatus=1`, so a missing credential stops visibly

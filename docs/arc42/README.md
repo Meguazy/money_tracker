@@ -964,9 +964,10 @@ worker, and llama.cpp, rendered for a checkout by
 `scripts/install_systemd_units.sh`. They are user services because the
 application owns no system-wide resource, and they are not ordered against
 Docker because a user unit cannot be: a database that starts late is handled by
-process exit codes instead. Exit code 1 means an operator must change something
-and the unit stops; exit code 2 means a dependency was unreachable and the unit
-restarts. No unit has yet been enabled against a real bot.
+process exit codes instead. Exit code 1 means an operator must change something and the unit stops;
+this includes `database_schema_invalid` when required migrations are absent.
+Exit code 2 means a dependency was unreachable and the unit restarts. Both
+entry points replace psycopg diagnostics with stable reason codes. No unit has yet been enabled against a real bot.
 
 Systemd user services use lingering, or an equivalent host setup, to recover
 without a manual application start. Each service tolerates delayed database,

@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from threading import Event
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
-from psycopg import OperationalError
+from psycopg import Error as PsycopgError
 
 from money_tracker.application import (
     CategoryProposalService,
@@ -203,7 +203,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             _run_forever(worker)
     except (
         LookupError,
-        OperationalError,
+        PsycopgError,
         RuntimeError,
         ValueError,
     ) as error:

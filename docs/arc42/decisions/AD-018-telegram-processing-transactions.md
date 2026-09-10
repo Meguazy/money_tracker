@@ -144,7 +144,10 @@ The Step 4 runtime does not require FastAPI. Operator commands and machine-safe
 process exit codes provide health/readiness and recovery until the Step 5 local
 control plane exists. Exactly two failure classes are distinguished, because
 that is what a supervisor can act on: a configuration problem stops the process
-and must not be restarted into, while an unreachable dependency restarts. The
+and must not be restarted into, while an unreachable dependency restarts. A
+reachable database with missing required relations is the former and emits only
+`database_schema_invalid`; a connection failure is the latter and emits only
+`database_unavailable`. The
 gateway also warns the owner directly when it resumes after longer than the Bot
 API keeps undelivered updates, since no local state can recover that gap.
 
@@ -226,6 +229,10 @@ its logical key already names; a real-PostgreSQL test kills the process before
 the terminal transaction and proves exactly one response survives. A
 clarification deliberately leaves the resolved mapping active, because
 consuming it would leave the message the owner is holding inert.
+
+The Telegram and worker production entry points catch every psycopg error and
+print a stable reason without traceback or database metadata. Real subprocess
+tests exercise both commands against an isolated empty PostgreSQL database.
 
 The production `BotApiClient` uses explicit allowed update types, bounded
 connect/read/write timeouts, backlog-preserving webhook removal, plain-text

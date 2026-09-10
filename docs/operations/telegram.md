@@ -196,6 +196,11 @@ Telegram may have discarded updates. `dead-letters` lists what failed with its
 identity, attempts, and reason code, which is where the `--inbox-id` for a
 replay comes from. The environment selected by `.env` scopes both commands; a
 UUID listed by another bot environment is rejected without changing that row.
+If required relations are missing, `health` exits with code 1 and prints only
+`Telegram gateway failed: database_schema_invalid`; apply the checked-in
+migrations with `uv run --env-file .env money-tracker-db bootstrap`, then rerun
+`health`. An unreachable database instead reports `database_unavailable` with
+exit code 2 so systemd retries it.
 
 Replay preserves the source reference, so the finance command keys the work
 unit already derived stay the same. An item that had already committed a

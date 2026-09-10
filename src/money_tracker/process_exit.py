@@ -13,7 +13,8 @@ from __future__ import annotations
 from enum import IntEnum
 
 from langchain_core.exceptions import ModelConnectionError
-from psycopg import OperationalError
+from psycopg import Error as PsycopgError
+from psycopg import OperationalError, ProgrammingError
 
 from money_tracker.telegram.transport import TelegramTransportError
 
@@ -67,6 +68,10 @@ def failure_reason(error: BaseException) -> str:
 
     if isinstance(error, OperationalError):
         return "database_unavailable"
+    if isinstance(error, ProgrammingError):
+        return "database_schema_invalid"
+    if isinstance(error, PsycopgError):
+        return "database_operation_invalid"
     if isinstance(error, ModelConnectionError):
         return "local_inference_unavailable"
     if isinstance(error, TelegramTransportError):

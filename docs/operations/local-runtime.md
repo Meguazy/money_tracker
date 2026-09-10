@@ -138,7 +138,10 @@ example without putting user choices into source constants.
   new writes.
 - Let the sequential worker finish or checkpoint the active item.
 - Create and verify a pre-upgrade authoritative backup.
-- Apply migrations before starting code that requires the new schema.
+- Apply migrations before starting code that requires the new schema. The
+  Telegram and worker entry points report `database_schema_invalid` without a
+  traceback and stop with exit code 1 until `uv run --env-file .env
+  money-tracker-db bootstrap` succeeds.
 - Keep the prior pinned application/model/container configuration available for
   rollback when compatible.
 - Never upgrade mobile image tags implicitly at boot.

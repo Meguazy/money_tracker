@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 from langchain_core.exceptions import ModelConnectionError
-from psycopg import OperationalError
+from psycopg import DataError, OperationalError, ProgrammingError
 
 from money_tracker.process_exit import ExitCode, exit_code_for, failure_reason
 from money_tracker.telegram.transport import TelegramTransportError
@@ -14,6 +14,7 @@ from money_tracker.telegram.transport import TelegramTransportError
     ("error", "expected"),
     [
         (OperationalError("connection refused"), ExitCode.DEPENDENCY),
+        (ProgrammingError("relation is missing"), ExitCode.CONFIGURATION),
         (ModelConnectionError("llama.cpp is down"), ExitCode.DEPENDENCY),
         (
             TelegramTransportError("bot_api_unavailable", transient=True),
@@ -52,6 +53,8 @@ def test_an_unrecognized_failure_stops_instead_of_looping() -> None:
             OperationalError("password authentication failed"),
             "database_unavailable",
         ),
+        (ProgrammingError("relation contains private name"), "database_schema_invalid"),
+        (DataError("row contains private value"), "database_operation_invalid"),
         (ModelConnectionError("connection refused"), "local_inference_unavailable"),
         (TelegramTransportError("invalid_token", transient=False), "invalid_token"),
         (RuntimeError("token file /home/owner/secret.txt"), "configuration_invalid"),

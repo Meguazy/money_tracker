@@ -134,8 +134,9 @@ exact workflow.
 ## Pairing the owner
 
 The bot has exactly one owner. Until that binding exists the gateway discards
-everything it sees, which is what keeps a bot username that anyone can find
-from becoming a way into your finances.
+everything except a valid private `/pair` attempt, which is consumed without
+entering the inbox. This is what keeps a bot username that anyone can find from
+becoming a way into your finances.
 
 1. Make sure the profile exists (`money-tracker-admin` creates it) and the
    database is migrated.
@@ -146,7 +147,9 @@ from becoming a way into your finances.
 
        uv run --env-file .env money-tracker-telegram pair
 
-3. Start the gateway so it can observe the reply.
+3. Start the gateway so it can observe the reply. After installing the user
+   units, use `systemctl --user start money-tracker-telegram.service`; for a
+   foreground setup, use the `run` command below.
 4. In the private chat with the bot, send the `send_in_private_chat` line
    exactly as printed, for example `/pair xY3...`.
 5. The bot answers that the account is now the owner. That reply comes from the
@@ -315,8 +318,9 @@ enable lingering so the services survive logout, then enable each unit. The
 installer refuses a missing `.env` or locked production entry point before
 writing any unit.
 
-Enable and start the three services after migration, credential validation,
-and pairing:
+Create the pairing code, start only the gateway, and send the private pairing
+message before starting the worker. Then enable and start all three services
+after migration, credential validation, and pairing:
 
     systemctl --user enable --now money-tracker-llama.service
     systemctl --user enable --now money-tracker-telegram.service

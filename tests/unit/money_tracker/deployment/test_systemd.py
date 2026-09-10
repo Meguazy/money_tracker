@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -81,6 +82,57 @@ def test_installer_requires_the_runtime_entrypoints_without_uv_placeholder() -> 
     assert ".venv/bin/money-tracker-telegram" in text
     assert ".venv/bin/money-tracker-worker" in text
     assert "UV_BINARY" not in text
+
+
+def test_installer_bootstraps_gateway_before_requiring_completed_pairing(
+    tmp_path: Path,
+) -> None:
+    """Keep fresh-host pairing possible before the worker is enabled."""
+
+    checkout = tmp_path / "checkout"
+    (checkout / "scripts").mkdir(parents=True)
+    (checkout / "deploy").mkdir()
+    (checkout / ".venv" / "bin").mkdir(parents=True)
+    shutil.copy2("scripts/install_systemd_units.sh", checkout / "scripts")
+    shutil.copytree(_UNIT_ROOT, checkout / "deploy" / "systemd")
+    (checkout / ".env").write_text("SAFE_TEST_SETTING=1\n")
+    for entrypoint in ("money-tracker-telegram", "money-tracker-worker"):
+        path = checkout / ".venv" / "bin" / entrypoint
+        path.write_text("#!/usr/bin/env bash\nexit 0\n")
+        path.chmod(0o700)
+
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    systemctl = fake_bin / "systemctl"
+    systemctl.write_text("#!/usr/bin/env bash\nexit 0\n")
+    systemctl.chmod(0o700)
+    environment = os.environ.copy()
+    environment["PATH"] = f"{fake_bin}:{environment['PATH']}"
+    environment["XDG_CONFIG_HOME"] = str(tmp_path / "config")
+
+    completed = subprocess.run(
+        ["bash", str(checkout / "scripts" / "install_systemd_units.sh")],
+        check=False,
+        capture_output=True,
+        env=environment,
+        text=True,
+        timeout=10,
+    )
+
+    assert completed.returncode == 0
+    create = completed.stdout.index("money-tracker-telegram pair")
+    gateway = completed.stdout.index(
+        "systemctl --user start money-tracker-telegram.service"
+    )
+    worker = completed.stdout.index(
+        "systemctl --user enable --now money-tracker-worker.service"
+    )
+    assert create < gateway < worker
+    rendered = (
+        tmp_path / "config" / "systemd" / "user" / "money-tracker-worker.service"
+    ).read_text()
+    assert str(checkout) in rendered
+    assert "__MONEY_TRACKER_ROOT__" not in rendered
 
 
 def _token_environment(tmp_path: Path) -> tuple[dict[str, str], Path, Path]:

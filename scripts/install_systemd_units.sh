@@ -45,13 +45,16 @@ echo "Installed into ${unit_target}:"
 printf '  %s\n' "${installed[@]}"
 cat <<'NEXT'
 
-The units are installed but not started. Before enabling them:
+The units are installed but not started. Bootstrap them in this order:
 
-  1. Pair the owner, otherwise the gateway discards every update:
+  1. Create one short-lived owner pairing code:
        uv run --env-file .env money-tracker-telegram pair
-  2. Allow the services to run without an active login session:
+  2. Start only the gateway, then send the printed /pair command from the
+     private owner chat and wait for its confirmation:
+       systemctl --user start money-tracker-telegram.service
+  3. Allow the services to run without an active login session:
        loginctl enable-linger "$USER"
-  3. Enable and start what you need:
+  4. Enable the paired gateway and start the remaining services:
        systemctl --user enable --now money-tracker-llama.service
        systemctl --user enable --now money-tracker-telegram.service
        systemctl --user enable --now money-tracker-worker.service

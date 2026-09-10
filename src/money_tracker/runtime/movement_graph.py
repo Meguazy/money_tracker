@@ -214,7 +214,13 @@ def build_movement_change_graph(
         )
 
     def run_undo(state: MovementChangeState) -> MovementChangeState:
-        """Void the trusted target exactly once without model involvement."""
+        """End the trusted target exactly once without model involvement.
+
+        The owner-facing outcome stays `VOIDED` for a discarded draft too,
+        because `Annulla` means one thing to them and the rendered
+        confirmation is already the same sentence. Which transition ran is
+        recorded in the audit, where the distinction is load-bearing.
+        """
 
         target = _target(state)
         if target is None:
@@ -222,7 +228,7 @@ def build_movement_change_graph(
         profile_id = UUID(state["profile_id"])
         try:
             current = configuration.get_expense(profile_id, target)
-            voided = finance.void_expense(
+            voided = finance.cancel_expense(
                 profile_id=profile_id,
                 expense_id=target,
                 expected_version=current.version,

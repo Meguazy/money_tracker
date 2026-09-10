@@ -313,7 +313,7 @@ def test_correction_replaces_both_dimensions_and_preserves_identity() -> None:
     assert repository.audits[-1].action == "correct"
 
 
-def test_void_retains_aggregate_and_appends_audit() -> None:
+def test_cancelling_a_posted_movement_voids_and_appends_audit() -> None:
     """Undo by status transition without deleting the stored record."""
 
     service, repository, expense, _ = _fixture()
@@ -327,7 +327,7 @@ def test_void_retains_aggregate_and_appends_audit() -> None:
         actor="owner",
         reason="approved",
     )
-    voided = service.void_expense(
+    voided = service.cancel_expense(
         profile_id=expense.profile_id,
         expense_id=expense.id,
         expected_version=posted.version,
@@ -340,3 +340,57 @@ def test_void_retains_aggregate_and_appends_audit() -> None:
     assert voided.status is ExpenseStatus.VOIDED
     assert repository.expenses[expense.id] == voided
     assert [event.action for event in repository.audits] == ["post", "void"]
+
+
+def test_cancelling_a_draft_discards_it_instead_of_failing() -> None:
+    """Give `Annulla` a transition on the state every movement starts in.
+
+    Voiding reverses something that counted, so the domain refuses it for a
+    draft. Every Telegram movement is created as a draft and its summary offers
+    the control, which therefore could never work: the owner pressed it and got
+    a clarification while the movement stayed a draft forever.
+    """
+
+    service, repository, expense, _ = _fixture()
+    repository.expenses[expense.id] = expense
+
+    cancelled = service.cancel_expense(
+        profile_id=expense.profile_id,
+        expense_id=expense.id,
+        expected_version=1,
+        idempotency_key="undo:draft",
+        request_hash="d" * 64,
+        actor="owner",
+        reason="undo",
+    )
+
+    assert cancelled.status is ExpenseStatus.DISCARDED
+    assert repository.expenses[expense.id] == cancelled
+    assert [event.action for event in repository.audits] == ["discard"]
+
+
+def test_cancelling_twice_returns_the_first_result_without_a_second_audit() -> None:
+    """Keep one command key across both transitions so a redelivery is safe.
+
+    The first run changes the very status the second would branch on, so
+    resolving the transition again would pick the other one and fail. The
+    stored result has to answer instead.
+    """
+
+    service, repository, expense, _ = _fixture()
+    repository.expenses[expense.id] = expense
+    arguments = {
+        "profile_id": expense.profile_id,
+        "expense_id": expense.id,
+        "expected_version": 1,
+        "idempotency_key": "undo:redelivered",
+        "request_hash": "e" * 64,
+        "actor": "owner",
+        "reason": "undo",
+    }
+
+    first = service.cancel_expense(**arguments)
+    second = service.cancel_expense(**arguments)
+
+    assert first == second
+    assert [event.action for event in repository.audits] == ["discard"]

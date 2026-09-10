@@ -128,6 +128,17 @@ printing private content or identifiers.
   purpose, and funding source with `Modifica`/`Annulla`; the paused review with
   only the branches AD-008 still allows; all four read tools; both channel
   commands; and one owner question for every stable clarification code.
+- `Annulla` now has a transition on the state every movement starts in. It
+  sent `undo`, which voids, and voiding reverses something that already
+  counted; a draft never did, so the domain refused it and the owner got a
+  clarification while the movement stayed a draft permanently. `discard` was
+  written for exactly this case, but its only caller was the category-review
+  cancellation, leaving the `discarded` state unreachable from Telegram.
+  `FinanceService.cancel_expense` resolves the transition from the stored
+  status under one command key, so a redelivered callback returns the first
+  result instead of re-resolving a status the first run already changed. The
+  rendered confirmation is unchanged, because one owner intent should not
+  expose a domain distinction; the audit records which transition ran.
 - Response content depends only on the outcome and committed state. Live queue
   figures are excluded by design, because a replayed render must reproduce the
   logical response its outbox key already names. Operational status stays with

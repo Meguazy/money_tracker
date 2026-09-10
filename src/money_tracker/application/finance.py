@@ -10,6 +10,7 @@ from money_tracker.domain import (
     AuditEvent,
     CategoryAllocation,
     Expense,
+    ExpenseStatus,
     Money,
     PaymentAllocation,
 )
@@ -198,7 +199,7 @@ class FinanceService:
             reason=reason,
         )
 
-    def void_expense(
+    def cancel_expense(
         self,
         *,
         profile_id: UUID,
@@ -209,7 +210,20 @@ class FinanceService:
         actor: str,
         reason: str,
     ) -> Expense:
-        """Void one posted aggregate without deleting it.
+        """End one movement, choosing the transition its state allows.
+
+        The owner has a single intent here and one control for it. The domain
+        has two transitions, because voiding reverses something that already
+        counted and a draft never did, so only a posted movement can be voided
+        and only a draft can be discarded. Resolving that from the stored
+        status keeps the distinction where it belongs and off the owner, who
+        would otherwise be offered a control that cannot work: every Telegram
+        movement starts as a draft, and asking to void one raised
+        `InvalidTransitionError` and answered with a clarification.
+
+        One command key covers both, so a redelivered callback returns the
+        first stored result instead of re-resolving a status the first run
+        already changed. The audit records which transition actually happened.
 
         Args:
             profile_id: Trusted owner scope.
@@ -221,27 +235,31 @@ class FinanceService:
             reason: Non-sensitive audit explanation.
 
         Returns:
-            Voided aggregate with incremented version.
+            Voided or discarded aggregate with incremented version.
+
+        Raises:
+            InvalidTransitionError: If the movement is already terminal.
         """
 
         replayed = self._repository.get_idempotent_expense_command(
             profile_id=profile_id,
             idempotency_key=idempotency_key,
-            command_type="void_expense",
+            command_type="cancel_expense",
             request_hash=request_hash,
             expense_id=expense_id,
         )
         if replayed is not None:
             return replayed
         current = self._repository.get_expense(profile_id, expense_id)
-        voided = current.void()
+        drafted = current.status is ExpenseStatus.DRAFT
+        ended = current.discard() if drafted else current.void()
         return self._replace_idempotently(
-            voided,
+            ended,
             expected_version=expected_version,
             prior_version=current.version,
-            action="void",
+            action="discard" if drafted else "void",
             idempotency_key=idempotency_key,
-            command_type="void_expense",
+            command_type="cancel_expense",
             request_hash=request_hash,
             actor=actor,
             reason=reason,

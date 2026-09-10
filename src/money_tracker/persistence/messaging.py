@@ -944,7 +944,16 @@ class PostgresMessagingRepository:
         return self._pending_action(rows[0])
 
     def health(self, bot_key: str) -> MessagingHealth:
-        """Return content-free queue, offset, action, and dead-letter state."""
+        """Return content-free queue, offset, action, and dead-letter state.
+
+        A bot whose persistence scope does not exist yet reports the same
+        empty state a freshly created one does. Health is the first readiness
+        check an operator runs on a migrated host, before `pair` creates that
+        scope, and the database and schema it reports on are sound at that
+        point. Every messaging table references `telegram_offsets(bot_key)`,
+        so the absent row proves the counters below are zero rather than
+        unknown.
+        """
 
         validate_bot_key(bot_key)
         with self._connect() as connection:
@@ -954,7 +963,11 @@ class PostgresMessagingRepository:
                 (bot_key,),
             ).fetchone()
             if offset is None:
-                raise LookupError("bot key is not initialized")
+                offset = {
+                    "next_offset": 0,
+                    "last_observed_at": None,
+                    "last_poll_at": None,
+                }
             inbox = connection.execute(
                 "SELECT count(*) FILTER (WHERE status = 'pending') AS pending, "
                 "count(*) FILTER (WHERE status = 'retry') AS retrying, "

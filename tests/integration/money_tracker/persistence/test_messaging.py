@@ -215,6 +215,40 @@ def test_outbox_recovery_migration_preserves_existing_messages(
     assert state == (response.id, "pending", 0, response.text)
 
 
+def test_health_reports_a_migrated_host_before_its_bot_scope_exists(
+    postgres_url: str,
+) -> None:
+    """Answer the first readiness check on a host that has never paired."""
+
+    upgrade_database(postgres_url)
+    repository = PostgresMessagingRepository(postgres_url)
+    unpaired = f"test-{uuid4().hex}"
+
+    health = repository.health(unpaired)
+
+    assert health.bot_key == unpaired
+    assert health.next_offset == 0
+    assert health.last_poll_at is None
+    assert health.last_observed_at is None
+    assert (health.pending_inbox, health.retrying_inbox, health.inbox_dead_letters) == (
+        0,
+        0,
+        0,
+    )
+    assert (
+        health.pending_outbox,
+        health.retrying_outbox,
+        health.outbox_dead_letters,
+    ) == (0, 0, 0)
+    assert health.active_actions == 0
+    assert health.oldest_inbox_at is None
+    assert health.oldest_outbox_at is None
+
+    repository.ensure_bot(unpaired, environment=BotEnvironment.TEST, now=_NOW)
+
+    assert repository.health(unpaired) == health
+
+
 def test_ingest_deduplicates_redelivery_and_advances_offset_atomically(
     postgres_url: str,
 ) -> None:

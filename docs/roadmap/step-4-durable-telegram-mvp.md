@@ -156,6 +156,16 @@ printing private content or identifiers.
   means unchanged, which is a new model-visible boundary that AD-012 puts
   behind an evaluation run, a dataset that does not yet exist, and a promotion
   decision.
+- The owner has settled the rule that dataset will encode: a correction changes
+  the description only when the message corrects it explicitly, through a
+  contrastive form such as "era benzina, non spesa" or a direct request such as
+  "correggi la descrizione: cena con Marco". Naming a purchase in passing does
+  not qualify, so "erano 20 euro di benzina" changes the amount alone. The
+  rejected alternative was to treat any named purchase as a new description,
+  which silently discards detail: an owner correcting the amount of "benzina
+  per il generatore" would have been left with "benzina". The signal is the
+  shape of the sentence rather than the meaning of a noun, which is both what
+  keeps the record faithful and what makes the rule teachable.
 - `Annulla` now has a transition on the state every movement starts in. It
   sent `undo`, which voids, and voiding reverses something that already
   counted; a draft never did, so the domain refused it and the owner got a

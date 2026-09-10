@@ -701,3 +701,44 @@ def test_unusable_stored_callback_data_is_a_dead_letter(callback_data: str) -> N
 
     assert repository.failures[0]["transient"] is False
     assert dispatcher.calls == []
+
+
+def test_ending_a_movement_revokes_controls_it_leaves_no_replacement_for() -> None:
+    """Retire the old buttons exactly where no new ones take their place.
+
+    A cancelled movement answers with plain confirmation and no controls, so a
+    rule keyed off the new response carrying controls skips it. That is the
+    worst case to skip: the earlier summary went on offering `Registra` for a
+    movement that no longer exists to record.
+    """
+
+    repository = _bound()
+    repository.superseded = (555,)
+    dispatcher = _Dispatcher(_outcome(DispatchStatus.VOIDED, expense_id=EXPENSE_ID))
+
+    _worker(repository, dispatcher).process_once()
+
+    committed = repository.completions[0]
+    revocations = committed["revocations"]
+    assert [item.target_message_id for item in revocations] == [555]
+    assert committed["pending_action"] is None
+    assert repository.superseded_queries[0]["movement_id"] == EXPENSE_ID
+
+
+def test_a_clarification_keeps_the_controls_it_asks_the_owner_to_use() -> None:
+    """Leave earlier buttons alone while a question is open.
+
+    A clarification tells the owner to act on the summary they already have,
+    which is the same reason its correlation is not consumed.
+    """
+
+    repository = _bound()
+    repository.superseded = (555,)
+    dispatcher = _Dispatcher(
+        _outcome(DispatchStatus.CLARIFICATION, expense_id=EXPENSE_ID)
+    )
+
+    _worker(repository, dispatcher).process_once()
+
+    assert repository.completions[0]["revocations"] == ()
+    assert repository.superseded_queries == []

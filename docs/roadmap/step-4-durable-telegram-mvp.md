@@ -140,8 +140,14 @@ printing private content or identifiers.
   the gateway clears the keyboard with `editMessageReplyMarkup`. The worker
   cannot make that call itself, because it holds no Bot API credential, so the
   revocation is durable work committed with the response that supersedes the
-  controls. A clarification deliberately revokes nothing, since it asks the
-  owner to use the controls they already have.
+  controls. Revocation keys off the lifecycle outcome rather than off the new
+  response carrying controls of its own: ending a movement answers with plain
+  confirmation and no controls, which is exactly the case a response-shaped
+  rule skips and the worst one to skip, since the earlier summary went on
+  offering `Registra` for a movement that no longer existed to record. Owner
+  testing found that gap after the first implementation. A clarification
+  deliberately revokes nothing, since it asks the owner to use the controls
+  they already have.
 - A correction no longer rewrites the movement's description, as an interim
   measure against silent falsification. The correction path reuses the
   extraction contract and prompt written for creating a movement, where

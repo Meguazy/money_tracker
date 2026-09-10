@@ -421,13 +421,13 @@ class SequentialWorker:
         response_id = draft.id
         pending_action = None
         revocations: tuple[ControlRevocationDraft, ...] = ()
+        if outcome.status in _MOVEMENT_STATUSES and outcome.expense_id is not None:
+            revocations = self._revocations(
+                update=update,
+                movement_id=outcome.expense_id,
+                response_id=response_id,
+            )
         if response.target is not None:
-            if response.target.target_type is PendingActionTarget.MOVEMENT:
-                revocations = self._revocations(
-                    update=update,
-                    movement_id=response.target.target_id,
-                    response_id=response_id,
-                )
             pending_action = PendingActionDraft(
                 id=_action_id(update.id),
                 bot_key=update.bot_key,
@@ -481,14 +481,15 @@ class SequentialWorker:
     ) -> tuple[ControlRevocationDraft, ...]:
         """Retire the controls on every earlier summary of one movement.
 
-        A new summary states what the movement is now and carries the controls
-        that still apply, which makes the buttons on its predecessors wrong
-        rather than merely old. Leaving them offers the owner the same actions
-        twice on contradictory descriptions of one movement.
+        Any lifecycle outcome makes the buttons on earlier summaries wrong
+        rather than merely old, so this keys off the outcome rather than off
+        the new response carrying controls of its own. Ending a movement is
+        exactly the case that produces no new controls, and leaving the old
+        ones is worst there: a cancelled movement kept offering `Registra`.
 
-        This runs only for a replacement summary. A clarification deliberately
-        leaves the previous controls alone, because it asks the owner to use
-        them, which is the same reason `_consumed` spares its mapping.
+        A clarification deliberately leaves the previous controls alone,
+        because it asks the owner to use them, which is the same reason
+        `_consumed` spares its mapping.
 
         Args:
             update: Normalized inbound item this response answers.

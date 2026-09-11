@@ -32,9 +32,9 @@ in order and commits owner-facing responses. Run both: the gateway owns the
 Telegram connection, the worker owns finance processing, and neither can stand
 in for the other.
 
-The code path exists end to end. Transport validation has run against the real
-test bot, but no owner workflow has. Treat pairing after token rotation as the
-start of acceptance testing, not as routine setup, and use the test bot for it.
+The code path exists end to end and the owner has driven every text workflow
+through it against the real test bot. Treat pairing as the start of acceptance
+testing on a new bot rather than as routine setup, and use the test bot for it.
 
 Both processes classify why they stopped, so a supervisor can tell a problem
 that a restart fixes from one that it hides:

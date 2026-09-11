@@ -222,6 +222,17 @@ printing private content or identifiers.
   per il generatore" would have been left with "benzina". The signal is the
   shape of the sentence rather than the meaning of a noun, which is both what
   keeps the record faithful and what makes the rule teachable.
+- A settled category review now tells the owner what happened. The dispatcher
+  built the approved and reused outcomes without the movement the review had
+  just posted, and the renderer requires it, so every settlement committed its
+  finance transaction and then failed while rendering: the category was
+  created, the movement was posted, and the work unit became a dead letter with
+  no response. The owner saw only silence, and an operator reading
+  `dead_letters` would reasonably conclude the approval had not happened and
+  repeat it. It was unconditional rather than a race, and no test caught it
+  because the dispatcher suite asserted only the status while the renderer
+  suite was handed a movement directly. Owner acceptance produced the first
+  real approval and the first failure with it.
 - `Annulla` now has a transition on the state every movement starts in. It
   sent `undo`, which voids, and voiding reverses something that already
   counted; a draft never did, so the domain refused it and the owner got a

@@ -319,6 +319,13 @@ class WorkflowDispatcher:
             routing=decision,
             status=DispatchStatus(outcome),
             proposal_id=current_proposal,
+            # A settled review posts the movement, and the owner is shown that
+            # movement rather than the decision. Dropping the reference here
+            # left the renderer nothing to summarize, so every approval and
+            # every reuse committed its finance transaction and then failed
+            # while rendering: the category existed, the movement was posted,
+            # and the owner was told nothing.
+            expense_id=_optional_uuid(final.get("expense_id")),
             settled_category_id=_optional_uuid(final.get("settled_category_id")),
             clarification_reason=final.get("clarification_reason"),
         )

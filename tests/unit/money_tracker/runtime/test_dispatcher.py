@@ -8,6 +8,8 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
+import pytest
+
 from money_tracker.runtime import WorkflowDispatcher
 from money_tracker.workflows import (
     CallbackAction,
@@ -297,3 +299,41 @@ def test_an_uncorrelated_posting_callback_records_nothing() -> None:
 
     assert result.status is DispatchStatus.CLARIFICATION
     assert movement.calls == []
+
+
+@pytest.mark.parametrize("status", [DispatchStatus.APPROVED, DispatchStatus.REUSED])
+def test_a_settled_review_carries_the_movement_it_posted(
+    status: DispatchStatus,
+) -> None:
+    """Give the renderer the movement a settled review is about.
+
+    Both settled branches post the movement, and the owner is shown that
+    movement rather than the decision. Dropping the reference made every
+    approval and every reuse commit its finance transaction and then fail while
+    rendering, so the category existed, the movement was posted, and the owner
+    was told nothing.
+    """
+
+    proposal_id = uuid4()
+    expense_id = uuid4()
+    dispatcher, _, _, _, _ = _dispatcher(
+        _decision(WorkflowIntent.CATEGORY_FOLLOW_UP, pending_action_id=proposal_id),
+        review={
+            "proposal_id": str(proposal_id),
+            "expense_id": str(expense_id),
+            "outcome": status.value,
+            "settled_category_id": str(uuid4()),
+            "clarification_reason": None,
+        },
+    )
+
+    result = dispatcher.dispatch(
+        _message("Approva"),
+        context=DispatchContext(
+            profile_id=uuid4(),
+            routing=RoutingContext(pending_category_review_ids=(proposal_id,)),
+        ),
+    )
+
+    assert result.status is status
+    assert result.expense_id == expense_id

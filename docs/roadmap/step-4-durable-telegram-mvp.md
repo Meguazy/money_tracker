@@ -2,9 +2,8 @@
 
 Part of the [delivery roadmap](../roadmap.md).
 
-Status: **In progress — every exit criterion has passed against the real test
-bot; only the recorded evidence entry remains.** Step 3 and its EVD-004
-baseline remain unchanged.
+Status: **In progress — one named flow is still unproven and the evidence
+entry remains.** Step 3 and its EVD-004 baseline remain unchanged.
 
 Accepted against the real test bot on 2026-09-10 and 2026-09-11, on the
 promoted `text-qwen3-14b` profile with all three services under the user
@@ -18,6 +17,11 @@ manager:
 - text expense, `Registra` and its idempotency, query, `Modifica` with a direct
   reply, correction, `Annulla` on both a draft and a posted movement, advice,
   `/help`, and `/status` all completed through the production entry points;
+- a category review opened, survived a worker restart, and settled its finance
+  transaction correctly. The owner was never told, because the settled outcome
+  dropped the movement it had posted; that is fixed and awaits a second live
+  approval to confirm, so the flow the exit criterion names is not yet proven
+  end to end;
 - unauthorized observations produced four rejections, zero inbox rows, zero
   responses, zero finance rows, and no stored pairing code;
 - warm text latency measured p95 5,770 ms over ten samples against the 30,000 ms
@@ -44,16 +48,18 @@ manager:
   gateway, not an unreachable Bot API, and that path stays covered by its real
   subprocess test.
 
-Still missing: the recorded evidence entry.
+Still missing: one owner-visible category-review settlement, and the recorded
+evidence entry.
 
-Twelve defects were found by running the product rather than by reading it, and
-each is described in the sections below with the commit that fixed it. Two —
-stale controls on a superseded summary, and a movement that ends leaving its
-old buttons live — were found by the owner looking at the screen. Four more
-existed only at boot: units that could not start at all, a binary a login shell
+Thirteen defects were found by running the product rather than by reading it,
+and each is described in the sections below with the commit that fixed it. Two
+— stale controls on a superseded summary, and a movement that ends leaving its
+old buttons live — were found by the owner looking at the screen. Four existed
+only at boot: units that could not start at all, a binary a login shell
 resolved and a boot did not, a GPU the model silently gave up on, and a model
-still loading that killed the worker outright. No test would have caught any of
-them.
+still loading that killed the worker outright. One had never been reachable
+until an owner pressed the button: every category-review settlement lost its
+response. No test would have caught any of them.
 
 An earlier session's run against `money_tracker_acceptance` on 2026-09-09 is
 not evidence: it executed while implementation commits were landing, predates

@@ -28,6 +28,7 @@ from money_tracker.application.reporting import (
     BudgetsAtRisk,
     CategoryBudget,
     CategorySpending,
+    MonthlyOverview,
     PeriodSplit,
     ReportingService,
 )
@@ -58,6 +59,7 @@ __all__ = [
     "BudgetsAtRisk",
     "CategoryBudget",
     "CategorySpending",
+    "MonthlyOverview",
     "PeriodSplit",
     "ReceiptMediaError",
     "ReceiptMediaStore",

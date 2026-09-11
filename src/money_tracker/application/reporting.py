@@ -25,9 +25,12 @@ from money_tracker.application.ports import ReportingRepository
 from money_tracker.domain import (
     BudgetStatus,
     Category,
+    Expense,
     FundingClassSplit,
     FundingSource,
     Money,
+    MonthlyBudget,
+    Taxonomy,
     TaxonomyError,
     YearMonth,
     budget_status,
@@ -101,6 +104,31 @@ class BudgetsAtRisk:
 
     period: YearMonth
     statuses: tuple[tuple[str, BudgetStatus], ...]
+    unbudgeted_category_names: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class MonthlyOverview:
+    """Deterministic control-plane summary for one Rome calendar month.
+
+    The total is derived from payment allocations, while budget positions are
+    derived from category allocations. Each dimension reconciles independently
+    to the same posted movements, so receipt parents or lines are never added a
+    second time.
+
+    Attributes:
+        period: Calendar month reported.
+        posted_total: Net posted consumption, including signed refunds.
+        split: The total separated by funding class and individual source.
+        budgets: Configured budgets ordered from most overspent to most free.
+        unbudgeted_category_names: Active purposes with spend and no applicable
+            parent or direct budget.
+    """
+
+    period: YearMonth
+    posted_total: Money
+    split: PeriodSplit
+    budgets: tuple[tuple[str, BudgetStatus], ...]
     unbudgeted_category_names: tuple[str, ...]
 
 
@@ -217,19 +245,7 @@ class ReportingService:
 
         expenses = self._repository.get_posted_expenses(profile_id, period=period)
         sources = self._repository.get_funding_sources(profile_id)
-        return PeriodSplit(
-            period=period,
-            split=posted_funding_class_split(expenses, funding_sources=sources),
-            sources=tuple(
-                (
-                    source,
-                    posted_funding_source_spend(expenses, funding_source_id=source.id),
-                )
-                for source in sorted(
-                    sources, key=lambda item: (item.name, str(item.id))
-                )
-            ),
-        )
+        return self._period_split_from(period, expenses=expenses, sources=sources)
 
     def budgets_at_risk(
         self,
@@ -256,6 +272,88 @@ class ReportingService:
         expenses = self._repository.get_posted_expenses(profile_id, period=period)
         taxonomy = self._repository.get_taxonomy(profile_id)
         budgets = self._repository.get_budgets(profile_id)
+        return self._budgets_at_risk_from(
+            period,
+            expenses=expenses,
+            taxonomy=taxonomy,
+            budgets=budgets,
+        )
+
+    def monthly_overview(
+        self,
+        *,
+        profile_id: UUID,
+        period: YearMonth,
+    ) -> MonthlyOverview:
+        """Build the first dashboard overview from existing read-only tools.
+
+        Args:
+            profile_id: Trusted owner scope supplied by runtime composition.
+            period: Rome calendar month to summarize.
+
+        Returns:
+            Exact posted total, funding split, and budget risk summary.
+        """
+
+        expenses = self._repository.get_posted_expenses(profile_id, period=period)
+        split = self._period_split_from(
+            period,
+            expenses=expenses,
+            sources=self._repository.get_funding_sources(profile_id),
+        )
+        risks = self._budgets_at_risk_from(
+            period,
+            expenses=expenses,
+            taxonomy=self._repository.get_taxonomy(profile_id),
+            budgets=self._repository.get_budgets(profile_id),
+        )
+        posted_total = split.split.personal_funds + split.split.benefit
+        posted_total += split.split.other
+        return MonthlyOverview(
+            period=period,
+            posted_total=posted_total,
+            split=split,
+            budgets=risks.statuses,
+            unbudgeted_category_names=risks.unbudgeted_category_names,
+        )
+
+    @staticmethod
+    def _period_split_from(
+        period: YearMonth,
+        *,
+        expenses: tuple[Expense, ...],
+        sources: tuple[FundingSource, ...],
+    ) -> PeriodSplit:
+        """Compute funding views from one immutable movement collection."""
+
+        return PeriodSplit(
+            period=period,
+            split=posted_funding_class_split(expenses, funding_sources=sources),
+            sources=tuple(
+                (
+                    source,
+                    posted_funding_source_spend(
+                        expenses,
+                        funding_source_id=source.id,
+                    ),
+                )
+                for source in sorted(
+                    sources,
+                    key=lambda item: (item.name, str(item.id)),
+                )
+            ),
+        )
+
+    @staticmethod
+    def _budgets_at_risk_from(
+        period: YearMonth,
+        *,
+        expenses: tuple[Expense, ...],
+        taxonomy: Taxonomy,
+        budgets: tuple[MonthlyBudget, ...],
+    ) -> BudgetsAtRisk:
+        """Compute category budget views from one movement collection."""
+
         budgeted = {budget.category_id for budget in budgets}
         statuses = tuple(
             (
@@ -264,7 +362,9 @@ class ReportingService:
                     budget,
                     period=period,
                     posted_spend=posted_category_spend(
-                        expenses, category_id=budget.category_id, taxonomy=taxonomy
+                        expenses,
+                        category_id=budget.category_id,
+                        taxonomy=taxonomy,
                     ),
                 ),
             )
@@ -317,6 +417,7 @@ __all__ = [
     "BudgetsAtRisk",
     "CategoryBudget",
     "CategorySpending",
+    "MonthlyOverview",
     "PeriodSplit",
     "ReportingService",
 ]

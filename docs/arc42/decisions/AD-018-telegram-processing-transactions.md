@@ -4,8 +4,8 @@
 - Implementation: messaging contracts/repository, category-review replay, Bot
   API transport, authorized ingress, gateway/outbox loops, Italian response
   rendering, the sequential worker, one-use owner pairing, operator
-  health/replay/resend/latency commands, and host service units implemented;
-  real-bot acceptance pending
+  health/replay/resend/latency commands, host service units, and real-bot
+  acceptance implemented
 - Date: 2026-09-09
 - Supersedes: the raw-update retention detail in
   [AD-010](AD-010-telegram-durable-messaging.md); all other AD-010 choices remain
@@ -291,8 +291,10 @@ sending, and safe reason codes that omit API bodies and token-bearing URLs.
 storage. `TelegramGateway` commits a complete observed batch before callback
 acknowledgement or another poll, while a second loop leases and delivers the
 outbox independently. Thirteen gateway unit tests and one additional real
-PostgreSQL authorization test pass. The real test-bot harness is present but
-still awaits external credentials and owner interaction.
+PostgreSQL authorization test pass. The test-bot harness and production entry points passed owner-driven
+workflow, authorization, fault, latency, and reboot acceptance on 2026-09-11. The
+[Step 4 evidence](../../roadmap/step-4-durable-telegram-mvp.md#acceptance-evidence)
+records the measurements and external-delivery limitations.
 
 ## Consequences
 

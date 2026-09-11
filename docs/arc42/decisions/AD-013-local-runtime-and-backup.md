@@ -1,9 +1,9 @@
 # AD-013: Host Runtime and Encrypted Backup
 
 - Status: accepted
-- Implementation: Compose topology, encrypted Restic backup/restore, and the
-  Telegram gateway, workflow worker, and llama.cpp service units implemented;
-  the backup timer and its scheduling planned
+- Implementation: Compose topology, encrypted Restic backup/restore, accepted
+  Telegram/worker/llama.cpp units, and the initial FastAPI service unit
+  implemented; the backup timer and its scheduling planned
 - Date: 2026-09-01
 
 ## Context
@@ -63,10 +63,16 @@ unit that declares them fails to execute with `218/CAPABILITIES` instead of
 being hardened. Template rendering passes `systemd-analyze verify` and the
 units start under the real user manager; measured exposure of what runs is 7.0
 for all three, where the earlier 3.5/3.8 figures scored templates that could
-not start. Reboot qualification is still pending, and further hardening is
-Step 7 work that must be qualified by starting a unit rather than scoring it. Daily
-backup scheduling, off-device recovery-secret verification, and the
-clean-machine restore drill remain planned for Step 7.
+not start. Step 4 reboot qualification passed with lingering: all three services
+started unaided and drained queued work in order. Further hardening is Step 7
+work that must be qualified by starting a unit rather than scoring it.
+
+Step 5 adds the `money-tracker-api.service` template, direct locked-environment
+entry point, loopback settings, and a preflight that requires compiled assets.
+It has unit and HTTP/PostgreSQL integration evidence but has not yet completed
+installed browser acceptance. Daily backup scheduling, off-device
+recovery-secret verification, and the clean-machine restore drill remain planned
+for Step 7.
 
 ## Consequences
 

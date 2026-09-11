@@ -108,14 +108,10 @@ without sending owner content:
       tests/integration/money_tracker/telegram/test_real_bot_api.py
 
 An unpaired bot deliberately acknowledges every observation as rejected and
-retains no content, so run `pair` before `poll-once` or `run`. BotFather
-command registration remains planned. Italian owner responses and their inline
-controls are implemented and produced by the worker.
-
-Candidate UI commands such as `/start`, `/help`, `/status`, and `/cancel` are
-product design targets, not current executable entry points. Their final list
-must match production behavior and be registered through BotFather or the Bot
-API in Step 4.
+retains no content, so run `pair` before `poll-once` or `run`. Italian owner
+responses, inline controls, `/help`, and `/status` are implemented and accepted.
+`/start` and `/cancel` are not application commands. BotFather menu registration
+is optional operator presentation and must match only the implemented commands.
 
 ## Pairing protocol
 
@@ -235,8 +231,8 @@ migrations with `uv run --env-file .env money-tracker-db bootstrap`, then rerun
 only an empty schema. An unreachable database instead reports
 `database_unavailable` with exit code 2 so systemd retries it.
 
-Step 4 readiness is deliberately a set of local checks rather than the
-not-yet-implemented Step 5 HTTP control plane:
+Step 4 readiness remains a set of transport and queue checks distinct from the
+Step 5 API liveness/readiness endpoints:
 
 | Condition | Command or signal | Ready interpretation |
 | --- | --- | --- |

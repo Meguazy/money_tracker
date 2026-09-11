@@ -3,11 +3,11 @@
 This directory contains the canonical product, architecture, delivery,
 evaluation, development, and operations documentation for Money Tracker.
 
-The repository currently contains an executable local-inference scaffold plus
-the Step 1 PostgreSQL, migration/checkpoint, observability, development-tooling,
-and evaluation foundations. Finance, Telegram, receipt, and web product
-components remain accepted target state and are marked `planned` until their
-roadmap step is completed.
+Steps 0–4 are complete. Step 5 is active: the repository now contains its first
+protected FastAPI/React monthly-overview slice, while the other dashboard and
+advice deliverables remain planned. Receipt extraction is still assigned to
+Step 6, and release hardening to Step 7. The roadmap and each step document are
+the authority for this distinction.
 
 ## Required reading order
 

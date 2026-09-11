@@ -446,3 +446,29 @@ def test_zero_source_consumption_remains_visible() -> None:
         "Carta": Money(0),
         "Buoni pasto": Money(0),
     }
+
+
+def test_monthly_overview_reconciles_each_dimension_without_double_counting() -> None:
+    """Expose one posted total while retaining its independent budget view."""
+
+    repository = InMemoryReporting(
+        expenses=(
+            _posted("Spesa alimentare", 2000, source=CARD),
+            _posted("Spesa alimentare", 3000, source=VOUCHERS),
+        ),
+        budgets=(_budget("Spesa alimentare", 8000),),
+    )
+
+    result = ReportingService(repository).monthly_overview(
+        profile_id=PROFILE,
+        period=PERIOD,
+    )
+
+    assert result.posted_total == Money(5000)
+    assert result.split.split.personal_funds == Money(2000)
+    assert result.split.split.benefit == Money(3000)
+    assert result.budgets[0][0] == "Spesa alimentare"
+    assert result.budgets[0][1].posted_spend == Money(5000)
+    assert result.budgets[0][1].remaining == Money(3000)
+    assert result.unbudgeted_category_names == ()
+    assert repository.reads.count("posted_expenses") == 1

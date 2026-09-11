@@ -1,0 +1,36 @@
+[Unit]
+Description=Money Tracker local API and dashboard
+Documentation=file://__MONEY_TRACKER_ROOT__/docs/operations/web.md
+# PostgreSQL is container-managed. A dependency failure exits with code 2 and
+# is retried; invalid configuration exits with code 1 and requires an operator.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=__MONEY_TRACKER_ROOT__
+EnvironmentFile=__MONEY_TRACKER_ROOT__/.env
+ExecStart=__MONEY_TRACKER_ROOT__/.venv/bin/money-tracker-api run
+Restart=always
+RestartSec=10
+RestartPreventExitStatus=1
+KillSignal=SIGINT
+TimeoutStopSec=30
+# The application also refuses non-IPv4-loopback listener configuration and
+# applies exact Host, Origin, and CSRF checks at the HTTP boundary.
+NoNewPrivileges=true
+UMask=0077
+LockPersonality=true
+PrivateTmp=true
+ProtectControlGroups=true
+ProtectHome=read-only
+ProtectKernelTunables=true
+ProtectSystem=strict
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=default.target

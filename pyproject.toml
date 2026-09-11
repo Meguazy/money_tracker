@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "alembic>=1.18,<2.0",
+    "fastapi>=0.116,<1.0",
     "httpx>=0.28,<1.0",
     "langchain>=1.0,<2.0",
     "langchain-openai>=1.0,<2.0",
@@ -16,6 +17,7 @@ dependencies = [
     "psycopg[binary,pool]>=3.3,<4.0",
     "pydantic>=2.13,<3.0",
     "pyyaml>=6.0,<7.0",
+    "uvicorn>=0.35,<1.0",
 ]
 
 [project.scripts]
@@ -25,6 +27,7 @@ money-tracker-backup = "money_tracker.backup_cli:main"
 money-tracker-db = "money_tracker.persistence.cli:main"
 money-tracker-eval = "money_tracker.evaluations.cli:main"
 money-tracker-telegram = "money_tracker.telegram.cli:main"
+money-tracker-api = "money_tracker.web.cli:main"
 money-tracker-validate-docs = "money_tracker.development.docs_validation:main"
 money-tracker-worker = "money_tracker.worker.cli:main"
 

@@ -1,14 +1,14 @@
 # Money Tracker
 
 Money Tracker is a local-first personal-finance assistant built with Python,
-LangChain, LangGraph, llama.cpp, PostgreSQL, and self-hosted observability. The
-current repository completes the platform foundation and the Step 2 finance
-domain, persistence, private receipt-archive core, and verified encrypted
-backup with an isolated restore drill. Step 3 is in progress: the typed root
-router's deterministic half and its strict model boundary exist, while the
-specialist workflows, prompts, and evaluation gates remain open. Telegram, the
-local web dashboard, receipt extraction, API/worker media wiring, and backup
-scheduling remain planned.
+LangChain, LangGraph, llama.cpp, PostgreSQL, and self-hosted observability.
+Steps 0–4 are complete: the repository contains the deterministic finance
+domain, PostgreSQL persistence, evaluated text workflows, durable private-owner
+Telegram channel, encrypted backup, and reboot/fault acceptance. Step 5 is in
+progress. Its first slice provides a protected loopback FastAPI host and an
+accessible monthly React overview; the remaining dashboard views, mutations,
+analytics, advice surface, receipt extraction, and release hardening remain
+open.
 
 ## Current scaffold quick start
 
@@ -41,8 +41,16 @@ local server running:
       --text 'Ho speso 12 euro per i croccantini dei gatti' \
       --minimum-confidence 0.8
 
-This reports routing only, and there is no bot yet: the Telegram channel and
-owner-facing replies arrive in Step 4.
+The same dispatcher now runs behind the accepted durable Telegram gateway and
+worker. Pairing, recovery, and real-bot evidence are in the Telegram runbook.
+
+Build and run the implemented monthly dashboard:
+
+    cd frontend && npm ci && npm run build && cd ..
+    uv run --env-file .env money-tracker-api run
+
+Then open `http://127.0.0.1:8000/`. See the local web runbook for the exact
+browser security and systemd contract.
 
 With Restic and matching PostgreSQL client tools installed and an external
 repository configured, create a verified encrypted backup of the authoritative

@@ -3,6 +3,7 @@
 ## Prerequisites
 
 - Python 3.12
+- Node.js 22 and npm 10 for the Step 5 frontend
 - UV
 - Docker with Docker Compose
 - NVIDIA CUDA toolkit 12.8 or newer for the RTX 5070 Ti
@@ -26,9 +27,9 @@ environment non-destructively after reviewing its permissions:
 
     ./scripts/upgrade_local_env.sh
 
-The upgrade script appends only missing database, llama.cpp profile, Telegram
-credential paths/environment, receipt archive, and backup settings, and never
-changes existing values. It never creates or copies a bot token.
+The upgrade script appends only missing database, llama.cpp, Telegram, receipt,
+web, and backup settings, and never changes existing values. It never creates
+or copies a bot token.
 
 ## Application PostgreSQL and migrations
 
@@ -70,6 +71,24 @@ guarded local test database:
 
 The fixture accepts only `money_tracker_test` on loopback port 5433 and removes
 only the schemas it owns.
+
+## Local dashboard and API
+
+Build the locked frontend, then run the same-origin production service:
+
+    cd frontend
+    npm ci
+    npm run typecheck
+    npm test -- --run
+    npm run build
+    cd ..
+    uv run --env-file .env money-tracker-api run
+
+The current Step 5 slice serves `http://127.0.0.1:8000/`, the monthly overview
+endpoint, and content-free health endpoints. It requires exactly one profile.
+The complete configuration, browser protections, systemd procedure, and real
+PostgreSQL test are in [Local Web Operations](operations/web.md). Other control
+plane views and mutations remain unimplemented.
 
 ## Bootstrapping the owner profile
 
@@ -118,24 +137,22 @@ or bytes. Retrying the same content returns the first database record.
 
 ## Exercising the Telegram gateway boundary
 
-The gateway production entry point is installed, while pairing, workflow
-processing, and owner-facing rendering remain incomplete:
+The accepted gateway and worker entry points expose their command surfaces with:
 
     uv run --env-file .env money-tracker-telegram --help
+    uv run --env-file .env money-tracker-worker --help
 
 Test and production use separate absolute token-file settings and distinct
 persistence keys. The selected token file must be a regular owner-owned mode-0600
-file. `validate`, `poll-once`, and `run` are documented in the
-[Telegram runbook](operations/telegram.md); real execution awaits owner-provided
-test-bot configuration. The opt-in official-protocol test never accepts the
-production environment.
+file. Pairing, production execution, acceptance evidence, and recovery are in
+the [Telegram runbook](operations/telegram.md). The opt-in official-protocol
+test never accepts the production environment.
 
 ## Exercising text dispatch by hand
 
-The Telegram workflow worker and owner-facing responses are still Step 4 work.
-The `route` command nevertheless uses the complete Step 3
-entry point. It builds one normalized work unit, invokes the root router, and,
-when `--profile-id` is present, dispatches it to the selected text specialist.
+The `route` command uses the same complete Step 3 dispatcher accepted through
+Telegram in Step 4. It builds one normalized work unit, invokes the root router,
+and, when `--profile-id` is present, dispatches it to the selected text specialist.
 It prints safe sorted JSON containing the typed route and outcome; it never
 echoes the owner message.
 

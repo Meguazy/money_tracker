@@ -76,6 +76,7 @@ def test_no_service_declares_hardening_a_user_manager_cannot_apply(
 @pytest.mark.parametrize(
     ("name", "entrypoint"),
     [
+        ("money-tracker-api.service", "money-tracker-api run"),
         ("money-tracker-telegram.service", "money-tracker-telegram run"),
         ("money-tracker-worker.service", "money-tracker-worker run"),
     ],
@@ -110,6 +111,7 @@ def test_installer_requires_the_runtime_entrypoints_without_uv_placeholder() -> 
 
     text = Path("scripts/install_systemd_units.sh").read_text()
 
+    assert ".venv/bin/money-tracker-api" in text
     assert ".venv/bin/money-tracker-telegram" in text
     assert ".venv/bin/money-tracker-worker" in text
     assert "UV_BINARY" not in text
@@ -127,7 +129,11 @@ def test_installer_bootstraps_gateway_before_requiring_completed_pairing(
     shutil.copy2("scripts/install_systemd_units.sh", checkout / "scripts")
     shutil.copytree(_UNIT_ROOT, checkout / "deploy" / "systemd")
     (checkout / ".env").write_text("SAFE_TEST_SETTING=1\n")
-    for entrypoint in ("money-tracker-telegram", "money-tracker-worker"):
+    (checkout / "frontend" / "dist" / "assets").mkdir(parents=True)
+    (checkout / "frontend" / "dist" / "index.html").write_text("dashboard")
+    for entrypoint in (
+        "money-tracker-api", "money-tracker-telegram", "money-tracker-worker"
+    ):
         path = checkout / ".venv" / "bin" / entrypoint
         path.write_text("#!/usr/bin/env bash\nexit 0\n")
         path.chmod(0o700)
@@ -158,7 +164,11 @@ def test_installer_bootstraps_gateway_before_requiring_completed_pairing(
     worker = completed.stdout.index(
         "systemctl --user enable --now money-tracker-worker.service"
     )
+    api = completed.stdout.index(
+        "systemctl --user enable --now money-tracker-api.service"
+    )
     assert create < gateway < worker
+    assert worker < api
     rendered = (
         tmp_path / "config" / "systemd" / "user" / "money-tracker-worker.service"
     ).read_text()

@@ -1,7 +1,7 @@
 # Local Runtime
 
-- Status: foundation, Telegram gateway/worker, and checked-in process
-  management implemented; real restart acceptance pending
+- Status: Steps 1–4 runtime accepted; Step 5 API/dashboard slice implemented
+  with complete control-plane acceptance still in progress
 - Target platform: Ubuntu workstation, RTX 5070 Ti 16 GB VRAM
 
 ## Current executable foundation
@@ -18,7 +18,7 @@ commands for:
 
 The environment generator refuses to overwrite an existing `.env`; the upgrade
 script appends only missing values, including distinct non-secret Telegram token
-file paths and an explicit test environment. Do not source or print the file during
+file paths, an explicit test environment, and the loopback web boundary. Do not source or print the file during
 troubleshooting except for explicitly safe, non-secret keys.
 
 The Langfuse non-cluster ClickHouse repair is implemented. Existing named
@@ -55,9 +55,9 @@ in this table:
 | Service | Host/container | Responsibility | Core? |
 | --- | --- | --- | --- |
 | Application PostgreSQL | Docker Compose | Implemented finance source of truth, audit, workflow checkpoints, and durable messaging queues | Yes |
-| FastAPI/UI service | Host systemd | Same-origin REST API and compiled dashboard | Yes after Step 5 |
-| Telegram gateway | Host systemd user service | Implemented authorized long polling, durable ingest, safe file metadata, callback acknowledgement, outbox dispatch | Yes after Step 4 acceptance |
-| Workflow worker | Host systemd user service | Implemented sequential routing/workflow processing | Yes after Step 4 acceptance |
+| FastAPI/UI service | Host systemd user service | Implemented same-origin health and monthly overview API plus compiled dashboard; remaining views planned | Yes during Step 5 |
+| Telegram gateway | Host systemd user service | Accepted authorized long polling, durable ingest, safe file metadata, callback acknowledgement, outbox dispatch | Yes |
+| Workflow worker | Host systemd user service | Accepted sequential routing/workflow processing | Yes |
 | llama.cpp server | Host systemd user service | Implemented unit for local promoted text inference | Yes for agent work |
 | Receipt extractor dependencies | Host process/adapter | Local OCR/VLM selected by evaluation | Yes after Step 6 |
 | Receipt archive adapter | Host library/private filesystem | Implemented decoded-image validation and content-addressed original retention; admin CLI wired, API/worker planned | Yes once receipt ingestion is exposed |
@@ -78,13 +78,14 @@ steady-state sequence is:
    dropping updates.
 3. llama.cpp loads the pinned model and exposes capability health.
 4. Workflow worker starts/retries and processes durable inbox work one at a time.
-5. FastAPI serves health, operations, and UI when implemented.
+5. FastAPI serves liveness, readiness, the monthly overview, and compiled UI;
+   the remaining control-plane operations arrive in later Step 5 slices.
 6. Langfuse starts only when the operator selects development/evaluation mode.
 
 The checked-in systemd user units use explicit working directories and
 environment files, bounded stop timeouts, dependency-sensitive restart codes,
-owner-only umasks, empty capability sets, restricted namespaces and address
-families, read-only home/system views, and the locked virtualenv entry points.
+owner-only umasks, restricted namespaces and address families, and read-only
+home/system views, and the locked virtualenv entry points.
 The llama unit deliberately retains device visibility for local GPU inference. User lingering or an equivalent boot setup is
 required if user services must start before graphical login.
 
@@ -92,15 +93,14 @@ The `money-tracker-telegram` entry point is executable for validation, owner
 pairing, one poll, continuous ingress/outbox loops, and operator health, dead
 letter, and replay inspection. It has no inference dependency; its persisted
 offset resumes after restart. `money-tracker-worker` processes the durable
-inbox in a separate process. The real test bot has passed transport-only
-validation but has not been driven through an owner workflow, so this is not
-yet an accepted product service.
+inbox in a separate process. The real test bot passed complete owner workflows, authorization, latency,
+fault injection, and reboot recovery on 2026-09-11.
 
 Checked-in unit templates live in `deploy/systemd/`, and
 `scripts/install_systemd_units.sh` renders them for the current checkout into
 `~/.config/systemd/user/`. Removal is `systemctl --user disable --now <unit>`
-followed by deleting the rendered file. A boot/restart recovery test on real
-hardware is still outstanding and is part of Step 4 acceptance.
+followed by deleting the rendered file. A real reboot with lingering brought the three Step 4 services up unaided and
+drained queued work in order.
 
 ## Implemented Step 4 checks and target health model
 
@@ -110,7 +110,8 @@ through `money-tracker-telegram validate`; gateway, worker, and model process
 liveness through their systemd user units; and llama.cpp readiness through its
 loopback `/health` endpoint. The exact command matrix and combined
 interpretation are in the [Telegram runbook](telegram.md#inspecting-and-recovering-the-queue).
-No single HTTP aggregation endpoint is claimed before the Step 5 control plane.
+The Step 5 API now exposes process and database/profile health separately; it
+does not aggregate Telegram queue, model, backup, or receipt health yet.
 The broader dependency behavior remains:
 
 | Dependency state | Expected behavior |
@@ -136,7 +137,7 @@ Current and planned configuration groups:
 - production and test Telegram tokens plus allowed/pairing state;
 - private receipt and evaluation data paths; the archive root is configured by
   `MONEY_TRACKER_RECEIPT_ARCHIVE_ROOT` for the administration CLI;
-- FastAPI bind/allowed Host/Origin/CSRF settings;
+- implemented FastAPI bind, exact Host/Origin, static-root, and CSRF settings;
 - optional Langfuse keys/profile;
 - Restic repository, password source, retention, and staging path.
 

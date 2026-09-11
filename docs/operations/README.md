@@ -1,18 +1,18 @@
 # Operations Guide
 
-- Status: Steps 1–3 complete; Step 4 durable Telegram implementation in progress
+- Status: Steps 1–4 complete; Step 5 local dashboard in progress
 - Current executable operations: local inference/CLI, dedicated application
   PostgreSQL, migrations/checkpoint bootstrap, optional healthy Langfuse,
   capability evaluation, profile-scoped receipt storage, one-shot Step 3
   dispatch, durable Telegram gateway/worker, pairing,
-  health/replay/resend/latency, and
-  checked-in host service units
+  health/replay/resend/latency, the local monthly dashboard/API, and checked-in
+  host service units
 - Implemented Step 2: authoritative finance schema and transactional
   expense, wallet, budget, pending category-proposal, and versioned receipt-review
   repository operations, a safe local receipt-media adapter, and verified
   encrypted backup with an isolated restore drill
-- Planned operations: owner-driven real-bot acceptance, real service/workstation
-  restart evidence, backup scheduling and clean-machine restore, web API,
+- Planned operations: remaining dashboard workflows and analytics, web advice,
+  browser E2E acceptance, backup scheduling and clean-machine restore,
   workflow-worker receipt wiring, and media deletion
 
 These guides describe accepted operational behavior and the controls future
@@ -22,6 +22,8 @@ the referenced file or entry point exists in the repository.
 
 ## Runbooks
 
+- [Local Web](web.md): build, loopback API/dashboard, browser controls, health,
+  systemd, verification, and rollback for the implemented Step 5 slice.
 - [Telegram](telegram.md): BotFather preparation, private-owner pairing target,
   long polling, the 24-hour limitation, testing, and token response.
 - [Local Runtime](local-runtime.md): current foundation, target process
@@ -58,9 +60,13 @@ the referenced file or entry point exists in the repository.
 - The dedicated application PostgreSQL is healthy, independently persistent,
   least-privileged, and separate from the Langfuse database. It owns the
   authoritative finance schema, persistent workflow checkpoints, and the
-  normalized Step 4 messaging tables/repository. The Telegram gateway and sequential worker entry points, one-use pairing,
-  health, scoped dead-letter replay, Italian response rendering, and host unit
-  templates exist. Real owner workflow and restart acceptance remain pending.
+  normalized Step 4 messaging tables/repository. The Telegram gateway and
+  sequential worker entry points, one-use pairing, health, scoped dead-letter
+  replay, Italian response rendering, and host unit templates passed real owner
+  workflows, restart/reboot, latency, and fault acceptance on 2026-09-11.
+- The FastAPI process, monthly overview endpoint, compiled React overview, local
+  browser controls, and API user-service template are implemented. Other Step
+  5 views and full browser acceptance remain open.
 - Langfuse 4.26.0 and every dependency are pinned by digest. The non-cluster
   repair and health checks pass with the pre-existing volumes preserved.
 - Installed model paths remain workstation-owned and outside the repository.
@@ -80,10 +86,10 @@ the referenced file or entry point exists in the repository.
   owner-selected external repository that the environment generator leaves as a
   deliberate placeholder. No scheduling timer, off-device secret check, or
   clean-machine drill exists yet.
-- A real test-bot credential has passed `getMe` and backlog-preserving webhook
-  validation on this workstation. No owner-driven end-to-end workflow, installed
-  service restart/reboot proof, API/dashboard, media deletion, or receipt
-  extraction exists yet.
+- The private test bot passed real owner workflows, unauthorized-user checks,
+  five fault injections, p95 latency, and an unattended reboot with all Step 4
+  host services. No production bot exists. The dashboard beyond its monthly
+  overview, media deletion, and receipt extraction do not exist yet.
 
 ## When to update these guides
 

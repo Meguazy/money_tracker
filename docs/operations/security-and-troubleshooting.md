@@ -1,7 +1,7 @@
 # Security and Troubleshooting
 
-- Status: current scaffold guidance plus accepted target controls
-- Scope: one-owner local workstation and the planned Telegram boundary
+- Status: implemented Steps 1–4 controls plus the first Step 5 web controls
+- Scope: one-owner local workstation, accepted Telegram boundary, and loopback web boundary
 
 ## Trust boundaries
 
@@ -32,7 +32,7 @@ Secrets include:
 - application and Langfuse database/service credentials;
 - Langfuse project secret key;
 - Restic password/key;
-- CSRF/session secrets when implemented;
+- random per-browser CSRF values while valid;
 - token-bearing Telegram file URLs and any one-use pairing code while valid.
 
 Controls:
@@ -53,7 +53,7 @@ secret-generation behavior must preserve those properties.
 
 ## Telegram authorization
 
-The planned gateway accepts only the paired private user/chat. It validates the
+The implemented gateway accepts only the paired private user/chat. It validates the
 source before downloading media, creating an inbox work item, invoking a model,
 or reading finance data. Group support is disabled. Pairing codes expire, are
 single-use, and cannot replace an existing owner without a local administrative
@@ -79,16 +79,22 @@ other secrets through the bot.
 
 ## Local web controls
 
-Loopback binding alone does not remove browser threats. The planned API must:
+Loopback binding alone does not remove browser threats. The first Step 5 slice
+implements these controls:
 
-- bind to `127.0.0.1` by default;
-- allow only expected Host and Origin values;
-- keep CORS closed to arbitrary origins;
-- protect mutations against CSRF;
-- serve the compiled UI and API from one origin;
-- return no environment or secret values;
-- validate IDs, versions, file paths, content types, and decoded image limits;
-- define a future authentication/TLS threat model before LAN or remote access.
+- typed configuration refuses every non-IPv4-loopback listener;
+- exact Host and Origin allowlists reject DNS rebinding and cross-origin reads;
+- CORS remains closed; no permission header is emitted;
+- unsafe methods require an allowed Origin and matching random HttpOnly-cookie
+  and header values;
+- API responses are `no-store`; the compiled UI and API share one origin and
+  receive restrictive CSP,
+  referrer, MIME-sniffing, and framing headers;
+- API responses return no environment, profile identity, private path, or secret.
+
+Future receipt and mutation routes must still validate IDs, versions, file
+paths, content types, and decoded image limits. LAN or remote access requires a
+new authentication/TLS threat model and ADR.
 
 ## Media controls
 

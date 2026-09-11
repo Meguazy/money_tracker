@@ -16,10 +16,18 @@ if ! command -v systemctl >/dev/null 2>&1; then
   exit 2
 fi
 
-if [[ ! -x "${repo_root}/.venv/bin/money-tracker-telegram" ]] ||
+if [[ ! -x "${repo_root}/.venv/bin/money-tracker-api" ]] ||
+   [[ ! -x "${repo_root}/.venv/bin/money-tracker-telegram" ]] ||
    [[ ! -x "${repo_root}/.venv/bin/money-tracker-worker" ]]; then
   echo "The locked virtual environment is missing production entry points." >&2
   echo "Run: uv sync --locked --all-groups" >&2
+  exit 2
+fi
+
+if [[ ! -f "${repo_root}/frontend/dist/index.html" ]] ||
+   [[ ! -d "${repo_root}/frontend/dist/assets" ]]; then
+  echo "The compiled dashboard is missing." >&2
+  echo "Run: cd frontend && npm ci && npm run build" >&2
   exit 2
 fi
 
@@ -58,10 +66,12 @@ The units are installed but not started. Bootstrap them in this order:
        systemctl --user enable --now money-tracker-llama.service
        systemctl --user enable --now money-tracker-telegram.service
        systemctl --user enable --now money-tracker-worker.service
+       systemctl --user enable --now money-tracker-api.service
 
 Exit code 1 means an operator must change something, and the units stop
 instead of restarting. Exit code 2 means a dependency was unreachable and the
 unit restarts on its own. Check which one happened with:
 
   systemctl --user status money-tracker-telegram.service
+  systemctl --user status money-tracker-api.service
 NEXT

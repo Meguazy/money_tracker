@@ -3,7 +3,7 @@
 - Status: accepted
 - Implementation: Bot API transport, separate token-file configuration,
   private-owner authorization, one-use owner pairing, normalized durable
-  ingestion, and outbox delivery implemented; real test-bot acceptance pending
+  ingestion, outbox delivery, and owner acceptance implemented
 - Date: 2026-09-01
 
 ## Context
@@ -36,11 +36,17 @@ credential with `getMe`,
 disables webhooks without dropping pending updates, and exposes only bounded
 reason codes on failure. Authorization compares private-chat sender and chat
 identities with the persisted owner binding before normalized inbox creation.
-Foreign users and groups advance the observed offset with counters only. Unit
+Foreign users and groups advance the observed offset with counters only.
+
+Step 4 owner acceptance on 2026-09-11 exercised every text workflow, one-use
+pairing, unauthorized identities, five fault scenarios, and unattended reboot
+recovery against the real private test bot. The journal contained no token or
+Bot API URL. Full measurements and limitations are recorded in the
+[Step 4 evidence](../../roadmap/step-4-durable-telegram-mvp.md#acceptance-evidence).
+Unit
 coverage proves redaction and authorization; the opt-in real Bot API test has
-passed against the real test bot without sending owner content. The
-credential used during initial diagnostics must be rotated before owner
-acceptance because it appeared in terminal output.
+passed against the real test bot without sending owner content. The credential used during initial diagnostics was revoked before owner
+acceptance because it had appeared in terminal output.
 
 ## Alternatives considered
 

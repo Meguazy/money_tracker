@@ -81,6 +81,30 @@ if ! has_setting MONEY_TRACKER_TELEGRAM_TEST_TOKEN_FILE; then
   updated=true
 fi
 
+if ! has_setting MONEY_TRACKER_WEB_HOST; then
+  printf 'MONEY_TRACKER_WEB_HOST=127.0.0.1\n' >>"${env_file}"
+  updated=true
+fi
+if ! has_setting MONEY_TRACKER_WEB_PORT; then
+  printf 'MONEY_TRACKER_WEB_PORT=8000\n' >>"${env_file}"
+  updated=true
+fi
+if ! has_setting MONEY_TRACKER_WEB_ALLOWED_HOSTS; then
+  printf 'MONEY_TRACKER_WEB_ALLOWED_HOSTS=127.0.0.1,localhost\n' >>"${env_file}"
+  updated=true
+fi
+if ! has_setting MONEY_TRACKER_WEB_ALLOWED_ORIGINS; then
+  printf '%s\n' \
+    'MONEY_TRACKER_WEB_ALLOWED_ORIGINS=http://127.0.0.1:8000,http://localhost:8000' \
+    >>"${env_file}"
+  updated=true
+fi
+if ! has_setting MONEY_TRACKER_WEB_STATIC_DIR; then
+  printf 'MONEY_TRACKER_WEB_STATIC_DIR=%s/frontend/dist\n' "${repo_root}" \
+    >>"${env_file}"
+  updated=true
+fi
+
 if ! has_setting MONEY_TRACKER_BACKUP_EXPECTED_DATABASE; then
   printf 'MONEY_TRACKER_BACKUP_EXPECTED_DATABASE=money_tracker\n' >>"${env_file}"
   updated=true

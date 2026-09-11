@@ -4,7 +4,7 @@
 - Implementation: PostgreSQL messaging state/repository, Bot API adapter,
   authorized ingress, one-use owner pairing, concurrent gateway loops, outbox
   delivery, the sequential workflow worker, and messaging health/recovery
-  reporting implemented; real test-bot acceptance pending
+  reporting implemented and owner-accepted
 - Date: 2026-09-01
 
 ## Context
@@ -47,9 +47,11 @@ callback acknowledgement and a later poll. Unit tests cover protocol parsing,
 redaction, authorization, and send/commit order, while real PostgreSQL proves
 that rejected identities create no inbox rows. The checked-in real Bot API test
 has passed `getMe` and backlog-preserving webhook removal without sending
-owner content. The channel is not yet accepted as usable: the exposed
-diagnostic credential must first be rotated, then the owner-driven workflows
-must pass.
+owner content. The exposed diagnostic credential was rotated. Step 4 owner
+acceptance then
+passed the real workflows, authorization, five fault scenarios, p95 latency,
+and unattended reboot recovery. The canonical measurements and limitations are
+in the [Step 4 evidence](../../roadmap/step-4-durable-telegram-mvp.md#acceptance-evidence).
 
 ## Alternatives considered
 

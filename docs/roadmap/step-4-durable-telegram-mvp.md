@@ -2,9 +2,10 @@
 
 Part of the [delivery roadmap](../roadmap.md).
 
-Status: **In progress — every exit criterion has passed against the real test
-bot; the recorded evidence entry remains.** Step 3 and its EVD-004 baseline
-remain unchanged.
+Status: **Complete (2026-09-11).** Every exit criterion has evidence in
+[acceptance evidence](#acceptance-evidence), gathered by an owner driving the
+real private test bot. Step 3 and its EVD-004 baseline remain unchanged, and
+this step promoted no model, prompt, schema, or threshold.
 
 Accepted against the real test bot on 2026-09-10 and 2026-09-11, on the
 promoted `text-qwen3-14b` profile with all three services under the user
@@ -48,8 +49,6 @@ manager:
   outbox dead letter requires per-request failures against an otherwise healthy
   gateway, not an unreachable Bot API, and that path stays covered by its real
   subprocess test.
-
-Still missing: the recorded evidence entry.
 
 Fourteen defects were found and fixed by running the product rather than by
 reading it, and each is described in the sections below with its commit. Three
@@ -477,6 +476,66 @@ printing private content or identifiers.
   PostgreSQL authorization test passed. The real Bot API test passed `getMe`
   and backlog-preserving webhook removal without owner content; this is
   transport evidence, not Telegram workflow acceptance.
+
+## Acceptance evidence
+
+Owner acceptance ran on 2026-09-10 and 2026-09-11 against the real private test
+bot, through the production entry points, with all three services under the
+user manager. This is the record the definition of done asks for.
+
+| Element | Value |
+| --- | --- |
+| Workstation | Linux 6.11.0-26-generic, NVIDIA RTX 5070 Ti 16 GiB |
+| Repository | `8e455cb` on `main` |
+| Bot environment | `test`, one private owner bound by one-use code |
+| Application database | `money_tracker` at migration `20260910_0007` |
+| Text profile | `text-qwen3-14b`, `Qwen3-14B-Q5_K_M.gguf` |
+| GGUF SHA-256 | `e7c9aba1…`, identical to the one EVD-004 promoted |
+| Inference runtime | llama.cpp `0.3.0-dev` build 1, commit `3466812`, context 8192 |
+| Prompts and policy | Unchanged from EVD-004; routing confidence 0.5 |
+
+Measured results:
+
+| Measure | Result |
+| --- | --- |
+| Warm text latency, p95 | **5,770 ms** against the 30,000 ms of NFR-PER-001 |
+| Latency sample | 11 successful text workflows, first excluded as warm-up |
+| Inbox identity | 60 rows carrying 60 distinct update identifiers |
+| Logical response identity | 74 rows carrying 74 distinct logical keys |
+| Control revocations delivered | 6, each on its first attempt |
+| Unauthorized observations | 4 rejected, 0 inbox rows, 0 responses, 0 finance rows |
+| Dead letters at close | 0 inbox, 0 outbox |
+| Credentials in the journal | 0 token-shaped runs, 0 Bot API URLs |
+
+Fault injection covered the database stopping and returning, the model stopping
+until a dead letter formed, the worker killed mid-work, the gateway killed
+after committing a batch, and the Bot API isolated at the host while the
+database and model stayed reachable. Across all five the ledger gained exactly
+one write per message, and every recovery happened without an operator except
+the two that exist to be manual, `replay` and `resend`.
+
+A workstation reboot with lingering enabled brought all three services up
+unaided, llama.cpp acquired the GPU, and two queued messages were processed in
+arrival order with one attempt each.
+
+Limitations this evidence does not cover, stated rather than implied:
+
+- Bot API acceptance of `sendMessage` is the repeatable proxy for delivery.
+  What the owner's client renders, and when it notifies, is not observable from
+  here and is excluded from the latency figure.
+- Ten warm samples on one workstation is a small sample. It is far enough
+  inside the requirement to be convincing about the order of magnitude and not
+  enough to characterize a distribution.
+- The group-chat rejection clause was exercised by its real-PostgreSQL test
+  rather than live. Live authorization testing redirected the owner binding, so
+  it drove the user and chat identity clauses of the same boolean expression
+  through the running gateway; the chat-type clause sits in that expression and
+  was not separately reached.
+- Correcting a movement's description is suspended, not working. The interim
+  measure preserves it unconditionally, which also costs the case where the
+  owner does restate the purpose.
+- Three model-judgement questions are open and recorded below.
+- No production bot exists. Everything here is the test bot.
 
 ## Evaluation work this acceptance identified
 

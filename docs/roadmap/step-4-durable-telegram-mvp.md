@@ -2,8 +2,8 @@
 
 Part of the [delivery roadmap](../roadmap.md).
 
-Status: **In progress — owner acceptance is under way and three exit criteria
-remain.** Step 3 and its EVD-004 baseline remain unchanged.
+Status: **In progress — owner acceptance has passed every exit criterion but
+one.** Step 3 and its EVD-004 baseline remain unchanged.
 
 Accepted against the real test bot on 2026-09-10 and 2026-09-11, on the
 promoted `text-qwen3-14b` profile with all three services under the user
@@ -21,14 +21,31 @@ manager:
   responses, zero finance rows, and no stored pairing code;
 - warm text latency measured p95 5,770 ms over ten samples against the 30,000 ms
   requirement of NFR-PER-001;
-- the journal carried no token-shaped run and no Bot API URL.
+- the journal carried no token-shaped run and no Bot API URL;
+- a workstation reboot with lingering enabled brought all three services up
+  unaided, llama.cpp acquired the GPU, and the two queued messages were
+  processed in the order they arrived, one attempt each and no manual
+  recovery. Inference measured one to two and a half seconds per model call;
+- four of five fault injections passed: the database stopped and returned, the
+  model stopped until a dead letter formed, the worker killed mid-work, and the
+  gateway killed after committing a batch. Across all of them the finance
+  ledger gained exactly one write per message, 40 inbox rows held 40 distinct
+  update identifiers, and 48 outbox rows held 48 distinct logical keys.
 
-Still missing: deliberate fault injection, the workstation reboot proof, and
-the recorded evidence entry. Nine defects were found by running the product
-rather than by reading it, and each is described in the sections below with the
-commit that fixed it. Two of them — stale controls on a superseded summary, and
-a movement that ends leaving its old buttons live — were found by the owner
-looking at the screen, and no test would have caught either.
+Still missing: the fifth fault injection and the recorded evidence entry. The
+outbox dead letter was not forced live, because cutting the network took the
+database down with it; isolating Telegram alone is the method for the next
+attempt, and the transient half is already evidenced by a real connection
+failure that recovered inside the bounded retry.
+
+Twelve defects were found by running the product rather than by reading it, and
+each is described in the sections below with the commit that fixed it. Two —
+stale controls on a superseded summary, and a movement that ends leaving its
+old buttons live — were found by the owner looking at the screen. Four more
+existed only at boot: units that could not start at all, a binary a login shell
+resolved and a boot did not, a GPU the model silently gave up on, and a model
+still loading that killed the worker outright. No test would have caught any of
+them.
 
 An earlier session's run against `money_tracker_acceptance` on 2026-09-09 is
 not evidence: it executed while implementation commits were landing, predates
@@ -64,8 +81,9 @@ every fix listed here, and is the session in which the credential was exposed.
 - `deploy/systemd/` holds user-service templates for the gateway, the worker,
   and llama.cpp, rendered for a checkout by `scripts/install_systemd_units.sh`.
   They use direct locked-virtualenv entry points, checkout-correct documentation
-  links, dependency-aware restart codes, and hardened user-service sandboxes. No
-  unit has been enabled against a real bot.
+  links, dependency-aware restart codes, and hardened user-service sandboxes.
+  All three are enabled with lingering and have started unaided across a real
+  reboot.
 - Compose provides application PostgreSQL and optional Langfuse. The three
   systemd unit templates above are checked in; FastAPI is neither installed nor
   required by the Step 4 runtime.

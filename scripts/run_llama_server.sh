@@ -29,6 +29,36 @@ if ! command -v "${llama_server_bin}" >/dev/null 2>&1; then
   echo "Build llama.cpp and set LLAMA_SERVER_BIN to its llama-server." >&2
   exit 2
 fi
+# llama.cpp falls back to CPU when CUDA cannot initialize, and says so only in
+# a warning it then keeps running past. At boot that fallback is silent and
+# catastrophic: the unit is active, the health endpoint answers, no queue grows,
+# and every inference takes roughly seventy seconds instead of two, which no
+# amount of retrying fixes and which NFR-PER-001 cannot absorb.
+#
+# The first real reboot lost that race by 400 milliseconds: CUDA was probed at
+# 10:22:28.040 and /dev/nvidiactl appeared at 10:22:28.432. So wait for the
+# driver rather than assume a boot ordering that no user unit can express, and
+# refuse to start rather than degrade where nothing would notice. Set
+# LLAMA_REQUIRE_GPU=0 for a deliberate CPU-only host.
+require_gpu="${LLAMA_REQUIRE_GPU:-1}"
+gpu_wait_seconds="${LLAMA_GPU_WAIT_SECONDS:-60}"
+if [[ "${require_gpu}" != "0" ]]; then
+  waited=0
+  until [[ -e /dev/nvidiactl ]] && nvidia-smi --list-gpus >/dev/null 2>&1; do
+    if (( waited >= gpu_wait_seconds )); then
+      echo "No usable GPU after ${gpu_wait_seconds}s; refusing to start." >&2
+      echo "llama.cpp would run on CPU without failing, roughly thirty times" >&2
+      echo "slower, and nothing downstream would report it." >&2
+      echo "Fix the driver, or set LLAMA_REQUIRE_GPU=0 to accept CPU speed." >&2
+      exit 2
+    fi
+    sleep 1
+    waited=$((waited + 1))
+  done
+  if (( waited > 0 )); then
+    echo "Waited ${waited}s for the NVIDIA driver before starting." >&2
+  fi
+fi
 model_alias="${LLAMA_MODEL_ALIAS:-local-model}"
 context_size="${LLAMA_CTX_SIZE:-8192}"
 parallel="${LLAMA_PARALLEL:-1}"

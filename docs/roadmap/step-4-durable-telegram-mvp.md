@@ -292,6 +292,17 @@ printing private content or identifiers.
   worker were unaffected: they name absolute entry points inside the locked
   virtualenv. The exit-code contract behaved correctly throughout, stopping
   visibly rather than looping.
+- The same reboot also showed llama.cpp starting without its GPU. CUDA
+  initialization ran 400 milliseconds before `/dev/nvidiactl` existed
+  (10:22:28.040 against 10:22:28.432), and llama.cpp treats that as a warning
+  it keeps running past. The unit stayed active, the health endpoint answered,
+  no queue grew, and every inference took roughly seventy seconds instead of
+  two, which NFR-PER-001 cannot absorb. Nothing in the readiness matrix would
+  have reported it, because liveness and the health endpoint were both honest.
+  A user unit cannot order itself against the driver, so the launcher now waits
+  for it and refuses to start rather than degrade where nothing would notice;
+  `LLAMA_REQUIRE_GPU=0` accepts CPU speed deliberately. Confirmed by restart:
+  GPU memory went from 1,219 MiB to 12,376 MiB.
 - A requested stop is now the third way these processes end, and the first real
   restart showed it was missing: neither entry point installed a signal handler,
   so `SIGINT` — the units' own `KillSignal` — raised `KeyboardInterrupt`

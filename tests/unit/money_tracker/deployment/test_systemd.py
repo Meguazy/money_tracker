@@ -304,3 +304,48 @@ def test_llama_unit_finds_a_user_installed_binary_at_boot() -> None:
     )
     assert "%h/.local/bin" in path
     assert "/usr/bin" in path
+
+
+def test_llama_launcher_refuses_a_silent_cpu_fallback(tmp_path: Path) -> None:
+    """Fail loudly where llama.cpp would quietly run thirty times slower.
+
+    CUDA initialization failure is a warning llama.cpp keeps running past, so
+    the unit stays active, the health endpoint answers, and no queue grows
+    while every inference takes seventy seconds instead of two. The first real
+    reboot lost that race by 400 milliseconds, and nothing downstream noticed.
+    """
+
+    model = tmp_path / "model.gguf"
+    model.write_text("not a real model")
+    stub = tmp_path / "bin"
+    stub.mkdir()
+    driver = stub / "nvidia-smi"
+    driver.write_text("#!/bin/sh\nexit 1\n")
+    driver.chmod(0o700)
+    environment = {
+        "PATH": f"{stub}:/usr/bin:/bin",
+        "MODEL_PATH": str(model),
+        "LLAMA_SERVER_BIN": "/bin/echo",
+        "LLAMA_GPU_WAIT_SECONDS": "1",
+    }
+
+    refused = subprocess.run(
+        ["bash", "scripts/run_llama_server.sh"],
+        check=False,
+        capture_output=True,
+        env=environment,
+        text=True,
+        timeout=30,
+    )
+    accepted = subprocess.run(
+        ["bash", "scripts/run_llama_server.sh"],
+        check=False,
+        capture_output=True,
+        env={**environment, "LLAMA_REQUIRE_GPU": "0"},
+        text=True,
+        timeout=30,
+    )
+
+    assert refused.returncode == 2
+    assert "No usable GPU" in refused.stderr
+    assert accepted.returncode == 0

@@ -2,8 +2,9 @@
 
 Part of the [delivery roadmap](../roadmap.md).
 
-Status: **In progress — owner acceptance has passed every exit criterion but
-one.** Step 3 and its EVD-004 baseline remain unchanged.
+Status: **In progress — every exit criterion has passed against the real test
+bot; only the recorded evidence entry remains.** Step 3 and its EVD-004
+baseline remain unchanged.
 
 Accepted against the real test bot on 2026-09-10 and 2026-09-11, on the
 promoted `text-qwen3-14b` profile with all three services under the user
@@ -26,17 +27,24 @@ manager:
   unaided, llama.cpp acquired the GPU, and the two queued messages were
   processed in the order they arrived, one attempt each and no manual
   recovery. Inference measured one to two and a half seconds per model call;
-- four of five fault injections passed: the database stopped and returned, the
+- four fault injections passed: the database stopped and returned, the
   model stopped until a dead letter formed, the worker killed mid-work, and the
   gateway killed after committing a batch. Across all of them the finance
   ledger gained exactly one write per message, 40 inbox rows held 40 distinct
-  update identifiers, and 48 outbox rows held 48 distinct logical keys.
+  update identifiers, and 48 outbox rows held 48 distinct logical keys;
+- the fifth injection isolated the Bot API alone, by resolving
+  `api.telegram.org` to the loopback while the database and the model stayed
+  reachable. It found that a total Bot API outage cannot produce an outbox dead
+  letter at all: `prepare()` calls `getMe` before either loop starts, so the
+  gateway exits 2 and restarts instead of ever attempting delivery. The queued
+  response therefore waited through the outage having consumed none of its five
+  attempts, and went out unaided on recovery with `attempt_count` still 1. That
+  is the better outcome, and the document previously did not distinguish it: an
+  outbox dead letter requires per-request failures against an otherwise healthy
+  gateway, not an unreachable Bot API, and that path stays covered by its real
+  subprocess test.
 
-Still missing: the fifth fault injection and the recorded evidence entry. The
-outbox dead letter was not forced live, because cutting the network took the
-database down with it; isolating Telegram alone is the method for the next
-attempt, and the transient half is already evidenced by a real connection
-failure that recovered inside the bounded retry.
+Still missing: the recorded evidence entry.
 
 Twelve defects were found by running the product rather than by reading it, and
 each is described in the sections below with the commit that fixed it. Two —

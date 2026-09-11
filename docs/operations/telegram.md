@@ -1,10 +1,9 @@
 # Telegram Operations
 
-- Status: implemented and in owner acceptance. Every text workflow, owner
-  authorization, the latency requirement, a workstation reboot, and four of
-  five fault injections have passed against the real test bot with all three
-  services under the user manager. One fault injection and the recorded
-  evidence entry remain
+- Status: implemented and accepted by the owner against the real test bot,
+  with all three services under the user manager. Every text workflow, owner
+  authorization, the latency requirement, a workstation reboot, and five fault
+  injections have passed. Only the recorded evidence entry remains
 - Bot created: test bot only
 - Production token configured: no
 - Test bot configured: yes. The exposed diagnostic credential was revoked in

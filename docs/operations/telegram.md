@@ -258,6 +258,15 @@ mutation before failing therefore returns its first result instead of applying
 a second one. That is what makes replay safe to offer at all, and it is why
 replay never rewinds the Telegram offset.
 
+Safe for the ledger is not the same as invisible to the owner. Replay
+re-dispatches the work unit, so it also delivers whatever answer that unit
+produces now, and the owner receives it with no sign that it belongs to an
+older conversation. A stale item can therefore arrive as a reply to a question
+they no longer remember asking, or as a refusal describing state that has since
+moved on: replaying a settled category review answers that the review is no
+longer open. Tell the owner before recovering an old dead letter, or expect to
+explain the message afterwards.
+
 `resend` preserves the existing logical outbox row and starts a fresh bounded
 five-attempt delivery cycle. Use it only after checking the transport failure:
 Telegram has no caller idempotency key for `sendMessage`, so an earlier

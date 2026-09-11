@@ -926,7 +926,8 @@ def test_a_new_summary_revokes_the_controls_on_the_one_it_replaces(
 
     superseded = repository.delivered_control_messages(
         bot_key=bot_key,
-        movement_id=movement_id,
+        target_type=PendingActionTarget.MOVEMENT,
+        target_id=movement_id,
         excluding_outbox_id=uuid4(),
     )
     assert superseded == (555,)

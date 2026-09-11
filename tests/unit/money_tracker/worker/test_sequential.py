@@ -722,7 +722,7 @@ def test_ending_a_movement_revokes_controls_it_leaves_no_replacement_for() -> No
     revocations = committed["revocations"]
     assert [item.target_message_id for item in revocations] == [555]
     assert committed["pending_action"] is None
-    assert repository.superseded_queries[0]["movement_id"] == EXPENSE_ID
+    assert repository.superseded_queries[0]["target_id"] == EXPENSE_ID
 
 
 def test_a_clarification_keeps_the_controls_it_asks_the_owner_to_use() -> None:
@@ -742,3 +742,34 @@ def test_a_clarification_keeps_the_controls_it_asks_the_owner_to_use() -> None:
 
     assert repository.completions[0]["revocations"] == ()
     assert repository.superseded_queries == []
+
+
+def test_a_settled_review_retires_its_own_four_branches() -> None:
+    """Take the review's buttons away once the question has been answered.
+
+    A settlement answers about the movement it posted, and a rule that looks
+    only at movement targets leaves the review message still offering Approva,
+    Usa una categoria esistente, Proponine un'altra and Annulla for a decision
+    the owner already made. The mapping is consumed, so pressing them is
+    harmless, but the chat keeps asking a question that has been settled.
+    """
+
+    proposal_id = uuid4()
+    repository = _bound()
+    repository.superseded = (555,)
+    dispatcher = _Dispatcher(
+        _outcome(
+            DispatchStatus.APPROVED,
+            expense_id=EXPENSE_ID,
+            proposal_id=proposal_id,
+        )
+    )
+
+    _worker(repository, dispatcher).process_once()
+
+    queried = repository.superseded_queries
+    assert [item["target_id"] for item in queried] == [EXPENSE_ID, proposal_id]
+    assert {item["target_type"] for item in queried} == {
+        PendingActionTarget.MOVEMENT,
+        PendingActionTarget.CATEGORY_REVIEW,
+    }

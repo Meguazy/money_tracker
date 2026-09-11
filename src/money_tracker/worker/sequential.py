@@ -420,13 +420,11 @@ class SequentialWorker:
         draft = self._response_draft(claim, response)
         response_id = draft.id
         pending_action = None
-        revocations: tuple[ControlRevocationDraft, ...] = ()
-        if outcome.status in _MOVEMENT_STATUSES and outcome.expense_id is not None:
-            revocations = self._revocations(
-                update=update,
-                movement_id=outcome.expense_id,
-                response_id=response_id,
-            )
+        revocations = self._revocations(
+            update=update,
+            targets=_superseded_targets(outcome),
+            response_id=response_id,
+        )
         if response.target is not None:
             pending_action = PendingActionDraft(
                 id=_action_id(update.id),
@@ -476,35 +474,44 @@ class SequentialWorker:
         self,
         *,
         update: NormalizedTelegramUpdate,
-        movement_id: UUID,
+        targets: tuple[tuple[PendingActionTarget, UUID], ...],
         response_id: UUID,
     ) -> tuple[ControlRevocationDraft, ...]:
-        """Retire the controls on every earlier summary of one movement.
+        """Retire the controls every superseded message still offers.
 
-        Any lifecycle outcome makes the buttons on earlier summaries wrong
-        rather than merely old, so this keys off the outcome rather than off
-        the new response carrying controls of its own. Ending a movement is
-        exactly the case that produces no new controls, and leaving the old
-        ones is worst there: a cancelled movement kept offering `Registra`.
+        Any lifecycle outcome makes earlier buttons wrong rather than merely
+        old, so this keys off the outcome rather than off the new response
+        carrying controls of its own. Ending a movement is exactly the case
+        that produces no new controls, and leaving the old ones is worst
+        there: a cancelled movement kept offering `Registra`.
 
-        A clarification deliberately leaves the previous controls alone,
-        because it asks the owner to use them, which is the same reason
-        `_consumed` spares its mapping.
+        One outcome can supersede two different targets. A settled review
+        answers about the movement it posted while also retiring the review
+        message's own four branches, and those are separate pending actions.
+
+        A clarification supersedes nothing, because it asks the owner to use
+        the controls they already have, which is the same reason `_consumed`
+        spares its mapping.
 
         Args:
             update: Normalized inbound item this response answers.
-            movement_id: Movement the new summary describes.
-            response_id: Response that supersedes the earlier ones.
+            targets: Movements and reviews whose earlier controls are stale.
+            response_id: Response that supersedes them.
 
         Returns:
-            One replay-stable revocation per superseded delivered summary.
+            One replay-stable revocation per superseded delivered message.
         """
 
-        superseded = self._repository.delivered_control_messages(
-            bot_key=update.bot_key,
-            movement_id=movement_id,
-            excluding_outbox_id=response_id,
-        )
+        superseded: list[int] = []
+        for target_type, target_id in targets:
+            superseded.extend(
+                self._repository.delivered_control_messages(
+                    bot_key=update.bot_key,
+                    target_type=target_type,
+                    target_id=target_id,
+                    excluding_outbox_id=response_id,
+                )
+            )
         return tuple(
             ControlRevocationDraft(
                 id=uuid5(
@@ -520,7 +527,7 @@ class SequentialWorker:
                 ).hexdigest(),
                 inbox_id=update.id,
             )
-            for message_id in superseded
+            for message_id in sorted(set(superseded))
         )
 
     @staticmethod
@@ -572,6 +579,26 @@ class SequentialWorker:
             transient,
             claim.attempt_count,
         )
+
+
+def _superseded_targets(
+    outcome: DispatchOutcome,
+) -> tuple[tuple[PendingActionTarget, UUID], ...]:
+    """Name every target whose delivered controls this outcome invalidates.
+
+    A clarification invalidates nothing: it asks the owner to act on what they
+    already have. Everything else either changed the movement it reports or
+    moved the review past the question its buttons asked.
+    """
+
+    if outcome.status is DispatchStatus.CLARIFICATION:
+        return ()
+    targets: list[tuple[PendingActionTarget, UUID]] = []
+    if outcome.status in _MOVEMENT_STATUSES and outcome.expense_id is not None:
+        targets.append((PendingActionTarget.MOVEMENT, outcome.expense_id))
+    if outcome.proposal_id is not None:
+        targets.append((PendingActionTarget.CATEGORY_REVIEW, outcome.proposal_id))
+    return tuple(targets)
 
 
 def _consumed(correlation: _Correlation, outcome: DispatchOutcome) -> UUID | None:

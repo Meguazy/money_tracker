@@ -19,6 +19,7 @@ from money_tracker.messaging.contracts import (
     OwnerBinding,
     PendingAction,
     PendingActionDraft,
+    PendingActionTarget,
     WorkflowResult,
 )
 
@@ -94,10 +95,11 @@ class MessagingRepository(Protocol):
         self,
         *,
         bot_key: str,
-        movement_id: UUID,
+        target_type: PendingActionTarget,
+        target_id: UUID,
         excluding_outbox_id: UUID,
     ) -> tuple[int, ...]:
-        """Return delivered summaries still offering controls for one movement."""
+        """Return delivered messages still offering controls for one target."""
 
     def replay_inbox(self, bot_key: str, inbox_id: UUID, *, now: datetime) -> None:
         """Replay one dead letter only inside the selected bot scope."""

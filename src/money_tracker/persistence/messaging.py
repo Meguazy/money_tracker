@@ -1276,18 +1276,25 @@ class PostgresMessagingRepository:
         self,
         *,
         bot_key: str,
-        movement_id: UUID,
+        target_type: PendingActionTarget,
+        target_id: UUID,
         excluding_outbox_id: UUID,
     ) -> tuple[int, ...]:
-        """Return delivered summaries still offering controls for one movement.
+        """Return delivered messages still offering controls for one target.
 
         Only sent rows have a Telegram identifier to edit, and only rows that
         carried buttons ever showed controls worth removing. The response just
         committed is excluded because it is the one that is still correct.
 
+        The target is named rather than assumed, because a settled category
+        review supersedes the controls on the review message as much as on any
+        earlier movement summary, and those are different targets.
+
         Args:
             bot_key: Selected bot persistence scope.
-            movement_id: Movement whose earlier summaries are superseded.
+            target_type: Whether the superseded controls acted on a movement or
+                a category review.
+            target_id: Movement or review whose earlier controls are superseded.
             excluding_outbox_id: Response that supersedes them.
 
         Returns:
@@ -1301,7 +1308,7 @@ class PostgresMessagingRepository:
                 "FROM messaging.telegram_pending_actions AS action "
                 "JOIN messaging.telegram_outbox AS outbox "
                 "ON outbox.id = action.outbox_id "
-                "WHERE action.bot_key = %s AND action.target_type = 'movement' "
+                "WHERE action.bot_key = %s AND action.target_type = %s "
                 "AND action.target_id = %s AND outbox.status = 'sent' "
                 "AND outbox.operation = %s "
                 "AND jsonb_array_length(outbox.buttons) > 0 "
@@ -1309,7 +1316,8 @@ class PostgresMessagingRepository:
                 "ORDER BY message_id",
                 (
                     bot_key,
-                    movement_id,
+                    target_type.value,
+                    target_id,
                     OUTBOX_SEND_MESSAGE,
                     excluding_outbox_id,
                 ),

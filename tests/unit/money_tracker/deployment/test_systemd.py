@@ -285,3 +285,22 @@ def test_each_unit_refuses_to_restart_what_an_operator_must_fix(
     text = (_UNIT_ROOT / name).read_text()
 
     assert f"RestartPreventExitStatus={prevented}\n" in text
+
+
+def test_llama_unit_finds_a_user_installed_binary_at_boot() -> None:
+    """Resolve `llama-server` without a login session to inherit PATH from.
+
+    `LLAMA_SERVER_BIN` defaults to a bare name, which a login shell resolves
+    through `~/.local/bin`. A lingering user manager starts at boot before any
+    login session exists, so that directory is absent from its PATH and the
+    launcher cannot find the binary. Starting the service by hand always
+    worked, which is why only a real reboot exposed it.
+    """
+
+    text = (_UNIT_ROOT / "money-tracker-llama.service").read_text()
+
+    path = next(
+        line for line in text.splitlines() if line.startswith("Environment=PATH=")
+    )
+    assert "%h/.local/bin" in path
+    assert "/usr/bin" in path

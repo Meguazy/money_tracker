@@ -11,6 +11,12 @@ WorkingDirectory=__MONEY_TRACKER_ROOT__
 # supplies it. Its own exit code 2 means "operator must fix the model
 # configuration", matching the convention the Python entry points use.
 EnvironmentFile=__MONEY_TRACKER_ROOT__/.env
+# `LLAMA_SERVER_BIN` defaults to the bare name `llama-server`, which a login
+# shell resolves through `~/.local/bin`. A lingering user manager starts at
+# boot before any login session exists and has none of that on its PATH, so
+# the launcher could not find the binary and the unit stopped. Starting the
+# service by hand always worked, which is why only a real reboot exposed it.
+Environment=PATH=%h/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 ExecStart=__MONEY_TRACKER_ROOT__/scripts/run_llama_server.sh
 Restart=always
 RestartSec=15

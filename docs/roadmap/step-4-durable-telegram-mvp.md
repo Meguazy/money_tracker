@@ -281,6 +281,17 @@ printing private content or identifiers.
   termination by signal is not an exit status, so the case that genuinely
   deserves a restart still gets one, and a parametrized test now pins each
   unit's policy.
+- The first real reboot with lingering enabled found that llama.cpp could not
+  start at boot. `LLAMA_SERVER_BIN` defaults to the bare name `llama-server`,
+  which a login shell resolves through `~/.local/bin`; a lingering user manager
+  starts before any login session exists and has none of that on its PATH, so
+  the launcher could not find the binary and the unit stopped with its
+  operator-must-fix code. Starting the service by hand always worked, because
+  it inherited the session PATH, which is why no earlier check caught it. The
+  unit now sets an explicit PATH that includes `%h/.local/bin`. The gateway and
+  worker were unaffected: they name absolute entry points inside the locked
+  virtualenv. The exit-code contract behaved correctly throughout, stopping
+  visibly rather than looping.
 - A requested stop is now the third way these processes end, and the first real
   restart showed it was missing: neither entry point installed a signal handler,
   so `SIGINT` — the units' own `KillSignal` — raised `KeyboardInterrupt`

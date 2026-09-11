@@ -299,10 +299,14 @@ printing private content or identifiers.
   no queue grew, and every inference took roughly seventy seconds instead of
   two, which NFR-PER-001 cannot absorb. Nothing in the readiness matrix would
   have reported it, because liveness and the health endpoint were both honest.
-  A user unit cannot order itself against the driver, so the launcher now waits
-  for it and refuses to start rather than degrade where nothing would notice;
-  `LLAMA_REQUIRE_GPU=0` accepts CPU speed deliberately. Confirmed by restart:
-  GPU memory went from 1,219 MiB to 12,376 MiB.
+  A user unit cannot order itself against the driver, so the launcher gates on
+  it and refuses to start rather than degrade where nothing would notice;
+  `LLAMA_REQUIRE_GPU=0` accepts CPU speed deliberately. The first gate waited
+  for `nvidia-smi` to answer and a second reboot failed anyway: what CUDA needs
+  is `/dev/nvidia-uvm`, which `nvidia-smi` never touches and which arrived 7.4
+  seconds after the devices it does use. The launcher now creates that node
+  through the setuid `nvidia-modprobe`, which is what a CUDA runtime would have
+  done, instead of waiting on a correlated signal.
 - A requested stop is now the third way these processes end, and the first real
   restart showed it was missing: neither entry point installed a signal handler,
   so `SIGINT` — the units' own `KillSignal` — raised `KeyboardInterrupt`

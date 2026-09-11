@@ -35,18 +35,27 @@ fi
 # and every inference takes roughly seventy seconds instead of two, which no
 # amount of retrying fixes and which NFR-PER-001 cannot absorb.
 #
-# The first real reboot lost that race by 400 milliseconds: CUDA was probed at
-# 10:22:28.040 and /dev/nvidiactl appeared at 10:22:28.432. So wait for the
-# driver rather than assume a boot ordering that no user unit can express, and
-# refuse to start rather than degrade where nothing would notice. Set
-# LLAMA_REQUIRE_GPU=0 for a deliberate CPU-only host.
+# What CUDA needs is /dev/nvidia-uvm, the unified-memory device, and that is
+# not what the obvious readiness signals report. Two reboots measured it: the
+# first probed CUDA at 10:22:28.040 with /dev/nvidiactl arriving at .432, and
+# the second waited for `nvidia-smi` to answer and still failed, because
+# nvidia-smi never touches the uvm device and it appeared 7.4 seconds later.
+#
+# So create the node rather than wait for something correlated with it.
+# nvidia-modprobe is setuid root precisely to do this on demand, which is what
+# a CUDA runtime would have done itself. The bounded wait remains only for
+# hosts without that helper. Set LLAMA_REQUIRE_GPU=0 for a CPU-only host.
 require_gpu="${LLAMA_REQUIRE_GPU:-1}"
 gpu_wait_seconds="${LLAMA_GPU_WAIT_SECONDS:-60}"
 if [[ "${require_gpu}" != "0" ]]; then
+  if command -v nvidia-modprobe >/dev/null 2>&1; then
+    nvidia-modprobe -u -c 0 >/dev/null 2>&1 || true
+  fi
   waited=0
-  until [[ -e /dev/nvidiactl ]] && nvidia-smi --list-gpus >/dev/null 2>&1; do
+  until [[ -e /dev/nvidia-uvm ]] && nvidia-smi --list-gpus >/dev/null 2>&1; do
     if (( waited >= gpu_wait_seconds )); then
       echo "No usable GPU after ${gpu_wait_seconds}s; refusing to start." >&2
+      echo "/dev/nvidia-uvm is what CUDA needs and it never appeared." >&2
       echo "llama.cpp would run on CPU without failing, roughly thirty times" >&2
       echo "slower, and nothing downstream would report it." >&2
       echo "Fix the driver, or set LLAMA_REQUIRE_GPU=0 to accept CPU speed." >&2
@@ -54,9 +63,12 @@ if [[ "${require_gpu}" != "0" ]]; then
     fi
     sleep 1
     waited=$((waited + 1))
+    if command -v nvidia-modprobe >/dev/null 2>&1; then
+      nvidia-modprobe -u -c 0 >/dev/null 2>&1 || true
+    fi
   done
   if (( waited > 0 )); then
-    echo "Waited ${waited}s for the NVIDIA driver before starting." >&2
+    echo "Waited ${waited}s for the CUDA unified-memory device." >&2
   fi
 fi
 model_alias="${LLAMA_MODEL_ALIAS:-local-model}"

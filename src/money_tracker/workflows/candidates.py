@@ -158,6 +158,22 @@ class CategoryFitCandidate:
     render_taxonomy: Callable[[Taxonomy], str]
 
 
+def _active_root_names(taxonomy: Taxonomy) -> tuple[str, ...]:
+    """Return the active roots a proposed category may sit under.
+
+    The domain admits only a root as a proposal's parent, so the decoding
+    grammar should admit only those too. Offering every category invited the
+    model to answer with the nearest leaf, which the domain then always
+    refused.
+    """
+
+    return tuple(
+        category.name
+        for category in taxonomy.categories
+        if category.parent_id is None and category.status is CategoryStatus.ACTIVE
+    )
+
+
 def _flat_taxonomy(taxonomy: Taxonomy) -> str:
     """Render the name-only context used by the original candidates."""
 
@@ -224,17 +240,26 @@ _CATEGORY_FIT_SHAPES: dict[
         _tree_taxonomy,
     ),
     "v6": (
-        lambda taxonomy: build_category_fit_schema(active_category_names(taxonomy)),
+        lambda taxonomy: build_category_fit_schema(
+            active_category_names(taxonomy),
+            _active_root_names(taxonomy),
+        ),
         category_fit_to_domain,
         _tree_taxonomy,
     ),
     "v8": (
-        lambda taxonomy: build_category_fit_schema(active_category_names(taxonomy)),
+        lambda taxonomy: build_category_fit_schema(
+            active_category_names(taxonomy),
+            _active_root_names(taxonomy),
+        ),
         category_fit_to_domain,
         _tree_taxonomy,
     ),
     "v7": (
-        lambda taxonomy: build_category_fit_schema(active_category_names(taxonomy)),
+        lambda taxonomy: build_category_fit_schema(
+            active_category_names(taxonomy),
+            _active_root_names(taxonomy),
+        ),
         category_fit_to_domain,
         _path_taxonomy,
     ),

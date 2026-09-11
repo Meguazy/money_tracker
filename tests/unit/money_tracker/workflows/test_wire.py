@@ -18,6 +18,7 @@ from money_tracker.workflows.wire import (
     WireCategoryFit,
     WireExpenseExtraction,
     WireToolRequest,
+    build_category_fit_schema,
 )
 
 
@@ -498,3 +499,36 @@ def test_a_declined_selection_carries_no_tool_or_period() -> None:
                 }
             )
         )
+
+
+def test_a_proposal_can_only_ask_for_a_root_it_may_actually_have() -> None:
+    """Make an unusable parent unexpressible rather than merely refused.
+
+    The domain admits only an active root as a proposal's parent. The schema
+    admitted any string, so the model answered with the nearest category, which
+    is usually a leaf, and every such proposal was refused with
+    `category_parent_invalid` leaving the owner nowhere to go. Approving a
+    category made it worse: the new leaf became the most attractive parent for
+    everything related to it, so using the review broke the review.
+    """
+
+    schema = build_category_fit_schema(
+        ("Casa e utenze", "Bollette", "Alimentazione"),
+        ("Casa e utenze", "Alimentazione"),
+    )
+
+    proposal = next(
+        definition
+        for name, definition in schema.model_json_schema()["$defs"].items()
+        if name == "BoundNewCategoryProposal"
+    )
+
+    assert proposal["properties"]["parent_name"]["enum"] == [
+        "Casa e utenze",
+        "Alimentazione",
+    ]
+    assert proposal["properties"]["closest_existing_category"]["enum"] == [
+        "Casa e utenze",
+        "Bollette",
+        "Alimentazione",
+    ]

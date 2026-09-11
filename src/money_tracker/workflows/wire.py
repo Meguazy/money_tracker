@@ -558,7 +558,10 @@ class WireToolRequest(_WireContract):
         )
 
 
-def build_category_fit_schema(active_names: tuple[str, ...]) -> type[BaseModel]:
+def build_category_fit_schema(
+    active_names: tuple[str, ...],
+    root_names: tuple[str, ...] = (),
+) -> type[BaseModel]:
     """Build a category judgment whose names are a closed set.
 
     `WireCategoryFit` asks for a category as free text and resolves it against
@@ -576,12 +579,25 @@ def build_category_fit_schema(active_names: tuple[str, ...]) -> type[BaseModel]:
     owner's categories are data. Resolution stays deterministic and unchanged:
     the boundary still names a category and never identifies one.
 
+    The same reasoning covers the parent a proposal asks for, and it did not
+    until an owner met it. The domain admits only an active root there, the
+    schema admitted any string, and the model reasonably answered with the
+    nearest category, which is usually a leaf. Every such proposal was refused
+    with `category_parent_invalid`, and the owner had no way forward. Approving
+    a category made it worse, because the new leaf then became the most
+    attractive parent for everything related to it.
+
     Args:
         active_names: Active category display names, in taxonomy order.
+        root_names: Active root display names a proposal may sit under.
+            Defaults to `active_names` only for callers that predate the
+            distinction, which leaves the old unconstrained behaviour visible
+            rather than silently narrowing it.
 
     Returns:
         A contract equivalent to `WireCategoryFit` whose category names are
-        constrained to `active_names`.
+        constrained to `active_names` and whose parent is constrained to
+        `root_names`.
 
     Raises:
         ValueError: If no active category was supplied.
@@ -590,6 +606,7 @@ def build_category_fit_schema(active_names: tuple[str, ...]) -> type[BaseModel]:
     if not active_names:
         raise ValueError("category fit requires at least one active category")
     name_type: Any = Literal[active_names]
+    parent_type: Any = Literal[root_names or active_names]
     existing = create_model(
         "BoundExistingCategoryChoice",
         __config__=ConfigDict(extra="forbid", strict=True),
@@ -604,7 +621,7 @@ def build_category_fit_schema(active_names: tuple[str, ...]) -> type[BaseModel]:
         closest_existing_category=(name_type, ...),
         why_closest_is_inadequate=(NonEmptyText, ...),
         proposed_name=(NonEmptyText, ...),
-        parent_name=(NonEmptyText, ...),
+        parent_name=(parent_type, ...),
         description=(NonEmptyText, ...),
         evidence=(EvidenceText, ...),
     )

@@ -236,6 +236,19 @@ printing private content or identifiers.
   because the dispatcher suite asserted only the status while the renderer
   suite was handed a movement directly. Owner acceptance produced the first
   real approval and the first failure with it.
+- A proposal can no longer ask for a parent the domain will refuse. Only an
+  active root may hold a proposed category, but the bound schema left
+  `parent_name` an unconstrained string while binding the category names
+  beside it, so the model answered with the nearest category, which is usually
+  a leaf, and the review ended in `category_parent_invalid` with nothing
+  recorded and no way forward. Approving a category made it worse: the new leaf
+  became the most attractive parent for everything related to it, so using the
+  review broke the review. Four probes out of four proposed the same invalid
+  parent before the fix and all four were valid after. The schema now binds the
+  parent to the active roots, which is the move its own docstring already
+  argues for: an unexpressible mistake beats a refused one. Constraining the
+  grammar removes only outputs the domain rejected every time; which root the
+  model then prefers is a judgement question recorded under evaluation work.
 - `Annulla` now has a transition on the state every movement starts in. It
   sent `undo`, which voids, and voiding reverses something that already
   counted; a draft never did, so the domain refused it and the owner got a

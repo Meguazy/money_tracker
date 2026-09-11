@@ -201,9 +201,13 @@ printing private content or identifiers.
   confirmation and no controls, which is exactly the case a response-shaped
   rule skips and the worst one to skip, since the earlier summary went on
   offering `Registra` for a movement that no longer existed to record. Owner
-  testing found that gap after the first implementation. A clarification
-  deliberately revokes nothing, since it asks the owner to use the controls
-  they already have.
+  testing found that gap after the first implementation. Revocation also names
+  the target it retires rather than assuming a movement: a settled review
+  answers about the movement it posted while also retiring the review
+  message's own four branches, and those are separate pending actions. Owner
+  testing found that second gap too, once a settled response reached the chat
+  at all. A clarification deliberately revokes nothing, since it asks the
+  owner to use the controls they already have.
 - A correction no longer rewrites the movement's description, as an interim
   measure against silent falsification. The correction path reuses the
   extraction contract and prompt written for creating a movement, where

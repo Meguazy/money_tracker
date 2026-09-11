@@ -218,16 +218,9 @@ printing private content or identifiers.
   means unchanged, which is a new model-visible boundary that AD-012 puts
   behind an evaluation run, a dataset that does not yet exist, and a promotion
   decision.
-- The owner has settled the rule that dataset will encode: a correction changes
-  the description only when the message corrects it explicitly, through a
-  contrastive form such as "era benzina, non spesa" or a direct request such as
-  "correggi la descrizione: cena con Marco". Naming a purchase in passing does
-  not qualify, so "erano 20 euro di benzina" changes the amount alone. The
-  rejected alternative was to treat any named purchase as a new description,
-  which silently discards detail: an owner correcting the amount of "benzina
-  per il generatore" would have been left with "benzina". The signal is the
-  shape of the sentence rather than the meaning of a noun, which is both what
-  keeps the record faithful and what makes the rule teachable.
+- The rule the replacement contract must encode is settled and recorded under
+  [evaluation work](#evaluation-work-this-acceptance-identified), together with
+  the two other model-boundary questions this acceptance raised.
 - A settled category review now tells the owner what happened. The dispatcher
   built the approved and reused outcomes without the movement the review had
   just posted, and the renderer requires it, so every settlement committed its
@@ -464,6 +457,47 @@ printing private content or identifiers.
   PostgreSQL authorization test passed. The real Bot API test passed `getMe`
   and backlog-preserving webhook removal without owner content; this is
   transport evidence, not Telegram workflow acceptance.
+
+## Evaluation work this acceptance identified
+
+Running the product against a real owner surfaced three model-boundary
+questions that Step 4 cannot settle, because each one changes an evaluated,
+promoted, model-visible boundary and AD-012 puts that behind a run and a
+promotion decision. All three are recorded here with what is already decided,
+so the next evaluation cycle starts from evidence rather than memory.
+
+- **Correction extraction.** Corrections reuse the contract and prompt written
+  for creating a movement, where `description` is required, so an instruction
+  leaves the model nothing else to return. The description is preserved
+  unconditionally for now, which also costs the case where the owner does
+  restate the purpose. The owner settled the rule the dataset must encode: only
+  an explicit correction changes a description, contrastive ("era benzina, non
+  spesa") or by direct request. Naming a purchase in passing changes nothing,
+  because an owner correcting the amount of "benzina per il generatore" should
+  not silently lose the detail.
+- **Routing an expense that names a benefit source.** `90 euro per spesa con
+  buoni pasto` was classified as needing clarification, while `ho speso 90 euro
+  con i buoni pasto per la spesa` was recorded normally. The dataset carries
+  three meal-voucher cases whose expected intent is `unsupported`, about
+  loading or receiving vouchers, against one that is an expense. A model that
+  hesitates on the shape in between is the predictable result of that balance,
+  and the fix is positive cases rather than a code change.
+- **When the category boundary should propose.** There is no threshold to tune
+  here: `CategoryFit` carries no confidence field and nothing in the path
+  applies a bar, unlike routing which uses the promoted 0.5. The decision is
+  entirely the model's, and the promoted prompt deliberately leans away from
+  proposing, calling it expensive because it interrupts the owner, and setting
+  the bar at "where the owner would look for this spending later". Eleven
+  adversarial purposes were probed read-only against the live 25-category
+  taxonomy and every one was fitted to an existing category, including a
+  funeral placed under `Regali e donazioni` and tobacco under `Alimentazione`,
+  which fail the prompt's own criterion. Those eleven were chosen to be hard
+  and are not a measurement; the categorization suite is, and it passes 0.8693
+  against its 0.85 gate. What is missing from that suite is a group of cases
+  with no plausible neighbour whose expected outcome is a proposal, which would
+  say whether the prompt or the model is responsible. The concern is not
+  cosmetic: a catch-all such as `Acquisti personali` absorbing anything unusual
+  defeats what AD-008 exists for, which is the owner owning their taxonomy.
 
 ## Deliverables
 

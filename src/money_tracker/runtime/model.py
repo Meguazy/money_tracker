@@ -16,8 +16,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from langchain_core.exceptions import ModelConnectionError
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
+from openai import APIStatusError
 from pydantic import BaseModel
 
 from money_tracker.llm import create_chat_model
@@ -135,7 +137,26 @@ class LocalStructuredOutputModel:
                 },
             }
         )
-        content = constrained.invoke(turns).content
+        try:
+            content = constrained.invoke(turns).content
+        except APIStatusError as error:
+            # llama.cpp accepts connections while it is still reading the model
+            # off disk and answers 503 until it is ready. A refused connection
+            # already arrives as `ModelConnectionError`, but this one did not,
+            # so it escaped the worker's work-unit handling, killed the process
+            # with a traceback, and exited 1 — which the unit reads as "an
+            # operator must fix this" and refuses to restart. A transient
+            # thirty-second startup therefore took the worker down until
+            # someone noticed, with its claimed item stranded.
+            #
+            # Any server-side status means the endpoint is not answering for
+            # reasons the caller cannot correct. A 4xx is the caller's own
+            # request and must keep propagating.
+            if error.status_code < 500:
+                raise
+            raise ModelConnectionError(
+                f"local inference endpoint returned {error.status_code}"
+            ) from error
         if not isinstance(content, str):
             raise RuntimeError(
                 "structured boundary requires text content from the endpoint"

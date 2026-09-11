@@ -5,10 +5,13 @@ from __future__ import annotations
 import json
 from typing import Any
 
+import httpx
 import pytest
+from langchain_core.exceptions import ModelConnectionError
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
+from openai import APIStatusError
 from pydantic import Field
 
 from money_tracker.runtime import LocalStructuredOutputModel
@@ -184,5 +187,70 @@ def test_non_text_content_is_refused_rather_than_coerced() -> None:
         adapter.complete_json(
             instructions="classify",
             message="ho speso 12 euro",
+            schema=RouteClassification,
+        )
+
+
+class FailingChatModel(BaseChatModel):
+    """A chat model that raises one provider status error per call."""
+
+    status_code: int = 503
+
+    @property
+    def _llm_type(self) -> str:
+        """Identify this model implementation to LangChain."""
+
+        return "failing"
+
+    def _generate(
+        self,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager: Any = None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        """Fail the way the local endpoint does, with a real status error."""
+
+        response = httpx.Response(
+            self.status_code,
+            request=httpx.Request("POST", "http://localhost:8080/v1/chat/completions"),
+        )
+        raise APIStatusError("endpoint failure", response=response, body=None)
+
+
+@pytest.mark.parametrize("status_code", [500, 502, 503])
+def test_an_unready_endpoint_is_a_connection_failure(status_code: int) -> None:
+    """Let the worker retry a model that is merely still starting.
+
+    llama.cpp accepts connections while reading the model off disk and answers
+    503 until it is ready. That escaped the worker's work-unit handling, killed
+    the process with a traceback and exit code 1, and the unit reads 1 as a
+    problem an operator must fix and refuses to restart. A thirty-second
+    startup took the worker down until someone noticed.
+    """
+
+    adapter = LocalStructuredOutputModel(FailingChatModel(status_code=status_code))
+
+    with pytest.raises(ModelConnectionError):
+        adapter.complete_json(
+            instructions="classify",
+            message="12 euro di pizza",
+            schema=RouteClassification,
+        )
+
+
+def test_a_rejected_request_still_propagates() -> None:
+    """Keep a caller-side status distinguishable from an unavailable endpoint.
+
+    A 4xx says this request was wrong, which retrying cannot fix and which must
+    not be reported as the endpoint being down.
+    """
+
+    adapter = LocalStructuredOutputModel(FailingChatModel(status_code=400))
+
+    with pytest.raises(APIStatusError):
+        adapter.complete_json(
+            instructions="classify",
+            message="12 euro di pizza",
             schema=RouteClassification,
         )

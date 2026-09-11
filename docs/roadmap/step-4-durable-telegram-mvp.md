@@ -307,6 +307,18 @@ printing private content or identifiers.
   seconds after the devices it does use. The launcher now creates that node
   through the setuid `nvidia-modprobe`, which is what a CUDA runtime would have
   done, instead of waiting on a correlated signal.
+- A model that is merely still starting no longer kills the worker. llama.cpp
+  accepts connections while it reads the model off disk and answers 503 until
+  ready. A refused connection already arrived as `ModelConnectionError`, but
+  this one did not: it escaped the work-unit handling entirely, ended the
+  process with a traceback and exit code 1, and the unit reads 1 as something
+  an operator must fix and refuses to restart. A thirty-second startup
+  therefore took the worker down indefinitely with its claimed item stranded in
+  `processing`, which is the opposite of the module's own rule that a failing
+  work unit is not a failing process. The provider boundary now translates any
+  server-side status into `ModelConnectionError`, which the worker already
+  retries and which exits 2 so the unit restarts; a 4xx still propagates,
+  because that is the caller's own request and no retry fixes it.
 - A requested stop is now the third way these processes end, and the first real
   restart showed it was missing: neither entry point installed a signal handler,
   so `SIGINT` — the units' own `KillSignal` — raised `KeyboardInterrupt`

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Literal, Self
+from typing import Literal, Self, cast
 from uuid import UUID
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
@@ -26,6 +26,8 @@ from money_tracker.domain import (
     FundingSourceStatus,
     Money,
     MonthlyBudget,
+    ReceiptMetadata,
+    ReceiptStatus,
     YearMonth,
 )
 
@@ -537,6 +539,85 @@ class CategoryReviewReuseRequest(_WebContract):
     category_name: str = Field(min_length=1, max_length=200)
 
 
+class ReceiptContract(_WebContract):
+    """Safe derived facts about one retained original receipt.
+
+    The content digest is deliberately absent. It is the archive storage key
+    under AD-014, the browser has no route that consumes it, and the review
+    decisions this page offers are addressed by the stable receipt identifier.
+    Source reference and profile identity are omitted for the same reason the
+    movement register omits them.
+
+    Attributes:
+        id: Stable receipt identifier and the only value a decision quotes.
+        media_type: Decoded media type accepted by the archive.
+        byte_size: Exact retained byte count.
+        stored_at: Instant the private archive accepted the content.
+        status: Retention and review state.
+        original_filename: Sanitized display name, never a storage path.
+        version: Optimistic version a review decision must quote.
+    """
+
+    id: UUID
+    media_type: Literal["image/jpeg", "image/png", "image/webp"]
+    byte_size: int = Field(ge=1)
+    stored_at: AwareDatetime
+    status: ReceiptStatus
+    original_filename: str | None
+    version: int = Field(ge=1)
+
+    @classmethod
+    def from_domain(cls, metadata: ReceiptMetadata) -> Self:
+        """Map retained metadata without exposing its archive key or scope."""
+
+        return cls(
+            id=metadata.id,
+            media_type=cast(
+                Literal["image/jpeg", "image/png", "image/webp"],
+                metadata.media_type,
+            ),
+            byte_size=metadata.byte_size,
+            stored_at=metadata.stored_at,
+            status=metadata.status,
+            original_filename=metadata.original_filename,
+            version=metadata.version,
+        )
+
+
+class ReceiptRegisterResponse(_WebContract):
+    """Every retained receipt and its current review state."""
+
+    receipts: tuple[ReceiptContract, ...]
+
+    @classmethod
+    def from_application(cls, receipts: tuple[ReceiptMetadata, ...]) -> Self:
+        """Map the retained archive metadata into the control-plane shape."""
+
+        return cls(
+            receipts=tuple(ReceiptContract.from_domain(item) for item in receipts)
+        )
+
+
+class ReceiptReviewRequest(_WebContract):
+    """Explicit review transition request under the displayed version."""
+
+    expected_version: int = Field(ge=1)
+
+
+class ReceiptMutationResponse(_WebContract):
+    """Return only the identity and state needed after a review transition."""
+
+    id: UUID
+    status: ReceiptStatus
+    version: int = Field(ge=1)
+
+    @classmethod
+    def from_domain(cls, metadata: ReceiptMetadata) -> Self:
+        """Map a transition result without returning profile or archive data."""
+
+        return cls(id=metadata.id, status=metadata.status, version=metadata.version)
+
+
 class HealthResponse(_WebContract):
     """Content-free process or dependency health state."""
 
@@ -567,6 +648,10 @@ __all__ = [
     "HealthResponse",
     "MonthlyOverviewResponse",
     "PeriodContract",
+    "ReceiptContract",
+    "ReceiptMutationResponse",
+    "ReceiptRegisterResponse",
+    "ReceiptReviewRequest",
     "TransactionCategoryAllocationContract",
     "TransactionContract",
     "TransactionPaymentAllocationContract",

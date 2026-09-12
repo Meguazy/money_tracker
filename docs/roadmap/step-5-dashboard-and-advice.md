@@ -6,7 +6,8 @@ Status: **In progress (2026-09-12).** The implemented vertical slices provide
 the loopback same-origin host, deterministic monthly overview and transaction
 register, accessible React shell, audited manual create, correct, post, and
 cancel workflows, the multi-allocation editor for both reconciling dimensions,
-the monthly budget planner, and owner review of pending category proposals. The
+the monthly budget planner, owner review of pending category proposals, and
+consultation and mandatory review of retained receipt metadata. The
 remaining control-plane views, wider
 analytics, advice surface, and complete browser E2E acceptance are still open.
 No model, prompt, routing threshold, tool contract, or taxonomy policy changed,
@@ -222,10 +223,75 @@ so EVD-004 remains the promoted text baseline.
   repository. No migration, model-visible contract, prompt, threshold, tool,
   or taxonomy policy changed; EVD-004 remains the promoted baseline.
 
+### Receipt metadata and review slice (2026-09-12)
+
+- `/scontrini` makes the private receipt archive's metadata reachable from the
+  control plane for the first time. Until now the `money-tracker-admin
+  receipt-store` command could retain an original and register its safe facts,
+  but the mandatory `stored` → `needs_review` → `approved` lifecycle AD-014
+  requires had no owner-facing surface at all: only tests advanced it.
+- The page lists every retained receipt newest first with its display
+  filename, decoded media type, exact byte size, storage instant, review
+  state, and the optimistic version a decision must quote. A receipt with no
+  filename is named as such rather than left blank.
+- The response deliberately omits the content digest. It is the archive
+  storage key under AD-014, no browser route consumes it, and the two review
+  decisions are addressed by the stable receipt identifier, so the key stays
+  out of the browser entirely. Profile identity and source reference are
+  omitted exactly as the movement register omits them.
+- Nothing in this slice reads, serves, links to, or deletes an original. The
+  `ReceiptReviewWriter` port exposes only the archive listing and the two
+  transitions, so the browser object graph contains no media store, no
+  extractor, and no deletion path. Extraction, line items, and media deletion
+  remain Step 6 and AD-011 work.
+- `ReceiptMetadataService` transitions became replay-safe in the same change.
+  They now claim the general `finance.idempotency_records` table in the same
+  transaction as the state change and its audit, keyed by the receipt and the
+  version the caller observed. A receipt is reviewed in successive steps, so
+  the command is the transition rather than the receipt: `receipt-review:
+  {receipt_id}:{expected_version}` replays one decision, while a different
+  decision taken from the same displayed state conflicts instead of applying a
+  transition the owner never chose. This keeps the AD-009 rule that reusing a
+  mutation key retries the identical command true for every implemented
+  resource.
+- A repeated transition is resolved before the current row is read, so a retry
+  never depends on state the first attempt already advanced. Approving a
+  receipt that never entered review is refused by the domain as a bounded 422,
+  and a decision quoting a version another transition already left is refused
+  the same way. No migration was needed: the command table and the receipt
+  version column already existed.
+- The web boundary's database failures are now recorded in the one function
+  that builds their response, with the traceback the response deliberately
+  withholds. The monthly overview previously produced that problem without the
+  shared funnel and so without a traceback; every read and every mutation now
+  goes through the same record.
+- Every client route is now served for direct navigation. `/budget` was
+  reachable by in-app navigation but not by reload or bookmark since the budget
+  slice, which the local-web runbook already described as working; `/budget`
+  and `/scontrini` are both mounted and covered by a test that asserts each
+  route returns the same shell.
+- Unit tests cover the safe wire shape and the absent digest, the canonical
+  command identity, the transition-wide key the boundary requires, the version
+  a decision quotes, a refused unknown body, replay of one transition, a
+  conflicting decision on one observed version, a stale version, and
+  newest-first ordering. Component tests cover the listed metadata, the absence
+  of any image or link, keyboard operation, the approval offered only after
+  review, a refused decision, retry, and the empty state.
+- A real PostgreSQL HTTP test registers two originals through the production
+  service, lists them newest first without the digest or source reference,
+  opens and replays one review, refuses approval of a receipt that never
+  entered review, approves the reviewed one, refuses a stale version, refuses
+  an unknown receipt and a non-canonical key, and verifies both terminal states
+  through the production repository. Repository tests prove one replayed
+  command writes a single audit row and a single claim, and that a failed audit
+  leaves no claim behind. No migration, model-visible contract, prompt,
+  threshold, tool, or taxonomy policy changed; EVD-004 remains the promoted
+  baseline.
+
 ### Work still required before completion
 
-- Add receipt metadata/review, category rename/archive management, funding
-  sources/wallets, messaging operations, and settings views.
+- Add category rename/archive management, funding sources/wallets, messaging
+  operations, and settings views.
 - Extend deterministic reads from the current month to day, ISO week, year,
   comparison, and validated custom ranges, retaining purpose and funding
   breakdowns.

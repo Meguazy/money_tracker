@@ -48,12 +48,16 @@ from money_tracker.web.contracts import (
     ExpenseReplaceRequest,
     HealthResponse,
     MonthlyOverviewResponse,
+    ReceiptMutationResponse,
+    ReceiptRegisterResponse,
+    ReceiptReviewRequest,
     TransactionRegisterResponse,
 )
 from money_tracker.web.mutations import (
     BudgetMutationAdapter,
     CategoryReviewMutationAdapter,
     ExpenseMutationAdapter,
+    ReceiptReviewMutationAdapter,
 )
 from money_tracker.web.security import (
     CSRF_COOKIE_NAME,
@@ -104,6 +108,7 @@ def create_app(
     mutations: ExpenseMutationAdapter,
     budgets: BudgetMutationAdapter,
     category_reviews: CategoryReviewMutationAdapter,
+    receipts: ReceiptReviewMutationAdapter,
     readiness_check: Callable[[], bool],
 ) -> FastAPI:
     """Compose the local web adapter around narrow application reads.
@@ -115,6 +120,8 @@ def create_app(
         mutations: Browser adapter over audited, replay-safe finance use cases.
         budgets: Browser adapter over audited, replay-safe budget use cases.
         category_reviews: Browser adapter over owner category decisions.
+        receipts: Browser adapter over retained receipt metadata and its
+            audited review transitions. It reaches no media store.
         readiness_check: Content-free database/schema readiness probe.
 
     Returns:
@@ -218,13 +225,7 @@ def create_app(
                 period=parsed,
             )
         except PsycopgError:
-            return _problem(
-                status=503,
-                title="Dati non disponibili",
-                detail="Il database dell'applicazione non è disponibile.",
-                code="database_unavailable",
-                instance=f"{API_V1_PREFIX}/overview/monthly",
-            )
+            return _database_problem(f"{API_V1_PREFIX}/overview/monthly")
         return MonthlyOverviewResponse.from_application(result)
 
     @router.get("/transactions", response_model=TransactionRegisterResponse)
@@ -485,6 +486,70 @@ def create_app(
             instance=f"{API_V1_PREFIX}/expenses/{expense_id}/cancel",
         )
 
+    @router.get("/receipts", response_model=ReceiptRegisterResponse)
+    def receipt_register() -> ReceiptRegisterResponse | JSONResponse:
+        """Return retained receipt metadata and its current review state."""
+
+        try:
+            stored = receipts.register(profile_id=profile_id)
+        except PsycopgError:
+            return _database_problem(f"{API_V1_PREFIX}/receipts")
+        return ReceiptRegisterResponse.from_application(stored)
+
+    @router.post(
+        "/receipts/{receipt_id}/review",
+        response_model=ReceiptMutationResponse,
+    )
+    def review_receipt(
+        receipt_id: UUID,
+        request: ReceiptReviewRequest,
+        idempotency_key: Annotated[
+            str,
+            Header(alias="Idempotency-Key", min_length=1, max_length=200),
+        ],
+    ) -> ReceiptMutationResponse | JSONResponse:
+        """Open mandatory owner review for one stored receipt."""
+
+        return _execute_mutation(
+            lambda: receipts.mark_needs_review(
+                profile_id=profile_id,
+                receipt_id=receipt_id,
+                command_key=idempotency_key.strip(),
+                request=request,
+            ),
+            render=ReceiptMutationResponse.from_domain,
+            problems=_RECEIPT_PROBLEMS,
+            command_key=idempotency_key,
+            instance=f"{API_V1_PREFIX}/receipts/{receipt_id}/review",
+        )
+
+    @router.post(
+        "/receipts/{receipt_id}/approve",
+        response_model=ReceiptMutationResponse,
+    )
+    def approve_receipt(
+        receipt_id: UUID,
+        request: ReceiptReviewRequest,
+        idempotency_key: Annotated[
+            str,
+            Header(alias="Idempotency-Key", min_length=1, max_length=200),
+        ],
+    ) -> ReceiptMutationResponse | JSONResponse:
+        """Record explicit owner approval of one reviewed receipt."""
+
+        return _execute_mutation(
+            lambda: receipts.approve(
+                profile_id=profile_id,
+                receipt_id=receipt_id,
+                command_key=idempotency_key.strip(),
+                request=request,
+            ),
+            render=ReceiptMutationResponse.from_domain,
+            problems=_RECEIPT_PROBLEMS,
+            command_key=idempotency_key,
+            instance=f"{API_V1_PREFIX}/receipts/{receipt_id}/approve",
+        )
+
     @router.get("/budgets", response_model=BudgetPlanResponse)
     def budget_plan(period: str) -> BudgetPlanResponse | JSONResponse:
         """Return the stored budget plan and its position in one month."""
@@ -618,6 +683,22 @@ _BUDGET_PROBLEMS = _MutationProblems(
     code_prefix="budget",
 )
 
+_RECEIPT_PROBLEMS = _MutationProblems(
+    not_found=(
+        "Scontrino non trovato",
+        "Lo scontrino richiesto non esiste o non appartiene a questo profilo.",
+    ),
+    conflict=(
+        "Scontrino già aggiornato",
+        "Ricarica gli scontrini prima di riprovare.",
+    ),
+    invalid=(
+        "Revisione non valida",
+        "Lo scontrino non si trova nello stato richiesto da questa decisione.",
+    ),
+    code_prefix="receipt",
+)
+
 _CATEGORY_REVIEW_PROBLEMS = _MutationProblems(
     not_found=(
         "Proposta non trovata",
@@ -680,15 +761,27 @@ def _execute_mutation[AggregateT, ResponseT](
             instance=instance,
         )
     except PsycopgError:
-        _LOGGER.exception("web.mutation.database_unavailable", path=instance)
         return _database_problem(instance)
     _LOGGER.info("web.mutation.applied", path=instance)
     return render(result)
 
 
 def _database_problem(instance: str) -> JSONResponse:
-    """Return the shared safe dependency failure."""
+    """Return the shared safe dependency failure and record its cause.
 
+    Every caller is inside an ``except PsycopgError`` block, so this is the one
+    place a database failure of this boundary is explained. The response says
+    nothing about the cause deliberately, which makes the traceback the only
+    record of it.
+
+    Args:
+        instance: Route the failure concerns.
+
+    Returns:
+        The bounded dependency problem-details response.
+    """
+
+    _LOGGER.exception("web.database_unavailable", path=instance)
     return _problem(
         status=503,
         title="Dati non disponibili",
@@ -770,8 +863,15 @@ def _mount_dashboard(app: FastAPI, static_dir: Path) -> None:
     @app.get("/", include_in_schema=False)
     @app.get("/movimenti", include_in_schema=False)
     @app.get("/categorie", include_in_schema=False)
+    @app.get("/budget", include_in_schema=False)
+    @app.get("/scontrini", include_in_schema=False)
     def dashboard() -> FileResponse:
-        """Return the compiled single-page application shell."""
+        """Return the compiled single-page application shell.
+
+        Every client route is listed here, because a route the browser can
+        reach by navigation but not by reload is a broken deep link rather
+        than a smaller surface.
+        """
 
         return FileResponse(index)
 

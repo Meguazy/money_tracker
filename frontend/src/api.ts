@@ -170,6 +170,28 @@ export type CategoryReviewQueue = {
   active_categories: CategoryReference[];
 };
 
+export type ReceiptStatus = "stored" | "needs_review" | "approved" | "deleted";
+
+export type Receipt = {
+  id: string;
+  media_type: "image/jpeg" | "image/png" | "image/webp";
+  byte_size: number;
+  stored_at: string;
+  status: ReceiptStatus;
+  original_filename: string | null;
+  version: number;
+};
+
+export type ReceiptRegister = {
+  receipts: Receipt[];
+};
+
+export type ReceiptMutation = {
+  id: string;
+  status: ReceiptStatus;
+  version: number;
+};
+
 type ProblemDetails = {
   detail?: string;
 };
@@ -364,4 +386,42 @@ export function cancelCategoryProposal(
     {},
     categoryReviewKey(proposalId),
   );
+}
+
+export async function loadReceipts(
+  signal?: AbortSignal,
+): Promise<ReceiptRegister> {
+  const response = await fetch("/api/v1/receipts", { signal });
+  return responseJson<ReceiptRegister>(response);
+}
+
+function receiptReviewKey(receiptId: string, expectedVersion: number): string {
+  return `receipt-review:${receiptId}:${expectedVersion}`;
+}
+
+function reviewReceipt(
+  action: "review" | "approve",
+  receiptId: string,
+  expectedVersion: number,
+): Promise<ReceiptMutation> {
+  return mutate<ReceiptMutation>(
+    `/api/v1/receipts/${encodeURIComponent(receiptId)}/${action}`,
+    "POST",
+    { expected_version: expectedVersion },
+    receiptReviewKey(receiptId, expectedVersion),
+  );
+}
+
+export function openReceiptReview(
+  receiptId: string,
+  expectedVersion: number,
+): Promise<ReceiptMutation> {
+  return reviewReceipt("review", receiptId, expectedVersion);
+}
+
+export function approveReceipt(
+  receiptId: string,
+  expectedVersion: number,
+): Promise<ReceiptMutation> {
+  return reviewReceipt("approve", receiptId, expectedVersion);
 }

@@ -88,8 +88,10 @@ The current Step 5 slices serve `http://127.0.0.1:8000/`, the monthly overview,
 `/movimenti`, the monthly transaction register, audited manual lifecycle
 mutations with multi-allocation editing, `/budget` with the monthly budget
 planner, `/categorie` with pending proposal approval, active-category reuse,
-and cancellation, and content-free health endpoints. They require exactly one
-profile. The complete configuration, browser protections, systemd procedure,
+and cancellation, `/scontrini` with retained receipt metadata and its mandatory
+review, and content-free health endpoints. They require exactly one
+profile. `/scontrini` shows metadata only; importing an original is still
+`money-tracker-admin receipt-store`, and no route returns receipt bytes. The complete configuration, browser protections, systemd procedure,
 and real PostgreSQL workflow test are in
 [Local Web Operations](operations/web.md). The remaining control-plane views
 are still unimplemented.

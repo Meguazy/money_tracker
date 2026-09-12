@@ -1,8 +1,9 @@
 # AD-011: Evaluation-Gated Receipt Extraction
 
 - Status: accepted
-- Implementation: private content-addressed original archive implemented;
-  extraction evaluation and review workflow planned
+- Implementation: private content-addressed original archive and the
+  owner-facing metadata review lifecycle implemented; extraction evaluation and
+  the extracted-draft preview workflow planned
 - Date: 2026-09-01
 
 ## Context
@@ -44,3 +45,12 @@ original-media boundary with decoded format/size limits, private hash paths,
 atomic idempotent writes, verified reads, and real filesystem/PostgreSQL tests.
 It does not select or promote an extractor and does not weaken mandatory owner
 preview.
+
+Step 5 makes that metadata lifecycle reachable from the local control plane:
+the owner can see what the archive retained and complete the mandatory
+`stored` → `needs_review` → `approved` review. This is the retention decision,
+not the preview this record requires. No extractor exists, no receipt draft is
+produced, and the browser is given neither the original nor its archive key, so
+"every receipt requires owner preview and approval in V1" remains an unmet
+obligation of the planned extraction workflow rather than something this
+surface has satisfied.

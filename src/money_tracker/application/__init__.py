@@ -28,7 +28,12 @@ from money_tracker.application.receipt_media import (
     ReceiptMediaStore,
     StoredReceiptMedia,
 )
-from money_tracker.application.receipts import ReceiptMetadataService
+from money_tracker.application.receipts import (
+    APPROVE_ACTION,
+    MARK_NEEDS_REVIEW_ACTION,
+    ReceiptMetadataService,
+    receipt_review_identity,
+)
 from money_tracker.application.reporting import (
     BudgetPlan,
     BudgetPlanEntry,
@@ -48,7 +53,9 @@ from money_tracker.application.review import (
 )
 
 __all__ = [
+    "APPROVE_ACTION",
     "CREATE_BUDGET_COMMAND",
+    "MARK_NEEDS_REVIEW_ACTION",
     "OWNER_REVIEW_PROVENANCE",
     "REPLACE_BUDGET_COMMAND",
     "AggregateNotFoundError",
@@ -82,4 +89,5 @@ __all__ = [
     "ReceiptMediaStore",
     "StoredReceiptMedia",
     "budget_request_hash",
+    "receipt_review_identity",
 ]

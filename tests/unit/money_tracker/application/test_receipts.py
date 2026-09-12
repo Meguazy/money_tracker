@@ -9,9 +9,13 @@ from uuid import UUID, uuid4
 import pytest
 
 from money_tracker.application import (
+    APPROVE_ACTION,
+    MARK_NEEDS_REVIEW_ACTION,
     AggregateNotFoundError,
+    IdempotencyConflictError,
     OptimisticConcurrencyError,
     ReceiptMetadataService,
+    receipt_review_identity,
 )
 from money_tracker.domain import (
     AuditEvent,
@@ -27,6 +31,9 @@ class _ReceiptRepository:
 
     receipts: dict[tuple[UUID, str], ReceiptMetadata] = field(default_factory=dict)
     audits: list[AuditEvent] = field(default_factory=list)
+    commands: dict[tuple[UUID, str], tuple[str, str, UUID]] = field(
+        default_factory=dict
+    )
 
     def create_receipt_metadata(
         self,
@@ -56,23 +63,70 @@ class _ReceiptRepository:
                 return metadata
         raise AggregateNotFoundError("receipt metadata does not exist in profile")
 
+    def list_receipt_metadata(self, profile_id: UUID) -> tuple[ReceiptMetadata, ...]:
+        """Return the profile's receipts newest storage first, ties by ID."""
+
+        return tuple(
+            sorted(
+                (
+                    metadata
+                    for (owner_id, _), metadata in self.receipts.items()
+                    if owner_id == profile_id
+                ),
+                key=lambda item: (item.stored_at, item.id),
+                reverse=True,
+            )
+        )
+
+    def get_idempotent_receipt_command(
+        self,
+        *,
+        profile_id: UUID,
+        idempotency_key: str,
+        command_type: str,
+        request_hash: str,
+    ) -> ReceiptMetadata | None:
+        """Return the receipt stored by an identical earlier transition."""
+
+        prior = self.commands.get((profile_id, idempotency_key))
+        if prior is None:
+            return None
+        if prior[:2] != (command_type, request_hash):
+            raise IdempotencyConflictError(
+                "idempotency key was used for different receipt content"
+            )
+        return self.get_receipt_metadata(profile_id, prior[2])
+
     def replace_receipt_metadata(
         self,
         metadata: ReceiptMetadata,
         *,
         expected_version: int,
+        idempotency_key: str,
+        command_type: str,
+        request_hash: str,
         audit_event: AuditEvent,
-    ) -> None:
-        """Replace state only when the observed version is still current."""
+    ) -> ReceiptMetadata:
+        """Claim the command and replace state at the observed version."""
 
+        claim = (metadata.profile_id, idempotency_key)
+        prior = self.commands.get(claim)
+        if prior is not None:
+            if prior[:2] != (command_type, request_hash):
+                raise IdempotencyConflictError(
+                    "idempotency key was used for different receipt content"
+                )
+            return self.get_receipt_metadata(metadata.profile_id, prior[2])
         key = (metadata.profile_id, metadata.content_sha256)
         current = self.receipts.get(key)
         if current is None or current.version != expected_version:
             raise OptimisticConcurrencyError(
                 "receipt changed since the requested version"
             )
+        self.commands[claim] = (command_type, request_hash, metadata.id)
         self.receipts[key] = metadata
         self.audits.append(audit_event)
+        return metadata
 
 
 @dataclass
@@ -91,9 +145,7 @@ class _Clock:
 class _Ids:
     """Yield prepared audit identifiers."""
 
-    values: list[UUID] = field(
-        default_factory=lambda: [uuid4(), uuid4(), uuid4(), uuid4()]
-    )
+    values: list[UUID] = field(default_factory=lambda: [uuid4() for _ in range(8)])
 
     def new(self) -> UUID:
         """Return and consume the next identifier."""
@@ -265,8 +317,8 @@ def test_receipt_cannot_be_approved_before_mandatory_review() -> None:
     assert len(repository.audits) == 1
 
 
-def test_receipt_rejects_repeated_review_transition() -> None:
-    """Preserve the committed transition when a caller repeats stale intent."""
+def test_repeating_one_review_transition_replays_its_first_result() -> None:
+    """Return the committed transition instead of applying a second one."""
 
     repository = _ReceiptRepository()
     service = ReceiptMetadataService(repository, clock=_Clock(), ids=_Ids())
@@ -283,17 +335,122 @@ def test_receipt_rejects_repeated_review_transition() -> None:
         reason="first writer",
     )
 
+    replayed = service.mark_needs_review(
+        profile_id=stored.profile_id,
+        receipt_id=stored.id,
+        expected_version=1,
+        actor="receipt-workflow",
+        reason="repeated transition",
+    )
+
+    assert replayed == winner
+    assert repository.get_receipt_metadata(stored.profile_id, stored.id) == winner
+    assert len(repository.audits) == 2
+
+
+def test_another_decision_on_the_observed_version_conflicts() -> None:
+    """Refuse a second decision taken from one displayed receipt state."""
+
+    repository = _ReceiptRepository()
+    service = ReceiptMetadataService(repository, clock=_Clock(), ids=_Ids())
+    stored = service.register(
+        _metadata(),
+        actor="receipt-store",
+        reason="validated content stored",
+    )
+    service.mark_needs_review(
+        profile_id=stored.profile_id,
+        receipt_id=stored.id,
+        expected_version=1,
+        actor="receipt-workflow",
+        reason="first writer",
+    )
+
+    with pytest.raises(IdempotencyConflictError, match="different receipt"):
+        service.approve(
+            profile_id=stored.profile_id,
+            receipt_id=stored.id,
+            expected_version=1,
+            actor="owner",
+            reason="decision taken from a stale page",
+        )
+
+    assert (
+        repository.get_receipt_metadata(stored.profile_id, stored.id).status
+        is ReceiptStatus.NEEDS_REVIEW
+    )
+    assert len(repository.audits) == 2
+
+
+def test_stale_version_refuses_a_transition_the_owner_never_saw() -> None:
+    """Refuse a decision quoting a version another transition already left."""
+
+    repository = _ReceiptRepository()
+    service = ReceiptMetadataService(repository, clock=_Clock(), ids=_Ids())
+    stored = service.register(
+        _metadata(),
+        actor="receipt-store",
+        reason="validated content stored",
+    )
+    service.mark_needs_review(
+        profile_id=stored.profile_id,
+        receipt_id=stored.id,
+        expected_version=1,
+        actor="receipt-workflow",
+        reason="first writer",
+    )
+
     with pytest.raises(InvalidTransitionError, match="stored"):
         service.mark_needs_review(
             profile_id=stored.profile_id,
             receipt_id=stored.id,
-            expected_version=1,
+            expected_version=2,
             actor="receipt-workflow",
-            reason="repeated transition",
+            reason="stale repetition",
         )
 
-    assert repository.get_receipt_metadata(stored.profile_id, stored.id) == winner
     assert len(repository.audits) == 2
+
+
+def test_review_command_identity_names_one_transition_of_one_receipt() -> None:
+    """Key the command by the receipt and the version the caller observed."""
+
+    receipt_id = UUID("00000000-0000-0000-0000-0000000000a1")
+
+    review = receipt_review_identity(
+        receipt_id,
+        1,
+        action=MARK_NEEDS_REVIEW_ACTION,
+    )
+    approve = receipt_review_identity(receipt_id, 1, action=APPROVE_ACTION)
+    later = receipt_review_identity(receipt_id, 2, action=APPROVE_ACTION)
+
+    assert review[0] == f"receipt-review:{receipt_id}:1"
+    assert review[0] == approve[0]
+    assert review[1] == "receipt_mark_needs_review"
+    assert review[2] != approve[2]
+    assert later[0] == f"receipt-review:{receipt_id}:2"
+
+
+def test_stored_receipts_are_listed_newest_first() -> None:
+    """Order the archive deterministically for the control plane."""
+
+    repository = _ReceiptRepository()
+    service = ReceiptMetadataService(repository, clock=_Clock(), ids=_Ids())
+    first = _metadata()
+    second = replace(
+        first,
+        id=uuid4(),
+        content_sha256="b" * 64,
+        stored_at=datetime(2026, 9, 3, 8, tzinfo=UTC),
+        source_reference="api:receipt:command-2",
+    )
+    service.register(first, actor="receipt-store", reason="first")
+    service.register(second, actor="receipt-store", reason="second")
+
+    listed = service.stored_receipts(profile_id=first.profile_id)
+
+    assert [item.id for item in listed] == [second.id, first.id]
 
 
 def test_receipt_repository_rejects_stale_version_without_audit() -> None:
@@ -317,10 +474,19 @@ def test_receipt_repository_rejects_stale_version_without_audit() -> None:
         reason="stale test",
     )
 
+    identity = receipt_review_identity(
+        stored.id,
+        99,
+        action=MARK_NEEDS_REVIEW_ACTION,
+    )
+
     with pytest.raises(OptimisticConcurrencyError, match="changed"):
         repository.replace_receipt_metadata(
             updated,
             expected_version=99,
+            idempotency_key=identity[0],
+            command_type=identity[1],
+            request_hash=identity[2],
             audit_event=audit,
         )
 

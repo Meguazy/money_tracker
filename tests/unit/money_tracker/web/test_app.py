@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
 from uuid import UUID, uuid4
@@ -35,6 +35,8 @@ from money_tracker.domain import (
     Money,
     MonthlyBudget,
     PaymentAllocation,
+    ReceiptMetadata,
+    ReceiptStatus,
     YearMonth,
     initial_taxonomy,
 )
@@ -46,6 +48,8 @@ from money_tracker.web.mutations import (
     CategoryReviewWriter,
     ExpenseMutationAdapter,
     ExpenseWriter,
+    ReceiptReviewMutationAdapter,
+    ReceiptReviewWriter,
 )
 
 PROFILE_ID = uuid4()
@@ -56,6 +60,8 @@ EXPENSE_ID = UUID("00000000-0000-0000-0000-000000000301")
 SOURCE_ID = UUID("00000000-0000-0000-0000-000000000201")
 RECEIPT_LINE_ID = UUID("00000000-0000-0000-0000-000000000401")
 BUDGET_ID = UUID("00000000-0000-0000-0000-000000000501")
+RECEIPT_ID = UUID("00000000-0000-0000-0000-000000000601")
+RECEIPT_DIGEST = "9f" * 32
 
 
 @dataclass
@@ -357,6 +363,71 @@ def _category_review_writer() -> RecordingCategoryReviewWriter:
     )
 
 
+@dataclass
+class RecordingReceiptReviewWriter:
+    """In-memory receipt reader and review writer without a media store."""
+
+    transitions: list[tuple[str, UUID, int]] = field(default_factory=list)
+    status: ReceiptStatus = ReceiptStatus.STORED
+    version: int = 1
+
+    def _metadata(self) -> ReceiptMetadata:
+        """Build the single retained receipt at its current review state."""
+
+        return ReceiptMetadata(
+            id=RECEIPT_ID,
+            profile_id=PROFILE_ID,
+            content_sha256=RECEIPT_DIGEST,
+            media_type="image/jpeg",
+            byte_size=204800,
+            stored_at=datetime(2026, 9, 12, 18, 5, tzinfo=UTC),
+            source_reference="local-admin:receipt:unit",
+            status=self.status,
+            original_filename="scontrino-mercato.jpg",
+            version=self.version,
+        )
+
+    def stored_receipts(self, *, profile_id: UUID) -> tuple[ReceiptMetadata, ...]:
+        """Return the fixed archive for the trusted profile only."""
+
+        assert profile_id == PROFILE_ID
+        return (self._metadata(),)
+
+    def mark_needs_review(
+        self,
+        *,
+        profile_id: UUID,
+        receipt_id: UUID,
+        expected_version: int,
+        actor: str,
+        reason: str,
+    ) -> ReceiptMetadata:
+        """Record the requested transition and advance the review state."""
+
+        del profile_id, actor, reason
+        self.transitions.append(("mark_needs_review", receipt_id, expected_version))
+        self.status = ReceiptStatus.NEEDS_REVIEW
+        self.version = expected_version + 1
+        return self._metadata()
+
+    def approve(
+        self,
+        *,
+        profile_id: UUID,
+        receipt_id: UUID,
+        expected_version: int,
+        actor: str,
+        reason: str,
+    ) -> ReceiptMetadata:
+        """Record explicit approval and advance the review state."""
+
+        del profile_id, actor, reason
+        self.transitions.append(("approve", receipt_id, expected_version))
+        self.status = ReceiptStatus.APPROVED
+        self.version = expected_version + 1
+        return self._metadata()
+
+
 class FixedIds:
     """Stable identifier source for adapter composition in boundary tests."""
 
@@ -373,6 +444,7 @@ def _app(
     ready: bool = True,
     budget_writer: BudgetWriter | None = None,
     category_review_writer: CategoryReviewWriter | None = None,
+    receipt_writer: ReceiptReviewWriter | None = None,
 ) -> FastAPI:
     """Compose an application with real middleware and an in-memory read port."""
 
@@ -390,6 +462,9 @@ def _app(
         ),
         category_reviews=CategoryReviewMutationAdapter(
             category_review_writer or cast(CategoryReviewWriter, object())
+        ),
+        receipts=ReceiptReviewMutationAdapter(
+            receipt_writer or RecordingReceiptReviewWriter()
         ),
         readiness_check=lambda: ready,
     )
@@ -695,14 +770,17 @@ def test_compiled_dashboard_is_served_from_the_api_origin(tmp_path: Path) -> Non
     (static_dir / "assets").mkdir(parents=True)
     (static_dir / "index.html").write_text("<main>Money Tracker</main>")
 
-    response = _client(_app(static_dir=static_dir)).get("/")
-    deep_link = _client(_app(static_dir=static_dir)).get("/movimenti")
-    category_link = _client(_app(static_dir=static_dir)).get("/categorie")
+    client = _client(_app(static_dir=static_dir))
+    response = client.get("/")
+    links = {
+        route: client.get(route)
+        for route in ("/movimenti", "/categorie", "/budget", "/scontrini")
+    }
 
     assert response.status_code == 200
     assert "Money Tracker" in response.text
-    assert deep_link.text == response.text
-    assert category_link.text == response.text
+    assert [link.status_code for link in links.values()] == [200, 200, 200, 200]
+    assert all(link.text == response.text for link in links.values())
 
 
 def test_budget_plan_exposes_targets_overrides_and_the_correction_version() -> None:
@@ -828,3 +906,115 @@ def test_budget_mutation_rejects_a_profile_field_in_the_request_body() -> None:
     assert response.status_code == 422
     assert response.json()["code"] == "request_invalid"
     assert writer.created is None
+
+
+def test_receipt_register_exposes_safe_facts_without_the_archive_key() -> None:
+    """Give the owner display metadata and the version a decision must quote."""
+
+    response = _client(_app()).get("/api/v1/receipts")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "receipts": [
+            {
+                "id": str(RECEIPT_ID),
+                "media_type": "image/jpeg",
+                "byte_size": 204800,
+                "stored_at": "2026-09-12T18:05:00Z",
+                "status": "stored",
+                "original_filename": "scontrino-mercato.jpg",
+                "version": 1,
+            }
+        ]
+    }
+    assert RECEIPT_DIGEST not in response.text
+    assert "profile_id" not in response.text
+    assert "source_reference" not in response.text
+
+
+def test_receipt_review_requires_the_transition_wide_command_key() -> None:
+    """Bind each HTTP retry to the receipt and the version the page displayed."""
+
+    writer = RecordingReceiptReviewWriter()
+    client = _client(_app(receipt_writer=writer))
+    issued = client.get("/api/v1/csrf", headers={"origin": ORIGIN})
+
+    refused = client.post(
+        f"/api/v1/receipts/{RECEIPT_ID}/review",
+        json={"expected_version": 1},
+        headers={
+            "origin": ORIGIN,
+            "x-csrf-token": issued.json()["token"],
+            "Idempotency-Key": f"receipt-review:{RECEIPT_ID}",
+        },
+    )
+    accepted = client.post(
+        f"/api/v1/receipts/{RECEIPT_ID}/review",
+        json={"expected_version": 1},
+        headers={
+            "origin": ORIGIN,
+            "x-csrf-token": issued.json()["token"],
+            "Idempotency-Key": f"receipt-review:{RECEIPT_ID}:1",
+        },
+    )
+
+    assert refused.status_code == 409
+    assert refused.json()["code"] == "receipt_conflict"
+    assert accepted.status_code == 200
+    assert accepted.json() == {
+        "id": str(RECEIPT_ID),
+        "status": "needs_review",
+        "version": 2,
+    }
+    assert writer.transitions == [("mark_needs_review", RECEIPT_ID, 1)]
+
+
+def test_receipt_approval_quotes_the_version_the_browser_observed() -> None:
+    """Advance mandatory review only from the state the owner actually saw."""
+
+    writer = RecordingReceiptReviewWriter(
+        status=ReceiptStatus.NEEDS_REVIEW,
+        version=2,
+    )
+    client = _client(_app(receipt_writer=writer))
+    issued = client.get("/api/v1/csrf", headers={"origin": ORIGIN})
+
+    response = client.post(
+        f"/api/v1/receipts/{RECEIPT_ID}/approve",
+        json={"expected_version": 2},
+        headers={
+            "origin": ORIGIN,
+            "x-csrf-token": issued.json()["token"],
+            "Idempotency-Key": f"receipt-review:{RECEIPT_ID}:2",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "id": str(RECEIPT_ID),
+        "status": "approved",
+        "version": 3,
+    }
+    assert writer.transitions == [("approve", RECEIPT_ID, 2)]
+
+
+def test_receipt_review_rejects_an_unknown_field_without_transitioning() -> None:
+    """Refuse a body that names anything but the observed version."""
+
+    writer = RecordingReceiptReviewWriter()
+    client = _client(_app(receipt_writer=writer))
+    issued = client.get("/api/v1/csrf", headers={"origin": ORIGIN})
+
+    response = client.post(
+        f"/api/v1/receipts/{RECEIPT_ID}/approve",
+        json={"expected_version": 1, "content_sha256": RECEIPT_DIGEST},
+        headers={
+            "origin": ORIGIN,
+            "x-csrf-token": issued.json()["token"],
+            "Idempotency-Key": f"receipt-review:{RECEIPT_ID}:1",
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["code"] == "request_invalid"
+    assert writer.transitions == []

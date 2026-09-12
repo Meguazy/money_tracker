@@ -96,9 +96,12 @@ surface enforces these controls:
   referrer, MIME-sniffing, and framing headers;
 - API responses return no environment, profile identity, private path, or secret.
 
-Future receipt routes must still validate IDs, versions, file paths, content
-types, and decoded image limits. LAN or remote access requires a new
-authentication/TLS threat model and ADR.
+The implemented receipt routes read and transition metadata only. They accept
+a receipt ID, an observed version, and the transition-wide command key, and
+they return no content digest, archive path, or image. Future routes that do
+touch media must still validate IDs, versions, file paths, content types, and
+decoded image limits. LAN or remote access requires a new authentication/TLS
+threat model and ADR.
 
 ## Media controls
 

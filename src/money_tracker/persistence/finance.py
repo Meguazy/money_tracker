@@ -640,15 +640,64 @@ class PostgresFinanceRepository:
         """
 
         with connect(self._database_url) as connection:
-            row = connection.execute(
-                "SELECT id, profile_id, content_sha256, media_type, byte_size, "
-                "stored_at, source_reference, status, original_filename, version "
-                "FROM finance.receipts WHERE id = %s AND profile_id = %s",
-                (receipt_id, profile_id),
-            ).fetchone()
+            return self._receipt_metadata_within(connection, profile_id, receipt_id)
+
+    def _receipt_metadata_within(
+        self,
+        connection: Connection[Any],
+        profile_id: UUID,
+        receipt_id: UUID,
+    ) -> ReceiptMetadata:
+        """Load one receipt inside a caller-owned transaction.
+
+        Extracted so a claimed replay can read the authoritative row without
+        opening a second connection while its own transaction is still open.
+
+        Args:
+            connection: Active transaction.
+            profile_id: Trusted owner scope.
+            receipt_id: Stable receipt identifier.
+
+        Returns:
+            Content-addressed receipt metadata without media bytes or paths.
+
+        Raises:
+            AggregateNotFoundError: If the receipt is outside the profile.
+        """
+
+        row = connection.execute(
+            "SELECT id, profile_id, content_sha256, media_type, byte_size, "
+            "stored_at, source_reference, status, original_filename, version "
+            "FROM finance.receipts WHERE id = %s AND profile_id = %s",
+            (receipt_id, profile_id),
+        ).fetchone()
         if row is None:
             raise AggregateNotFoundError("receipt metadata does not exist in profile")
         return self._receipt_metadata_from_row(row)
+
+    def list_receipt_metadata(self, profile_id: UUID) -> tuple[ReceiptMetadata, ...]:
+        """Load every retained receipt in one profile, newest storage first.
+
+        Ordering is stable: two receipts stored in the same instant are
+        separated by their identifier, so the control plane and its tests see
+        one deterministic sequence.
+
+        Args:
+            profile_id: Trusted owner scope.
+
+        Returns:
+            Safe metadata rows without media bytes or archive paths.
+        """
+
+        with connect(self._database_url) as connection:
+            rows = connection.execute(
+                "SELECT id, profile_id, content_sha256, media_type, byte_size, "
+                "stored_at, source_reference, status, original_filename, version "
+                "FROM finance.receipts WHERE profile_id = %s "
+                "ORDER BY stored_at DESC, id DESC",
+                (profile_id,),
+            ).fetchall()
+        return tuple(self._receipt_metadata_from_row(row) for row in rows)
 
     def create_receipt_metadata(
         self,
@@ -714,28 +763,140 @@ class PostgresFinanceRepository:
                 raise ValueError("receipt digest conflicts with stored media metadata")
             return existing
 
+    def get_idempotent_receipt_command(
+        self,
+        *,
+        profile_id: UUID,
+        idempotency_key: str,
+        command_type: str,
+        request_hash: str,
+    ) -> ReceiptMetadata | None:
+        """Return the receipt an identical replayed transition already stored.
+
+        Args:
+            profile_id: Trusted owner scope.
+            idempotency_key: Stable one-transition key for the receipt.
+            command_type: Exact review transition the caller intends.
+            request_hash: Canonical receipt, version, and action digest.
+
+        Returns:
+            Stored receipt metadata, or None when the key has never been
+            claimed.
+
+        Raises:
+            IdempotencyConflictError: If the key names different semantics.
+            AggregateNotFoundError: If the claimed receipt no longer exists.
+        """
+
+        self._validate_command_identity(idempotency_key, command_type, request_hash)
+        with connect(self._database_url) as connection:
+            prior = connection.execute(
+                "SELECT command_type, request_hash, aggregate_id "
+                "FROM finance.idempotency_records "
+                "WHERE profile_id = %s AND idempotency_key = %s",
+                (profile_id, idempotency_key),
+            ).fetchone()
+            if prior is None:
+                return None
+            self._require_identical_receipt_command(
+                prior,
+                command_type=command_type,
+                request_hash=request_hash,
+            )
+            row = connection.execute(
+                "SELECT id, profile_id, content_sha256, media_type, byte_size, "
+                "stored_at, source_reference, status, original_filename, version "
+                "FROM finance.receipts WHERE id = %s AND profile_id = %s",
+                (prior[2], profile_id),
+            ).fetchone()
+            if row is None:
+                # A claimed command whose aggregate vanished means the archive
+                # metadata and the command journal disagree, which no retry can
+                # repair on its own.
+                _LOGGER.error(
+                    "receipt.claimed_aggregate_missing",
+                    profile_id=profile_id,
+                    command_type=command_type,
+                )
+                raise AggregateNotFoundError("claimed receipt no longer exists")
+            return self._receipt_metadata_from_row(row)
+
     def replace_receipt_metadata(
         self,
         metadata: ReceiptMetadata,
         *,
         expected_version: int,
+        idempotency_key: str,
+        command_type: str,
+        request_hash: str,
         audit_event: AuditEvent,
-    ) -> None:
-        """Atomically replace receipt review state at the observed version.
+    ) -> ReceiptMetadata:
+        """Claim one transition and replace review state at the observed version.
 
         Only lifecycle state and version are mutable. Content identity, storage
-        facts, source provenance, and display filename remain immutable.
+        facts, source provenance, and display filename remain immutable. The
+        command claim, the state change, and the audit share one transaction, so
+        a failure leaves the key unclaimed and the receipt untouched.
 
         Args:
             metadata: Complete validated metadata after a domain transition.
             expected_version: Version observed by the caller.
+            idempotency_key: Stable one-transition key for the receipt.
+            command_type: Exact review transition being applied.
+            request_hash: Canonical receipt, version, and action digest.
             audit_event: Matching immutable transition audit.
 
+        Returns:
+            The applied metadata, or the stored receipt when a concurrent
+            identical command claimed the key first.
+
         Raises:
+            IdempotencyConflictError: If the key named a different transition.
             OptimisticConcurrencyError: If another transition already won.
         """
 
+        self._validate_command_identity(idempotency_key, command_type, request_hash)
         with connect(self._database_url) as connection:
+            claimed = connection.execute(
+                "INSERT INTO finance.idempotency_records "
+                "(profile_id, idempotency_key, command_type, request_hash, "
+                "aggregate_id, created_at) VALUES (%s, %s, %s, %s, %s, %s) "
+                "ON CONFLICT DO NOTHING RETURNING aggregate_id",
+                (
+                    metadata.profile_id,
+                    idempotency_key,
+                    command_type,
+                    request_hash,
+                    metadata.id,
+                    audit_event.occurred_at,
+                ),
+            ).fetchone()
+            if claimed is None:
+                prior = connection.execute(
+                    "SELECT command_type, request_hash, aggregate_id "
+                    "FROM finance.idempotency_records "
+                    "WHERE profile_id = %s AND idempotency_key = %s",
+                    (metadata.profile_id, idempotency_key),
+                ).fetchone()
+                if prior is None:
+                    _LOGGER.error(
+                        "receipt.idempotency_claim_missing",
+                        profile_id=metadata.profile_id,
+                        receipt_id=metadata.id,
+                        command_type=command_type,
+                    )
+                    raise IdempotencyConflictError("idempotency claim disappeared")
+                self._require_identical_receipt_command(
+                    prior,
+                    command_type=command_type,
+                    request_hash=request_hash,
+                    receipt_id=metadata.id,
+                )
+                return self._receipt_metadata_within(
+                    connection,
+                    metadata.profile_id,
+                    metadata.id,
+                )
             cursor = connection.execute(
                 "UPDATE finance.receipts SET status = %s, version = %s "
                 "WHERE id = %s AND profile_id = %s AND version = %s",
@@ -758,6 +919,29 @@ class PostgresFinanceRepository:
                     "receipt changed since the requested version"
                 )
             self._insert_audit(connection, audit_event)
+        return metadata
+
+    @staticmethod
+    def _require_identical_receipt_command(
+        prior: tuple[object, ...],
+        *,
+        command_type: str,
+        request_hash: str,
+        receipt_id: UUID | None = None,
+    ) -> None:
+        """Refuse a receipt transition key reused for another decision."""
+
+        if prior[:2] != (command_type, request_hash) or (
+            receipt_id is not None and prior[2] != receipt_id
+        ):
+            _LOGGER.error(
+                "receipt.idempotency_conflict",
+                command_type=command_type,
+                receipt_id=receipt_id,
+            )
+            raise IdempotencyConflictError(
+                "idempotency key was used for different receipt content"
+            )
 
     def get_funding_sources(self, profile_id: UUID) -> tuple[FundingSource, ...]:
         """Load all funding sources for one profile.

@@ -8,9 +8,12 @@ from uuid import UUID
 
 from money_tracker.api.contracts import ExpenseCreateRequest
 from money_tracker.application import (
+    APPROVE_ACTION,
+    MARK_NEEDS_REVIEW_ACTION,
     CategoryReviewQueue,
     IdempotencyConflictError,
     IdGenerator,
+    receipt_review_identity,
 )
 from money_tracker.domain import (
     CategoryAllocation,
@@ -19,6 +22,7 @@ from money_tracker.domain import (
     Money,
     MonthlyBudget,
     PaymentAllocation,
+    ReceiptMetadata,
     YearMonth,
 )
 from money_tracker.web.contracts import (
@@ -29,6 +33,7 @@ from money_tracker.web.contracts import (
     ExpenseCancelRequest,
     ExpensePostRequest,
     ExpenseReplaceRequest,
+    ReceiptReviewRequest,
 )
 from money_tracker.workflows import (
     canonical_request_hash,
@@ -466,6 +471,132 @@ class CategoryReviewMutationAdapter:
             )
 
 
+class ReceiptReviewWriter(Protocol):
+    """Expose only the receipt reads and transitions the browser may reach.
+
+    Storage, extraction, and deletion are absent by shape. The browser can see
+    what the archive retained and advance the mandatory review AD-014 requires;
+    it cannot import media, read an original, or remove one.
+    """
+
+    def stored_receipts(self, *, profile_id: UUID) -> tuple[ReceiptMetadata, ...]:
+        """Return every retained receipt and its review state."""
+
+    def mark_needs_review(
+        self,
+        *,
+        profile_id: UUID,
+        receipt_id: UUID,
+        expected_version: int,
+        actor: str,
+        reason: str,
+    ) -> ReceiptMetadata:
+        """Open or replay mandatory review for one stored receipt."""
+
+    def approve(
+        self,
+        *,
+        profile_id: UUID,
+        receipt_id: UUID,
+        expected_version: int,
+        actor: str,
+        reason: str,
+    ) -> ReceiptMetadata:
+        """Record or replay explicit owner approval for one receipt."""
+
+
+class ReceiptReviewMutationAdapter:
+    """Bind strict browser review decisions to the existing metadata service.
+
+    A receipt is reviewed in successive steps, so the command key names the
+    transition rather than the receipt: it carries the version the page
+    displayed. The adapter refuses any other key, which keeps the HTTP retry
+    contract identical to the one the application transaction claims.
+    """
+
+    def __init__(self, writer: ReceiptReviewWriter) -> None:
+        """Bind the browser boundary to audited, replay-safe transitions.
+
+        Args:
+            writer: Existing receipt metadata reads and review use cases.
+        """
+
+        self._writer = writer
+
+    def register(self, *, profile_id: UUID) -> tuple[ReceiptMetadata, ...]:
+        """Return every retained receipt for the trusted profile."""
+
+        return self._writer.stored_receipts(profile_id=profile_id)
+
+    def mark_needs_review(
+        self,
+        *,
+        profile_id: UUID,
+        receipt_id: UUID,
+        command_key: str,
+        request: ReceiptReviewRequest,
+    ) -> ReceiptMetadata:
+        """Send one stored receipt into mandatory owner review."""
+
+        self._require_command_key(
+            receipt_id,
+            request.expected_version,
+            command_key,
+            action=MARK_NEEDS_REVIEW_ACTION,
+        )
+        return self._writer.mark_needs_review(
+            profile_id=profile_id,
+            receipt_id=receipt_id,
+            expected_version=request.expected_version,
+            actor=WEB_ACTOR,
+            reason="owner opened receipt review in browser",
+        )
+
+    def approve(
+        self,
+        *,
+        profile_id: UUID,
+        receipt_id: UUID,
+        command_key: str,
+        request: ReceiptReviewRequest,
+    ) -> ReceiptMetadata:
+        """Record explicit owner approval of one reviewed receipt."""
+
+        self._require_command_key(
+            receipt_id,
+            request.expected_version,
+            command_key,
+            action=APPROVE_ACTION,
+        )
+        return self._writer.approve(
+            profile_id=profile_id,
+            receipt_id=receipt_id,
+            expected_version=request.expected_version,
+            actor=WEB_ACTOR,
+            reason="owner approved receipt in browser",
+        )
+
+    @staticmethod
+    def _require_command_key(
+        receipt_id: UUID,
+        expected_version: int,
+        command_key: str,
+        *,
+        action: str,
+    ) -> None:
+        """Require the exact key the application transaction claims."""
+
+        expected, _, _ = receipt_review_identity(
+            receipt_id,
+            expected_version,
+            action=action,
+        )
+        if command_key != expected:
+            raise IdempotencyConflictError(
+                "receipt review requires its transition-wide command key"
+            )
+
+
 def _overrides_from_request(
     request: BudgetWriteRequest,
 ) -> tuple[tuple[YearMonth, Money], ...]:
@@ -530,4 +661,6 @@ __all__ = [
     "CategoryReviewWriter",
     "ExpenseMutationAdapter",
     "ExpenseWriter",
+    "ReceiptReviewMutationAdapter",
+    "ReceiptReviewWriter",
 ]

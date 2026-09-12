@@ -13,6 +13,7 @@ from money_tracker.application import (
     CategoryReviewService,
     FinanceAdministrationService,
     FinanceService,
+    ReceiptMetadataService,
     ReportingService,
 )
 from money_tracker.application.runtime import SystemClock, UUID4Generator
@@ -26,6 +27,7 @@ from money_tracker.web.mutations import (
     BudgetMutationAdapter,
     CategoryReviewMutationAdapter,
     ExpenseMutationAdapter,
+    ReceiptReviewMutationAdapter,
 )
 
 _LOGGER = get_logger("money_tracker.web.cli")
@@ -89,6 +91,9 @@ def main(argv: Sequence[str] | None = None) -> None:
             ),
             category_reviews=CategoryReviewMutationAdapter(
                 CategoryReviewService(repository, repository, clock=clock, ids=ids)
+            ),
+            receipts=ReceiptReviewMutationAdapter(
+                ReceiptMetadataService(repository, clock=clock, ids=ids)
             ),
             readiness_check=lambda: repository.profile_exists(profile_id),
         )

@@ -7,14 +7,15 @@
   dispatch, durable Telegram gateway/worker, pairing,
   health/replay/resend/latency, the local monthly dashboard/API, manual movement
   lifecycle with multi-allocation editing, monthly budget planning,
-  category-proposal review, and checked-in host service units
+  category-proposal review, receipt metadata consultation and its mandatory
+  review, and checked-in host service units
 - Implemented Step 2: authoritative finance schema and transactional
   expense, wallet, budget, pending category-proposal, and versioned receipt-review
   repository operations, a safe local receipt-media adapter, and verified
   encrypted backup with an isolated restore drill
 - Planned operations: remaining dashboard workflows, wider analytics, web advice,
   browser E2E acceptance, backup scheduling and clean-machine restore,
-  workflow-worker receipt wiring, and media deletion
+  workflow-worker receipt wiring, receipt extraction, and media deletion
 
 These guides describe accepted operational behavior and the controls future
 steps must implement. A section labelled `planned` is not a runnable procedure.
@@ -24,7 +25,8 @@ the referenced file or entry point exists in the repository.
 ## Runbooks
 
 - [Local Web](web.md): build, loopback API/dashboard, browser controls, health,
-  systemd, verification, and rollback for the implemented Step 5 slice.
+  systemd, verification, and rollback for the implemented Step 5 slices,
+  including the metadata-only receipt review surface.
 - [Telegram](telegram.md): BotFather preparation, private-owner pairing target,
   long polling, the 24-hour limitation, testing, and token response.
 - [Local Runtime](local-runtime.md): current foundation, target process
@@ -68,8 +70,11 @@ the referenced file or entry point exists in the repository.
 - The FastAPI process, monthly overview and transaction endpoints, compiled
   React overview/register, audited manual lifecycle, multi-allocation editing
   of both reconciling dimensions, replay-safe monthly budget planning,
-  deterministic category-proposal review, local browser controls, and API
-  user-service template are implemented. The other Step 5 views and full
+  deterministic category-proposal review, replay-safe receipt metadata review,
+  local browser controls, and API
+  user-service template are implemented. The receipt surface carries metadata
+  only: it never returns an original, its archive key, or a deletion path. The
+  other Step 5 views and full
   browser acceptance remain open.
 - Langfuse 4.26.0 and every dependency are pinned by digest. The non-cluster
   repair and health checks pass with the pre-existing volumes preserved.
@@ -80,9 +85,10 @@ the referenced file or entry point exists in the repository.
   read-selection rollback; no receipt model is promoted.
 - Expense, wallet, budget, pending-proposal, and content-idempotent receipt
   metadata operations exist. Receipt review/approval transitions are versioned,
-  audited, and concurrency-safe; proposal decisions and receipt extraction or
-  deletion remain open. The private content-addressed receipt adapter is
-  integration-tested through the local administration CLI.
+  audited, replay-safe, concurrency-safe, and reachable from `/scontrini`;
+  receipt extraction and deletion remain open. The private content-addressed
+  receipt adapter is integration-tested through the local administration CLI,
+  which remains the only way to import an original.
 - `money-tracker-backup` creates verified encrypted snapshots of the
   authoritative database, receipt archive, and runtime configuration, reports
   snapshot age, and restores only into explicitly empty isolated targets. It

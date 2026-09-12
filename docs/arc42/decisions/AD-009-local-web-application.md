@@ -2,8 +2,9 @@
 
 - Status: accepted
 - Implementation: monthly overview, transaction/manual-lifecycle,
-  multi-allocation editing, budget-planning, and category-review slices, HTTP
-  security, and host deployment implemented; remaining Step 5 surface in progress
+  multi-allocation editing, budget-planning, category-review, and
+  receipt-metadata-review slices, HTTP security, and host deployment
+  implemented; remaining Step 5 surface in progress
 - Date: 2026-09-01
 
 ## Context
@@ -143,6 +144,23 @@ manual active-category reuse, cancellation, and accessible empty/error states.
 Model-backed re-proposal remains in the conversational workflow and no
 model-visible contract changes.
 
+The receipt slice adds a `ReceiptReviewMutationAdapter` over the existing
+`ReceiptMetadataService`. `GET /api/v1/receipts` returns each retained
+original's display filename, decoded media type, exact byte size, storage
+instant, review state, and optimistic version. It deliberately omits the
+content digest: that is the archive storage key under AD-014, no browser route
+consumes it, and both decisions are addressed by the stable receipt identifier.
+Profile identity and source reference are omitted as elsewhere. The review and
+approve resources carry only the version the page displayed, and their command
+key is `receipt-review:{receipt_id}:{expected_version}` — the transition, not
+the receipt, because a receipt is reviewed in successive steps and each is a
+separate decision. Retrying one decision replays it; a different decision taken
+from the same displayed state conflicts. The adapter's port exposes the archive
+listing and the two transitions and nothing else, so this surface cannot reach
+a media store, an extractor, or a deletion path. Every client route is mounted
+for direct navigation, so a reload or bookmark of `/movimenti`, `/categorie`,
+`/budget`, or `/scontrini` reaches the same shell.
+
 `money-tracker-api` is a host entry point and
 `money-tracker-api.service` is a hardened systemd user-service template. The
 environment generator/upgrader owns its non-secret loopback settings, and the
@@ -154,13 +172,20 @@ profile scope, deterministic reconciliation, invalid periods, dependency health,
 Host, Origin, CSRF, static serving/deep links, strict mutation validation, and
 deployment templates, plus budget plan ordering, its correction version, the
 exact budget wire shape, trusted scope injection, and a refused profile field in
-a budget body. Real PostgreSQL integration tests cover the monthly read, the
+a budget body, and the receipt wire shape without its archive key, the
+transition-wide command identity, the version a decision quotes, and a refused
+unknown receipt field. Real PostgreSQL integration tests cover the monthly read, the
 complete manual create/replay/correct/post/replay/void HTTP lifecycle, a
 multi-category multi-source movement whose rewrite, refused unreconciled
 posting, and refused unreconciled correction of a posted movement are verified
 against the real `FinanceService` and `PostgresFinanceRepository`, and a budget
 configured, replayed, read for an overridden month, refused under a reused key
-and a stale version, then verified in the database and in the overview. Frontend
+and a stale version, then verified in the database and in the overview. A real
+PostgreSQL receipt test lists two registered originals newest first without
+their digests, opens and replays one review, refuses approval of a receipt that
+never entered review, approves the reviewed one, refuses a stale version, an
+unknown receipt, and a non-canonical command key, and reads both terminal
+states back through the production repository. Frontend
 typecheck, component tests, production build, and a runtime dependency audit
 pass. This is partial Step 5 evidence: the remaining control-plane resources,
 range analytics, advice surface, and full browser E2E acceptance are still

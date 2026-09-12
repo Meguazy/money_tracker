@@ -1,9 +1,10 @@
 # AD-014: Private Content-Addressed Receipt Archive
 
 - Status: accepted
-- Implementation: local adapter, administration CLI, and filesystem/PostgreSQL
-  integration plus versioned receipt-review transitions implemented;
-  API/worker wiring, deletion, and backup planned
+- Implementation: local adapter, administration CLI, filesystem/PostgreSQL
+  integration, encrypted archive backup/restore, replay-safe versioned
+  receipt-review transitions, and browser metadata review implemented;
+  API/worker media wiring and deletion planned
 - Date: 2026-09-02
 
 ## Context
@@ -43,6 +44,16 @@ by profile and digest. Metadata then advances only from `stored` to
 and an atomic audit for every transition. No product deletion API exists until
 audit, references, and backup-retention semantics are implemented together.
 
+Each transition is a command in its own right, not a property of the receipt.
+It claims the general command record described in
+[AD-005](AD-005-application-postgresql.md) under the key
+`receipt-review:{receipt_id}:{expected_version}` in the same transaction as the
+state change and its audit, so a retried decision replays its first result
+while a different decision taken from the same observed version conflicts. The
+control plane may read this metadata and complete the review; it may not read,
+serve, or delete an original, and the content digest is not exposed to the
+browser because it is the archive storage key.
+
 The local administration CLI wires these boundaries for a profile-scoped
 manual import. It requires an explicitly configured absolute archive root,
 preflights the active profile, refuses final input symlinks and oversized files,
@@ -70,5 +81,26 @@ and prints no private paths.
   require a separate contract.
 - Tests cover supported formats, full decode failure, byte/dimension limits,
   permissions, concurrent idempotency, restart, symlink refusal, and tamper
-  detection plus migration, concurrent review transitions, and audit rollback
-  using real filesystem and PostgreSQL protocols.
+  detection plus migration, concurrent review transitions, replayed and
+  conflicting review commands, and audit rollback using real filesystem and
+  PostgreSQL protocols.
+
+## Implementation evidence
+
+The Step 5 `/scontrini` slice exposes this metadata to the owner for the first
+time. `ReceiptMetadataService.stored_receipts` lists the retained archive
+newest first, and the strict `GET /api/v1/receipts` response carries display
+filename, decoded media type, exact byte size, storage instant, review state,
+and optimistic version. It carries no content digest, profile identity, or
+source reference, and no route returns or links to an original.
+`ReceiptReviewMutationAdapter` reaches only that listing and the two transition
+use cases, so the browser object graph contains no media store, extractor, or
+deletion path.
+
+The two transitions became replay-safe in the same change. A repeat is resolved
+before the current row is read, the domain still decides which transition is
+legal, and a failed audit leaves neither a state change nor a command claim.
+Real PostgreSQL tests cover the HTTP listing, an opened and replayed review, a
+refused approval of a receipt that never entered review, an approval, a stale
+version, an unknown receipt, a non-canonical command key, and the terminal
+states read back through the production repository.

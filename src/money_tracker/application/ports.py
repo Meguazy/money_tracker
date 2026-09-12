@@ -273,6 +273,9 @@ class ReceiptMetadataRepository(Protocol):
     ) -> ReceiptMetadata:
         """Load one receipt inside the trusted profile scope."""
 
+    def list_receipt_metadata(self, profile_id: UUID) -> tuple[ReceiptMetadata, ...]:
+        """Load every receipt in one profile in a stable newest-first order."""
+
     def create_receipt_metadata(
         self,
         metadata: ReceiptMetadata,
@@ -281,11 +284,24 @@ class ReceiptMetadataRepository(Protocol):
     ) -> ReceiptMetadata:
         """Create metadata or return the existing record for the same content."""
 
+    def get_idempotent_receipt_command(
+        self,
+        *,
+        profile_id: UUID,
+        idempotency_key: str,
+        command_type: str,
+        request_hash: str,
+    ) -> ReceiptMetadata | None:
+        """Return the receipt an identical replayed transition already stored."""
+
     def replace_receipt_metadata(
         self,
         metadata: ReceiptMetadata,
         *,
         expected_version: int,
+        idempotency_key: str,
+        command_type: str,
+        request_hash: str,
         audit_event: AuditEvent,
-    ) -> None:
-        """Replace review state only at the expected current version."""
+    ) -> ReceiptMetadata:
+        """Claim one transition command and replace state at its version."""

@@ -121,9 +121,9 @@ boundary is not end-to-end encrypted and must not be described as local storage.
 | Application to inference | OpenAI-compatible HTTP | Messages, schemas, tool calls, model settings | Implemented basic chat |
 | Application to Langfuse | SDK over local HTTP/OTLP | Redacted graph/model observations and aggregate scores | Implemented, optional and healthy |
 | Telegram gateway to Bot API | HTTPS long polling and send methods | Updates, callback queries, messages, and bounded file metadata; no Step 4 file download | Implemented and owner-accepted against the real private test bot |
-| Browser to application API | Same-origin HTTP JSON | Monthly overview, transaction register, manual lifecycle, budget planning, category-proposal review, CSRF, and health implemented; remaining receipt, taxonomy-management, wallet, analytics, and operations resources planned | Step 5 slices implemented |
+| Browser to application API | Same-origin HTTP JSON | Monthly overview, transaction register, manual lifecycle, budget planning, category-proposal review, receipt metadata and its mandatory review, CSRF, and health implemented; remaining taxonomy-management, wallet, analytics, operations, and receipt-extraction resources planned. No route returns receipt bytes or their archive key | Step 5 slices implemented |
 | Application to PostgreSQL | PostgreSQL protocol | Checkpoints, authoritative finance aggregates, normalized messaging offsets/inbox/outbox, pairing, actions, retries, and dead letters | Implemented foundation, finance repositories, and Step 4 messaging persistence |
-| Application to receipt archive | Private host filesystem | Fully decoded original JPEG/PNG/WebP keyed and verified by content hash; no derivatives | Local adapter/admin CLI implemented; API/worker wiring, deletion, and backup planned |
+| Application to receipt archive | Private host filesystem | Fully decoded original JPEG/PNG/WebP keyed and verified by content hash; no derivatives | Local adapter/admin CLI and encrypted backup/restore implemented; API/worker media wiring and deletion planned. The control plane reads metadata only and never opens this boundary |
 | Backup process to repository | Restic repository protocol | Database dump, receipts and recovery configuration | Implemented and restore-tested; scheduling planned |
 
 ### Out of scope for V1
@@ -269,7 +269,7 @@ catalog is promoted; every identifier carries a `candidate-` prefix.
 | Component | Responsibility | Narrow interfaces/dependencies | Data ownership | Deployment/security |
 | --- | --- | --- | --- | --- |
 | Finance domain (core implemented) | Enforce money, expense/refund, allocation, budget, category and wallet invariants | Pure value objects and domain policies | No infrastructure state | Python application; no framework imports |
-| Application services (expense/wallet/budget, proposal submission and settlement, and receipt registration/review implemented) | Execute validated commands and queries transactionally | Narrow repository ports, clock, ID and future media ports | Command/content idempotency, versioning, review boundary, and audit semantics | Future FastAPI and implemented worker host processes; profile scope injected; product receipt review remains workflow-owned |
+| Application services (expense/wallet/budget, proposal submission and settlement, and replay-safe receipt registration/review implemented) | Execute validated commands and queries transactionally | Narrow repository ports, clock, ID and future media ports | Command/content idempotency, versioning, review boundary, and audit semantics | Implemented FastAPI and worker host processes; profile scope injected; the receipt metadata lifecycle is control-plane reachable while the extracted-draft preview remains workflow-owned |
 | Finance repositories (expense/wallet/budget/proposal/versioned receipt metadata implemented) | Persist authoritative domain records and analytics projections | PostgreSQL protocol through explicit repository contracts | Finance schema implemented; receipt deletion open | Dedicated application database; least-privilege credentials; optimistic versions and source locks protect concurrent mutations; no media payloads |
 | Messaging persistence (implemented) | Receive, order, lease, retry, dead-letter, replay, correlate, and complete transport work | `MessagingRepository` port, psycopg, and PostgreSQL | Minimum normalized inbox data, offsets, typed results, logical outbox, pairing, pending actions, and attempt metadata | Shared gateway/worker/admin adapter; no raw update payload, token, or token-bearing URL in rows |
 | Workflow runtime (dispatcher, router, and Step 3 text specialists implemented) | Route one normalized work unit and execute exactly one bounded specialist | Typed dispatcher outcome, LangGraph, model gateway, application services, checkpointer | Small per-graph versioned workflow state only; authoritative domain data stays in repositories | Administration CLI and sequential worker; no media, credentials, or service objects in checkpoints |
@@ -283,8 +283,8 @@ catalog is promoted; every identifier carries a `candidate-` prefix.
 | --- | --- | --- | --- | --- |
 | Workflow dispatcher, root router, and text specialists (implemented) | Route one intent and coordinate expense/refund, correction/undo, category review, query, or advice | Typed normalized work unit/outcome, versioned schemas, scoped tool registries, trusted correlations | Namespaced checkpoint references and workflow IDs; no domain ownership | Administration CLI and worker; mutation paths call replay-safe application services |
 | Telegram Bot API transport (implemented) | Validate the bot, long poll, obtain file metadata, acknowledge callbacks, and deliver outbox messages | Bounded HTTPS client and messaging services | No authoritative finance data or correctness state | Gateway host service; separate production/test token selected from a private environment file |
-| FastAPI adapter (partial) | Expose monthly overview/register, manual lifecycle, budget planning, pending category review, health, CSRF bootstrap, compiled UI, and later REST resources | Narrow reporting, finance, budget, and category-review adapters | No independent data | Implemented on loopback with Host/Origin, CSRF, idempotency, optimistic concurrency, proposal-wide command identity, and bounded errors |
-| React dashboard (partial) | Display the overview, transaction register, budget planner, and pending category proposals; edit the multi-allocation manual lifecycle, monthly budgets, and deterministic category decisions; later edit receipt, wallet and operational state | Same-origin REST API | Browser session/UI state only | Compiled static assets; no secrets; labelled controls, lifecycle history, responsive navigation, and accessible chart table alternative |
+| FastAPI adapter (partial) | Expose monthly overview/register, manual lifecycle, budget planning, pending category review, receipt metadata review, health, CSRF bootstrap, compiled UI, and later REST resources | Narrow reporting, finance, budget, category-review, and receipt-review adapters | No independent data | Implemented on loopback with Host/Origin, CSRF, idempotency, optimistic concurrency, proposal-wide and transition-wide command identity, and bounded errors |
+| React dashboard (partial) | Display the overview, transaction register, budget planner, pending category proposals, and retained receipt metadata; edit the multi-allocation manual lifecycle, monthly budgets, deterministic category decisions, and the mandatory receipt review; later edit wallet and operational state | Same-origin REST API | Browser session/UI state only | Compiled static assets; no secrets or receipt images; labelled controls, lifecycle history, responsive wrapping navigation, and accessible chart table alternative |
 | Local model gateway | Provide typed chat, schema and tool capabilities | OpenAI-compatible local endpoint | No persistent domain data | Replaceable host inference process |
 | Receipt extractor adapter | Produce a versioned structured receipt draft | Selected local OCR/VLM pipeline | No authoritative data until validated | Local-only; selection remains evaluation-gated |
 | Langfuse adapter | Record redacted traces and experiment scores | Local Langfuse SDK | Observability copies, not source of truth | Optional development/evaluation profile |
@@ -494,11 +494,40 @@ says exceeded and at-risk budgets come first.
    rolls back the new metadata row.
 5. The application permits only `stored` to `needs_review` to `approved`;
    direct approval and all transitions from terminal states fail.
-6. Each review transition increments an optimistic version and commits its
-   immutable audit atomically; concurrent writers have exactly one winner.
+6. Each review transition increments an optimistic version, claims a command
+   key derived from the receipt and the observed version, and commits its
+   immutable audit atomically. A repeated command replays its result; a
+   different decision on one observed version conflicts; concurrent distinct
+   writers have exactly one winner.
 
-The media adapter is wired to the local administration CLI but not to an
-API/worker entry point. Extraction and the product review workflow remain planned.
+The media adapter is wired to the local administration CLI, which imports an
+original, and the metadata lifecycle is wired to the control plane, which reads
+it and completes the mandatory review. No entry point reads, serves, or deletes
+an original. Extraction and the product draft-preview workflow remain planned.
+
+### Current browser receipt metadata review
+
+1. The browser loads every retained receipt of the trusted profile through one
+   narrow control-plane adapter over `ReceiptMetadataService`.
+2. The response carries display filename, decoded media type, exact byte size,
+   storage instant, review state, and optimistic version. It omits the content
+   digest, which is the archive storage key, together with profile identity and
+   source reference. No route returns, links to, or streams an original.
+3. A review or approval request carries only the version the page displayed.
+   The HTTP command key is `receipt-review:{receipt_id}:{expected_version}`,
+   the same key the application transaction claims, and the adapter refuses any
+   other value.
+4. The service resolves a replay before reading the current row, so a retry
+   returns the first result rather than depending on state that attempt already
+   advanced. The domain then decides the transition: approving a receipt that
+   never entered review, or quoting a version another transition already left,
+   is a bounded rejection that writes nothing.
+5. The React page lists the archive newest first with explicit loading, empty,
+   failure and pending states, and offers exactly one decision per state. A
+   successful decision invalidates the archive read.
+6. The web object graph contains no media store, extractor, or deletion path,
+   so this surface cannot widen beyond metadata consultation and the two
+   audited transitions without a new component and a new decision.
 
 ### Current local receipt-media storage
 
@@ -826,8 +855,8 @@ migration local to each bounded workflow.
    adjacent table expose the same overview values; the movement table retains
    complete lifecycle and allocation facts.
 
-The adapters own no authoritative state, model call, or receipt access. Other
-Step 5 resources remain planned rather than implicit in these slices.
+The adapters own no authoritative state, model call, or receipt media access.
+Other Step 5 resources remain planned rather than implicit in these slices.
 
 ### Current browser category-proposal review
 
@@ -1125,6 +1154,11 @@ preflight without coupling Telegram recovery to dashboard availability.
   exclusive answers to one question. The identical branch replays into its
   first movement or successor proposal, while a competing branch conflicts
   without a second finance write.
+- A receipt review decision keys on the transition rather than on the receipt,
+  because a receipt is reviewed in successive steps and each step is a separate
+  command. The key names the receipt and the version the caller observed, so a
+  retry of one decision replays it while a different decision taken from the
+  same displayed state conflicts.
 - Callback and free-text follow-up map to explicit pending actions and workflow
   IDs instead of assuming one global chat thread.
 
@@ -1137,13 +1171,16 @@ preflight without coupling Telegram recovery to dashboard availability.
 - Unsafe methods require an allowed Origin plus equal random values in an
   HttpOnly, same-site cookie and the `X-CSRF-Token` header. Every finance
   mutation additionally requires `Idempotency-Key`; movements and budgets use
-  their command keys and optimistic versions, while category decisions require
-  the proposal-wide key already claimed by the review transaction.
+  their command keys and optimistic versions, category decisions require the
+  proposal-wide key already claimed by the review transaction, and receipt
+  review decisions require the transition-wide key that names the receipt and
+  the version the page displayed.
 - API responses are `no-store`. CSP restricts content and connections to the
   same origin; framing, referrers, and MIME sniffing are disabled. Interactive API schema endpoints are absent.
-- Static serving exposes only the compiled index and asset directory. The API
-  returns no credential, profile identity, receipt path, owner text, or raw
-  database diagnostic.
+- Static serving exposes only the compiled index and asset directory. Every
+  client route is mounted so a reload or bookmark reaches the same shell. The
+  API returns no credential, profile identity, receipt path or content digest,
+  owner text, or raw database diagnostic, and no route returns receipt bytes.
 - V1 intentionally trusts other processes running as the workstation owner.
   LAN or remote access requires authentication, TLS, a new threat model, and an
   ADR rather than a wider allowlist.
@@ -1246,6 +1283,12 @@ tracing and from the exit-code contract AD-018 defines for supervisors.
   durations. Credential redaction applies to messages, fields, and rendered
   tracebacks, and is a defence against tokens only: it cannot recognize owner
   text.
+- A shared failure funnel is the place the record is written, rather than each
+  of its callers. The web boundary builds every problem response in one
+  function, and every database failure of that boundary in one more, so a
+  rejected request is recorded with its status, stable code and route, and an
+  unavailable database is recorded with the traceback that is the only
+  explanation the response deliberately withholds.
 - The journal explains behavior. PostgreSQL owns state and the audit trail, and
   backup does not cover logs.
 
@@ -1345,8 +1388,8 @@ environment file.
 
 - [AD-005: Dedicated application PostgreSQL](decisions/AD-005-application-postgresql.md):
   service, migration boundary, checkpoints, finance schema, expense, wallet,
-  budget, pending-proposal, versioned receipt-review, and messaging persistence
-  implemented; remaining adapters planned.
+  budget, pending-proposal, replay-safe versioned receipt-review, and messaging
+  persistence implemented; remaining adapters planned.
 - [AD-007: Expense and dual-allocation model](decisions/AD-007-expense-allocation-model.md):
   domain, schema, expense/wallet/budget persistence, reconciliation, and
   reports implemented; remaining adapters planned.
@@ -1370,17 +1413,19 @@ environment file.
   isolated restore drill, accepted Step 4 host units, and Step 5 API unit
   implemented; scheduling and the clean-machine restore remain planned.
 - [AD-011: Evaluation-gated receipt extraction](decisions/AD-011-receipt-extraction.md):
-  private original-media boundary implemented; extractor evaluation and review
-  workflow planned.
+  private original-media boundary and the owner-facing metadata lifecycle
+  implemented; extractor evaluation and the extracted-draft preview workflow
+  planned.
 - [AD-009: Local FastAPI and React web application](decisions/AD-009-local-web-application.md):
   strict version-one finance wire contracts, monthly overview, manual
-  lifecycle, multi-allocation editing, budget planning, category review, HTTP
-  security, and host deployment implemented; remaining Step 5 resources and
-  acceptance planned.
+  lifecycle, multi-allocation editing, budget planning, category review,
+  receipt metadata review, HTTP security, and host deployment implemented;
+  remaining Step 5 resources and acceptance planned.
 - [AD-014: Private content-addressed receipt archive](decisions/AD-014-private-receipt-archive.md):
-  safe local adapter, versioned review state, and real filesystem/PostgreSQL
-  integration implemented; administration CLI wiring and encrypted archive
-  backup/restore implemented; API/worker wiring and deletion planned.
+  safe local adapter, replay-safe versioned review state, and real
+  filesystem/PostgreSQL integration implemented; administration CLI wiring,
+  encrypted archive backup/restore, and browser metadata review implemented;
+  API/worker media wiring and deletion planned.
 - [AD-016: Explicit workflow dispatcher](decisions/AD-016-explicit-workflow-dispatcher.md):
   transport-neutral typed outcome, explicit router-to-specialist composition,
   trusted action correlation, administration CLI wiring, durable worker, and

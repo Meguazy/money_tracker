@@ -15,6 +15,7 @@ from money_tracker.application import (
     CategoryReviewService,
     FinanceAdministrationService,
     FinanceService,
+    ReceiptMetadataService,
     ReportingService,
 )
 from money_tracker.application.runtime import SystemClock, UUID4Generator
@@ -30,6 +31,8 @@ from money_tracker.domain import (
     Money,
     PaymentAllocation,
     Profile,
+    ReceiptMetadata,
+    ReceiptStatus,
     initial_taxonomy,
 )
 from money_tracker.persistence.database import upgrade_database
@@ -39,6 +42,7 @@ from money_tracker.web.mutations import (
     BudgetMutationAdapter,
     CategoryReviewMutationAdapter,
     ExpenseMutationAdapter,
+    ReceiptReviewMutationAdapter,
 )
 from money_tracker.workflows import posting_request_hash
 
@@ -141,6 +145,9 @@ def test_monthly_endpoint_reads_real_postgresql_state(postgres_url: str) -> None
         category_reviews=CategoryReviewMutationAdapter(
             CategoryReviewService(repository, repository, clock=SystemClock(), ids=ids)
         ),
+        receipts=ReceiptReviewMutationAdapter(
+            ReceiptMetadataService(repository, clock=SystemClock(), ids=ids)
+        ),
         readiness_check=lambda: repository.profile_exists(profile.id),
     )
 
@@ -195,6 +202,9 @@ def test_manual_expense_workflow_is_replay_safe_and_visible(
         ),
         category_reviews=CategoryReviewMutationAdapter(
             CategoryReviewService(repository, repository, clock=SystemClock(), ids=ids)
+        ),
+        receipts=ReceiptReviewMutationAdapter(
+            ReceiptMetadataService(repository, clock=SystemClock(), ids=ids)
         ),
         readiness_check=lambda: repository.profile_exists(profile.id),
     )
@@ -358,6 +368,9 @@ def test_multi_allocation_movement_survives_correction_in_real_postgresql(
         ),
         category_reviews=CategoryReviewMutationAdapter(
             CategoryReviewService(repository, repository, clock=SystemClock(), ids=ids)
+        ),
+        receipts=ReceiptReviewMutationAdapter(
+            ReceiptMetadataService(repository, clock=SystemClock(), ids=ids)
         ),
         readiness_check=lambda: repository.profile_exists(profile.id),
     )
@@ -587,6 +600,9 @@ def test_budget_plan_is_configured_and_corrected_in_real_postgresql(
         category_reviews=CategoryReviewMutationAdapter(
             CategoryReviewService(repository, repository, clock=SystemClock(), ids=ids)
         ),
+        receipts=ReceiptReviewMutationAdapter(
+            ReceiptMetadataService(repository, clock=SystemClock(), ids=ids)
+        ),
         readiness_check=lambda: repository.profile_exists(profile.id),
     )
     client = TestClient(app, base_url="http://localhost:8000")
@@ -735,6 +751,9 @@ def test_budget_routes_refuse_unknown_and_inactive_categories(
         category_reviews=CategoryReviewMutationAdapter(
             CategoryReviewService(repository, repository, clock=SystemClock(), ids=ids)
         ),
+        receipts=ReceiptReviewMutationAdapter(
+            ReceiptMetadataService(repository, clock=SystemClock(), ids=ids)
+        ),
         readiness_check=lambda: repository.profile_exists(profile.id),
     )
     client = TestClient(app, base_url="http://localhost:8000")
@@ -872,6 +891,9 @@ def test_category_proposals_are_resolved_through_real_services(
             ids=ids,
         ),
         category_reviews=CategoryReviewMutationAdapter(review),
+        receipts=ReceiptReviewMutationAdapter(
+            ReceiptMetadataService(repository, clock=SystemClock(), ids=ids)
+        ),
         readiness_check=lambda: repository.profile_exists(profile.id),
     )
     client = TestClient(app, base_url="http://localhost:8000")
@@ -951,3 +973,160 @@ def test_category_proposals_are_resolved_through_real_services(
         is CategoryProposalStatus.CANCELLED
     )
     assert client.get("/api/v1/category-proposals").json()["proposals"] == []
+
+
+@pytest.mark.postgres
+def test_receipt_review_is_operated_through_http_and_real_postgresql(
+    postgres_url: str,
+) -> None:
+    """List retained receipts and run mandatory review over real services."""
+
+    upgrade_database(postgres_url)
+    repository = PostgresFinanceRepository(postgres_url)
+    profile = Profile(uuid4())
+    now = SystemClock().now()
+    repository.bootstrap_profile(profile, taxonomy=initial_taxonomy(), occurred_at=now)
+    ids = UUID4Generator()
+    metadata = ReceiptMetadataService(repository, clock=SystemClock(), ids=ids)
+
+    def store(digest: str, *, stored_at: datetime, filename: str) -> ReceiptMetadata:
+        """Register one already archived original through the real service."""
+
+        return metadata.register(
+            ReceiptMetadata(
+                id=uuid4(),
+                profile_id=profile.id,
+                content_sha256=digest,
+                media_type="image/jpeg",
+                byte_size=131072,
+                stored_at=stored_at,
+                source_reference=f"integration:web:receipt:{digest[:8]}",
+                original_filename=filename,
+            ),
+            actor="local-admin",
+            reason="web receipt review fixture",
+        )
+
+    newer = store(
+        "a1" * 32,
+        stored_at=datetime(2026, 9, 12, 19, tzinfo=ROME),
+        filename="mercato.jpg",
+    )
+    older = store(
+        "b2" * 32,
+        stored_at=datetime(2026, 9, 10, 9, tzinfo=ROME),
+        filename="farmacia.jpg",
+    )
+    app = create_app(
+        settings=WebSettings(static_dir=None),
+        profile_id=profile.id,
+        reporting=ReportingService(repository),
+        mutations=ExpenseMutationAdapter(
+            FinanceService(repository, clock=SystemClock(), ids=ids),
+            ids=ids,
+        ),
+        budgets=BudgetMutationAdapter(
+            FinanceAdministrationService(repository, clock=SystemClock(), ids=ids),
+            ids=ids,
+        ),
+        category_reviews=CategoryReviewMutationAdapter(
+            CategoryReviewService(repository, repository, clock=SystemClock(), ids=ids)
+        ),
+        receipts=ReceiptReviewMutationAdapter(metadata),
+        readiness_check=lambda: repository.profile_exists(profile.id),
+    )
+    client = TestClient(app, base_url="http://localhost:8000")
+    csrf = client.get(
+        "/api/v1/csrf",
+        headers={"origin": "http://localhost:8000"},
+    ).json()["token"]
+
+    def headers(receipt_id: UUID, expected_version: int) -> dict[str, str]:
+        """Return browser headers bound to one receipt transition."""
+
+        return {
+            "origin": "http://localhost:8000",
+            "x-csrf-token": csrf,
+            "Idempotency-Key": f"receipt-review:{receipt_id}:{expected_version}",
+        }
+
+    listed = client.get("/api/v1/receipts")
+    opened = client.post(
+        f"/api/v1/receipts/{newer.id}/review",
+        json={"expected_version": 1},
+        headers=headers(newer.id, 1),
+    )
+    replayed = client.post(
+        f"/api/v1/receipts/{newer.id}/review",
+        json={"expected_version": 1},
+        headers=headers(newer.id, 1),
+    )
+    early = client.post(
+        f"/api/v1/receipts/{older.id}/approve",
+        json={"expected_version": 1},
+        headers=headers(older.id, 1),
+    )
+    approved = client.post(
+        f"/api/v1/receipts/{newer.id}/approve",
+        json={"expected_version": 2},
+        headers=headers(newer.id, 2),
+    )
+    stale = client.post(
+        f"/api/v1/receipts/{newer.id}/approve",
+        json={"expected_version": 3},
+        headers=headers(newer.id, 3),
+    )
+    absent_id = uuid4()
+    unknown = client.post(
+        f"/api/v1/receipts/{absent_id}/review",
+        json={"expected_version": 1},
+        headers=headers(absent_id, 1),
+    )
+    wrong_key = client.post(
+        f"/api/v1/receipts/{older.id}/review",
+        json={"expected_version": 1},
+        headers={
+            "origin": "http://localhost:8000",
+            "x-csrf-token": csrf,
+            "Idempotency-Key": f"receipt-review:{older.id}",
+        },
+    )
+
+    assert listed.status_code == 200
+    assert [item["id"] for item in listed.json()["receipts"]] == [
+        str(newer.id),
+        str(older.id),
+    ]
+    assert listed.json()["receipts"][0]["original_filename"] == "mercato.jpg"
+    assert "a1" * 32 not in listed.text
+    assert "source_reference" not in listed.text
+    assert opened.status_code == 200
+    assert opened.json() == {
+        "id": str(newer.id),
+        "status": "needs_review",
+        "version": 2,
+    }
+    assert replayed.json() == opened.json()
+    assert early.status_code == 422
+    assert early.json()["code"] == "receipt_invalid"
+    assert approved.status_code == 200
+    assert approved.json()["status"] == "approved"
+    assert stale.status_code == 422
+    assert unknown.status_code == 404
+    assert unknown.json()["code"] == "receipt_not_found"
+    assert wrong_key.status_code == 409
+    assert wrong_key.json()["code"] == "receipt_conflict"
+    assert (
+        repository.get_receipt_metadata(profile.id, newer.id).status
+        is ReceiptStatus.APPROVED
+    )
+    assert (
+        repository.get_receipt_metadata(profile.id, older.id).status
+        is ReceiptStatus.STORED
+    )
+    assert [
+        item["status"] for item in client.get("/api/v1/receipts").json()["receipts"]
+    ] == [
+        "approved",
+        "stored",
+    ]

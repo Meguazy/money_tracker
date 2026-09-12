@@ -4,11 +4,12 @@ import { NavLink, Navigate, Route, Routes } from "react-router-dom";
 import { BudgetsPage } from "./BudgetsPage";
 import { CategoriesPage } from "./CategoriesPage";
 import { OverviewPage } from "./OverviewPage";
+import { ReceiptsPage } from "./ReceiptsPage";
 import { TransactionsPage } from "./TransactionsPage";
 
 export function App() {
   return (
-    <AppShell header={{ height: { base: 112, sm: 72 } }} padding={0}>
+    <AppShell header={{ height: { base: 152, sm: 72 } }} padding={0}>
       <a className="skip-link" href="#main-content">
         Vai al contenuto
       </a>
@@ -49,6 +50,12 @@ export function App() {
             >
               Budget
             </NavLink>
+            <NavLink
+              className={({ isActive }) => (isActive ? "active" : "")}
+              to="/scontrini"
+            >
+              Scontrini
+            </NavLink>
           </nav>
           <Text className="local-state">127.0.0.1</Text>
         </Group>
@@ -59,6 +66,7 @@ export function App() {
           <Route element={<TransactionsPage />} path="/movimenti" />
           <Route element={<CategoriesPage />} path="/categorie" />
           <Route element={<BudgetsPage />} path="/budget" />
+          <Route element={<ReceiptsPage />} path="/scontrini" />
           <Route element={<Navigate replace to="/" />} path="*" />
         </Routes>
       </AppShell.Main>

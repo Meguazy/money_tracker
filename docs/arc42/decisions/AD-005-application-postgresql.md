@@ -2,9 +2,9 @@
 
 - Status: accepted
 - Implementation: foundation, finance schema, expense/wallet/budget repository
-  operations, replay-safe correction/undo/category-review/budget command claims,
-  pending-proposal persistence, receipt review, and durable messaging
-  persistence implemented; remaining adapters planned
+  operations, replay-safe correction/undo/category-review/budget/receipt-review
+  command claims, pending-proposal persistence, receipt review, and durable
+  messaging persistence implemented; remaining adapters planned
 - Date: 2026-09-01
 
 ## Context
@@ -54,9 +54,13 @@ returns the first movement or successor proposal, and a competing branch
 conflicts without a second finance write.
 Budget creation and replacement claim that table too, keyed by a canonical
 digest of scope, category, recurring target, and overrides, so a retried
-browser or administrative request writes one budget and one audit row. The
-table is general rather than expense-shaped, which is why a second command
-family needed no migration.
+browser or administrative request writes one budget and one audit row.
+Receipt review transitions are the fourth family. Their key names the receipt
+and the version the caller observed, because a receipt is reviewed in
+successive steps and each step is its own command; the claim, the state change,
+and the audit commit together, so a retry replays and a different decision on
+one observed version conflicts. The table is general rather than
+expense-shaped, which is why none of these families needed a migration.
 Roadmap Step 4 migration `20260909_0005` adds environment-scoped offsets,
 minimum normalized inbox rows, bounded claim/retry/dead-letter state, unique
 logical outbox messages, hashed one-use pairing, owner bindings, and scoped
@@ -68,9 +72,10 @@ retries, exhaustion, scoped inbox replay and outbox resend, forward migration,
 durable action recovery, environment separation, and pairing.
 Existing real PostgreSQL tests continue to cover finance migration, constraints,
 rollback, restart persistence, identical retry, stale versions, and concurrent
-expense and wallet writers, including concurrent receipt review transitions.
-Proposal resolution, receipt extraction/deletion, and remaining transport
-adapters are still open.
+expense and wallet writers, including concurrent receipt review transitions, a
+replayed review command that writes one audit row and one claim, and a rolled
+back audit that leaves no claim behind.
+Receipt extraction/deletion and remaining transport adapters are still open.
 
 ## Consequences
 

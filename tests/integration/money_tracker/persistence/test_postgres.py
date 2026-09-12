@@ -5,6 +5,7 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import UTC, datetime
+from hashlib import sha256
 from threading import Barrier
 from typing import TypedDict
 from uuid import UUID, uuid4
@@ -14,11 +15,13 @@ from langgraph.graph import END, START, StateGraph
 from psycopg import Connection, connect, errors
 
 from money_tracker.application import (
+    MARK_NEEDS_REVIEW_ACTION,
     AggregateNotFoundError,
     IdempotencyConflictError,
     OptimisticConcurrencyError,
     ReceiptMetadataService,
     budget_request_hash,
+    receipt_review_identity,
 )
 from money_tracker.application.runtime import SystemClock, UUID4Generator
 from money_tracker.domain import (
@@ -1660,14 +1663,22 @@ def test_concurrent_receipt_review_writers_have_exactly_one_winner(
     candidate = stored.mark_needs_review()
     barrier = Barrier(2)
 
-    def attempt(_: int) -> bool:
-        """Race a review transition and report whether this writer committed."""
+    def attempt(worker: int) -> bool:
+        """Race a review transition and report whether this writer committed.
+
+        Each racer claims its own command key, so the compare-and-swap and not
+        the replay record decides the winner. Two retries of one command are
+        covered separately by the replay test below.
+        """
 
         barrier.wait()
         try:
             repository.replace_receipt_metadata(
                 candidate,
                 expected_version=1,
+                idempotency_key=f"integration:receipt-race:{stored.id}:{worker}",
+                command_type="receipt_mark_needs_review",
+                request_hash=sha256(f"race-{worker}".encode()).hexdigest(),
                 audit_event=_generic_audit(
                     profile_id=profile.id,
                     aggregate_type="receipt",
@@ -1713,10 +1724,19 @@ def test_receipt_review_rolls_back_when_audit_fails(postgres_url: str) -> None:
     )
     review = stored.mark_needs_review()
 
+    identity = receipt_review_identity(
+        stored.id,
+        1,
+        action=MARK_NEEDS_REVIEW_ACTION,
+    )
+
     with pytest.raises(errors.ForeignKeyViolation):
         repository.replace_receipt_metadata(
             review,
             expected_version=1,
+            idempotency_key=identity[0],
+            command_type=identity[1],
+            request_hash=identity[2],
             audit_event=_generic_audit(
                 profile_id=uuid4(),
                 aggregate_type="receipt",
@@ -1733,6 +1753,113 @@ def test_receipt_review_rolls_back_when_audit_fails(postgres_url: str) -> None:
             "SELECT count(*) FROM finance.audit_events WHERE aggregate_id = %s",
             (stored.id,),
         ).fetchone() == (1,)
+        assert connection.execute(
+            "SELECT count(*) FROM finance.idempotency_records "
+            "WHERE idempotency_key = %s",
+            (identity[0],),
+        ).fetchone() == (0,)
+
+
+@pytest.mark.postgres
+def test_repeated_receipt_transition_writes_one_audit_and_one_claim(
+    postgres_url: str,
+) -> None:
+    """Replay one review command instead of applying it twice."""
+
+    upgrade_database(postgres_url)
+    repository, profile, _, _ = _repository_fixture(postgres_url)
+    service = ReceiptMetadataService(
+        repository,
+        clock=SystemClock(),
+        ids=UUID4Generator(),
+    )
+    first_digest = "1" * 64
+    stored = service.register(
+        _receipt_metadata(profile, digest=first_digest),
+        actor="receipt-store",
+        reason="validated content stored",
+    )
+    older = service.register(
+        replace(
+            _receipt_metadata(profile, digest="2" * 64),
+            stored_at=datetime(2026, 9, 1, 8, tzinfo=UTC),
+        ),
+        actor="receipt-store",
+        reason="earlier validated content stored",
+    )
+
+    review = service.mark_needs_review(
+        profile_id=profile.id,
+        receipt_id=stored.id,
+        expected_version=1,
+        actor="owner:web",
+        reason="owner opened receipt review in browser",
+    )
+    replayed = service.mark_needs_review(
+        profile_id=profile.id,
+        receipt_id=stored.id,
+        expected_version=1,
+        actor="owner:web",
+        reason="owner opened receipt review in browser",
+    )
+
+    assert replayed == review
+    assert [item.id for item in repository.list_receipt_metadata(profile.id)] == [
+        stored.id,
+        older.id,
+    ]
+    with connect(postgres_url) as connection:
+        assert connection.execute(
+            "SELECT count(*) FROM finance.audit_events "
+            "WHERE aggregate_id = %s AND action = %s",
+            (stored.id, "mark_needs_review"),
+        ).fetchone() == (1,)
+        assert connection.execute(
+            "SELECT count(*) FROM finance.idempotency_records "
+            "WHERE profile_id = %s AND idempotency_key = %s",
+            (profile.id, f"receipt-review:{stored.id}:1"),
+        ).fetchone() == (1,)
+
+
+@pytest.mark.postgres
+def test_another_receipt_decision_on_one_version_conflicts(
+    postgres_url: str,
+) -> None:
+    """Refuse a second decision taken from the same displayed receipt state."""
+
+    upgrade_database(postgres_url)
+    repository, profile, _, _ = _repository_fixture(postgres_url)
+    service = ReceiptMetadataService(
+        repository,
+        clock=SystemClock(),
+        ids=UUID4Generator(),
+    )
+    stored = service.register(
+        _receipt_metadata(profile, digest="3" * 64),
+        actor="receipt-store",
+        reason="validated content stored",
+    )
+    service.mark_needs_review(
+        profile_id=profile.id,
+        receipt_id=stored.id,
+        expected_version=1,
+        actor="owner:web",
+        reason="owner opened receipt review in browser",
+    )
+
+    with pytest.raises(IdempotencyConflictError):
+        service.approve(
+            profile_id=profile.id,
+            receipt_id=stored.id,
+            expected_version=1,
+            actor="owner:web",
+            reason="decision taken from a stale page",
+        )
+
+    assert (
+        repository.get_receipt_metadata(profile.id, stored.id).status
+        is ReceiptStatus.NEEDS_REVIEW
+    )
 
 
 @pytest.mark.postgres

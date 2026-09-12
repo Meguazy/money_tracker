@@ -1,8 +1,8 @@
 # Local Web Operations
 
 - Status: Step 5 overview, manual-movement, multi-allocation editing,
-  budget-planning, and category-proposal review slices implemented; complete
-  control plane and release acceptance still in progress
+  budget-planning, category-proposal review, and receipt metadata review slices
+  implemented; complete control plane and release acceptance still in progress
 - Binding decision: [AD-009](../arc42/decisions/AD-009-local-web-application.md)
 - Delivery evidence: [Step 5](../roadmap/step-5-dashboard-and-advice.md)
 
@@ -11,10 +11,11 @@ versioned JSON API from the same origin. It provides the monthly overview,
 complete monthly transaction register, manual movement lifecycle with
 multi-allocation editing, monthly budget planning, liveness, readiness, and CSRF
 bootstrap endpoints. It also exposes the pending category-proposal queue and
-the deterministic approve, reuse-active-category, and cancel decisions. Receipt
-review, category rename/archive, wallet administration, messaging operations,
-settings, wider date ranges, and advice remain Step 5 work and must not be
-described as available.
+the deterministic approve, reuse-active-category, and cancel decisions, plus
+the retained receipt metadata and its mandatory review. Category
+rename/archive, wallet administration, messaging operations, settings, wider
+date ranges, advice, and every receipt-extraction capability remain Step 5 or
+Step 6 work and must not be described as available.
 
 ## Ownership and boundaries
 
@@ -24,11 +25,14 @@ policy, but no finance data. `ReportingService` computes exact reads;
 `FinanceService`; `BudgetMutationAdapter` translates budget commands into the
 existing `FinanceAdministrationService`; `CategoryReviewMutationAdapter`
 exposes the existing `CategoryReviewService` without accepting a movement
-identifier from the browser; and `PostgresFinanceRepository` owns authoritative
-storage and audit. Wallet entries have no browser route. The React application
+identifier from the browser; `ReceiptReviewMutationAdapter` exposes the
+existing `ReceiptMetadataService` and reaches no media store; and
+`PostgresFinanceRepository` owns authoritative storage and audit. Wallet
+entries have no browser route. The React application
 owns only ephemeral browser state and receives neither a profile identifier nor
 credentials. The production build is read-only input to FastAPI; receipt
-originals are outside the static root.
+originals are outside the static root, and no route serves their bytes or their
+content digest.
 
 The process requires exactly one bootstrapped profile and refuses to start when
 that V1 invariant does not hold. Profile scope is injected during composition,
@@ -72,6 +76,15 @@ cancelling discards both the proposal and the draft movement. The model-backed
 `Proponine un'altra` path remains in the Telegram conversation: this page does
 not invoke a model or change the taxonomy.
 
+Use `/scontrini` to see what the private archive retained and to finish the
+mandatory review AD-014 requires. Each row shows the display filename, decoded
+format, exact size, storage instant and current state. A `stored` receipt is
+sent into review, a receipt already in review is approved, and an approved one
+offers nothing further. Originals are never shown, linked, downloaded, or
+deleted here: the page carries metadata only, and importing an original stays
+in `money-tracker-admin receipt-store`. Extraction of the purchase from an
+image is Step 6 work and does not exist.
+
 Use `/budget` to set the monthly targets the overview compares against. Until a
 target exists there, the overview's budget comparison is empty by design and
 every spent category is reported as unbudgeted. A budget has one recurring
@@ -106,7 +119,7 @@ listener and allowed origins.
 
 | Route | Purpose | Content |
 | --- | --- | --- |
-| `GET /`, `GET /movimenti`, `GET /budget`, `GET /categorie` | Compiled React shell | Static application only; every route supports direct browser navigation. |
+| `GET /`, `GET /movimenti`, `GET /budget`, `GET /categorie`, `GET /scontrini` | Compiled React shell | Static application only; every route supports direct browser navigation, reload, and bookmarking. |
 | `GET /api/v1/overview/monthly?period=YYYY-MM` | Deterministic monthly overview | Exact posted total, funding class/source split, budgets, and unbudgeted categories. |
 | `GET /api/v1/transactions?period=YYYY-MM` | Monthly lifecycle register | Every movement state, exact allocations, optimistic versions, and safe category/source references. |
 | `POST /api/v1/expenses` | Create a manual draft | Strict complete movement body; returns safe ID, state, and version. |
@@ -120,6 +133,9 @@ listener and allowed origins.
 | `POST /api/v1/category-proposals/{id}/approve` | Approve a proposal | Applies the proposed category to its server-resolved movement. |
 | `POST /api/v1/category-proposals/{id}/use-existing` | Reuse an active category | Strict category reference; the movement target is never browser input. |
 | `POST /api/v1/category-proposals/{id}/cancel` | Cancel a proposal | Cancels the proposal and its server-resolved draft movement. |
+| `GET /api/v1/receipts` | Retained receipt metadata | Display filename, media type, exact byte size, storage instant, review state, and version, newest first. No content digest, no image, no archive path. |
+| `POST /api/v1/receipts/{id}/review` | Open mandatory review | Moves a stored receipt to `needs_review` under its displayed version. |
+| `POST /api/v1/receipts/{id}/approve` | Approve a receipt | Records explicit owner approval of a receipt already in review. |
 | `GET /api/v1/health/live` | Process liveness | Content-free healthy state. |
 | `GET /api/v1/health/ready` | Database/profile readiness | Healthy state or bounded problem details. |
 | `GET /api/v1/csrf` | Prepare unsafe browser requests | Random double-submit value and HttpOnly same-site cookie. |
@@ -146,6 +162,11 @@ paths, owner text, or credentials.
   Category-review commands use the fixed proposal-wide key
   `category-review:{proposal_id}` already owned by the review service. Retrying
   one decision replays it; changing the decision for that proposal conflicts.
+  Receipt-review commands use the fixed transition-wide key
+  `receipt-review:{receipt_id}:{expected_version}`, because a receipt is
+  reviewed in successive steps and each step is a separate command. Retrying
+  one transition replays it; a different decision taken from the same displayed
+  state conflicts, and a version another transition already left is refused.
 - API responses are marked `no-store`. Responses also set a same-origin content
   security policy, deny framing and referrers, and disable MIME sniffing.
 - The API has no secret-returning endpoint. Do not add token, database URL,
@@ -188,6 +209,10 @@ read for an overridden month, refused under a reused key and a stale version,
 then verified in the database and the overview. It also reads three pending
 category proposals, approves one with replay, reuses an active category for
 one, cancels one, and verifies every terminal movement/proposal state in
+PostgreSQL. It registers two receipts, lists them newest first without their
+digests, opens and replays one review, refuses approval of a receipt that never
+entered review, approves the reviewed one, refuses a stale version, an unknown
+receipt and a non-canonical key, and reads both terminal states back from
 PostgreSQL. It uses isolated identifiers and cleans up its schemas.
 
 A draft may legitimately be unreconciled, so both allocation dimensions are
@@ -197,7 +222,9 @@ Registering an unreconciled movement returns a bounded 422 and changes nothing.
 To withdraw the web surface, stop and disable only
 `money-tracker-api.service`. No migration rollback is needed. Manual movements
 already committed through the service are authoritative finance history, and so
-are configured budgets and category-review decisions: keep them and the
-Telegram services running, and correct or cancel them only through normal
-audited use cases. Re-enable the last known-good build and unit rather than
+are configured budgets, category-review decisions, and receipt review states:
+keep them and the Telegram services running, and correct or cancel them only
+through normal audited use cases. Withdrawing the web surface leaves every
+retained original untouched, because the service never had access to the
+archive. Re-enable the last known-good build and unit rather than
 deleting `frontend/dist` while the service is active.

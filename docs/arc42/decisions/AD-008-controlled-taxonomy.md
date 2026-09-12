@@ -81,3 +81,20 @@ refused rather than quietly converted into reuse, because the adequate node
 exists and hiding the wrong judgment would both misreport the reason to the
 owner and suppress a measurable failure. Category allocations record the
 boundary version that classified them and whether the owner forced reuse.
+
+Roadmap Step 5 exposes the deterministic owner-decision subset through the
+local dashboard. The API lists pending proposals with their stored rationale,
+parent, exclusions, and existing-category shortlist, then supports approval,
+active-category reuse, and cancellation through the same
+`CategoryReviewService`; it does not implement a second taxonomy mutation
+path. A proposal is paired server-side to the movement sharing the workflow's
+trusted source reference. The browser receives neither that reference nor the
+profile ID and cannot nominate a movement for settlement. The application
+rechecks the association before a decision, and missing or ambiguous
+correlation is refused and logged without owner content.
+
+Generating another candidate remains in the persistent conversational workflow
+and its evaluated category-fit boundary. The web process contains no model or
+candidate generator; its complete manual fallback is reuse of any active
+category by name, preserving this decision's owner-only creation authority and
+bounded proposal loop.

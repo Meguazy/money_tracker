@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from dataclasses import dataclass
 from uuid import UUID
 
 from money_tracker.application.ports import (
@@ -55,6 +56,32 @@ stored allocation must say whether a human or a prompt chose it.
 _LOGGER = get_logger("money_tracker.application.review")
 
 
+@dataclass(frozen=True, slots=True)
+class PendingCategoryReview:
+    """One proposal paired with the movement whose purpose it must resolve.
+
+    Attributes:
+        proposal: Persisted candidate awaiting an owner decision.
+        expense: Movement created from the same trusted workflow source.
+    """
+
+    proposal: CategoryProposal
+    expense: Expense
+
+
+@dataclass(frozen=True, slots=True)
+class CategoryReviewQueue:
+    """Pending category work and the taxonomy available for deterministic reuse.
+
+    Attributes:
+        reviews: Open proposals in their stable creation order.
+        taxonomy: Current profile taxonomy used to name parents and alternatives.
+    """
+
+    reviews: tuple[PendingCategoryReview, ...]
+    taxonomy: Taxonomy
+
+
 class CategoryReviewService:
     """Settle owner category decisions and complete the reviewed movement."""
 
@@ -79,6 +106,55 @@ class CategoryReviewService:
         self._finance = finance
         self._clock = clock
         self._ids = ids
+
+    def pending_reviews(self, *, profile_id: UUID) -> CategoryReviewQueue:
+        """Return every open proposal paired with its trusted movement.
+
+        The browser never supplies a movement identifier for a review. The
+        repository resolves the movement from the source reference persisted
+        by the workflow, and this service checks that association before it is
+        exposed or used by a decision.
+
+        Args:
+            profile_id: Trusted owner scope.
+
+        Returns:
+            Open review items and their current taxonomy.
+
+        Raises:
+            AggregateNotFoundError: If persisted review state has no movement.
+            IdempotencyConflictError: If the source reference is ambiguous.
+        """
+
+        proposals = self._repository.get_pending_category_proposals(profile_id)
+        return CategoryReviewQueue(
+            reviews=tuple(
+                PendingCategoryReview(
+                    proposal=proposal,
+                    expense=self._review_expense(profile_id, proposal),
+                )
+                for proposal in proposals
+            ),
+            taxonomy=self._finance.get_taxonomy(profile_id),
+        )
+
+    def review_expense(self, *, profile_id: UUID, proposal_id: UUID) -> Expense:
+        """Resolve the movement owned by one proposal without browser input.
+
+        Args:
+            profile_id: Trusted owner scope.
+            proposal_id: Proposal whose source correlation is authoritative.
+
+        Returns:
+            Correlated movement in the same profile.
+
+        Raises:
+            AggregateNotFoundError: If either side of the correlation is absent.
+            IdempotencyConflictError: If the source reference is ambiguous.
+        """
+
+        proposal = self._repository.get_category_proposal(profile_id, proposal_id)
+        return self._review_expense(profile_id, proposal)
 
     def approve(
         self,
@@ -120,6 +196,7 @@ class CategoryReviewService:
             return replayed
         proposal = self._pending(profile_id, proposal_id)
         expense = self._finance.get_expense(profile_id, expense_id)
+        self._require_linked(proposal, expense)
         taxonomy = self._finance.get_taxonomy(profile_id)
         category = Category(
             id=self._ids.new(),
@@ -208,6 +285,7 @@ class CategoryReviewService:
             return replayed
         proposal = self._pending(profile_id, proposal_id)
         expense = self._finance.get_expense(profile_id, expense_id)
+        self._require_linked(proposal, expense)
         taxonomy = self._finance.get_taxonomy(profile_id)
         category = taxonomy.resolve_active(category_name)
         posted = self._with_purpose(
@@ -276,6 +354,7 @@ class CategoryReviewService:
             return replayed
         proposal = self._pending(profile_id, proposal_id)
         expense = self._finance.get_expense(profile_id, expense_id)
+        self._require_linked(proposal, expense)
         discarded = expense.discard()
         cancelled = proposal.cancel()
         _LOGGER.info(
@@ -434,6 +513,37 @@ class CategoryReviewService:
             )
             raise ValueError("category review is no longer pending")
         return proposal
+
+    def _review_expense(
+        self,
+        profile_id: UUID,
+        proposal: CategoryProposal,
+    ) -> Expense:
+        """Load and validate the movement correlated by persistent source."""
+
+        expense = self._repository.get_category_review_expense(
+            profile_id,
+            proposal.id,
+        )
+        self._require_linked(proposal, expense)
+        return expense
+
+    @staticmethod
+    def _require_linked(proposal: CategoryProposal, expense: Expense) -> None:
+        """Refuse a decision aimed at a movement from another workflow source."""
+
+        if (
+            proposal.profile_id == expense.profile_id
+            and proposal.source_reference == expense.source_reference
+        ):
+            return
+        _LOGGER.warning(
+            "category_review.expense_mismatched",
+            profile_id=proposal.profile_id,
+            proposal_id=proposal.id,
+            expense_id=expense.id,
+        )
+        raise ValueError("category review movement does not match its proposal")
 
     def _replayed_expense(
         self,
@@ -611,4 +721,9 @@ def _review_identity(
     )
 
 
-__all__ = ["OWNER_REVIEW_PROVENANCE", "CategoryReviewService"]
+__all__ = [
+    "OWNER_REVIEW_PROVENANCE",
+    "CategoryReviewQueue",
+    "CategoryReviewService",
+    "PendingCategoryReview",
+]

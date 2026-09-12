@@ -179,6 +179,13 @@ class CategoryReviewRepository(Protocol):
     ) -> tuple[CategoryProposal, ...]:
         """Load every open review in one profile scope, oldest first."""
 
+    def get_category_review_expense(
+        self,
+        profile_id: UUID,
+        proposal_id: UUID,
+    ) -> Expense:
+        """Load the movement sharing one proposal's trusted source reference."""
+
     def get_idempotent_category_review_command(
         self,
         *,

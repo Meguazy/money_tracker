@@ -1,8 +1,8 @@
 # Local Web Operations
 
-- Status: Step 5 overview, manual-movement, multi-allocation editing, and
-  budget-planning slices implemented; complete control plane and release
-  acceptance still in progress
+- Status: Step 5 overview, manual-movement, multi-allocation editing,
+  budget-planning, and category-proposal review slices implemented; complete
+  control plane and release acceptance still in progress
 - Binding decision: [AD-009](../arc42/decisions/AD-009-local-web-application.md)
 - Delivery evidence: [Step 5](../roadmap/step-5-dashboard-and-advice.md)
 
@@ -10,9 +10,11 @@ The implemented local service serves one compiled React application and its
 versioned JSON API from the same origin. It provides the monthly overview,
 complete monthly transaction register, manual movement lifecycle with
 multi-allocation editing, monthly budget planning, liveness, readiness, and CSRF
-bootstrap endpoints. Receipt review, taxonomy, wallet administration, messaging
-operations, settings, wider date ranges, and advice remain Step 5 work and must
-not be described as available.
+bootstrap endpoints. It also exposes the pending category-proposal queue and
+the deterministic approve, reuse-active-category, and cancel decisions. Receipt
+review, category rename/archive, wallet administration, messaging operations,
+settings, wider date ranges, and advice remain Step 5 work and must not be
+described as available.
 
 ## Ownership and boundaries
 
@@ -20,11 +22,13 @@ not be described as available.
 policy, but no finance data. `ReportingService` computes exact reads;
 `ExpenseMutationAdapter` translates strict browser commands into the existing
 `FinanceService`; `BudgetMutationAdapter` translates budget commands into the
-existing `FinanceAdministrationService`; and `PostgresFinanceRepository` owns
-authoritative storage and audit. Wallet entries have no browser route. The
-React application owns only ephemeral browser state and receives neither a
-profile identifier nor credentials. The production build is read-only
-input to FastAPI; receipt originals are outside the static root.
+existing `FinanceAdministrationService`; `CategoryReviewMutationAdapter`
+exposes the existing `CategoryReviewService` without accepting a movement
+identifier from the browser; and `PostgresFinanceRepository` owns authoritative
+storage and audit. Wallet entries have no browser route. The React application
+owns only ephemeral browser state and receives neither a profile identifier nor
+credentials. The production build is read-only input to FastAPI; receipt
+originals are outside the static root.
 
 The process requires exactly one bootstrapped profile and refuses to start when
 that V1 invariant does not hold. Profile scope is injected during composition,
@@ -61,6 +65,13 @@ left for review, opens with no category row. Add one before saving: the form
 refuses an empty dimension, a duplicate reference, an amount whose sign differs
 from the total, and any split that does not reconcile.
 
+Use `/categorie` to review proposals that are still pending. The page shows the
+proposed category and the safe facts of its associated movement. Approving uses
+the proposal, reusing a category applies an existing active category, and
+cancelling discards both the proposal and the draft movement. The model-backed
+`Proponine un'altra` path remains in the Telegram conversation: this page does
+not invoke a model or change the taxonomy.
+
 Use `/budget` to set the monthly targets the overview compares against. Until a
 target exists there, the overview's budget comparison is empty by design and
 every spent category is reported as unbudgeted. A budget has one recurring
@@ -95,7 +106,7 @@ listener and allowed origins.
 
 | Route | Purpose | Content |
 | --- | --- | --- |
-| `GET /`, `GET /movimenti`, `GET /budget` | Compiled React shell | Static application only; every route supports direct browser navigation. |
+| `GET /`, `GET /movimenti`, `GET /budget`, `GET /categorie` | Compiled React shell | Static application only; every route supports direct browser navigation. |
 | `GET /api/v1/overview/monthly?period=YYYY-MM` | Deterministic monthly overview | Exact posted total, funding class/source split, budgets, and unbudgeted categories. |
 | `GET /api/v1/transactions?period=YYYY-MM` | Monthly lifecycle register | Every movement state, exact allocations, optimistic versions, and safe category/source references. |
 | `POST /api/v1/expenses` | Create a manual draft | Strict complete movement body; returns safe ID, state, and version. |
@@ -105,6 +116,10 @@ listener and allowed origins.
 | `GET /api/v1/budgets?period=YYYY-MM` | Monthly budget plan | Configured targets worst position first, their overrides and versions, and the categories still available. |
 | `POST /api/v1/budgets` | Configure a category budget | Strict recurring target plus optional month overrides. |
 | `PUT /api/v1/budgets/{category_id}` | Replace a budget plan | Strict complete replacement plus `expected_version`. |
+| `GET /api/v1/category-proposals` | Pending category review queue | Safe proposal/movement facts, alternatives, and active categories. |
+| `POST /api/v1/category-proposals/{id}/approve` | Approve a proposal | Applies the proposed category to its server-resolved movement. |
+| `POST /api/v1/category-proposals/{id}/use-existing` | Reuse an active category | Strict category reference; the movement target is never browser input. |
+| `POST /api/v1/category-proposals/{id}/cancel` | Cancel a proposal | Cancels the proposal and its server-resolved draft movement. |
 | `GET /api/v1/health/live` | Process liveness | Content-free healthy state. |
 | `GET /api/v1/health/ready` | Database/profile readiness | Healthy state or bounded problem details. |
 | `GET /api/v1/csrf` | Prepare unsafe browser requests | Random double-submit value and HttpOnly same-site cookie. |
@@ -128,6 +143,9 @@ paths, owner text, or credentials.
   Correction, registration, cancellation, and budget replacement also carry the
   version observed by the browser, so stale tabs receive 409 and must reload
   before retrying.
+  Category-review commands use the fixed proposal-wide key
+  `category-review:{proposal_id}` already owned by the review service. Retrying
+  one decision replays it; changing the decision for that proposal conflicts.
 - API responses are marked `no-store`. Responses also set a same-origin content
   security policy, deny framing and referrers, and disable MIME sniffing.
 - The API has no secret-returning endpoint. Do not add token, database URL,
@@ -167,8 +185,10 @@ is read back, whose unreconciled draft stays editable but cannot be registered,
 whose unreconciled correction of a posted movement is refused, and whose
 rewritten split is verified in PostgreSQL, and a budget configured, replayed,
 read for an overridden month, refused under a reused key and a stale version,
-then verified in the database and the overview. It uses isolated identifiers and
-cleans up its schemas.
+then verified in the database and the overview. It also reads three pending
+category proposals, approves one with replay, reuses an active category for
+one, cancels one, and verifies every terminal movement/proposal state in
+PostgreSQL. It uses isolated identifiers and cleans up its schemas.
 
 A draft may legitimately be unreconciled, so both allocation dimensions are
 enforced when a movement is registered, not while it is still being edited.
@@ -177,7 +197,7 @@ Registering an unreconciled movement returns a bounded 422 and changes nothing.
 To withdraw the web surface, stop and disable only
 `money-tracker-api.service`. No migration rollback is needed. Manual movements
 already committed through the service are authoritative finance history, and so
-are the configured budgets: keep
-them and the Telegram services running, and correct or cancel them only through
-normal audited use cases. Re-enable the last known-good build and unit rather
-than deleting `frontend/dist` while the service is active.
+are configured budgets and category-review decisions: keep them and the
+Telegram services running, and correct or cancel them only through normal
+audited use cases. Re-enable the last known-good build and unit rather than
+deleting `frontend/dist` while the service is active.

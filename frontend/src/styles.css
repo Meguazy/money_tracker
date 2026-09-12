@@ -276,6 +276,20 @@ body {
 }
 
 @media (max-width: 48rem) {
+  .app-header > div {
+    align-content: center;
+    flex-wrap: wrap;
+  }
+
+  .main-nav {
+    order: 3;
+    flex-basis: 100%;
+    justify-content: center;
+  }
+
+  .main-nav a {
+    padding-inline: 0.65rem;
+  }
   .page {
     width: min(100% - 1.25rem, 42rem);
     padding-top: 2rem;

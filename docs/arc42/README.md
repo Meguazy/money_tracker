@@ -29,7 +29,8 @@ workflow, authorization, latency, fault, and reboot acceptance on 2026-09-11.
 Step 5 is active. Its implemented slices provide the loopback FastAPI host,
 monthly overview and transaction register, audited manual create/correct/post/
 cancel workflows, the multi-allocation editor for both reconciling dimensions,
-the monthly budget planner, compiled React shell, browser security policy, and
+the monthly budget planner, owner review of pending category proposals,
+compiled React shell, browser security policy, and
 host unit. The remaining control-plane views, wider analytics, advice exposure,
 and browser E2E acceptance are still planned within Step 5. Receipt extraction
 remains assigned to Step 6.
@@ -120,7 +121,7 @@ boundary is not end-to-end encrypted and must not be described as local storage.
 | Application to inference | OpenAI-compatible HTTP | Messages, schemas, tool calls, model settings | Implemented basic chat |
 | Application to Langfuse | SDK over local HTTP/OTLP | Redacted graph/model observations and aggregate scores | Implemented, optional and healthy |
 | Telegram gateway to Bot API | HTTPS long polling and send methods | Updates, callback queries, messages, and bounded file metadata; no Step 4 file download | Implemented and owner-accepted against the real private test bot |
-| Browser to application API | Same-origin HTTP JSON | Monthly overview, transaction register, manual lifecycle, budget planning, CSRF, and health implemented; remaining review, analytics, and operations resources planned | Step 5 slices implemented |
+| Browser to application API | Same-origin HTTP JSON | Monthly overview, transaction register, manual lifecycle, budget planning, category-proposal review, CSRF, and health implemented; remaining receipt, taxonomy-management, wallet, analytics, and operations resources planned | Step 5 slices implemented |
 | Application to PostgreSQL | PostgreSQL protocol | Checkpoints, authoritative finance aggregates, normalized messaging offsets/inbox/outbox, pairing, actions, retries, and dead letters | Implemented foundation, finance repositories, and Step 4 messaging persistence |
 | Application to receipt archive | Private host filesystem | Fully decoded original JPEG/PNG/WebP keyed and verified by content hash; no derivatives | Local adapter/admin CLI implemented; API/worker wiring, deletion, and backup planned |
 | Backup process to repository | Restic repository protocol | Database dump, receipts and recovery configuration | Implemented and restore-tested; scheduling planned |
@@ -167,7 +168,7 @@ boundary is not end-to-end encrypted and must not be described as local storage.
 ```text
 Money Tracker workstation
 ├── Host processes
-│   ├── FastAPI application and compiled React UI        [overview/movements implemented]
+│   ├── FastAPI application and compiled React UI        [overview/movements/budgets/category review implemented]
 │   ├── Telegram gateway                                [implemented; unit template checked in]
 │   ├── Sequential workflow worker                      [implemented; unit template checked in]
 │   │   ├── typed dispatcher, router, and text graphs  [implemented library]
@@ -282,8 +283,8 @@ catalog is promoted; every identifier carries a `candidate-` prefix.
 | --- | --- | --- | --- | --- |
 | Workflow dispatcher, root router, and text specialists (implemented) | Route one intent and coordinate expense/refund, correction/undo, category review, query, or advice | Typed normalized work unit/outcome, versioned schemas, scoped tool registries, trusted correlations | Namespaced checkpoint references and workflow IDs; no domain ownership | Administration CLI and worker; mutation paths call replay-safe application services |
 | Telegram Bot API transport (implemented) | Validate the bot, long poll, obtain file metadata, acknowledge callbacks, and deliver outbox messages | Bounded HTTPS client and messaging services | No authoritative finance data or correctness state | Gateway host service; separate production/test token selected from a private environment file |
-| FastAPI adapter (partial) | Expose monthly overview/register, manual lifecycle, budget planning, health, CSRF bootstrap, compiled UI, and later REST resources | Narrow reporting and finance ports | No independent data | Implemented on loopback with Host/Origin, CSRF, idempotency, optimistic concurrency, and bounded errors |
-| React dashboard (partial) | Display the overview and transaction register, edit the multi-allocation manual lifecycle and monthly budgets, and later edit review, wallet and operational state | Same-origin REST API | Browser session/UI state only | Compiled static assets; no secrets; labelled controls, lifecycle history, and accessible chart table alternative |
+| FastAPI adapter (partial) | Expose monthly overview/register, manual lifecycle, budget planning, pending category review, health, CSRF bootstrap, compiled UI, and later REST resources | Narrow reporting, finance, budget, and category-review adapters | No independent data | Implemented on loopback with Host/Origin, CSRF, idempotency, optimistic concurrency, proposal-wide command identity, and bounded errors |
+| React dashboard (partial) | Display the overview, transaction register, budget planner, and pending category proposals; edit the multi-allocation manual lifecycle, monthly budgets, and deterministic category decisions; later edit receipt, wallet and operational state | Same-origin REST API | Browser session/UI state only | Compiled static assets; no secrets; labelled controls, lifecycle history, responsive navigation, and accessible chart table alternative |
 | Local model gateway | Provide typed chat, schema and tool capabilities | OpenAI-compatible local endpoint | No persistent domain data | Replaceable host inference process |
 | Receipt extractor adapter | Produce a versioned structured receipt draft | Selected local OCR/VLM pipeline | No authoritative data until validated | Local-only; selection remains evaluation-gated |
 | Langfuse adapter | Record redacted traces and experiment scores | Local Langfuse SDK | Observability copies, not source of truth | Optional development/evaluation profile |
@@ -828,6 +829,39 @@ migration local to each bounded workflow.
 The adapters own no authoritative state, model call, or receipt access. Other
 Step 5 resources remain planned rather than implicit in these slices.
 
+### Current browser category-proposal review
+
+1. The browser loads every pending proposal, the current active taxonomy, and
+   the movement each review blocks through one profile-scoped control-plane
+   adapter.
+2. PostgreSQL correlates proposal and movement through the trusted source
+   reference written by the expense workflow. The service requires one exact
+   match; missing or ambiguous state emits a structured error with identifiers
+   and counts only. The response omits profile, source reference, channel data,
+   and command records.
+3. The browser sends only a proposal ID and, for reuse, a current category
+   display name. It never supplies the movement ID. `CategoryReviewService`
+   rechecks that proposal and movement share profile and source before applying
+   approval, reuse, or cancellation.
+4. Every branch requires the canonical proposal-wide HTTP idempotency key that
+   the existing review transaction claims. Approval creates a taxonomy node
+   and posts the correlated movement atomically; reuse resolves an active name
+   or alias and posts without node creation; cancellation terminates the
+   proposal and discards the never-posted movement.
+5. The React page offers the stored shortlist and a labelled selector over all
+   active categories, with loading, empty, retryable failure and pending-action
+   states. Successful decisions invalidate proposal, movement, overview, and
+   budget reads.
+6. A request for another model candidate remains in the persistent Telegram
+   workflow. The web object graph contains neither a model nor a proposal
+   generator; manual active-category reuse provides a deterministic browser
+   resolution without widening taxonomy authority or changing a model-visible
+   contract.
+
+The application service and PostgreSQL own decision and audit semantics. The
+FastAPI adapter owns strict JSON, CSRF, bounded problems, and trusted profile
+injection; React owns ephemeral selection state only.
+
 ### Current authoritative backup and restore drill
 
 1. `money-tracker-backup create` validates executables and owner-only
@@ -872,7 +906,7 @@ manual acceptance check.
    targeted question.
 7. The owner receives a summary with modify and undo actions.
 
-### Planned category review
+### Current conversational category review
 
 1. The workflow persists a proposal and emits a serializable review payload.
 2. The owner approves it, requests the best existing category, names an existing
@@ -881,7 +915,8 @@ manual acceptance check.
    checkpoint.
 4. Creation and expense posting occur only after the interrupt in an idempotent
    database transaction.
-5. A re-proposal excludes candidates rejected in the current review; after
+5. The implemented re-proposal path excludes candidates rejected in the
+   current review; after
    three rejections the interface requires existing-list or manual resolution.
 
 ### Planned receipt review
@@ -1100,9 +1135,10 @@ preflight without coupling Telegram recovery to dashboard availability.
 - Host validation occurs before routing to block DNS rebinding. A present Origin
   must match exactly, and the service emits no CORS permission headers.
 - Unsafe methods require an allowed Origin plus equal random values in an
-  HttpOnly, same-site cookie and the `X-CSRF-Token` header. Movement mutations
-  additionally require `Idempotency-Key` and use optimistic versions for
-  existing aggregates.
+  HttpOnly, same-site cookie and the `X-CSRF-Token` header. Every finance
+  mutation additionally requires `Idempotency-Key`; movements and budgets use
+  their command keys and optimistic versions, while category decisions require
+  the proposal-wide key already claimed by the review transaction.
 - API responses are `no-store`. CSP restricts content and connections to the
   same origin; framing, referrers, and MIME sniffing are disabled. Interactive API schema endpoints are absent.
 - Static serving exposes only the compiled index and asset directory. The API
@@ -1338,7 +1374,7 @@ environment file.
   workflow planned.
 - [AD-009: Local FastAPI and React web application](decisions/AD-009-local-web-application.md):
   strict version-one finance wire contracts, monthly overview, manual
-  lifecycle, multi-allocation editing and budget-planning slices, HTTP
+  lifecycle, multi-allocation editing, budget planning, category review, HTTP
   security, and host deployment implemented; remaining Step 5 resources and
   acceptance planned.
 - [AD-014: Private content-addressed receipt archive](decisions/AD-014-private-receipt-archive.md):
@@ -1407,7 +1443,7 @@ Quantitative evaluation gates are maintained in
   but automatic scheduling, off-device secret verification, and a clean-machine
   restore remain later release work.
 - The real Telegram evidence uses a private test bot, not a production bot. The
-  Step 5 overview and movement workflows have component and real PostgreSQL HTTP
+  implemented Step 5 web workflows have component and real PostgreSQL HTTP
   coverage but still lack complete browser E2E and installed-service
   acceptance.
 

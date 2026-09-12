@@ -38,6 +38,9 @@ from money_tracker.web.contracts import (
     BudgetMutationResponse,
     BudgetPlanResponse,
     BudgetReplaceRequest,
+    CategoryReviewDecisionRequest,
+    CategoryReviewQueueResponse,
+    CategoryReviewReuseRequest,
     CsrfTokenResponse,
     ExpenseCancelRequest,
     ExpenseMutationResponse,
@@ -49,6 +52,7 @@ from money_tracker.web.contracts import (
 )
 from money_tracker.web.mutations import (
     BudgetMutationAdapter,
+    CategoryReviewMutationAdapter,
     ExpenseMutationAdapter,
 )
 from money_tracker.web.security import (
@@ -99,6 +103,7 @@ def create_app(
     reporting: DashboardReader,
     mutations: ExpenseMutationAdapter,
     budgets: BudgetMutationAdapter,
+    category_reviews: CategoryReviewMutationAdapter,
     readiness_check: Callable[[], bool],
 ) -> FastAPI:
     """Compose the local web adapter around narrow application reads.
@@ -109,6 +114,7 @@ def create_app(
         reporting: Read-only application service for dashboard facts.
         mutations: Browser adapter over audited, replay-safe finance use cases.
         budgets: Browser adapter over audited, replay-safe budget use cases.
+        category_reviews: Browser adapter over owner category decisions.
         readiness_check: Content-free database/schema readiness probe.
 
     Returns:
@@ -242,6 +248,126 @@ def create_app(
         except PsycopgError:
             return _database_problem(f"{API_V1_PREFIX}/transactions")
         return TransactionRegisterResponse.from_application(result)
+
+    @router.get(
+        "/category-proposals",
+        response_model=CategoryReviewQueueResponse,
+    )
+    def category_proposals() -> CategoryReviewQueueResponse | JSONResponse:
+        """Return pending proposals and active deterministic reuse choices."""
+
+        try:
+            queue = category_reviews.pending(profile_id=profile_id)
+        except PsycopgError:
+            return _database_problem(f"{API_V1_PREFIX}/category-proposals")
+        except (AggregateNotFoundError, IdempotencyConflictError):
+            return _problem(
+                status=503,
+                title="Revisioni non disponibili",
+                detail="La correlazione di una proposta richiede assistenza.",
+                code="category_review_unavailable",
+                instance=f"{API_V1_PREFIX}/category-proposals",
+            )
+        return CategoryReviewQueueResponse.from_application(queue)
+
+    @router.post(
+        "/category-proposals/{proposal_id}/approve",
+        response_model=ExpenseMutationResponse,
+    )
+    async def approve_category_proposal(
+        proposal_id: UUID,
+        http_request: Request,
+        idempotency_key: Annotated[
+            str,
+            Header(alias="Idempotency-Key", min_length=1, max_length=200),
+        ],
+    ) -> ExpenseMutationResponse | JSONResponse:
+        """Approve a candidate and post its correlated movement atomically."""
+
+        try:
+            CategoryReviewDecisionRequest.model_validate_json(await http_request.body())
+        except ValidationError:
+            return _invalid_body(
+                f"{API_V1_PREFIX}/category-proposals/{proposal_id}/approve"
+            )
+        return _execute_mutation(
+            lambda: category_reviews.approve(
+                profile_id=profile_id,
+                proposal_id=proposal_id,
+                command_key=idempotency_key.strip(),
+            ),
+            render=ExpenseMutationResponse.from_domain,
+            problems=_CATEGORY_REVIEW_PROBLEMS,
+            command_key=idempotency_key,
+            instance=f"{API_V1_PREFIX}/category-proposals/{proposal_id}/approve",
+        )
+
+    @router.post(
+        "/category-proposals/{proposal_id}/use-existing",
+        response_model=ExpenseMutationResponse,
+    )
+    async def use_existing_category(
+        proposal_id: UUID,
+        http_request: Request,
+        idempotency_key: Annotated[
+            str,
+            Header(alias="Idempotency-Key", min_length=1, max_length=200),
+        ],
+    ) -> ExpenseMutationResponse | JSONResponse:
+        """Refuse a candidate and post with one named active category."""
+
+        try:
+            payload = CategoryReviewReuseRequest.model_validate_json(
+                await http_request.body()
+            )
+        except ValidationError:
+            return _invalid_body(
+                f"{API_V1_PREFIX}/category-proposals/{proposal_id}/use-existing"
+            )
+        return _execute_mutation(
+            lambda: category_reviews.use_existing(
+                profile_id=profile_id,
+                proposal_id=proposal_id,
+                command_key=idempotency_key.strip(),
+                request=payload,
+            ),
+            render=ExpenseMutationResponse.from_domain,
+            problems=_CATEGORY_REVIEW_PROBLEMS,
+            command_key=idempotency_key,
+            instance=(f"{API_V1_PREFIX}/category-proposals/{proposal_id}/use-existing"),
+        )
+
+    @router.post(
+        "/category-proposals/{proposal_id}/cancel",
+        response_model=ExpenseMutationResponse,
+    )
+    async def cancel_category_proposal(
+        proposal_id: UUID,
+        http_request: Request,
+        idempotency_key: Annotated[
+            str,
+            Header(alias="Idempotency-Key", min_length=1, max_length=200),
+        ],
+    ) -> ExpenseMutationResponse | JSONResponse:
+        """Cancel a proposal and discard its correlated movement."""
+
+        try:
+            CategoryReviewDecisionRequest.model_validate_json(await http_request.body())
+        except ValidationError:
+            return _invalid_body(
+                f"{API_V1_PREFIX}/category-proposals/{proposal_id}/cancel"
+            )
+        return _execute_mutation(
+            lambda: category_reviews.cancel(
+                profile_id=profile_id,
+                proposal_id=proposal_id,
+                command_key=idempotency_key.strip(),
+            ),
+            render=ExpenseMutationResponse.from_domain,
+            problems=_CATEGORY_REVIEW_PROBLEMS,
+            command_key=idempotency_key,
+            instance=f"{API_V1_PREFIX}/category-proposals/{proposal_id}/cancel",
+        )
 
     @router.post(
         "/expenses",
@@ -492,6 +618,22 @@ _BUDGET_PROBLEMS = _MutationProblems(
     code_prefix="budget",
 )
 
+_CATEGORY_REVIEW_PROBLEMS = _MutationProblems(
+    not_found=(
+        "Proposta non trovata",
+        "La proposta richiesta non esiste o non appartiene a questo profilo.",
+    ),
+    conflict=(
+        "Proposta già decisa",
+        "Ricarica le proposte prima di scegliere un'altra azione.",
+    ),
+    invalid=(
+        "Decisione non valida",
+        "La proposta o la categoria scelta non può essere applicata.",
+    ),
+    code_prefix="category_review",
+)
+
 
 def _execute_mutation[AggregateT, ResponseT](
     operation: Callable[[], AggregateT],
@@ -627,6 +769,7 @@ def _mount_dashboard(app: FastAPI, static_dir: Path) -> None:
 
     @app.get("/", include_in_schema=False)
     @app.get("/movimenti", include_in_schema=False)
+    @app.get("/categorie", include_in_schema=False)
     def dashboard() -> FileResponse:
         """Return the compiled single-page application shell."""
 

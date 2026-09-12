@@ -145,6 +145,31 @@ export type BudgetMutation = {
   version: number;
 };
 
+export type CategoryProposal = {
+  id: string;
+  proposed_name: string;
+  description: string;
+  parent_name: string | null;
+  rationale: string;
+  alternative_categories: CategoryReference[];
+  excluded_names: string[];
+  can_repropose: boolean;
+  expense: {
+    id: string;
+    amount: Money;
+    occurred_at: string;
+    description: string;
+    merchant: string | null;
+    status: ExpenseStatus;
+    version: number;
+  };
+};
+
+export type CategoryReviewQueue = {
+  proposals: CategoryProposal[];
+  active_categories: CategoryReference[];
+};
+
 type ProblemDetails = {
   detail?: string;
 };
@@ -204,13 +229,14 @@ async function mutate<T>(
   path: string,
   method: "POST" | "PUT",
   body: unknown,
+  idempotencyKey: string = crypto.randomUUID(),
 ): Promise<T> {
   const token = await csrfToken();
   const response = await fetch(path, {
     method,
     headers: {
       "Content-Type": "application/json",
-      "Idempotency-Key": crypto.randomUUID(),
+      "Idempotency-Key": idempotencyKey,
       "X-CSRF-Token": token,
     },
     body: JSON.stringify(body),
@@ -292,5 +318,50 @@ export function cancelExpense(
     `/api/v1/expenses/${encodeURIComponent(expenseId)}/cancel`,
     "POST",
     { expected_version: expectedVersion },
+  );
+}
+
+export async function loadCategoryProposals(
+  signal?: AbortSignal,
+): Promise<CategoryReviewQueue> {
+  const response = await fetch("/api/v1/category-proposals", { signal });
+  return responseJson<CategoryReviewQueue>(response);
+}
+
+function categoryReviewKey(proposalId: string): string {
+  return `category-review:${proposalId}`;
+}
+
+export function approveCategoryProposal(
+  proposalId: string,
+): Promise<ExpenseMutation> {
+  return mutate<ExpenseMutation>(
+    `/api/v1/category-proposals/${encodeURIComponent(proposalId)}/approve`,
+    "POST",
+    {},
+    categoryReviewKey(proposalId),
+  );
+}
+
+export function reuseCategoryProposal(
+  proposalId: string,
+  categoryName: string,
+): Promise<ExpenseMutation> {
+  return mutate<ExpenseMutation>(
+    `/api/v1/category-proposals/${encodeURIComponent(proposalId)}/use-existing`,
+    "POST",
+    { category_name: categoryName },
+    categoryReviewKey(proposalId),
+  );
+}
+
+export function cancelCategoryProposal(
+  proposalId: string,
+): Promise<ExpenseMutation> {
+  return mutate<ExpenseMutation>(
+    `/api/v1/category-proposals/${encodeURIComponent(proposalId)}/cancel`,
+    "POST",
+    {},
+    categoryReviewKey(proposalId),
   );
 }

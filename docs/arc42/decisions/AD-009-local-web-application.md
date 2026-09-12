@@ -2,8 +2,8 @@
 
 - Status: accepted
 - Implementation: monthly overview, transaction/manual-lifecycle,
-  multi-allocation editing and budget-planning slices, HTTP security, and host
-  deployment implemented; remaining Step 5 surface in progress
+  multi-allocation editing, budget-planning, and category-review slices, HTTP
+  security, and host deployment implemented; remaining Step 5 surface in progress
 - Date: 2026-09-01
 
 ## Context
@@ -123,6 +123,25 @@ exposes no browser route for them. Budget creation and replacement became
 replay-safe in the same change, claiming the general command table described in
 AD-005, so this decision's rule that a reused mutation key retries the identical
 command holds for every implemented resource instead of only for movements.
+
+The category-review slice composes a dedicated
+`CategoryReviewMutationAdapter` over the existing owner-decision service.
+`GET /api/v1/category-proposals` exposes proposal and correlated movement facts
+plus active reuse choices without profile, source-reference, checkpoint, or
+command data. Approve, use-existing, and cancel routes accept no movement ID;
+the repository resolves it from the workflow source shared by the proposal and
+expense, and the application verifies the association before settlement.
+Missing or ambiguous association is a structured, bounded dependency failure,
+not a guessed target.
+
+All three mutations require the canonical `category-review:{proposal_id}`
+header value. That is the proposal-wide key already claimed in the same
+PostgreSQL transaction as proposal, taxonomy, movement, and audit state, so an
+identical HTTP retry reconstructs the first result and another branch
+conflicts. The React `/categorie` page exposes approval, shortlist reuse,
+manual active-category reuse, cancellation, and accessible empty/error states.
+Model-backed re-proposal remains in the conversational workflow and no
+model-visible contract changes.
 
 `money-tracker-api` is a host entry point and
 `money-tracker-api.service` is a hardened systemd user-service template. The

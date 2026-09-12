@@ -7,7 +7,11 @@ from typing import Protocol
 from uuid import UUID
 
 from money_tracker.api.contracts import ExpenseCreateRequest
-from money_tracker.application import IdGenerator
+from money_tracker.application import (
+    CategoryReviewQueue,
+    IdempotencyConflictError,
+    IdGenerator,
+)
 from money_tracker.domain import (
     CategoryAllocation,
     Expense,
@@ -21,6 +25,7 @@ from money_tracker.web.contracts import (
     BudgetCreateRequest,
     BudgetReplaceRequest,
     BudgetWriteRequest,
+    CategoryReviewReuseRequest,
     ExpenseCancelRequest,
     ExpensePostRequest,
     ExpenseReplaceRequest,
@@ -319,6 +324,148 @@ class BudgetMutationAdapter:
         )
 
 
+class CategoryReviewWriter(Protocol):
+    """Expose only owner category-review operations required by the browser."""
+
+    def pending_reviews(self, *, profile_id: UUID) -> CategoryReviewQueue:
+        """Return open proposals paired to their trusted movements."""
+
+    def review_expense(self, *, profile_id: UUID, proposal_id: UUID) -> Expense:
+        """Resolve one proposal's movement from persistent workflow identity."""
+
+    def approve(
+        self,
+        *,
+        profile_id: UUID,
+        proposal_id: UUID,
+        expense_id: UUID,
+        actor: str,
+        reason: str,
+    ) -> Expense:
+        """Approve a candidate and post its movement."""
+
+    def use_existing(
+        self,
+        *,
+        profile_id: UUID,
+        proposal_id: UUID,
+        expense_id: UUID,
+        category_name: str,
+        actor: str,
+        reason: str,
+    ) -> Expense:
+        """Reuse an active category and post the movement."""
+
+    def cancel(
+        self,
+        *,
+        profile_id: UUID,
+        proposal_id: UUID,
+        expense_id: UUID,
+        actor: str,
+        reason: str,
+    ) -> Expense:
+        """Cancel the proposal and discard its movement."""
+
+
+class CategoryReviewMutationAdapter:
+    """Bind strict browser decisions to the existing review service.
+
+    The proposal identifier is enough: the correlated movement is resolved by
+    the service from persistent workflow identity and never accepted from the
+    browser. The required HTTP idempotency key is the proposal-wide key already
+    claimed atomically by every category-review branch.
+    """
+
+    def __init__(self, writer: CategoryReviewWriter) -> None:
+        """Bind the browser boundary to replay-safe owner decisions.
+
+        Args:
+            writer: Existing category-review use cases and trusted reads.
+        """
+
+        self._writer = writer
+
+    def pending(self, *, profile_id: UUID) -> CategoryReviewQueue:
+        """Return the pending owner review queue."""
+
+        return self._writer.pending_reviews(profile_id=profile_id)
+
+    def approve(
+        self,
+        *,
+        profile_id: UUID,
+        proposal_id: UUID,
+        command_key: str,
+    ) -> Expense:
+        """Approve one candidate using its proposal-wide command key."""
+
+        self._require_command_key(proposal_id, command_key)
+        expense = self._writer.review_expense(
+            profile_id=profile_id, proposal_id=proposal_id
+        )
+        return self._writer.approve(
+            profile_id=profile_id,
+            proposal_id=proposal_id,
+            expense_id=expense.id,
+            actor=WEB_ACTOR,
+            reason="owner approved category in browser",
+        )
+
+    def use_existing(
+        self,
+        *,
+        profile_id: UUID,
+        proposal_id: UUID,
+        command_key: str,
+        request: CategoryReviewReuseRequest,
+    ) -> Expense:
+        """Resolve one review with an active category name."""
+
+        self._require_command_key(proposal_id, command_key)
+        expense = self._writer.review_expense(
+            profile_id=profile_id, proposal_id=proposal_id
+        )
+        return self._writer.use_existing(
+            profile_id=profile_id,
+            proposal_id=proposal_id,
+            expense_id=expense.id,
+            category_name=request.category_name,
+            actor=WEB_ACTOR,
+            reason="owner reused category in browser",
+        )
+
+    def cancel(
+        self,
+        *,
+        profile_id: UUID,
+        proposal_id: UUID,
+        command_key: str,
+    ) -> Expense:
+        """Cancel one review and discard its correlated movement."""
+
+        self._require_command_key(proposal_id, command_key)
+        expense = self._writer.review_expense(
+            profile_id=profile_id, proposal_id=proposal_id
+        )
+        return self._writer.cancel(
+            profile_id=profile_id,
+            proposal_id=proposal_id,
+            expense_id=expense.id,
+            actor=WEB_ACTOR,
+            reason="owner cancelled category review in browser",
+        )
+
+    @staticmethod
+    def _require_command_key(proposal_id: UUID, command_key: str) -> None:
+        """Require the exact key the application transaction claims."""
+
+        if command_key != f"category-review:{proposal_id}":
+            raise IdempotencyConflictError(
+                "category review requires its proposal-wide command key"
+            )
+
+
 def _overrides_from_request(
     request: BudgetWriteRequest,
 ) -> tuple[tuple[YearMonth, Money], ...]:
@@ -379,6 +526,8 @@ __all__ = [
     "WEB_ACTOR",
     "BudgetMutationAdapter",
     "BudgetWriter",
+    "CategoryReviewMutationAdapter",
+    "CategoryReviewWriter",
     "ExpenseMutationAdapter",
     "ExpenseWriter",
 ]

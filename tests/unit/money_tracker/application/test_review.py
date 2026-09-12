@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from itertools import count
 from uuid import UUID, uuid4
@@ -84,6 +84,20 @@ class _Repository:
             proposal
             for proposal in self.proposals.values()
             if proposal.status is CategoryProposalStatus.PENDING
+        )
+
+    def get_category_review_expense(
+        self,
+        profile_id: UUID,
+        proposal_id: UUID,
+    ) -> Expense:
+        """Resolve the movement sharing the proposal's trusted source."""
+
+        proposal = self.proposals[proposal_id]
+        return next(
+            expense
+            for expense in self.expenses.values()
+            if expense.source_reference == proposal.source_reference
         )
 
     def get_idempotent_category_review_command(
@@ -298,6 +312,43 @@ def test_approval_creates_the_node_and_posts_the_movement() -> None:
     assert posted.category_allocations[0].owner_override is False
     assert repository.proposals[proposal.id].status is CategoryProposalStatus.APPROVED
     assert repository.settlements == 1
+
+
+def test_pending_queue_pairs_each_proposal_with_its_source_movement() -> None:
+    """Keep movement identity out of the future browser request contract."""
+
+    repository, service, draft, proposal = _fixture()
+
+    queue = service.pending_reviews(profile_id=PROFILE)
+
+    assert queue.reviews[0].proposal == proposal
+    assert queue.reviews[0].expense == draft
+    assert queue.taxonomy == repository.taxonomy
+
+
+def test_review_refuses_a_movement_from_another_source() -> None:
+    """Never apply a proposal decision to a browser-selected movement."""
+
+    repository, service, draft, proposal = _fixture()
+    other = replace(
+        draft,
+        id=uuid4(),
+        source_reference="channel:other",
+        idempotency_key="key:other",
+    )
+    repository.expenses[other.id] = other
+
+    with pytest.raises(ValueError, match="does not match"):
+        service.cancel(
+            profile_id=PROFILE,
+            proposal_id=proposal.id,
+            expense_id=other.id,
+            actor="owner",
+            reason="wrong movement",
+        )
+
+    assert repository.proposals[proposal.id].status is CategoryProposalStatus.PENDING
+    assert repository.expenses[other.id].status is ExpenseStatus.DRAFT
 
 
 def test_identical_approval_replay_returns_the_first_result() -> None:

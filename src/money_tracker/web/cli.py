@@ -10,6 +10,7 @@ import uvicorn
 from psycopg import Error as PsycopgError
 
 from money_tracker.application import (
+    CategoryReviewService,
     FinanceAdministrationService,
     FinanceService,
     ReportingService,
@@ -23,6 +24,7 @@ from money_tracker.web.app import create_app
 from money_tracker.web.config import WebSettings
 from money_tracker.web.mutations import (
     BudgetMutationAdapter,
+    CategoryReviewMutationAdapter,
     ExpenseMutationAdapter,
 )
 
@@ -64,6 +66,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             )
         profile_id = profiles[0]
         ids = UUID4Generator()
+        clock = SystemClock()
         app = create_app(
             settings=settings,
             profile_id=profile_id,
@@ -71,7 +74,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             mutations=ExpenseMutationAdapter(
                 FinanceService(
                     repository,
-                    clock=SystemClock(),
+                    clock=clock,
                     ids=ids,
                 ),
                 ids=ids,
@@ -79,10 +82,13 @@ def main(argv: Sequence[str] | None = None) -> None:
             budgets=BudgetMutationAdapter(
                 FinanceAdministrationService(
                     repository,
-                    clock=SystemClock(),
+                    clock=clock,
                     ids=ids,
                 ),
                 ids=ids,
+            ),
+            category_reviews=CategoryReviewMutationAdapter(
+                CategoryReviewService(repository, repository, clock=clock, ids=ids)
             ),
             readiness_check=lambda: repository.profile_exists(profile_id),
         )

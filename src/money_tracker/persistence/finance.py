@@ -283,6 +283,63 @@ class PostgresFinanceRepository:
             ).fetchall()
         return tuple(self._category_proposal_from_row(row) for row in rows)
 
+    def get_category_review_expense(
+        self,
+        profile_id: UUID,
+        proposal_id: UUID,
+    ) -> Expense:
+        """Load the one movement correlated to a proposal's workflow source.
+
+        The proposal and movement are created from the same durable work unit,
+        so their persisted source reference is the authoritative association.
+        A browser never supplies the movement identifier. Ambiguous legacy or
+        manually corrupted state is refused instead of selecting one row.
+
+        Args:
+            profile_id: Trusted owner scope.
+            proposal_id: Proposal whose movement is required.
+
+        Returns:
+            The uniquely correlated movement.
+
+        Raises:
+            AggregateNotFoundError: If no correlated movement exists.
+            IdempotencyConflictError: If more than one movement shares the source.
+        """
+
+        with connect(self._database_url) as connection:
+            rows = connection.execute(
+                "SELECT expense.id FROM finance.category_proposals AS proposal "
+                "JOIN finance.expenses AS expense "
+                "ON expense.profile_id = proposal.profile_id "
+                "AND expense.source_reference = proposal.source_reference "
+                "WHERE proposal.profile_id = %s AND proposal.id = %s "
+                "ORDER BY expense.id",
+                (profile_id, proposal_id),
+            ).fetchall()
+            if not rows:
+                _LOGGER.error(
+                    "finance.category_review_expense.lookup_failed",
+                    profile_id=profile_id,
+                    proposal_id=proposal_id,
+                    reason="missing",
+                )
+                raise AggregateNotFoundError(
+                    "category proposal has no correlated expense"
+                )
+            if len(rows) != 1:
+                _LOGGER.error(
+                    "finance.category_review_expense.lookup_failed",
+                    profile_id=profile_id,
+                    proposal_id=proposal_id,
+                    reason="ambiguous",
+                    matches=len(rows),
+                )
+                raise IdempotencyConflictError(
+                    "category proposal source matches multiple expenses"
+                )
+            return self._load_expense(connection, profile_id, rows[0][0])
+
     def get_idempotent_category_review_command(
         self,
         *,

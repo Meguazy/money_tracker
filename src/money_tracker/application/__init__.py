@@ -42,7 +42,9 @@ from money_tracker.application.reporting import (
 )
 from money_tracker.application.review import (
     OWNER_REVIEW_PROVENANCE,
+    CategoryReviewQueue,
     CategoryReviewService,
+    PendingCategoryReview,
 )
 
 __all__ = [
@@ -54,6 +56,7 @@ __all__ = [
     "CategoryProposalRepository",
     "CategoryProposalService",
     "CategoryReviewRepository",
+    "CategoryReviewQueue",
     "CategoryReviewService",
     "FinanceAdministrationRepository",
     "FinanceAdministrationService",
@@ -74,6 +77,7 @@ __all__ = [
     "CategorySpending",
     "MonthlyOverview",
     "PeriodSplit",
+    "PendingCategoryReview",
     "ReceiptMediaError",
     "ReceiptMediaStore",
     "StoredReceiptMedia",

@@ -11,6 +11,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from money_tracker.application import (
+    CategoryProposalService,
+    CategoryReviewService,
     FinanceAdministrationService,
     FinanceService,
     ReportingService,
@@ -19,6 +21,8 @@ from money_tracker.application.runtime import SystemClock, UUID4Generator
 from money_tracker.domain import (
     BalanceMode,
     CategoryAllocation,
+    CategoryProposal,
+    CategoryProposalStatus,
     Expense,
     ExpenseStatus,
     FundingClass,
@@ -33,6 +37,7 @@ from money_tracker.persistence.finance import PostgresFinanceRepository
 from money_tracker.web import WebSettings, create_app
 from money_tracker.web.mutations import (
     BudgetMutationAdapter,
+    CategoryReviewMutationAdapter,
     ExpenseMutationAdapter,
 )
 from money_tracker.workflows import posting_request_hash
@@ -133,6 +138,9 @@ def test_monthly_endpoint_reads_real_postgresql_state(postgres_url: str) -> None
             FinanceAdministrationService(repository, clock=SystemClock(), ids=ids),
             ids=ids,
         ),
+        category_reviews=CategoryReviewMutationAdapter(
+            CategoryReviewService(repository, repository, clock=SystemClock(), ids=ids)
+        ),
         readiness_check=lambda: repository.profile_exists(profile.id),
     )
 
@@ -184,6 +192,9 @@ def test_manual_expense_workflow_is_replay_safe_and_visible(
         budgets=BudgetMutationAdapter(
             FinanceAdministrationService(repository, clock=SystemClock(), ids=ids),
             ids=ids,
+        ),
+        category_reviews=CategoryReviewMutationAdapter(
+            CategoryReviewService(repository, repository, clock=SystemClock(), ids=ids)
         ),
         readiness_check=lambda: repository.profile_exists(profile.id),
     )
@@ -344,6 +355,9 @@ def test_multi_allocation_movement_survives_correction_in_real_postgresql(
         budgets=BudgetMutationAdapter(
             FinanceAdministrationService(repository, clock=SystemClock(), ids=ids),
             ids=ids,
+        ),
+        category_reviews=CategoryReviewMutationAdapter(
+            CategoryReviewService(repository, repository, clock=SystemClock(), ids=ids)
         ),
         readiness_check=lambda: repository.profile_exists(profile.id),
     )
@@ -570,6 +584,9 @@ def test_budget_plan_is_configured_and_corrected_in_real_postgresql(
             FinanceAdministrationService(repository, clock=SystemClock(), ids=ids),
             ids=ids,
         ),
+        category_reviews=CategoryReviewMutationAdapter(
+            CategoryReviewService(repository, repository, clock=SystemClock(), ids=ids)
+        ),
         readiness_check=lambda: repository.profile_exists(profile.id),
     )
     client = TestClient(app, base_url="http://localhost:8000")
@@ -715,6 +732,9 @@ def test_budget_routes_refuse_unknown_and_inactive_categories(
             FinanceAdministrationService(repository, clock=SystemClock(), ids=ids),
             ids=ids,
         ),
+        category_reviews=CategoryReviewMutationAdapter(
+            CategoryReviewService(repository, repository, clock=SystemClock(), ids=ids)
+        ),
         readiness_check=lambda: repository.profile_exists(profile.id),
     )
     client = TestClient(app, base_url="http://localhost:8000")
@@ -761,3 +781,173 @@ def test_budget_routes_refuse_unknown_and_inactive_categories(
     assert negative.status_code == 422
     assert negative.json()["code"] == "budget_invalid"
     assert repository.get_budgets(profile.id) == ()
+
+
+@pytest.mark.postgres
+def test_category_proposals_are_resolved_through_real_services(
+    postgres_url: str,
+) -> None:
+    """List, approve, reuse, cancel, and replay reviews through HTTP."""
+
+    upgrade_database(postgres_url)
+    repository = PostgresFinanceRepository(postgres_url)
+    profile = Profile(uuid4())
+    now = SystemClock().now()
+    taxonomy = initial_taxonomy()
+    repository.bootstrap_profile(profile, taxonomy=taxonomy, occurred_at=now)
+    card = FundingSource(
+        id=uuid4(),
+        profile_id=profile.id,
+        name="Carta review web",
+        funding_class=FundingClass.PERSONAL_FUNDS,
+        balance_mode=BalanceMode.UNTRACKED,
+        is_default=True,
+    )
+    repository.create_funding_source(card, occurred_at=now)
+    ids = UUID4Generator()
+    finance = FinanceService(repository, clock=SystemClock(), ids=ids)
+    proposals = CategoryProposalService(repository, clock=SystemClock(), ids=ids)
+
+    def pending(name: str, reference: str) -> tuple[Expense, CategoryProposal]:
+        """Store one correlated draft and pending candidate."""
+
+        draft = Expense(
+            id=uuid4(),
+            profile_id=profile.id,
+            amount=Money(1250),
+            occurred_at=datetime(2026, 9, 12, 10, 30, tzinfo=ROME),
+            description="movimento da classificare",
+            merchant=None,
+            status=ExpenseStatus.DRAFT,
+            category_allocations=(),
+            payment_allocations=(
+                PaymentAllocation(funding_source_id=card.id, amount=Money(1250)),
+            ),
+            source_reference=reference,
+            idempotency_key=f"expense:{reference}",
+        )
+        created = finance.create_expense(
+            draft,
+            request_hash=sha256(reference.encode()).hexdigest(),
+            actor="test",
+            reason="web category review fixture",
+        )
+        proposal = proposals.submit(
+            CategoryProposal(
+                id=uuid4(),
+                profile_id=profile.id,
+                proposed_name=name,
+                description=f"Ambito riutilizzabile {name}.",
+                parent_id=None,
+                rationale="Nessuna categoria attiva descrive la finalità.",
+                alternative_category_ids=(taxonomy.resolve_active("Formazione").id,),
+                excluded_names=(),
+                source_reference=reference,
+            ),
+            actor="workflow",
+            reason="candidate awaiting browser review",
+        )
+        return created, proposal
+
+    approved_draft, approved_proposal = pending(
+        "Giardinaggio web",
+        f"integration:web:category-review:{uuid4()}",
+    )
+    reused_draft, reused_proposal = pending(
+        "Materiale didattico web",
+        f"integration:web:category-review:{uuid4()}",
+    )
+    cancelled_draft, cancelled_proposal = pending(
+        "Collezionismo web",
+        f"integration:web:category-review:{uuid4()}",
+    )
+    review = CategoryReviewService(repository, repository, clock=SystemClock(), ids=ids)
+    app = create_app(
+        settings=WebSettings(static_dir=None),
+        profile_id=profile.id,
+        reporting=ReportingService(repository),
+        mutations=ExpenseMutationAdapter(finance, ids=ids),
+        budgets=BudgetMutationAdapter(
+            FinanceAdministrationService(repository, clock=SystemClock(), ids=ids),
+            ids=ids,
+        ),
+        category_reviews=CategoryReviewMutationAdapter(review),
+        readiness_check=lambda: repository.profile_exists(profile.id),
+    )
+    client = TestClient(app, base_url="http://localhost:8000")
+    csrf = client.get(
+        "/api/v1/csrf",
+        headers={"origin": "http://localhost:8000"},
+    ).json()["token"]
+
+    def review_headers(proposal_id: UUID) -> dict[str, str]:
+        """Return browser headers bound to one proposal-wide command."""
+
+        return {
+            "origin": "http://localhost:8000",
+            "x-csrf-token": csrf,
+            "Idempotency-Key": f"category-review:{proposal_id}",
+        }
+
+    listed = client.get("/api/v1/category-proposals")
+    assert listed.status_code == 200
+    assert [item["id"] for item in listed.json()["proposals"]] == [
+        str(approved_proposal.id),
+        str(reused_proposal.id),
+        str(cancelled_proposal.id),
+    ]
+    assert all("source_reference" not in item for item in listed.json()["proposals"])
+
+    approved = client.post(
+        f"/api/v1/category-proposals/{approved_proposal.id}/approve",
+        json={},
+        headers=review_headers(approved_proposal.id),
+    )
+    replayed = client.post(
+        f"/api/v1/category-proposals/{approved_proposal.id}/approve",
+        json={},
+        headers=review_headers(approved_proposal.id),
+    )
+    reused = client.post(
+        f"/api/v1/category-proposals/{reused_proposal.id}/use-existing",
+        json={"category_name": "Formazione"},
+        headers=review_headers(reused_proposal.id),
+    )
+    cancelled = client.post(
+        f"/api/v1/category-proposals/{cancelled_proposal.id}/cancel",
+        json={},
+        headers=review_headers(cancelled_proposal.id),
+    )
+
+    assert approved.status_code == 200
+    assert approved.json() == replayed.json()
+    assert approved.json()["status"] == "posted"
+    assert reused.status_code == 200
+    assert reused.json()["status"] == "posted"
+    assert cancelled.status_code == 200
+    assert cancelled.json()["status"] == "discarded"
+    assert (
+        repository.get_expense(profile.id, approved_draft.id).status
+        is ExpenseStatus.POSTED
+    )
+    assert (
+        repository.get_expense(profile.id, reused_draft.id).status
+        is ExpenseStatus.POSTED
+    )
+    assert (
+        repository.get_expense(profile.id, cancelled_draft.id).status
+        is ExpenseStatus.DISCARDED
+    )
+    assert (
+        repository.get_category_proposal(profile.id, approved_proposal.id).status
+        is CategoryProposalStatus.APPROVED
+    )
+    assert (
+        repository.get_category_proposal(profile.id, reused_proposal.id).status
+        is CategoryProposalStatus.REJECTED
+    )
+    assert (
+        repository.get_category_proposal(profile.id, cancelled_proposal.id).status
+        is CategoryProposalStatus.CANCELLED
+    )
+    assert client.get("/api/v1/category-proposals").json()["proposals"] == []

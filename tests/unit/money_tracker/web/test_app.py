@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
 from typing import cast
@@ -15,7 +15,9 @@ from fastapi.testclient import TestClient
 from money_tracker.application import (
     BudgetPlan,
     BudgetPlanEntry,
+    CategoryReviewQueue,
     MonthlyOverview,
+    PendingCategoryReview,
     PeriodSplit,
     TransactionRegister,
 )
@@ -24,6 +26,7 @@ from money_tracker.domain import (
     BalanceMode,
     BudgetStatus,
     CategoryAllocation,
+    CategoryProposal,
     Expense,
     ExpenseStatus,
     FundingClass,
@@ -39,6 +42,8 @@ from money_tracker.web import WebSettings, create_app
 from money_tracker.web.mutations import (
     BudgetMutationAdapter,
     BudgetWriter,
+    CategoryReviewMutationAdapter,
+    CategoryReviewWriter,
     ExpenseMutationAdapter,
     ExpenseWriter,
 )
@@ -243,6 +248,115 @@ class RecordingBudgetWriter:
         )
 
 
+@dataclass
+class RecordingCategoryReviewWriter:
+    """In-memory review writer recording only browser-selected decisions."""
+
+    queue: CategoryReviewQueue
+    actions: list[tuple[str, UUID, str | None]] = field(default_factory=list)
+
+    def pending_reviews(self, *, profile_id: UUID) -> CategoryReviewQueue:
+        """Return the fixed trusted-profile review queue."""
+
+        assert profile_id == PROFILE_ID
+        return self.queue
+
+    def review_expense(self, *, profile_id: UUID, proposal_id: UUID) -> Expense:
+        """Resolve the movement without accepting it from the request."""
+
+        assert profile_id == PROFILE_ID
+        review = next(
+            item for item in self.queue.reviews if item.proposal.id == proposal_id
+        )
+        return review.expense
+
+    def approve(
+        self,
+        *,
+        profile_id: UUID,
+        proposal_id: UUID,
+        expense_id: UUID,
+        actor: str,
+        reason: str,
+    ) -> Expense:
+        """Record approval and return the resulting posted movement."""
+
+        del profile_id, actor, reason
+        self.actions.append(("approve", proposal_id, None))
+        expense = self.review_expense(profile_id=PROFILE_ID, proposal_id=proposal_id)
+        assert expense.id == expense_id
+        return replace(
+            expense, status=ExpenseStatus.POSTED, version=expense.version + 2
+        )
+
+    def use_existing(
+        self,
+        *,
+        profile_id: UUID,
+        proposal_id: UUID,
+        expense_id: UUID,
+        category_name: str,
+        actor: str,
+        reason: str,
+    ) -> Expense:
+        """Record reuse and return the resulting posted movement."""
+
+        del profile_id, actor, reason
+        self.actions.append(("use_existing", proposal_id, category_name))
+        expense = self.review_expense(profile_id=PROFILE_ID, proposal_id=proposal_id)
+        assert expense.id == expense_id
+        return replace(
+            expense, status=ExpenseStatus.POSTED, version=expense.version + 2
+        )
+
+    def cancel(
+        self,
+        *,
+        profile_id: UUID,
+        proposal_id: UUID,
+        expense_id: UUID,
+        actor: str,
+        reason: str,
+    ) -> Expense:
+        """Record cancellation and return the discarded movement."""
+
+        del profile_id, actor, reason
+        self.actions.append(("cancel", proposal_id, None))
+        expense = self.review_expense(profile_id=PROFILE_ID, proposal_id=proposal_id)
+        assert expense.id == expense_id
+        return replace(
+            expense, status=ExpenseStatus.DISCARDED, version=expense.version + 1
+        )
+
+
+def _category_review_writer() -> RecordingCategoryReviewWriter:
+    """Build one pending proposal over the real baseline taxonomy."""
+
+    taxonomy = initial_taxonomy()
+    expense = (
+        OverviewReader()
+        .transaction_register(profile_id=PROFILE_ID, period=PERIOD)
+        .expenses[0]
+    )
+    proposal = CategoryProposal(
+        id=uuid4(),
+        profile_id=PROFILE_ID,
+        proposed_name="Cura del giardino",
+        description="Piante, terriccio e attrezzi per il giardino.",
+        parent_id=taxonomy.resolve_active("Casa e utenze").id,
+        rationale="Le categorie attive non distinguono questa finalità.",
+        alternative_category_ids=(taxonomy.resolve_active("Acquisti personali").id,),
+        excluded_names=("Giardinaggio",),
+        source_reference=expense.source_reference,
+    )
+    return RecordingCategoryReviewWriter(
+        CategoryReviewQueue(
+            reviews=(PendingCategoryReview(proposal, expense),),
+            taxonomy=taxonomy,
+        )
+    )
+
+
 class FixedIds:
     """Stable identifier source for adapter composition in boundary tests."""
 
@@ -258,6 +372,7 @@ def _app(
     static_dir: Path | None = None,
     ready: bool = True,
     budget_writer: BudgetWriter | None = None,
+    category_review_writer: CategoryReviewWriter | None = None,
 ) -> FastAPI:
     """Compose an application with real middleware and an in-memory read port."""
 
@@ -272,6 +387,9 @@ def _app(
         budgets=BudgetMutationAdapter(
             budget_writer or cast(BudgetWriter, object()),
             ids=cast(IdGenerator, FixedIds()),
+        ),
+        category_reviews=CategoryReviewMutationAdapter(
+            category_review_writer or cast(CategoryReviewWriter, object())
         ),
         readiness_check=lambda: ready,
     )
@@ -383,6 +501,99 @@ def test_split_allocations_keep_exact_cents_and_their_receipt_line() -> None:
     ]
 
 
+def test_category_proposals_expose_review_facts_without_workflow_identity() -> None:
+    """Show the candidate, movement, and deterministic active choices safely."""
+
+    writer = _category_review_writer()
+
+    response = _client(_app(category_review_writer=writer)).get(
+        "/api/v1/category-proposals"
+    )
+
+    assert response.status_code == 200
+    proposal = response.json()["proposals"][0]
+    assert proposal["id"] == str(writer.queue.reviews[0].proposal.id)
+    assert proposal["proposed_name"] == "Cura del giardino"
+    assert proposal["parent_name"] == "Casa e utenze"
+    assert proposal["alternative_categories"][0]["name"] == "Acquisti personali"
+    assert proposal["excluded_names"] == ["Giardinaggio"]
+    assert proposal["can_repropose"] is True
+    assert proposal["expense"]["id"] == str(writer.queue.reviews[0].expense.id)
+    assert proposal["expense"]["amount"] == {
+        "minor_units": 5000,
+        "currency": "EUR",
+    }
+    assert "source_reference" not in response.text
+    assert "profile_id" not in response.text
+
+
+def test_category_approval_uses_only_the_proposal_wide_command_identity() -> None:
+    """Resolve movement identity server-side and replay through the service key."""
+
+    writer = _category_review_writer()
+    proposal_id = writer.queue.reviews[0].proposal.id
+    client = _client(_app(category_review_writer=writer))
+    issued = client.get("/api/v1/csrf", headers={"origin": ORIGIN})
+
+    response = client.post(
+        f"/api/v1/category-proposals/{proposal_id}/approve",
+        json={},
+        headers={
+            "origin": ORIGIN,
+            "x-csrf-token": issued.json()["token"],
+            "Idempotency-Key": f"category-review:{proposal_id}",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "id": str(writer.queue.reviews[0].expense.id),
+        "status": "posted",
+        "version": 3,
+    }
+    assert writer.actions == [("approve", proposal_id, None)]
+
+
+def test_category_reuse_validates_strict_json_and_the_proposal_key() -> None:
+    """Reject browser-controlled identity and pass only an active display name."""
+
+    writer = _category_review_writer()
+    proposal_id = writer.queue.reviews[0].proposal.id
+    client = _client(_app(category_review_writer=writer))
+    issued = client.get("/api/v1/csrf", headers={"origin": ORIGIN})
+    headers = {
+        "origin": ORIGIN,
+        "x-csrf-token": issued.json()["token"],
+        "Idempotency-Key": f"category-review:{proposal_id}",
+    }
+
+    invalid = client.post(
+        f"/api/v1/category-proposals/{proposal_id}/use-existing",
+        json={
+            "category_name": "Acquisti personali",
+            "expense_id": str(uuid4()),
+        },
+        headers=headers,
+    )
+    wrong_key = client.post(
+        f"/api/v1/category-proposals/{proposal_id}/use-existing",
+        json={"category_name": "Acquisti personali"},
+        headers={**headers, "Idempotency-Key": "different-key"},
+    )
+    accepted = client.post(
+        f"/api/v1/category-proposals/{proposal_id}/use-existing",
+        json={"category_name": "Acquisti personali"},
+        headers=headers,
+    )
+
+    assert invalid.status_code == 422
+    assert invalid.json()["code"] == "request_invalid"
+    assert wrong_key.status_code == 409
+    assert wrong_key.json()["code"] == "category_review_conflict"
+    assert accepted.status_code == 200
+    assert writer.actions == [("use_existing", proposal_id, "Acquisti personali")]
+
+
 def test_invalid_period_returns_a_bounded_problem() -> None:
     """Reject ambiguous dates without invoking the application reader."""
 
@@ -486,10 +697,12 @@ def test_compiled_dashboard_is_served_from_the_api_origin(tmp_path: Path) -> Non
 
     response = _client(_app(static_dir=static_dir)).get("/")
     deep_link = _client(_app(static_dir=static_dir)).get("/movimenti")
+    category_link = _client(_app(static_dir=static_dir)).get("/categorie")
 
     assert response.status_code == 200
     assert "Money Tracker" in response.text
     assert deep_link.text == response.text
+    assert category_link.text == response.text
 
 
 def test_budget_plan_exposes_targets_overrides_and_the_correction_version() -> None:

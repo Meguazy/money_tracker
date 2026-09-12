@@ -11,10 +11,12 @@ from money_tracker.api.contracts import ExpenseCreateRequest, MoneyContract
 from money_tracker.application import (
     BudgetPlan,
     BudgetPlanEntry,
+    CategoryReviewQueue,
     MonthlyOverview,
     TransactionRegister,
 )
 from money_tracker.domain import (
+    MAX_REVIEW_PROPOSALS,
     BalanceMode,
     BudgetStatus,
     CategoryStatus,
@@ -432,6 +434,109 @@ class ExpenseMutationResponse(_WebContract):
         return cls(id=expense.id, status=expense.status, version=expense.version)
 
 
+class CategoryReviewExpenseContract(_WebContract):
+    """Movement facts needed to understand one pending category decision."""
+
+    id: UUID
+    amount: MoneyContract
+    occurred_at: AwareDatetime
+    description: str
+    merchant: str | None
+    status: ExpenseStatus
+    version: int = Field(ge=1)
+
+
+class CategoryProposalContract(_WebContract):
+    """One pending candidate and its deterministic resolution choices."""
+
+    id: UUID
+    proposed_name: str
+    description: str
+    parent_name: str | None
+    rationale: str
+    alternative_categories: tuple[CategoryReferenceContract, ...]
+    excluded_names: tuple[str, ...]
+    can_repropose: bool
+    expense: CategoryReviewExpenseContract
+
+
+class CategoryReviewQueueResponse(_WebContract):
+    """Open category proposals plus active choices for manual reuse."""
+
+    proposals: tuple[CategoryProposalContract, ...]
+    active_categories: tuple[CategoryReferenceContract, ...]
+
+    @classmethod
+    def from_application(cls, queue: CategoryReviewQueue) -> Self:
+        """Map owner review state without exposing profile or source identity."""
+
+        categories = {category.id: category for category in queue.taxonomy.categories}
+
+        def reference(category_id: UUID) -> CategoryReferenceContract:
+            category = categories[category_id]
+            return CategoryReferenceContract(
+                id=category.id,
+                name=category.name,
+                parent_id=category.parent_id,
+                status=category.status,
+            )
+
+        return cls(
+            proposals=tuple(
+                CategoryProposalContract(
+                    id=item.proposal.id,
+                    proposed_name=item.proposal.proposed_name,
+                    description=item.proposal.description,
+                    parent_name=(
+                        None
+                        if item.proposal.parent_id is None
+                        else categories[item.proposal.parent_id].name
+                    ),
+                    rationale=item.proposal.rationale,
+                    alternative_categories=tuple(
+                        reference(category_id)
+                        for category_id in item.proposal.alternative_category_ids
+                        if categories[category_id].status is CategoryStatus.ACTIVE
+                    ),
+                    excluded_names=item.proposal.excluded_names,
+                    can_repropose=(
+                        len(item.proposal.exclusions_for_next()) < MAX_REVIEW_PROPOSALS
+                    ),
+                    expense=CategoryReviewExpenseContract(
+                        id=item.expense.id,
+                        amount=MoneyContract(
+                            minor_units=item.expense.amount.minor_units
+                        ),
+                        occurred_at=item.expense.occurred_at,
+                        description=item.expense.description,
+                        merchant=item.expense.merchant,
+                        status=item.expense.status,
+                        version=item.expense.version,
+                    ),
+                )
+                for item in queue.reviews
+            ),
+            active_categories=tuple(
+                reference(category.id)
+                for category in sorted(
+                    queue.taxonomy.categories,
+                    key=lambda item: (item.name, str(item.id)),
+                )
+                if category.status is CategoryStatus.ACTIVE
+            ),
+        )
+
+
+class CategoryReviewDecisionRequest(_WebContract):
+    """Strict empty body for an approve or cancel decision."""
+
+
+class CategoryReviewReuseRequest(_WebContract):
+    """Existing category selected by its current active display name."""
+
+    category_name: str = Field(min_length=1, max_length=200)
+
+
 class HealthResponse(_WebContract):
     """Content-free process or dependency health state."""
 
@@ -446,7 +551,11 @@ class CsrfTokenResponse(_WebContract):
 
 __all__ = [
     "BudgetPositionContract",
+    "CategoryProposalContract",
     "CategoryReferenceContract",
+    "CategoryReviewDecisionRequest",
+    "CategoryReviewQueueResponse",
+    "CategoryReviewReuseRequest",
     "CsrfTokenResponse",
     "ExpenseCancelRequest",
     "ExpenseMutationResponse",

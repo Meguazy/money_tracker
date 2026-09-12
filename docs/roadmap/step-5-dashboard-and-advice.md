@@ -6,7 +6,8 @@ Status: **In progress (2026-09-12).** The implemented vertical slices provide
 the loopback same-origin host, deterministic monthly overview and transaction
 register, accessible React shell, audited manual create, correct, post, and
 cancel workflows, the multi-allocation editor for both reconciling dimensions,
-and the monthly budget planner. The remaining control-plane views, wider
+the monthly budget planner, and owner review of pending category proposals. The
+remaining control-plane views, wider
 analytics, advice surface, and complete browser E2E acceptance are still open.
 No model, prompt, routing threshold, tool contract, or taxonomy policy changed,
 so EVD-004 remains the promoted text baseline.
@@ -185,10 +186,46 @@ so EVD-004 remains the promoted text baseline.
   database and in the monthly overview. A repository test proves one replayed
   command writes a single audit row.
 
+### Category proposal review slice (2026-09-12)
+
+- `/categorie` makes every pending category proposal reachable from the local
+  control plane. Each card names the candidate, optional parent, inclusion
+  guidance, rationale, rejected candidates, shortlist, and the exact movement
+  waiting for a purpose decision.
+- The read model pairs proposal and movement server-side through the trusted
+  workflow `source_reference`. The browser receives neither that reference nor
+  the profile ID and never supplies an expense ID; missing or ambiguous
+  correlation is logged as a stable structured failure and refused.
+- `GET /api/v1/category-proposals` returns the pending queue and active taxonomy.
+  Strict approve, use-existing, and cancel resources reuse the existing
+  `CategoryReviewService`, so approval creates a node and posts atomically,
+  reuse posts without taxonomy growth, and cancellation discards the
+  never-posted draft without deletion.
+- Every HTTP branch requires the proposal-wide `Idempotency-Key` that the
+  existing settlement transaction claims. An identical request replays its
+  first result, while another branch or a key for another proposal conflicts.
+- The page offers the evaluated shortlist and a labelled selector over all
+  active categories. Loading, empty, failure/retry and pending-decision states
+  are explicit; controls are keyboard accessible and the four-item navigation
+  wraps on narrow screens.
+- Generating another model candidate remains in the Telegram review workflow.
+  The browser can always resolve the review deterministically by choosing an
+  active category, but it does not gain an inference dependency or a second
+  path that can invent taxonomy.
+- Unit tests cover source correlation, cross-workflow refusal, strict wire
+  shape, trusted scope, canonical command identity, bounded problems and deep
+  linking. Component tests cover proposal facts, approval, shortlist/manual
+  reuse, cancellation, keyboard operation, and empty/error recovery.
+- A real PostgreSQL HTTP test lists three correlated proposals, approves and
+  replays one, reuses an existing category for another, cancels the third, and
+  verifies terminal proposal and movement state through the production
+  repository. No migration, model-visible contract, prompt, threshold, tool,
+  or taxonomy policy changed; EVD-004 remains the promoted baseline.
+
 ### Work still required before completion
 
-- Add receipt metadata/review, taxonomy proposals, funding sources/wallets,
-  messaging operations, and settings views.
+- Add receipt metadata/review, category rename/archive management, funding
+  sources/wallets, messaging operations, and settings views.
 - Extend deterministic reads from the current month to day, ISO week, year,
   comparison, and validated custom ranges, retaining purpose and funding
   breakdowns.

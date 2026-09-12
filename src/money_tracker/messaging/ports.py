@@ -20,6 +20,7 @@ from money_tracker.messaging.contracts import (
     PendingAction,
     PendingActionDraft,
     PendingActionTarget,
+    RequeueOutcome,
     WorkflowResult,
 )
 
@@ -104,6 +105,16 @@ class MessagingRepository(Protocol):
     def replay_inbox(self, bot_key: str, inbox_id: UUID, *, now: datetime) -> None:
         """Replay one dead letter only inside the selected bot scope."""
 
+    def requeue_inbox(
+        self,
+        bot_key: str,
+        inbox_id: UUID,
+        *,
+        expected_replay_count: int | None,
+        now: datetime,
+    ) -> RequeueOutcome:
+        """Requeue one dead letter under the replay count the caller observed."""
+
     def dead_letters(self, bot_key: str, *, limit: int) -> tuple[DeadLetter, ...]:
         """List failed work items an operator may inspect and replay."""
 
@@ -114,6 +125,16 @@ class MessagingRepository(Protocol):
 
     def replay_outbox(self, bot_key: str, outbox_id: UUID, *, now: datetime) -> None:
         """Return one delivery dead letter to a fresh automatic attempt cycle."""
+
+    def requeue_outbox(
+        self,
+        bot_key: str,
+        outbox_id: UUID,
+        *,
+        expected_replay_count: int | None,
+        now: datetime,
+    ) -> RequeueOutcome:
+        """Resend one delivery dead letter under the state the caller observed."""
 
     def enqueue_notice(self, notice: OutboxMessageDraft, *, now: datetime) -> UUID:
         """Queue one owner message that no inbound work unit asked for."""

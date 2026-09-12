@@ -2,9 +2,9 @@
 
 - Status: accepted
 - Implementation: monthly overview, transaction/manual-lifecycle,
-  multi-allocation editing, budget-planning, category-review, and
-  receipt-metadata-review slices, HTTP security, and host deployment
-  implemented; remaining Step 5 surface in progress
+  multi-allocation editing, budget-planning, category-review,
+  receipt-metadata-review, and messaging-operations slices, HTTP security, and
+  host deployment implemented; remaining Step 5 surface in progress
 - Date: 2026-09-01
 
 ## Context
@@ -159,7 +159,54 @@ from the same displayed state conflicts. The adapter's port exposes the archive
 listing and the two transitions and nothing else, so this surface cannot reach
 a media store, an extractor, or a deletion path. Every client route is mounted
 for direct navigation, so a reload or bookmark of `/movimenti`, `/categorie`,
-`/budget`, or `/scontrini` reaches the same shell.
+`/budget`, `/scontrini`, or `/messaggistica` reaches the same shell.
+
+The messaging slice adds a `MessagingOperationsAdapter` over the existing
+`MessagingAdministration`. This is the first control-plane domain that is not
+scoped by profile: durable messaging state belongs to one bot environment.
+The trusted `MessagingScope` is therefore read from configuration and bound
+into the adapter at composition time, and no adapter method accepts a scope, so
+the HTTP layer has no argument through which a request could name another bot.
+The web process reads no Bot API credential: `MessagingScope.from_env` needs
+only the selected environment, and this surface inspects and requeues durable
+rows rather than speaking to Telegram.
+
+`GET /api/v1/messaging` returns the bot environment, whether an owner is
+paired, the persisted offset, both queue depths with their oldest waiting item,
+the active correlation count, whether the downtime gap exceeds the Bot API's
+24-hour retention, and both dead-letter queues. It is content-free by
+construction: every value is a count, an age, a bounded reason code, or a
+stable local identifier. The inbox projection omits the source reference, which
+is the finance command identity a replay preserves, exactly as the movement
+register and the receipt response omit theirs; the bot key is omitted too,
+because the browser never selects a scope.
+
+Replay and resend are requeue commands rather than new financial writes, so
+their identity is decided differently from the other resources. They claim no
+entry in `finance.idempotency_records`: that table is claimed in the same
+transaction as the finance state it protects, and a messaging requeue commits
+in the messaging schema through a different repository and connection, so a
+claim there would promise an atomicity that does not exist. The durable pin is
+instead the row's own `replay_count`, checked and advanced inside the single
+messaging transaction that requeues it. The HTTP key names that exact
+transition — `messaging-replay:{inbox_id}:{observed_replay_count}` and
+`messaging-resend:{outbox_id}:{observed_replay_count}` — and the adapter
+refuses any other value. Retrying one decision replays it and reports
+`replayed` without a second requeue; a stale tab that already requeued an item
+cannot silently requeue it again. No migration was needed.
+
+Every refusal of a requeue is one bounded 409. AD-018 requires an inbox
+identifier from another bot environment to be indistinguishable from a missing
+or non-dead-letter item, so a foreign, unknown, already progressed, and
+non-canonically keyed request all return the same problem.
+
+The `/messaggistica` view shows both queue cards, the persisted offset, the
+last poll, the active correlations, and both failure tables with their attempt
+counts, requeue counts, and reason codes. It names no message. It warns when the
+bot has no paired owner and when the downtime gap means Telegram has discarded
+updates, and it states before the resend controls that Telegram offers no send
+idempotency key, so a resend can produce a duplicate physical message while no
+finance write is repeated.
 
 `money-tracker-api` is a host entry point and
 `money-tracker-api.service` is a hardened systemd user-service template. The
@@ -185,7 +232,14 @@ PostgreSQL receipt test lists two registered originals newest first without
 their digests, opens and replays one review, refuses approval of a receipt that
 never entered review, approves the reviewed one, refuses a stale version, an
 unknown receipt, and a non-canonical command key, and reads both terminal
-states back through the production repository. Frontend
+states back through the production repository. A real PostgreSQL messaging
+test drives one update to an inbox dead letter and one notice to a delivery
+dead letter through the production repository, reads both over HTTP without the
+owner's text or the bot key, replays the work item, repeats that request and
+receives `replayed`, refuses a stale count, an unknown item, and a crossed key
+with the identical problem, resends the response, and proves through the
+repository that one requeue happened per queue and that the recovered work item
+kept its source reference. Frontend
 typecheck, component tests, production build, and a runtime dependency audit
 pass. This is partial Step 5 evidence: the remaining control-plane resources,
 range analytics, advice surface, and full browser E2E acceptance are still

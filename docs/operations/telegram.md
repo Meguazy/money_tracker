@@ -224,6 +224,19 @@ and failed logical responses with identity, attempts, replay count, and reason
 code. Use `--inbox-id` to replay work and `--outbox-id` to resend a
 response. The environment selected by `.env` scopes both actions; a UUID from
 another bot environment is rejected without changing that row.
+
+The Step 5 dashboard shows the same facts and offers the same two recovery
+commands at `http://127.0.0.1:8000/messaggistica`, described in
+[the local web runbook](web.md). Prefer it for routine checks: it is scoped by
+the same configured environment and reaches the same bounded operations. These
+commands remain the unattended path, work when the API service is stopped, and
+are the only place pairing, latency and `validate` live. One difference is
+deliberate: the browser decides from a listing, so it states the requeue count
+it displayed and a repeated click reports the requeue as already applied
+instead of applying a second one. The command form names an item rather than a
+view, so it accepts whichever dead letter that identifier resolves to; run
+`dead-letters` immediately before `replay` or `resend` if someone may be
+recovering the same queue from the dashboard.
 If required relations are missing, `health` exits with code 1 and prints only
 `Telegram gateway failed: database_schema_invalid`; apply the checked-in
 migrations with `uv run --env-file .env money-tracker-db bootstrap`, then rerun

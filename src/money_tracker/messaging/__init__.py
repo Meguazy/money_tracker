@@ -2,11 +2,15 @@
 
 from money_tracker.messaging.administration import (
     DEFAULT_PAIRING_LIFETIME,
+    INBOX_REQUEUE_COMMAND,
+    OUTBOX_REQUEUE_COMMAND,
     TELEGRAM_UPDATE_RETENTION,
     MessagingAdministration,
+    MessagingOperationsSnapshot,
     PairingCode,
     TextLatencyReport,
     downtime_gap,
+    requeue_command_key,
 )
 from money_tracker.messaging.contracts import (
     MAX_TELEGRAM_FILE_BYTES,
@@ -16,6 +20,7 @@ from money_tracker.messaging.contracts import (
     InboxClaim,
     InboxStatus,
     MessagingHealth,
+    MessagingQueue,
     NormalizedTelegramUpdate,
     OutboundButton,
     OutboundWork,
@@ -28,15 +33,25 @@ from money_tracker.messaging.contracts import (
     PendingActionDraft,
     PendingActionStatus,
     PendingActionTarget,
+    RequeuedItem,
+    RequeueOutcome,
     WorkflowResult,
     require_aware,
     validate_bot_key,
 )
+from money_tracker.messaging.errors import (
+    MessagingConflictError,
+    MessagingLeaseError,
+)
 from money_tracker.messaging.ports import MessagingRepository
 from money_tracker.messaging.retry import RetryPolicy
+from money_tracker.messaging.scope import TELEGRAM_ENVIRONMENT_ENV, MessagingScope
 
 __all__ = [
     "DEFAULT_PAIRING_LIFETIME",
+    "INBOX_REQUEUE_COMMAND",
+    "OUTBOX_REQUEUE_COMMAND",
+    "TELEGRAM_ENVIRONMENT_ENV",
     "TELEGRAM_UPDATE_RETENTION",
     "MAX_TELEGRAM_FILE_BYTES",
     "BotEnvironment",
@@ -44,8 +59,13 @@ __all__ = [
     "InboxClaim",
     "InboxStatus",
     "MessagingAdministration",
+    "MessagingConflictError",
     "MessagingHealth",
+    "MessagingLeaseError",
+    "MessagingOperationsSnapshot",
+    "MessagingQueue",
     "MessagingRepository",
+    "MessagingScope",
     "NormalizedTelegramUpdate",
     "OutboundButton",
     "OutboxClaim",
@@ -62,8 +82,11 @@ __all__ = [
     "TextLatencyReport",
     "downtime_gap",
     "PendingActionTarget",
+    "RequeueOutcome",
+    "RequeuedItem",
     "RetryPolicy",
     "WorkflowResult",
     "require_aware",
+    "requeue_command_key",
     "validate_bot_key",
 ]

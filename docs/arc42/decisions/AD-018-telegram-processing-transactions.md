@@ -4,8 +4,8 @@
 - Implementation: messaging contracts/repository, category-review replay, Bot
   API transport, authorized ingress, gateway/outbox loops, Italian response
   rendering, the sequential worker, one-use owner pairing, operator
-  health/replay/resend/latency commands, host service units, and real-bot
-  acceptance implemented
+  health/replay/resend/latency commands, the Step 5 browser operations surface,
+  host service units, and real-bot acceptance implemented
 - Date: 2026-09-09
 - Supersedes: the raw-update retention detail in
   [AD-010](AD-010-telegram-durable-messaging.md); all other AD-010 choices remain
@@ -163,7 +163,16 @@ cannot target another movement or review.
 
 The Step 4 runtime does not require FastAPI. Operator commands and machine-safe
 process exit codes provide health/readiness and recovery until the Step 5 local
-control plane exists. Exactly two failure classes are distinguished, because
+control plane exists. Step 5 adds that control plane as a second caller of the
+same bounded operations rather than as a second implementation of them. A
+browser caller decides from a listing, so it pins the transition it decided
+from: a requeue may state the `replay_count` it observed, and the repository
+applies it only from that exact state, reporting a repeat of the same
+transition as already done instead of requeuing twice. The unattended operator
+command keeps its existing unpinned form, because a terminal invocation names
+an item rather than a view. Neither form claims a finance command record: the
+durable pin lives in the messaging row itself, inside the one transaction that
+changes it. Exactly two failure classes are distinguished, because
 that is what a supervisor can act on: a configuration problem stops the process
 and must not be restarted into, while an unreachable dependency restarts. A
 reachable database with missing required relations is the former and emits only
@@ -229,7 +238,15 @@ Twenty-four unit tests cover rendering, digest stability, and refusal of
 missing display data.
 
 Operator commands cover health, content-free text latency, both dead-letter
-queues, inbox replay, and outbox resend. Their output carries counts, ages,
+queues, inbox replay, and outbox resend. The Step 5 `/api/v1/messaging` read and
+its two requeue resources expose exactly those operations to the local browser
+through `MessagingOperationsAdapter`, which binds the configured bot scope at
+composition time so no request can name another bot, and which holds no Bot API
+credential or transport. Their refusals are one bounded conflict, preserving
+this decision's rule that a foreign inbox identifier is indistinguishable from
+a missing or non-dead-letter item. A repeated pinned requeue is reported as
+already applied, and a real PostgreSQL HTTP test proves one requeue per queue
+and a recovered work item that kept its source reference. Their output carries counts, ages,
 safe identifiers, and reason codes but no message content. Inbox replay is
 scoped by the selected bot key and inbox UUID and preserves the source
 reference so an item that already mutated finance returns its first result.
@@ -308,6 +325,8 @@ records the measurements and external-delivery limitations.
   durable owner response.
 - Operations can inspect counts, ages, safe identifiers, error codes, and
   dependency state, but not raw Telegram payloads or private message content.
+  That holds for the browser surface as well: the dead-letter projections carry
+  no owner text at all, so the same values are safe in a page and in a journal.
 - A physical duplicate Telegram acknowledgement remains a documented external
   transport risk; a duplicate logical response or financial mutation is a
   correctness defect.

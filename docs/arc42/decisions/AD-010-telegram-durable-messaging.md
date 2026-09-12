@@ -4,7 +4,8 @@
 - Implementation: PostgreSQL messaging state/repository, Bot API adapter,
   authorized ingress, one-use owner pairing, concurrent gateway loops, outbox
   delivery, the sequential workflow worker, and messaging health/recovery
-  reporting implemented and owner-accepted
+  reporting implemented and owner-accepted; the same recovery operations are
+  also reachable from the Step 5 local control plane
 - Date: 2026-09-01
 
 ## Context
@@ -39,7 +40,11 @@ manual delivery replay accounting, hashed one-use pairing, sole-owner bindings
 per bot, and scoped pending actions. An explicit outbox resend preserves the
 logical row and starts a fresh bounded attempt cycle; because a prior
 `sendMessage` result may be ambiguous, the operator must accept the risk of a
-duplicate physical Telegram message.
+duplicate physical Telegram message. Step 5 makes both recovery commands
+reachable from `/messaggistica` without widening them: the browser sees the same
+content-free projections the CLI prints, states the transition it decided from,
+and gains no way to send a message, change the pairing, move the offset, or
+delete a row.
 `BotApiClient`, `TelegramUpdateIngestor`, `TelegramGateway`, and the
 `money-tracker-telegram` production entry point now implement the HTTPS and
 process side. Ingress and outbox delivery have independent loops; commit precedes

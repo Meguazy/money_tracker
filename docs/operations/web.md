@@ -1,8 +1,9 @@
 # Local Web Operations
 
 - Status: Step 5 overview, manual-movement, multi-allocation editing,
-  budget-planning, category-proposal review, and receipt metadata review slices
-  implemented; complete control plane and release acceptance still in progress
+  budget-planning, category-proposal review, receipt metadata review, and
+  messaging-operations slices implemented; complete control plane and release
+  acceptance still in progress
 - Binding decision: [AD-009](../arc42/decisions/AD-009-local-web-application.md)
 - Delivery evidence: [Step 5](../roadmap/step-5-dashboard-and-advice.md)
 
@@ -11,9 +12,10 @@ versioned JSON API from the same origin. It provides the monthly overview,
 complete monthly transaction register, manual movement lifecycle with
 multi-allocation editing, monthly budget planning, liveness, readiness, and CSRF
 bootstrap endpoints. It also exposes the pending category-proposal queue and
-the deterministic approve, reuse-active-category, and cancel decisions, plus
-the retained receipt metadata and its mandatory review. Category
-rename/archive, wallet administration, messaging operations, settings, wider
+the deterministic approve, reuse-active-category, and cancel decisions, the
+retained receipt metadata and its mandatory review, and the durable messaging
+queues with the two requeue commands. Category
+rename/archive, wallet administration, settings, wider
 date ranges, advice, and every receipt-extraction capability remain Step 5 or
 Step 6 work and must not be described as available.
 
@@ -26,7 +28,9 @@ policy, but no finance data. `ReportingService` computes exact reads;
 existing `FinanceAdministrationService`; `CategoryReviewMutationAdapter`
 exposes the existing `CategoryReviewService` without accepting a movement
 identifier from the browser; `ReceiptReviewMutationAdapter` exposes the
-existing `ReceiptMetadataService` and reaches no media store; and
+existing `ReceiptMetadataService` and reaches no media store;
+`MessagingOperationsAdapter` exposes the existing `MessagingAdministration`
+over `PostgresMessagingRepository` and reaches no Bot API transport; and
 `PostgresFinanceRepository` owns authoritative storage and audit. Wallet
 entries have no browser route. The React application
 owns only ephemeral browser state and receives neither a profile identifier nor
@@ -36,7 +40,11 @@ content digest.
 
 The process requires exactly one bootstrapped profile and refuses to start when
 that V1 invariant does not hold. Profile scope is injected during composition,
-not taken from query parameters, headers, cookies, or response bodies.
+not taken from query parameters, headers, cookies, or response bodies. The bot
+scope behind `/messaggistica` is injected the same way, from
+`MONEY_TRACKER_TELEGRAM_ENVIRONMENT`, so the service refuses to start without an
+explicit environment. It reads no Bot API token: the messaging surface inspects
+and requeues durable rows and never calls Telegram.
 
 ## Build and run
 
@@ -92,6 +100,24 @@ target plus optional per-month exceptions and never rolls over: each month
 starts from its own target. Budgets are addressed by category, so correcting one
 replaces its complete plan under the version the page displayed.
 
+Use `/messaggistica` to see what the Telegram channel is actually doing and to
+recover from a failure without opening a terminal. The page shows the selected
+bot environment, whether an owner is paired, the persisted offset, the last
+poll, active interactions, both queue depths with their oldest waiting item,
+and both dead-letter queues with attempt counts, requeue counts and reason
+codes. It shows no message: the projections behind it carry no owner text at
+all. Rimetti in coda returns a failed work item to the sequential worker with
+its source reference intact, so a work unit that already committed a finance
+mutation returns its first result rather than applying a second one. Rinvia
+starts a fresh bounded delivery cycle for one undelivered response; Telegram
+offers no send idempotency key, so an earlier ambiguous send can make the owner
+see the same message twice, which the page states before the control. Sending a
+message, changing the pairing, moving the offset and deleting a row are not on
+this page and are not Step 5 work. Read
+[the Telegram runbook](telegram.md) before recovering an old dead letter: a
+replayed item delivers whatever answer it produces now, which can reach the
+owner as a reply to a question they no longer remember asking.
+
 For frontend development, keep the API on port 8000 and run Vite separately:
 
     cd frontend
@@ -110,6 +136,7 @@ development session. Production continues to use only the port-8000 origins.
 | `MONEY_TRACKER_WEB_ALLOWED_HOSTS` | `127.0.0.1,localhost` | Non-empty exact host-name allowlist; loopback names only. |
 | `MONEY_TRACKER_WEB_ALLOWED_ORIGINS` | the two exact HTTP origins on the configured port | Non-empty exact origins; no path, credentials, query, fragment, wildcard, or HTTPS substitution. |
 | `MONEY_TRACKER_WEB_STATIC_DIR` | checkout `frontend/dist` | Absolute path containing `index.html` and `assets/`. |
+| `MONEY_TRACKER_TELEGRAM_ENVIRONMENT` | `test` | Already generated for the gateway. The API now reads it too, to scope `/messaggistica` to one bot. It selects no credential here and the web process reads no token file. |
 
 Run `scripts/upgrade_local_env.sh` to append missing web settings without
 changing existing values. Review any non-default port consistently across the
@@ -119,7 +146,7 @@ listener and allowed origins.
 
 | Route | Purpose | Content |
 | --- | --- | --- |
-| `GET /`, `GET /movimenti`, `GET /budget`, `GET /categorie`, `GET /scontrini` | Compiled React shell | Static application only; every route supports direct browser navigation, reload, and bookmarking. |
+| `GET /`, `GET /movimenti`, `GET /budget`, `GET /categorie`, `GET /scontrini`, `GET /messaggistica` | Compiled React shell | Static application only; every route supports direct browser navigation, reload, and bookmarking. |
 | `GET /api/v1/overview/monthly?period=YYYY-MM` | Deterministic monthly overview | Exact posted total, funding class/source split, budgets, and unbudgeted categories. |
 | `GET /api/v1/transactions?period=YYYY-MM` | Monthly lifecycle register | Every movement state, exact allocations, optimistic versions, and safe category/source references. |
 | `POST /api/v1/expenses` | Create a manual draft | Strict complete movement body; returns safe ID, state, and version. |
@@ -136,6 +163,9 @@ listener and allowed origins.
 | `GET /api/v1/receipts` | Retained receipt metadata | Display filename, media type, exact byte size, storage instant, review state, and version, newest first. No content digest, no image, no archive path. |
 | `POST /api/v1/receipts/{id}/review` | Open mandatory review | Moves a stored receipt to `needs_review` under its displayed version. |
 | `POST /api/v1/receipts/{id}/approve` | Approve a receipt | Records explicit owner approval of a receipt already in review. |
+| `GET /api/v1/messaging` | Durable messaging state | Bot environment, pairing state, offset, last poll, active interactions, both queue depths and ages, and both dead-letter queues. No bot key, no source reference, no message content. |
+| `POST /api/v1/messaging/inbox/{id}/replay` | Requeue a failed work item | Requires the requeue count the page displayed; preserves the source reference and never rewinds the offset. |
+| `POST /api/v1/messaging/outbox/{id}/resend` | Retry an undelivered response | Requires the resend count the page displayed; keeps the same logical row and may produce a duplicate physical message. |
 | `GET /api/v1/health/live` | Process liveness | Content-free healthy state. |
 | `GET /api/v1/health/ready` | Database/profile readiness | Healthy state or bounded problem details. |
 | `GET /api/v1/csrf` | Prepare unsafe browser requests | Random double-submit value and HttpOnly same-site cookie. |
@@ -167,6 +197,13 @@ paths, owner text, or credentials.
   reviewed in successive steps and each step is a separate command. Retrying
   one transition replays it; a different decision taken from the same displayed
   state conflicts, and a version another transition already left is refused.
+  Messaging requeues use `messaging-replay:{inbox_id}:{replay_count}` and
+  `messaging-resend:{outbox_id}:{replay_count}`, where the count is the one the
+  page displayed. A requeue claims no finance command record: it commits in the
+  messaging schema, and the count in the row itself is the durable pin. Repeating
+  one request answers `replayed` and requeues nothing further; every refusal is
+  one 409, because an item from another bot environment must not be
+  distinguishable from a missing or already recovered one.
 - API responses are marked `no-store`. Responses also set a same-origin content
   security policy, deny framing and referrers, and disable MIME sniffing.
 - The API has no secret-returning endpoint. Do not add token, database URL,
@@ -213,7 +250,13 @@ PostgreSQL. It registers two receipts, lists them newest first without their
 digests, opens and replays one review, refuses approval of a receipt that never
 entered review, approves the reviewed one, refuses a stale version, an unknown
 receipt and a non-canonical key, and reads both terminal states back from
-PostgreSQL. It uses isolated identifiers and cleans up its schemas.
+PostgreSQL. It drives one update to an inbox dead letter and one notice to a
+delivery dead letter, reads both over HTTP without the owner's text or the bot
+key, replays the work item, repeats that request and receives `replayed`,
+refuses a stale count, an unknown item and a crossed key identically, resends
+the response, and verifies through the repository that one requeue happened per
+queue and that the recovered work item kept its source reference. It uses
+isolated identifiers and cleans up its schemas.
 
 A draft may legitimately be unreconciled, so both allocation dimensions are
 enforced when a movement is registered, not while it is still being edited.
@@ -222,9 +265,11 @@ Registering an unreconciled movement returns a bounded 422 and changes nothing.
 To withdraw the web surface, stop and disable only
 `money-tracker-api.service`. No migration rollback is needed. Manual movements
 already committed through the service are authoritative finance history, and so
-are configured budgets, category-review decisions, and receipt review states:
+are configured budgets, category-review decisions, receipt review states, and
+any requeue already applied:
 keep them and the Telegram services running, and correct or cancel them only
 through normal audited use cases. Withdrawing the web surface leaves every
 retained original untouched, because the service never had access to the
-archive. Re-enable the last known-good build and unit rather than
+archive, and leaves the Telegram queues operable from
+`money-tracker-telegram`, which remains the unattended recovery path. Re-enable the last known-good build and unit rather than
 deleting `frontend/dist` while the service is active.

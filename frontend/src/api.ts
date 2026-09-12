@@ -32,11 +32,7 @@ export type MonthlyOverview = {
 };
 
 export type ExpenseStatus =
-  | "draft"
-  | "needs_review"
-  | "posted"
-  | "voided"
-  | "discarded";
+  "draft" | "needs_review" | "posted" | "voided" | "discarded";
 
 export type CategoryReference = {
   id: string;
@@ -424,4 +420,94 @@ export function approveReceipt(
   expectedVersion: number,
 ): Promise<ReceiptMutation> {
   return reviewReceipt("approve", receiptId, expectedVersion);
+}
+
+export type MessagingQueueState = {
+  pending: number;
+  retrying: number;
+  dead_letters: number;
+  oldest_at: string | null;
+};
+
+export type InboxDeadLetter = {
+  inbox_id: string;
+  update_id: number;
+  attempt_count: number;
+  replay_count: number;
+  last_error_code: string | null;
+  accepted_at: string;
+};
+
+export type OutboxDeadLetter = {
+  outbox_id: string;
+  response_kind: string;
+  attempt_count: number;
+  replay_count: number;
+  last_error_code: string | null;
+  created_at: string;
+};
+
+export type MessagingOperations = {
+  environment: "production" | "test";
+  owner_paired: boolean;
+  next_offset: number;
+  last_poll_at: string | null;
+  last_observed_at: string | null;
+  downtime_exceeds_update_retention: boolean;
+  active_actions: number;
+  inbox: MessagingQueueState;
+  outbox: MessagingQueueState;
+  inbox_dead_letters: InboxDeadLetter[];
+  outbox_dead_letters: OutboxDeadLetter[];
+};
+
+export type MessagingRequeue = {
+  id: string;
+  queue: "inbox" | "outbox";
+  outcome: "applied" | "replayed";
+};
+
+export async function loadMessagingOperations(
+  signal?: AbortSignal,
+): Promise<MessagingOperations> {
+  const response = await fetch("/api/v1/messaging", { signal });
+  return responseJson<MessagingOperations>(response);
+}
+
+function requeue(
+  command: "messaging-replay" | "messaging-resend",
+  path: string,
+  itemId: string,
+  observedReplayCount: number,
+): Promise<MessagingRequeue> {
+  return mutate<MessagingRequeue>(
+    path,
+    "POST",
+    { expected_replay_count: observedReplayCount },
+    `${command}:${itemId}:${observedReplayCount}`,
+  );
+}
+
+export function replayInboxItem(
+  inboxId: string,
+  observedReplayCount: number,
+): Promise<MessagingRequeue> {
+  return requeue(
+    "messaging-replay",
+    `/api/v1/messaging/inbox/${encodeURIComponent(inboxId)}/replay`,
+    inboxId,
+    observedReplayCount,
+  );
+}
+
+export function resendOutboxItem(
+  outboxId: string,
+  observedReplayCount: number,
+): Promise<MessagingRequeue> {
+  return requeue(
+    "messaging-resend",
+    `/api/v1/messaging/outbox/${encodeURIComponent(outboxId)}/resend`,
+    outboxId,
+    observedReplayCount,
+  );
 }

@@ -31,6 +31,7 @@ from money_tracker.application import (
     TransactionRegister,
 )
 from money_tracker.domain import DomainError, YearMonth
+from money_tracker.messaging import MessagingConflictError
 from money_tracker.structured_logging import get_logger
 from money_tracker.web.config import WebSettings
 from money_tracker.web.contracts import (
@@ -47,6 +48,9 @@ from money_tracker.web.contracts import (
     ExpensePostRequest,
     ExpenseReplaceRequest,
     HealthResponse,
+    MessagingOperationsResponse,
+    MessagingRequeueRequest,
+    MessagingRequeueResponse,
     MonthlyOverviewResponse,
     ReceiptMutationResponse,
     ReceiptRegisterResponse,
@@ -57,6 +61,7 @@ from money_tracker.web.mutations import (
     BudgetMutationAdapter,
     CategoryReviewMutationAdapter,
     ExpenseMutationAdapter,
+    MessagingOperationsAdapter,
     ReceiptReviewMutationAdapter,
 )
 from money_tracker.web.security import (
@@ -109,6 +114,7 @@ def create_app(
     budgets: BudgetMutationAdapter,
     category_reviews: CategoryReviewMutationAdapter,
     receipts: ReceiptReviewMutationAdapter,
+    messaging: MessagingOperationsAdapter,
     readiness_check: Callable[[], bool],
 ) -> FastAPI:
     """Compose the local web adapter around narrow application reads.
@@ -122,6 +128,8 @@ def create_app(
         category_reviews: Browser adapter over owner category decisions.
         receipts: Browser adapter over retained receipt metadata and its
             audited review transitions. It reaches no media store.
+        messaging: Browser adapter over one bot's durable messaging state and
+            its requeue commands. Its bot scope is bound at composition time.
         readiness_check: Content-free database/schema readiness probe.
 
     Returns:
@@ -550,6 +558,68 @@ def create_app(
             instance=f"{API_V1_PREFIX}/receipts/{receipt_id}/approve",
         )
 
+    @router.get("/messaging", response_model=MessagingOperationsResponse)
+    def messaging_operations() -> MessagingOperationsResponse | JSONResponse:
+        """Return the configured bot's queues, offset, and failure queues."""
+
+        try:
+            snapshot = messaging.snapshot()
+        except PsycopgError:
+            return _database_problem(f"{API_V1_PREFIX}/messaging")
+        return MessagingOperationsResponse.from_application(snapshot)
+
+    @router.post(
+        "/messaging/inbox/{inbox_id}/replay",
+        response_model=MessagingRequeueResponse,
+    )
+    def replay_inbox_item(
+        inbox_id: UUID,
+        request: MessagingRequeueRequest,
+        idempotency_key: Annotated[
+            str,
+            Header(alias="Idempotency-Key", min_length=1, max_length=200),
+        ],
+    ) -> MessagingRequeueResponse | JSONResponse:
+        """Return one failed work item to the sequential worker's queue."""
+
+        return _execute_mutation(
+            lambda: messaging.replay_inbox(
+                inbox_id=inbox_id,
+                command_key=idempotency_key.strip(),
+                request=request,
+            ),
+            render=MessagingRequeueResponse.from_domain,
+            problems=_MESSAGING_PROBLEMS,
+            command_key=idempotency_key,
+            instance=f"{API_V1_PREFIX}/messaging/inbox/{inbox_id}/replay",
+        )
+
+    @router.post(
+        "/messaging/outbox/{outbox_id}/resend",
+        response_model=MessagingRequeueResponse,
+    )
+    def resend_outbox_item(
+        outbox_id: UUID,
+        request: MessagingRequeueRequest,
+        idempotency_key: Annotated[
+            str,
+            Header(alias="Idempotency-Key", min_length=1, max_length=200),
+        ],
+    ) -> MessagingRequeueResponse | JSONResponse:
+        """Start a fresh bounded delivery cycle for one undelivered response."""
+
+        return _execute_mutation(
+            lambda: messaging.resend_outbox(
+                outbox_id=outbox_id,
+                command_key=idempotency_key.strip(),
+                request=request,
+            ),
+            render=MessagingRequeueResponse.from_domain,
+            problems=_MESSAGING_PROBLEMS,
+            command_key=idempotency_key,
+            instance=f"{API_V1_PREFIX}/messaging/outbox/{outbox_id}/resend",
+        )
+
     @router.get("/budgets", response_model=BudgetPlanResponse)
     def budget_plan(period: str) -> BudgetPlanResponse | JSONResponse:
         """Return the stored budget plan and its position in one month."""
@@ -699,6 +769,22 @@ _RECEIPT_PROBLEMS = _MutationProblems(
     code_prefix="receipt",
 )
 
+_MESSAGING_PROBLEMS = _MutationProblems(
+    not_found=(
+        "Elemento non trovato",
+        "L'elemento richiesto non è in coda per questo bot.",
+    ),
+    conflict=(
+        "Coda già aggiornata",
+        "Ricarica lo stato della messaggistica prima di riprovare.",
+    ),
+    invalid=(
+        "Richiesta non valida",
+        "L'elemento non si trova nello stato richiesto da questa azione.",
+    ),
+    code_prefix="messaging",
+)
+
 _CATEGORY_REVIEW_PROBLEMS = _MutationProblems(
     not_found=(
         "Proposta non trovata",
@@ -744,7 +830,11 @@ def _execute_mutation[AggregateT, ResponseT](
             code=f"{problems.code_prefix}_not_found",
             instance=instance,
         )
-    except (IdempotencyConflictError, OptimisticConcurrencyError):
+    except (
+        IdempotencyConflictError,
+        MessagingConflictError,
+        OptimisticConcurrencyError,
+    ):
         return _problem(
             status=409,
             title=problems.conflict[0],
@@ -865,6 +955,7 @@ def _mount_dashboard(app: FastAPI, static_dir: Path) -> None:
     @app.get("/categorie", include_in_schema=False)
     @app.get("/budget", include_in_schema=False)
     @app.get("/scontrini", include_in_schema=False)
+    @app.get("/messaggistica", include_in_schema=False)
     def dashboard() -> FileResponse:
         """Return the compiled single-page application shell.
 

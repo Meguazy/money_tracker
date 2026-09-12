@@ -16,7 +16,10 @@ from money_tracker.messaging import (
     DeadLetter,
     MessagingAdministration,
     MessagingHealth,
+    MessagingQueue,
     OutboxDeadLetter,
+    OwnerBinding,
+    RequeueOutcome,
     downtime_gap,
 )
 
@@ -50,8 +53,9 @@ class _Repository:
         self.ensured: list[tuple[str, Any]] = []
         self.limits: list[int] = []
         self.outbox_limits: list[int] = []
-        self.replayed: list[tuple[str, UUID, datetime]] = []
-        self.resent: list[tuple[str, UUID, datetime]] = []
+        self.replayed: list[tuple[str, UUID, int | None, datetime]] = []
+        self.resent: list[tuple[str, UUID, int | None, datetime]] = []
+        self.binding: OwnerBinding | None = None
         self.latencies = (9_999, 1_000, 2_000, 3_000, 4_000)
 
     def ensure_bot(self, bot_key: str, **values: Any) -> None:
@@ -87,10 +91,24 @@ class _Repository:
             ),
         )
 
-    def replay_inbox(self, bot_key: str, inbox_id: UUID, *, now: datetime) -> None:
-        """Record one replay request."""
+    def requeue_inbox(
+        self,
+        bot_key: str,
+        inbox_id: UUID,
+        *,
+        expected_replay_count: int | None,
+        now: datetime,
+    ) -> RequeueOutcome:
+        """Record one requeue request and the state it was pinned to."""
 
-        self.replayed.append((bot_key, inbox_id, now))
+        self.replayed.append((bot_key, inbox_id, expected_replay_count, now))
+        return RequeueOutcome.APPLIED
+
+    def owner_binding(self, bot_key: str) -> OwnerBinding | None:
+        """Return the configured binding for the requested bot only."""
+
+        del bot_key
+        return self.binding
 
     def outbox_dead_letters(
         self, bot_key: str, *, limit: int
@@ -109,10 +127,18 @@ class _Repository:
             ),
         )
 
-    def replay_outbox(self, bot_key: str, outbox_id: UUID, *, now: datetime) -> None:
-        """Record one manual delivery retry request."""
+    def requeue_outbox(
+        self,
+        bot_key: str,
+        outbox_id: UUID,
+        *,
+        expected_replay_count: int | None,
+        now: datetime,
+    ) -> RequeueOutcome:
+        """Record one manual delivery retry and the state it was pinned to."""
 
-        self.resent.append((bot_key, outbox_id, now))
+        self.resent.append((bot_key, outbox_id, expected_replay_count, now))
+        return RequeueOutcome.REPLAYED
 
     def text_delivery_latencies(
         self, bot_key: str, *, since: datetime, limit: int
@@ -262,7 +288,7 @@ def test_replay_names_the_selected_item_and_the_instant() -> None:
 
     _service(repository).replay("telegram-test", inbox_id)
 
-    assert repository.replayed == [("telegram-test", inbox_id, NOW)]
+    assert repository.replayed == [("telegram-test", inbox_id, None, NOW)]
 
 
 def test_outbox_dead_letters_expose_only_safe_delivery_metadata() -> None:
@@ -286,7 +312,7 @@ def test_resend_names_one_selected_outbox_dead_letter() -> None:
 
     _service(repository).resend("telegram-test", outbox_id)
 
-    assert repository.resent == [("telegram-test", outbox_id, NOW)]
+    assert repository.resent == [("telegram-test", outbox_id, None, NOW)]
 
 
 def test_text_latency_excludes_warmup_and_uses_nearest_rank_p95() -> None:
@@ -359,3 +385,76 @@ def test_pairing_creates_the_bot_scope_it_needs() -> None:
 
     assert repository.ensured == [("telegram-test", BotEnvironment.TEST)]
     assert repository.stored[0]["bot_key"] == "telegram-test"
+
+
+def test_a_pinned_requeue_names_the_transition_it_was_decided_from() -> None:
+    """Tie an operator surface requeue to the state it actually displayed."""
+
+    repository = _Repository()
+    inbox_id = UUID("00000000-0000-0000-0000-0000000000d1")
+
+    item = _service(repository).requeue_inbox(
+        "telegram-test",
+        inbox_id,
+        expected_replay_count=2,
+    )
+
+    assert repository.replayed == [("telegram-test", inbox_id, 2, NOW)]
+    assert item.id == inbox_id
+    assert item.queue is MessagingQueue.INBOX
+    assert item.outcome is RequeueOutcome.APPLIED
+
+
+def test_a_pinned_resend_reports_a_transition_that_already_happened() -> None:
+    """Answer a repeated delivery retry without starting a second cycle."""
+
+    repository = _Repository()
+    outbox_id = UUID("00000000-0000-0000-0000-0000000000d2")
+
+    item = _service(repository).requeue_outbox(
+        "telegram-test",
+        outbox_id,
+        expected_replay_count=0,
+    )
+
+    assert repository.resent == [("telegram-test", outbox_id, 0, NOW)]
+    assert item.queue is MessagingQueue.OUTBOX
+    assert item.outcome is RequeueOutcome.REPLAYED
+
+
+def test_the_operations_snapshot_carries_only_content_free_state() -> None:
+    """Give one surface the counters, failures, and pairing state it needs."""
+
+    repository = _Repository()
+    repository.binding = OwnerBinding(
+        bot_key="telegram-test",
+        profile_id=PROFILE,
+        telegram_user_id=1001,
+        telegram_chat_id=1001,
+        paired_at=NOW,
+    )
+
+    snapshot = _service(repository).operations_snapshot(
+        "telegram-test",
+        environment=BotEnvironment.TEST,
+    )
+
+    assert snapshot.environment is BotEnvironment.TEST
+    assert snapshot.owner_paired is True
+    assert snapshot.health.inbox_dead_letters == 2
+    assert snapshot.downtime_exceeds_update_retention is False
+    assert snapshot.inbox_dead_letters[0].last_error_code == "model_unavailable"
+    assert snapshot.outbox_dead_letters[0].response_kind == "draft"
+    assert repository.limits == [50] and repository.outbox_limits == [50]
+
+
+def test_the_operations_snapshot_reports_a_bot_that_was_never_paired() -> None:
+    """Say plainly that queue counters belong to a bot with no owner yet."""
+
+    snapshot = _service(_Repository()).operations_snapshot(
+        "telegram-test",
+        environment=BotEnvironment.PRODUCTION,
+    )
+
+    assert snapshot.owner_paired is False
+    assert snapshot.environment is BotEnvironment.PRODUCTION

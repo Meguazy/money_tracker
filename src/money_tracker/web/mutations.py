@@ -25,6 +25,15 @@ from money_tracker.domain import (
     ReceiptMetadata,
     YearMonth,
 )
+from money_tracker.messaging import (
+    INBOX_REQUEUE_COMMAND,
+    OUTBOX_REQUEUE_COMMAND,
+    BotEnvironment,
+    MessagingOperationsSnapshot,
+    MessagingScope,
+    RequeuedItem,
+    requeue_command_key,
+)
 from money_tracker.web.contracts import (
     BudgetCreateRequest,
     BudgetReplaceRequest,
@@ -33,6 +42,7 @@ from money_tracker.web.contracts import (
     ExpenseCancelRequest,
     ExpensePostRequest,
     ExpenseReplaceRequest,
+    MessagingRequeueRequest,
     ReceiptReviewRequest,
 )
 from money_tracker.workflows import (
@@ -597,6 +607,139 @@ class ReceiptReviewMutationAdapter:
             )
 
 
+class MessagingOperationsWriter(Protocol):
+    """Expose only the messaging reads and requeues the browser may reach.
+
+    Sending a message, changing the pairing, moving the Bot API offset, and
+    deleting a row are absent by shape. The browser can see what the durable
+    queues hold and return a failed item to them; it cannot reach the Bot API
+    transport, the owner binding, or the rows themselves.
+    """
+
+    def operations_snapshot(
+        self,
+        bot_key: str,
+        *,
+        environment: BotEnvironment,
+    ) -> MessagingOperationsSnapshot:
+        """Return content-free queue, offset, pairing, and failure state."""
+
+    def requeue_inbox(
+        self,
+        bot_key: str,
+        inbox_id: UUID,
+        *,
+        expected_replay_count: int | None,
+    ) -> RequeuedItem:
+        """Requeue one dead letter under the state the caller observed."""
+
+    def requeue_outbox(
+        self,
+        bot_key: str,
+        outbox_id: UUID,
+        *,
+        expected_replay_count: int | None,
+    ) -> RequeuedItem:
+        """Resend one delivery dead letter under the state the caller observed."""
+
+
+class MessagingOperationsAdapter:
+    """Bind the browser to one bot's durable state and its requeue commands.
+
+    This domain is scoped by bot and environment rather than by profile, so the
+    trusted scope is bound here at composition time and no method accepts one.
+    The HTTP layer therefore has no argument through which a request could name
+    another bot, which is a stronger guarantee than validating one it received.
+
+    A requeue is not a finance write and claims no command table: the durable
+    pin is the observed replay count, checked inside the single messaging
+    transaction that applies the requeue. The `Idempotency-Key` header still
+    names that exact transition, so a caller states which one it intends and a
+    stale tab cannot silently requeue an item a second time.
+    """
+
+    def __init__(
+        self,
+        operations: MessagingOperationsWriter,
+        *,
+        scope: MessagingScope,
+    ) -> None:
+        """Bind the operator service to one trusted bot persistence scope.
+
+        Args:
+            operations: Existing bounded messaging operator use cases.
+            scope: Bot environment and key selected by process configuration.
+        """
+
+        self._operations = operations
+        self._scope = scope
+
+    def snapshot(self) -> MessagingOperationsSnapshot:
+        """Return the configured bot's content-free operational state."""
+
+        return self._operations.operations_snapshot(
+            self._scope.bot_key,
+            environment=self._scope.environment,
+        )
+
+    def replay_inbox(
+        self,
+        *,
+        inbox_id: UUID,
+        command_key: str,
+        request: MessagingRequeueRequest,
+    ) -> RequeuedItem:
+        """Return one failed work item to the sequential worker's queue."""
+
+        self._require_command_key(
+            INBOX_REQUEUE_COMMAND,
+            inbox_id,
+            request.expected_replay_count,
+            command_key,
+        )
+        return self._operations.requeue_inbox(
+            self._scope.bot_key,
+            inbox_id,
+            expected_replay_count=request.expected_replay_count,
+        )
+
+    def resend_outbox(
+        self,
+        *,
+        outbox_id: UUID,
+        command_key: str,
+        request: MessagingRequeueRequest,
+    ) -> RequeuedItem:
+        """Start a fresh bounded delivery cycle for one undelivered response."""
+
+        self._require_command_key(
+            OUTBOX_REQUEUE_COMMAND,
+            outbox_id,
+            request.expected_replay_count,
+            command_key,
+        )
+        return self._operations.requeue_outbox(
+            self._scope.bot_key,
+            outbox_id,
+            expected_replay_count=request.expected_replay_count,
+        )
+
+    @staticmethod
+    def _require_command_key(
+        command: str,
+        item_id: UUID,
+        expected_replay_count: int,
+        command_key: str,
+    ) -> None:
+        """Require the exact key that names the requested transition."""
+
+        expected = requeue_command_key(command, item_id, expected_replay_count)
+        if command_key != expected:
+            raise IdempotencyConflictError(
+                "a requeue requires its transition-wide command key"
+            )
+
+
 def _overrides_from_request(
     request: BudgetWriteRequest,
 ) -> tuple[tuple[YearMonth, Money], ...]:
@@ -661,6 +804,8 @@ __all__ = [
     "CategoryReviewWriter",
     "ExpenseMutationAdapter",
     "ExpenseWriter",
+    "MessagingOperationsAdapter",
+    "MessagingOperationsWriter",
     "ReceiptReviewMutationAdapter",
     "ReceiptReviewWriter",
 ]

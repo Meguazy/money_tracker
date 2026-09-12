@@ -3,13 +3,14 @@ import { NavLink, Navigate, Route, Routes } from "react-router-dom";
 
 import { BudgetsPage } from "./BudgetsPage";
 import { CategoriesPage } from "./CategoriesPage";
+import { MessagingPage } from "./MessagingPage";
 import { OverviewPage } from "./OverviewPage";
 import { ReceiptsPage } from "./ReceiptsPage";
 import { TransactionsPage } from "./TransactionsPage";
 
 export function App() {
   return (
-    <AppShell header={{ height: { base: 152, sm: 72 } }} padding={0}>
+    <AppShell header={{ height: { base: 184, sm: 72 } }} padding={0}>
       <a className="skip-link" href="#main-content">
         Vai al contenuto
       </a>
@@ -21,7 +22,9 @@ export function App() {
             </span>
             <div>
               <Text className="brand-name">Money Tracker</Text>
-              <Text className="brand-note">locale · privato · verificabile</Text>
+              <Text className="brand-note">
+                locale · privato · verificabile
+              </Text>
             </div>
           </Group>
           <nav aria-label="Navigazione principale" className="main-nav">
@@ -56,6 +59,12 @@ export function App() {
             >
               Scontrini
             </NavLink>
+            <NavLink
+              className={({ isActive }) => (isActive ? "active" : "")}
+              to="/messaggistica"
+            >
+              Messaggistica
+            </NavLink>
           </nav>
           <Text className="local-state">127.0.0.1</Text>
         </Group>
@@ -67,6 +76,7 @@ export function App() {
           <Route element={<CategoriesPage />} path="/categorie" />
           <Route element={<BudgetsPage />} path="/budget" />
           <Route element={<ReceiptsPage />} path="/scontrini" />
+          <Route element={<MessagingPage />} path="/messaggistica" />
           <Route element={<Navigate replace to="/" />} path="*" />
         </Routes>
       </AppShell.Main>

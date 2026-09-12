@@ -7,9 +7,8 @@ import stat
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from money_tracker.messaging import BotEnvironment
+from money_tracker.messaging import BotEnvironment, MessagingScope
 
-_ENVIRONMENT = "MONEY_TRACKER_TELEGRAM_ENVIRONMENT"
 _PRODUCTION_TOKEN_FILE = "MONEY_TRACKER_TELEGRAM_PRODUCTION_TOKEN_FILE"
 _TEST_TOKEN_FILE = "MONEY_TRACKER_TELEGRAM_TEST_TOKEN_FILE"
 
@@ -78,13 +77,8 @@ class TelegramSettings:
             ValueError: If environment or duration configuration is invalid.
         """
 
-        raw_environment = os.getenv(_ENVIRONMENT, "").strip()
-        try:
-            environment = BotEnvironment(raw_environment)
-        except ValueError as error:
-            raise RuntimeError(
-                f"{_ENVIRONMENT} must be explicitly 'production' or 'test'"
-            ) from error
+        scope = MessagingScope.from_env()
+        environment = scope.environment
         production_path = os.getenv(_PRODUCTION_TOKEN_FILE, "").strip()
         test_path = os.getenv(_TEST_TOKEN_FILE, "").strip()
         if not production_path or not test_path:
@@ -102,7 +96,7 @@ class TelegramSettings:
             raise RuntimeError("Telegram token file paths must be absolute")
         return cls(
             environment=environment,
-            bot_key=f"telegram-{environment.value}",
+            bot_key=scope.bot_key,
             token_file=selected,
             connect_timeout_seconds=_positive_float(
                 "MONEY_TRACKER_TELEGRAM_CONNECT_TIMEOUT_SECONDS", 5.0

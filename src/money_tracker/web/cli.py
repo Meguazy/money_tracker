@@ -17,8 +17,10 @@ from money_tracker.application import (
     ReportingService,
 )
 from money_tracker.application.runtime import SystemClock, UUID4Generator
+from money_tracker.messaging import MessagingAdministration, MessagingScope
 from money_tracker.persistence.database import database_url_from_env
 from money_tracker.persistence.finance import PostgresFinanceRepository
+from money_tracker.persistence.messaging import PostgresMessagingRepository
 from money_tracker.process_exit import exit_code_for, failure_reason
 from money_tracker.structured_logging import configure_logging, get_logger
 from money_tracker.web.app import create_app
@@ -27,6 +29,7 @@ from money_tracker.web.mutations import (
     BudgetMutationAdapter,
     CategoryReviewMutationAdapter,
     ExpenseMutationAdapter,
+    MessagingOperationsAdapter,
     ReceiptReviewMutationAdapter,
 )
 
@@ -69,6 +72,12 @@ def main(argv: Sequence[str] | None = None) -> None:
         profile_id = profiles[0]
         ids = UUID4Generator()
         clock = SystemClock()
+        # Messaging is scoped by bot and environment rather than by profile.
+        # The scope is read here, from configuration, and bound into the
+        # adapter, so no HTTP request can name another bot. The web process
+        # deliberately reads no Bot API credential: it inspects and requeues
+        # durable rows and never speaks to Telegram.
+        scope = MessagingScope.from_env()
         app = create_app(
             settings=settings,
             profile_id=profile_id,
@@ -95,6 +104,14 @@ def main(argv: Sequence[str] | None = None) -> None:
             receipts=ReceiptReviewMutationAdapter(
                 ReceiptMetadataService(repository, clock=clock, ids=ids)
             ),
+            messaging=MessagingOperationsAdapter(
+                MessagingAdministration(
+                    PostgresMessagingRepository(database_url),
+                    clock=clock,
+                    ids=ids,
+                ),
+                scope=scope,
+            ),
             readiness_check=lambda: repository.profile_exists(profile_id),
         )
         _LOGGER.info(
@@ -102,6 +119,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             host=settings.host,
             port=settings.port,
             profile_id=profile_id,
+            environment=scope.environment.value,
         )
         uvicorn.run(
             app,

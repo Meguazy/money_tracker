@@ -61,6 +61,42 @@ class PendingActionTarget(StrEnum):
     MOVEMENT = "movement"
 
 
+class MessagingQueue(StrEnum):
+    """Durable queue one operator requeue acts on."""
+
+    INBOX = "inbox"
+    OUTBOX = "outbox"
+
+
+class RequeueOutcome(StrEnum):
+    """What one operator requeue actually did to a dead letter.
+
+    A requeue that pins the replay count it observed can tell a first
+    application apart from a repeat of that same application. The distinction
+    matters because the two are indistinguishable from the caller's side once
+    a response is lost in transit, and answering `replayed` is the only honest
+    way to say that the requested transition is already durable.
+    """
+
+    APPLIED = "applied"
+    REPLAYED = "replayed"
+
+
+@dataclass(frozen=True, slots=True)
+class RequeuedItem:
+    """Identity and effect of one completed operator requeue.
+
+    Attributes:
+        id: Dead letter the caller named.
+        queue: Durable queue the item belongs to.
+        outcome: Whether this call requeued it or found the transition done.
+    """
+
+    id: UUID
+    queue: MessagingQueue
+    outcome: RequeueOutcome
+
+
 def validate_bot_key(value: str) -> str:
     """Validate a non-secret stable bot persistence key.
 

@@ -6,8 +6,9 @@ Status: **In progress (2026-09-12).** The implemented vertical slices provide
 the loopback same-origin host, deterministic monthly overview and transaction
 register, accessible React shell, audited manual create, correct, post, and
 cancel workflows, the multi-allocation editor for both reconciling dimensions,
-the monthly budget planner, owner review of pending category proposals, and
-consultation and mandatory review of retained receipt metadata. The
+the monthly budget planner, owner review of pending category proposals,
+consultation and mandatory review of retained receipt metadata, and browser
+inspection and requeue of the durable messaging queues. The
 remaining control-plane views, wider
 analytics, advice surface, and complete browser E2E acceptance are still open.
 No model, prompt, routing threshold, tool contract, or taxonomy policy changed,
@@ -288,10 +289,95 @@ so EVD-004 remains the promoted text baseline.
   threshold, tool, or taxonomy policy changed; EVD-004 remains the promoted
   baseline.
 
+### Messaging operations slice (2026-09-12)
+
+- `/messaggistica` makes the durable Telegram queues reachable from the control
+  plane. `money_tracker.messaging.administration` has exposed `health`,
+  `dead_letters`, `outbox_dead_letters`, `replay`, and `resend` on
+  `PostgresMessagingRepository` since Step 4, with recovery and latency
+  acceptance evidence, but only `money-tracker-telegram health|dead-letters|
+  replay|resend` could reach them. The owner had to open a terminal to learn
+  that a message had failed.
+- The page shows the selected bot environment, whether an owner is paired, the
+  persisted offset, the last poll, active correlations, both queue depths with
+  their oldest waiting item, and both dead-letter queues with attempt counts,
+  requeue counts, and bounded reason codes. It warns when the bot has no owner
+  binding and when the gap since the last poll exceeds the 24 hours Telegram
+  keeps undelivered updates.
+- This is the first control-plane domain that is not scoped by profile.
+  Durable messaging state belongs to one bot environment, so a new
+  `MessagingScope` reads only `MONEY_TRACKER_TELEGRAM_ENVIRONMENT` and derives
+  the stable bot key. `TelegramSettings` now derives its key from that same
+  value instead of repeating it. The scope is bound into
+  `MessagingOperationsAdapter` at composition time and no adapter method takes
+  a scope, so the HTTP layer has no argument through which a request could name
+  another bot. The web process reads no Bot API credential: it inspects and
+  requeues rows and never speaks to Telegram.
+- Nothing the owner wrote reaches this surface. The Step 4 `DeadLetter` and
+  `OutboxDeadLetter` projections are content-free by construction, so the
+  browser/journal distinction the brief anticipated does not arise: the same
+  values are safe in both. The response additionally omits the bot key and the
+  inbox `source_reference`, which is the finance command identity a replay
+  preserves and which the movement register and receipt response omit for the
+  same reason.
+- Replay and resend are requeue commands, not new financial writes, and their
+  identity was decided before the routes were written. They claim no entry in
+  `finance.idempotency_records`: that table is claimed in the same transaction
+  as the finance state it protects, while a requeue commits in the messaging
+  schema through a different repository and connection, so a claim there would
+  promise an atomicity that does not exist. The durable pin is instead the
+  row's own `replay_count`, checked and advanced inside the single messaging
+  transaction that requeues it. The HTTP key names that transition —
+  `messaging-replay:{inbox_id}:{observed_replay_count}` and
+  `messaging-resend:{outbox_id}:{observed_replay_count}` — and the adapter
+  refuses any other value. No migration was needed.
+- The repository therefore locks the row, applies the requeue only from the
+  pinned state, and reports a repeat of that exact transition as `replayed`
+  rather than requeuing twice. Without the pin a stale tab could requeue an
+  item a second time after the first requeue had already failed again. Every
+  other outcome is one bounded 409, because AD-018 requires an inbox identifier
+  from another bot environment to be indistinguishable from a missing or
+  non-dead-letter item. The unattended `money-tracker-telegram replay|resend`
+  commands keep their unpinned form, since a terminal names an item rather than
+  a view, and both forms now share one implementation.
+- The refusal of a requeue is recorded once, in the repository funnel that
+  decides it, with the queue, the observed status and count, and the pinned
+  count. The outbox refusal previously produced no record at all. Both service
+  commands now record the outcome they achieved instead of the intervention
+  they attempted.
+- `MessagingConflictError` and `MessagingLeaseError` moved from
+  `persistence.messaging` to `messaging.errors` and are re-exported unchanged.
+  They are part of what the `MessagingRepository` port promises, so a caller
+  that depends only on the port can now name them without importing a storage
+  adapter.
+- Nothing in this slice sends a message, changes the pairing, moves the Bot API
+  offset, or deletes a row. The adapter's port exposes the snapshot and the two
+  requeues and nothing else, so the browser object graph contains no Bot API
+  transport, owner binding, or deletion path.
+- Unit tests cover the pinned transition identity and the typed requeue result,
+  the composed snapshot including an unpaired bot, the content-free wire shape
+  with no bot key or source reference, the trusted scope the read uses, both
+  command families, a crossed key, one bounded conflict for every refusal, a
+  refused body naming a bot, and the mounted deep link. Component tests cover
+  the rendered state, both requeue controls under the counts they displayed,
+  keyboard operation, the unpaired and expired-backlog warnings, a refused
+  requeue, retry, and the healthy empty state.
+- Real PostgreSQL tests drive one update to an inbox dead letter and one notice
+  to a delivery dead letter through the production repository, then over HTTP
+  read both without the owner's text, the failure notice text, or the bot key,
+  replay the work item, repeat that request and receive `replayed`, refuse a
+  stale count, an unknown item, and a crossed key with the identical problem,
+  and resend the response. The repository is then read back to prove one
+  requeue per queue and a recovered work item that kept its source reference.
+  Repository tests additionally prove the pinned requeue applies once for both
+  queues and that a stale or unknown pin changes nothing. No migration,
+  model-visible contract, prompt, threshold, tool, or taxonomy policy changed;
+  EVD-004 remains the promoted baseline.
+
 ### Work still required before completion
 
-- Add category rename/archive management, funding sources/wallets, messaging
-  operations, and settings views.
+- Add category rename/archive management, funding sources/wallets, and settings
+  views.
 - Extend deterministic reads from the current month to day, ISO week, year,
   comparison, and validated custom ranges, retaining purpose and funding
   breakdowns.

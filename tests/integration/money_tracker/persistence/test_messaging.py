@@ -19,6 +19,7 @@ from money_tracker.messaging import (
     OutboxMessageDraft,
     PendingActionDraft,
     PendingActionTarget,
+    RequeueOutcome,
 )
 from money_tracker.persistence.database import upgrade_database
 from money_tracker.persistence.messaging import (
@@ -1062,3 +1063,165 @@ def test_a_revocation_is_queued_once_and_never_measured_as_latency(
         limit=10,
     )
     assert len(latencies) == 1
+
+
+@pytest.mark.postgres
+def test_a_pinned_requeue_applies_once_and_then_reports_itself_done(
+    postgres_url: str,
+) -> None:
+    """Let a lost response be retried without requeuing a second time."""
+
+    repository, bot_key = _repository(postgres_url)
+    update = _update(bot_key, 0)
+    _ingest(repository, bot_key, update)
+    claim = repository.claim_next_inbox(
+        bot_key,
+        now=_NOW + timedelta(seconds=1),
+        lease=timedelta(minutes=1),
+        claim_token=uuid4(),
+    )
+    assert claim is not None
+    repository.fail_inbox(
+        claim,
+        error_code="model_unavailable",
+        transient=False,
+        retry_at=None,
+        response=_failure_response(claim.update, terminal=True),
+        now=_NOW + timedelta(seconds=2),
+    )
+    item = repository.dead_letters(bot_key, limit=10)[0]
+    assert item.replay_count == 0
+
+    applied = repository.requeue_inbox(
+        bot_key,
+        item.id,
+        expected_replay_count=0,
+        now=_NOW + timedelta(seconds=3),
+    )
+    repeated = repository.requeue_inbox(
+        bot_key,
+        item.id,
+        expected_replay_count=0,
+        now=_NOW + timedelta(seconds=4),
+    )
+
+    assert applied is RequeueOutcome.APPLIED
+    assert repeated is RequeueOutcome.REPLAYED
+    assert (
+        _count(
+            postgres_url,
+            "SELECT replay_count FROM messaging.telegram_inbox WHERE id = %s",
+            (item.id,),
+        )
+        == 1
+    )
+    claimed = repository.claim_next_inbox(
+        bot_key,
+        now=_NOW + timedelta(seconds=5),
+        lease=timedelta(minutes=1),
+        claim_token=uuid4(),
+    )
+    assert claimed is not None
+    assert claimed.update.source_reference == update.source_reference
+
+
+@pytest.mark.postgres
+def test_a_requeue_pinned_to_a_state_that_moved_on_changes_nothing(
+    postgres_url: str,
+) -> None:
+    """Refuse a stale view exactly as a foreign or unknown item is refused."""
+
+    repository, bot_key = _repository(postgres_url)
+    update = _update(bot_key, 0)
+    _ingest(repository, bot_key, update)
+    claim = repository.claim_next_inbox(
+        bot_key,
+        now=_NOW + timedelta(seconds=1),
+        lease=timedelta(minutes=1),
+        claim_token=uuid4(),
+    )
+    assert claim is not None
+    repository.fail_inbox(
+        claim,
+        error_code="model_unavailable",
+        transient=False,
+        retry_at=None,
+        response=_failure_response(claim.update, terminal=True),
+        now=_NOW + timedelta(seconds=2),
+    )
+    item = repository.dead_letters(bot_key, limit=10)[0]
+
+    with pytest.raises(MessagingConflictError):
+        repository.requeue_inbox(
+            bot_key,
+            item.id,
+            expected_replay_count=4,
+            now=_NOW + timedelta(seconds=3),
+        )
+    with pytest.raises(MessagingConflictError):
+        repository.requeue_inbox(
+            bot_key,
+            uuid4(),
+            expected_replay_count=0,
+            now=_NOW + timedelta(seconds=3),
+        )
+
+    assert repository.dead_letters(bot_key, limit=10) == (item,)
+
+
+@pytest.mark.postgres
+def test_a_pinned_resend_starts_one_delivery_cycle_for_one_response(
+    postgres_url: str,
+) -> None:
+    """Keep a repeated resend request from queuing a second physical message."""
+
+    repository, bot_key = _repository(postgres_url)
+    response_id = uuid4()
+    repository.enqueue_notice(
+        _response(bot_key=bot_key, inbox_id=None, response_id=response_id),
+        now=_NOW,
+    )
+    now = _NOW + timedelta(minutes=1)
+    for _ in range(5):
+        claimed = repository.claim_next_outbox(
+            bot_key,
+            now=now,
+            lease=timedelta(seconds=30),
+            claim_token=uuid4(),
+        )
+        assert claimed is not None
+        repository.fail_outbox(
+            claimed,
+            error_code="telegram_unavailable",
+            transient=True,
+            retry_at=now + timedelta(seconds=2),
+            now=now,
+        )
+        now += timedelta(seconds=2)
+    item = repository.outbox_dead_letters(bot_key, limit=10)[0]
+    assert item.replay_count == 0
+
+    applied = repository.requeue_outbox(
+        bot_key,
+        item.id,
+        expected_replay_count=0,
+        now=now + timedelta(minutes=1),
+    )
+    repeated = repository.requeue_outbox(
+        bot_key,
+        item.id,
+        expected_replay_count=0,
+        now=now + timedelta(minutes=2),
+    )
+
+    assert applied is RequeueOutcome.APPLIED
+    assert repeated is RequeueOutcome.REPLAYED
+    assert (
+        _count(
+            postgres_url,
+            "SELECT replay_count FROM messaging.telegram_outbox WHERE id = %s",
+            (item.id,),
+        )
+        == 1
+    )
+    assert repository.outbox_dead_letters(bot_key, limit=10) == ()

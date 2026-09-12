@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+import hashlib
+from datetime import datetime, timedelta
 from hashlib import sha256
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
@@ -35,18 +36,48 @@ from money_tracker.domain import (
     ReceiptStatus,
     initial_taxonomy,
 )
+from money_tracker.messaging import (
+    BotEnvironment,
+    MessagingAdministration,
+    MessagingScope,
+    NormalizedTelegramUpdate,
+    OutboxMessageDraft,
+)
 from money_tracker.persistence.database import upgrade_database
 from money_tracker.persistence.finance import PostgresFinanceRepository
+from money_tracker.persistence.messaging import PostgresMessagingRepository
 from money_tracker.web import WebSettings, create_app
 from money_tracker.web.mutations import (
     BudgetMutationAdapter,
     CategoryReviewMutationAdapter,
     ExpenseMutationAdapter,
+    MessagingOperationsAdapter,
     ReceiptReviewMutationAdapter,
 )
 from money_tracker.workflows import posting_request_hash
 
 ROME = ZoneInfo("Europe/Rome")
+
+
+def _messaging(
+    postgres_url: str,
+    *,
+    scope: MessagingScope | None = None,
+) -> MessagingOperationsAdapter:
+    """Bind the browser messaging surface to one isolated real bot scope."""
+
+    return MessagingOperationsAdapter(
+        MessagingAdministration(
+            PostgresMessagingRepository(postgres_url),
+            clock=SystemClock(),
+            ids=UUID4Generator(),
+        ),
+        scope=scope
+        or MessagingScope(
+            environment=BotEnvironment.TEST,
+            bot_key=f"test-{uuid4().hex}",
+        ),
+    )
 
 
 def _store_posted_expense(
@@ -148,6 +179,7 @@ def test_monthly_endpoint_reads_real_postgresql_state(postgres_url: str) -> None
         receipts=ReceiptReviewMutationAdapter(
             ReceiptMetadataService(repository, clock=SystemClock(), ids=ids)
         ),
+        messaging=_messaging(postgres_url),
         readiness_check=lambda: repository.profile_exists(profile.id),
     )
 
@@ -206,6 +238,7 @@ def test_manual_expense_workflow_is_replay_safe_and_visible(
         receipts=ReceiptReviewMutationAdapter(
             ReceiptMetadataService(repository, clock=SystemClock(), ids=ids)
         ),
+        messaging=_messaging(postgres_url),
         readiness_check=lambda: repository.profile_exists(profile.id),
     )
     client = TestClient(app, base_url="http://localhost:8000")
@@ -372,6 +405,7 @@ def test_multi_allocation_movement_survives_correction_in_real_postgresql(
         receipts=ReceiptReviewMutationAdapter(
             ReceiptMetadataService(repository, clock=SystemClock(), ids=ids)
         ),
+        messaging=_messaging(postgres_url),
         readiness_check=lambda: repository.profile_exists(profile.id),
     )
     client = TestClient(app, base_url="http://localhost:8000")
@@ -603,6 +637,7 @@ def test_budget_plan_is_configured_and_corrected_in_real_postgresql(
         receipts=ReceiptReviewMutationAdapter(
             ReceiptMetadataService(repository, clock=SystemClock(), ids=ids)
         ),
+        messaging=_messaging(postgres_url),
         readiness_check=lambda: repository.profile_exists(profile.id),
     )
     client = TestClient(app, base_url="http://localhost:8000")
@@ -754,6 +789,7 @@ def test_budget_routes_refuse_unknown_and_inactive_categories(
         receipts=ReceiptReviewMutationAdapter(
             ReceiptMetadataService(repository, clock=SystemClock(), ids=ids)
         ),
+        messaging=_messaging(postgres_url),
         readiness_check=lambda: repository.profile_exists(profile.id),
     )
     client = TestClient(app, base_url="http://localhost:8000")
@@ -894,6 +930,7 @@ def test_category_proposals_are_resolved_through_real_services(
         receipts=ReceiptReviewMutationAdapter(
             ReceiptMetadataService(repository, clock=SystemClock(), ids=ids)
         ),
+        messaging=_messaging(postgres_url),
         readiness_check=lambda: repository.profile_exists(profile.id),
     )
     client = TestClient(app, base_url="http://localhost:8000")
@@ -1033,6 +1070,7 @@ def test_receipt_review_is_operated_through_http_and_real_postgresql(
             CategoryReviewService(repository, repository, clock=SystemClock(), ids=ids)
         ),
         receipts=ReceiptReviewMutationAdapter(metadata),
+        messaging=_messaging(postgres_url),
         readiness_check=lambda: repository.profile_exists(profile.id),
     )
     client = TestClient(app, base_url="http://localhost:8000")
@@ -1130,3 +1168,211 @@ def test_receipt_review_is_operated_through_http_and_real_postgresql(
         "approved",
         "stored",
     ]
+
+
+@pytest.mark.postgres
+def test_messaging_operations_are_inspected_and_requeued_over_http(
+    postgres_url: str,
+) -> None:
+    """Read one bot's real queues and requeue both failure kinds safely."""
+
+    upgrade_database(postgres_url)
+    repository = PostgresFinanceRepository(postgres_url)
+    profile = Profile(uuid4())
+    clock = SystemClock()
+    now = clock.now()
+    repository.bootstrap_profile(profile, taxonomy=initial_taxonomy(), occurred_at=now)
+    scope = MessagingScope(
+        environment=BotEnvironment.TEST,
+        bot_key=f"test-{uuid4().hex}",
+    )
+    messaging_repository = PostgresMessagingRepository(postgres_url)
+    messaging_repository.ensure_bot(
+        scope.bot_key,
+        environment=scope.environment,
+        now=now,
+    )
+    update = NormalizedTelegramUpdate(
+        id=uuid4(),
+        bot_key=scope.bot_key,
+        update_id=907,
+        telegram_user_id=1001,
+        telegram_chat_id=1001,
+        telegram_message_id=908,
+        received_at=now,
+        accepted_at=now,
+        text="tre euro di caffè al bar",
+    )
+    messaging_repository.commit_ingest_batch(
+        bot_key=scope.bot_key,
+        expected_offset=messaging_repository.polling_offset(scope.bot_key),
+        observed_update_ids=(update.update_id,),
+        accepted_updates=(update,),
+        rejected_count=0,
+        unsupported_count=0,
+        now=now,
+    )
+    claim = messaging_repository.claim_next_inbox(
+        scope.bot_key,
+        now=now + timedelta(seconds=1),
+        lease=timedelta(minutes=1),
+        claim_token=uuid4(),
+    )
+    assert claim is not None
+    notice_text = "Non sono riuscito a elaborare un messaggio."
+    messaging_repository.fail_inbox(
+        claim,
+        error_code="model_unavailable",
+        transient=False,
+        retry_at=None,
+        response=OutboxMessageDraft(
+            id=uuid4(),
+            bot_key=scope.bot_key,
+            telegram_chat_id=update.telegram_chat_id,
+            logical_key=f"inbox:{update.id}:response:terminal_failure",
+            response_kind="terminal_failure",
+            text=notice_text,
+            content_hash=hashlib.sha256(notice_text.encode()).hexdigest(),
+            inbox_id=update.id,
+        ),
+        now=now + timedelta(seconds=2),
+    )
+    delivery_now = now + timedelta(minutes=1)
+    for _ in range(5):
+        outbox = messaging_repository.claim_next_outbox(
+            scope.bot_key,
+            now=delivery_now,
+            lease=timedelta(seconds=30),
+            claim_token=uuid4(),
+        )
+        assert outbox is not None
+        messaging_repository.fail_outbox(
+            outbox,
+            error_code="telegram_unavailable",
+            transient=True,
+            retry_at=delivery_now + timedelta(seconds=2),
+            now=delivery_now,
+        )
+        delivery_now += timedelta(seconds=2)
+
+    ids = UUID4Generator()
+    app = create_app(
+        settings=WebSettings(static_dir=None),
+        profile_id=profile.id,
+        reporting=ReportingService(repository),
+        mutations=ExpenseMutationAdapter(
+            FinanceService(repository, clock=clock, ids=ids),
+            ids=ids,
+        ),
+        budgets=BudgetMutationAdapter(
+            FinanceAdministrationService(repository, clock=clock, ids=ids),
+            ids=ids,
+        ),
+        category_reviews=CategoryReviewMutationAdapter(
+            CategoryReviewService(repository, repository, clock=clock, ids=ids)
+        ),
+        receipts=ReceiptReviewMutationAdapter(
+            ReceiptMetadataService(repository, clock=clock, ids=ids)
+        ),
+        messaging=_messaging(postgres_url, scope=scope),
+        readiness_check=lambda: repository.profile_exists(profile.id),
+    )
+    client = TestClient(app, base_url="http://localhost:8000")
+    csrf = client.get(
+        "/api/v1/csrf",
+        headers={"origin": "http://localhost:8000"},
+    ).json()["token"]
+
+    def headers(command_key: str) -> dict[str, str]:
+        """Return the exact browser mutation boundary headers."""
+
+        return {
+            "origin": "http://localhost:8000",
+            "x-csrf-token": csrf,
+            "Idempotency-Key": command_key,
+        }
+
+    listed = client.get("/api/v1/messaging")
+    state = listed.json()
+    inbox_id = state["inbox_dead_letters"][0]["inbox_id"]
+    outbox_id = state["outbox_dead_letters"][0]["outbox_id"]
+    replayed = client.post(
+        f"/api/v1/messaging/inbox/{inbox_id}/replay",
+        json={"expected_replay_count": 0},
+        headers=headers(f"messaging-replay:{inbox_id}:0"),
+    )
+    retried = client.post(
+        f"/api/v1/messaging/inbox/{inbox_id}/replay",
+        json={"expected_replay_count": 0},
+        headers=headers(f"messaging-replay:{inbox_id}:0"),
+    )
+    stale = client.post(
+        f"/api/v1/messaging/inbox/{inbox_id}/replay",
+        json={"expected_replay_count": 3},
+        headers=headers(f"messaging-replay:{inbox_id}:3"),
+    )
+    foreign = uuid4()
+    unknown = client.post(
+        f"/api/v1/messaging/outbox/{foreign}/resend",
+        json={"expected_replay_count": 0},
+        headers=headers(f"messaging-resend:{foreign}:0"),
+    )
+    wrong_key = client.post(
+        f"/api/v1/messaging/outbox/{outbox_id}/resend",
+        json={"expected_replay_count": 0},
+        headers=headers(f"messaging-replay:{outbox_id}:0"),
+    )
+    resent = client.post(
+        f"/api/v1/messaging/outbox/{outbox_id}/resend",
+        json={"expected_replay_count": 0},
+        headers=headers(f"messaging-resend:{outbox_id}:0"),
+    )
+
+    assert listed.status_code == 200
+    assert state["environment"] == "test"
+    assert state["owner_paired"] is False
+    assert state["inbox"]["dead_letters"] == 1
+    assert state["outbox"]["dead_letters"] == 1
+    assert state["inbox_dead_letters"][0]["update_id"] == 907
+    assert state["inbox_dead_letters"][0]["last_error_code"] == "model_unavailable"
+    assert state["outbox_dead_letters"][0]["response_kind"] == "terminal_failure"
+    assert update.text is not None
+    assert update.text not in listed.text
+    assert notice_text not in listed.text
+    assert scope.bot_key not in listed.text
+    assert "source_reference" not in listed.text
+    assert replayed.status_code == 200
+    assert replayed.json() == {
+        "id": inbox_id,
+        "queue": "inbox",
+        "outcome": "applied",
+    }
+    assert retried.json()["outcome"] == "replayed"
+    assert stale.status_code == 409
+    assert stale.json()["code"] == "messaging_conflict"
+    assert unknown.status_code == 409
+    assert unknown.json() == stale.json() | {"instance": unknown.json()["instance"]}
+    assert wrong_key.status_code == 409
+    assert wrong_key.json()["code"] == "messaging_conflict"
+    assert resent.status_code == 200
+    assert resent.json() == {
+        "id": outbox_id,
+        "queue": "outbox",
+        "outcome": "applied",
+    }
+
+    health = messaging_repository.health(scope.bot_key)
+    assert health.inbox_dead_letters == 0
+    assert health.outbox_dead_letters == 0
+    assert health.pending_inbox == 1
+    assert health.pending_outbox == 1
+    recovered = messaging_repository.claim_next_inbox(
+        scope.bot_key,
+        now=delivery_now + timedelta(minutes=1),
+        lease=timedelta(minutes=1),
+        claim_token=uuid4(),
+    )
+    assert recovered is not None
+    assert recovered.update.source_reference == update.source_reference
+    assert recovered.replay_count == 1
+    assert client.get("/api/v1/messaging").json()["inbox_dead_letters"] == []

@@ -8,7 +8,8 @@
   health/replay/resend/latency, the local monthly dashboard/API, manual movement
   lifecycle with multi-allocation editing, monthly budget planning,
   category-proposal review, receipt metadata consultation and its mandatory
-  review, and checked-in host service units
+  review, browser inspection and requeue of the durable messaging queues, and
+  checked-in host service units
 - Implemented Step 2: authoritative finance schema and transactional
   expense, wallet, budget, pending category-proposal, and versioned receipt-review
   repository operations, a safe local receipt-media adapter, and verified
@@ -26,7 +27,8 @@ the referenced file or entry point exists in the repository.
 
 - [Local Web](web.md): build, loopback API/dashboard, browser controls, health,
   systemd, verification, and rollback for the implemented Step 5 slices,
-  including the metadata-only receipt review surface.
+  including the metadata-only receipt review surface and the content-free
+  messaging operations surface.
 - [Telegram](telegram.md): BotFather preparation, private-owner pairing target,
   long polling, the 24-hour limitation, testing, and token response.
 - [Local Runtime](local-runtime.md): current foundation, target process
@@ -71,9 +73,13 @@ the referenced file or entry point exists in the repository.
   React overview/register, audited manual lifecycle, multi-allocation editing
   of both reconciling dimensions, replay-safe monthly budget planning,
   deterministic category-proposal review, replay-safe receipt metadata review,
+  messaging queue consultation with pinned inbox replay and outbox resend,
   local browser controls, and API
   user-service template are implemented. The receipt surface carries metadata
   only: it never returns an original, its archive key, or a deletion path. The
+  messaging surface carries counts, ages, identifiers and reason codes only: it
+  never returns a message, a bot key, or a Bot API credential, and it cannot
+  send, pair, move the offset, or delete. The
   other Step 5 views and full
   browser acceptance remain open.
 - Langfuse 4.26.0 and every dependency are pinned by digest. The non-cluster

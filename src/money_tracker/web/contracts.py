@@ -30,6 +30,15 @@ from money_tracker.domain import (
     ReceiptStatus,
     YearMonth,
 )
+from money_tracker.messaging import (
+    DeadLetter,
+    MessagingHealth,
+    MessagingOperationsSnapshot,
+    MessagingQueue,
+    OutboxDeadLetter,
+    RequeuedItem,
+    RequeueOutcome,
+)
 
 
 class _WebContract(BaseModel):
@@ -616,6 +625,193 @@ class ReceiptMutationResponse(_WebContract):
         """Map a transition result without returning profile or archive data."""
 
         return cls(id=metadata.id, status=metadata.status, version=metadata.version)
+
+
+class MessagingQueueContract(_WebContract):
+    """Depth, failure count, and age of one durable messaging queue.
+
+    Attributes:
+        pending: Items waiting for their first or next attempt.
+        retrying: Items inside a bounded automatic retry cycle.
+        dead_letters: Items that exhausted their attempts and need a decision.
+        oldest_at: Instant the oldest still unfinished item entered the queue.
+    """
+
+    pending: int = Field(ge=0)
+    retrying: int = Field(ge=0)
+    dead_letters: int = Field(ge=0)
+    oldest_at: AwareDatetime | None
+
+
+class InboxDeadLetterContract(_WebContract):
+    """One failed work item, with no trace of what the owner wrote.
+
+    The source reference is deliberately absent. It is the finance command
+    identity a replay preserves, the register and receipt responses omit it for
+    the same reason, and nothing the browser does needs it: a requeue is
+    addressed by the stable inbox identifier.
+
+    Attributes:
+        inbox_id: Stable identifier a requeue names.
+        update_id: Telegram ordering identity, useful for correlating reports.
+        attempt_count: Automatic attempts already spent.
+        replay_count: Requeues an operator already applied, and the value a
+            new decision pins itself to.
+        last_error_code: Bounded machine-readable reason of the last attempt.
+        accepted_at: Instant the gateway durably accepted the update.
+    """
+
+    inbox_id: UUID
+    update_id: int = Field(ge=0)
+    attempt_count: int = Field(ge=0)
+    replay_count: int = Field(ge=0)
+    last_error_code: str | None
+    accepted_at: AwareDatetime
+
+    @classmethod
+    def from_domain(cls, item: DeadLetter) -> Self:
+        """Map one failed work item without its finance command identity."""
+
+        return cls(
+            inbox_id=item.id,
+            update_id=item.update_id,
+            attempt_count=item.attempt_count,
+            replay_count=item.replay_count,
+            last_error_code=item.last_error_code,
+            accepted_at=item.accepted_at,
+        )
+
+
+class OutboxDeadLetterContract(_WebContract):
+    """One undelivered logical response, without its text.
+
+    Attributes:
+        outbox_id: Stable identifier a resend names.
+        response_kind: Bounded presentation kind, useful for diagnosis.
+        attempt_count: Delivery attempts in the exhausted automatic cycle.
+        replay_count: Manual resend cycles already requested.
+        last_error_code: Bounded machine-readable reason of the last attempt.
+        created_at: Instant the logical response was first committed.
+    """
+
+    outbox_id: UUID
+    response_kind: str = Field(min_length=1, max_length=100)
+    attempt_count: int = Field(ge=0)
+    replay_count: int = Field(ge=0)
+    last_error_code: str | None
+    created_at: AwareDatetime
+
+    @classmethod
+    def from_domain(cls, item: OutboxDeadLetter) -> Self:
+        """Map one delivery failure without the message it would have sent."""
+
+        return cls(
+            outbox_id=item.id,
+            response_kind=item.response_kind,
+            attempt_count=item.attempt_count,
+            replay_count=item.replay_count,
+            last_error_code=item.last_error_code,
+            created_at=item.created_at,
+        )
+
+
+class MessagingOperationsResponse(_WebContract):
+    """Content-free state of the configured bot and both failure queues.
+
+    Nothing here can carry owner content: every value is a count, an age, a
+    bounded reason code, or a stable local identifier. The bot key itself is
+    also absent, because the browser never selects a scope; only the
+    environment it is looking at is worth naming.
+
+    Attributes:
+        environment: Bot environment selected by process configuration.
+        owner_paired: Whether the sole owner binding exists yet.
+        next_offset: Next Bot API update offset owned by the gateway.
+        last_poll_at: Instant of the last successful poll, when one happened.
+        last_observed_at: Instant of the last observed update batch.
+        downtime_exceeds_update_retention: Whether the gap since the last poll
+            is longer than the Bot API keeps undelivered updates.
+        active_actions: Correlations still offered to the owner.
+        inbox: Inbound work queue state.
+        outbox: Outbound logical response queue state.
+        inbox_dead_letters: Failed work items awaiting an operator decision.
+        outbox_dead_letters: Undelivered responses awaiting a decision.
+    """
+
+    environment: Literal["production", "test"]
+    owner_paired: bool
+    next_offset: int = Field(ge=0)
+    last_poll_at: AwareDatetime | None
+    last_observed_at: AwareDatetime | None
+    downtime_exceeds_update_retention: bool
+    active_actions: int = Field(ge=0)
+    inbox: MessagingQueueContract
+    outbox: MessagingQueueContract
+    inbox_dead_letters: tuple[InboxDeadLetterContract, ...]
+    outbox_dead_letters: tuple[OutboxDeadLetterContract, ...]
+
+    @classmethod
+    def from_application(cls, snapshot: MessagingOperationsSnapshot) -> Self:
+        """Map the operator snapshot into the control-plane shape."""
+
+        health: MessagingHealth = snapshot.health
+        return cls(
+            environment=snapshot.environment.value,
+            owner_paired=snapshot.owner_paired,
+            next_offset=health.next_offset,
+            last_poll_at=health.last_poll_at,
+            last_observed_at=health.last_observed_at,
+            downtime_exceeds_update_retention=(
+                snapshot.downtime_exceeds_update_retention
+            ),
+            active_actions=health.active_actions,
+            inbox=MessagingQueueContract(
+                pending=health.pending_inbox,
+                retrying=health.retrying_inbox,
+                dead_letters=health.inbox_dead_letters,
+                oldest_at=health.oldest_inbox_at,
+            ),
+            outbox=MessagingQueueContract(
+                pending=health.pending_outbox,
+                retrying=health.retrying_outbox,
+                dead_letters=health.outbox_dead_letters,
+                oldest_at=health.oldest_outbox_at,
+            ),
+            inbox_dead_letters=tuple(
+                InboxDeadLetterContract.from_domain(item)
+                for item in snapshot.inbox_dead_letters
+            ),
+            outbox_dead_letters=tuple(
+                OutboxDeadLetterContract.from_domain(item)
+                for item in snapshot.outbox_dead_letters
+            ),
+        )
+
+
+class MessagingRequeueRequest(_WebContract):
+    """Requeue one dead letter from the exact state the page displayed."""
+
+    expected_replay_count: int = Field(ge=0)
+
+
+class MessagingRequeueResponse(_WebContract):
+    """Identity and effect of one accepted requeue.
+
+    Attributes:
+        id: Dead letter the request named.
+        queue: Durable queue it belongs to.
+        outcome: Whether this call requeued it or replayed a done transition.
+    """
+
+    id: UUID
+    queue: MessagingQueue
+    outcome: RequeueOutcome
+
+    @classmethod
+    def from_domain(cls, item: RequeuedItem) -> Self:
+        """Map the requeue result without exposing queue internals."""
+
+        return cls(id=item.id, queue=item.queue, outcome=item.outcome)
 
 
 class HealthResponse(_WebContract):

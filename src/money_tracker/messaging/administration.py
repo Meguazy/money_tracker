@@ -19,7 +19,9 @@ from money_tracker.messaging.contracts import (
     BotEnvironment,
     DeadLetter,
     MessagingHealth,
+    MessagingQueue,
     OutboxDeadLetter,
+    RequeuedItem,
 )
 from money_tracker.messaging.ports import MessagingRepository
 from money_tracker.structured_logging import get_logger
@@ -33,6 +35,34 @@ TELEGRAM_UPDATE_RETENTION = timedelta(hours=24)
 _CODE_BYTES = 16
 _DEAD_LETTER_LIMIT = 50
 _LATENCY_SAMPLE_LIMIT = 200
+
+INBOX_REQUEUE_COMMAND = "messaging-replay"
+OUTBOX_REQUEUE_COMMAND = "messaging-resend"
+
+
+def requeue_command_key(
+    command: str,
+    item_id: UUID,
+    observed_replay_count: int,
+) -> str:
+    """Build the stable key that names one requeue of one dead letter.
+
+    A requeue is not a finance write and claims no command table: the durable
+    pin is the row's own replay count, checked inside the single messaging
+    transaction that requeues it. The key exists so a caller states which
+    transition it intends, and so two callers looking at the same displayed
+    state cannot ask for two different ones.
+
+    Args:
+        command: Requeue family, either inbox replay or outbox resend.
+        item_id: Dead letter the caller selected.
+        observed_replay_count: Replay count shown when the caller decided.
+
+    Returns:
+        The canonical key for that one transition.
+    """
+
+    return f"{command}:{item_id}:{observed_replay_count}"
 
 
 class Clock(Protocol):
@@ -83,6 +113,33 @@ class TextLatencyReport:
     warm_sample_count: int
     warm_p95_ms: int | None
     maximum_ms: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class MessagingOperationsSnapshot:
+    """Everything an operator surface may know about one bot at one instant.
+
+    The snapshot is content-free by construction: every value in it is a count,
+    an age, a bounded reason code, or a stable identifier. Nothing an owner
+    wrote can reach it, which is what lets the same value be rendered in a
+    browser and summarized in a journal without a separate privacy decision.
+
+    Attributes:
+        environment: Bot environment this durable state belongs to.
+        owner_paired: Whether the sole owner binding exists.
+        health: Queue depths, ages, offset, and active correlations.
+        downtime_exceeds_update_retention: Whether the gap since the last poll
+            is longer than the Bot API keeps undelivered updates.
+        inbox_dead_letters: Failed work items, oldest Telegram identity first.
+        outbox_dead_letters: Failed logical responses, oldest first.
+    """
+
+    environment: BotEnvironment
+    owner_paired: bool
+    health: MessagingHealth
+    downtime_exceeds_update_retention: bool
+    inbox_dead_letters: tuple[DeadLetter, ...]
+    outbox_dead_letters: tuple[OutboxDeadLetter, ...]
 
 
 class MessagingAdministration:
@@ -187,6 +244,42 @@ class MessagingAdministration:
 
         return self._repository.health(bot_key)
 
+    def operations_snapshot(
+        self,
+        bot_key: str,
+        *,
+        environment: BotEnvironment,
+        limit: int = _DEAD_LETTER_LIMIT,
+    ) -> MessagingOperationsSnapshot:
+        """Compose the one content-free view an operator surface needs.
+
+        Queue state and both failure queues are read together because a count
+        without its failed items cannot be acted on, and a failed item without
+        the queue it sits in cannot be judged. Whether the downtime gap matters
+        is operator policy, so it is decided here rather than by each caller.
+
+        Args:
+            bot_key: Bot and environment persistence scope.
+            environment: Trusted environment that scope belongs to.
+            limit: Maximum dead letters to include per queue.
+
+        Returns:
+            Counts, ages, offset state, pairing state, and both failure queues.
+        """
+
+        health = self._repository.health(bot_key)
+        gap = downtime_gap(health, now=self._clock.now())
+        return MessagingOperationsSnapshot(
+            environment=environment,
+            owner_paired=self.owner_paired(bot_key),
+            health=health,
+            downtime_exceeds_update_retention=(
+                gap is not None and gap > TELEGRAM_UPDATE_RETENTION
+            ),
+            inbox_dead_letters=self.dead_letters(bot_key, limit=limit),
+            outbox_dead_letters=self.outbox_dead_letters(bot_key, limit=limit),
+        )
+
     def dead_letters(
         self,
         bot_key: str,
@@ -205,13 +298,28 @@ class MessagingAdministration:
 
         return self._repository.dead_letters(bot_key, limit=limit)
 
+    def owner_paired(self, bot_key: str) -> bool:
+        """Report whether one bot already has its sole owner binding.
+
+        The binding itself carries Telegram identities, so callers that only
+        need to know whether pairing happened get the answer rather than the
+        record.
+
+        Args:
+            bot_key: Bot and environment persistence scope.
+
+        Returns:
+            True when the bot has an owner binding.
+        """
+
+        return self._repository.owner_binding(bot_key) is not None
+
     def replay(self, bot_key: str, inbox_id: UUID) -> None:
         """Return one dead letter to the queue with its identity intact.
 
-        Replay preserves the source reference, so the finance command keys the
-        work unit already derived stay the same. A replayed item that already
-        committed a mutation therefore returns the first result rather than
-        applying a second one, which is what makes this safe to offer at all.
+        This is the unattended operator form: it accepts whichever dead letter
+        the named identifier resolves to. A caller that decided from a listing
+        should pin that listing with `requeue_inbox` instead.
 
         Args:
             bot_key: Bot and environment persistence scope selected by config.
@@ -221,10 +329,55 @@ class MessagingAdministration:
             MessagingConflictError: If the item is not a dead letter.
         """
 
-        # An operator reaching for replay means something already failed
-        # five times, so the action is recorded as a deliberate intervention.
-        _LOGGER.warning("messaging.inbox.replayed", bot_key=bot_key, inbox_id=inbox_id)
-        self._repository.replay_inbox(bot_key, inbox_id, now=self._clock.now())
+        self.requeue_inbox(bot_key, inbox_id, expected_replay_count=None)
+
+    def requeue_inbox(
+        self,
+        bot_key: str,
+        inbox_id: UUID,
+        *,
+        expected_replay_count: int | None,
+    ) -> RequeuedItem:
+        """Requeue one dead letter under the state the caller decided from.
+
+        Replay preserves the source reference, so the finance command keys the
+        work unit already derived stay the same. A replayed item that already
+        committed a mutation therefore returns the first result rather than
+        applying a second one, which is what makes this safe to offer at all.
+
+        Args:
+            bot_key: Bot and environment persistence scope selected by config.
+            inbox_id: Dead letter the caller chose to retry.
+            expected_replay_count: Replay count shown when the caller decided,
+                or None to accept any dead letter.
+
+        Returns:
+            Whether this call requeued the item or replayed a done transition.
+
+        Raises:
+            MessagingConflictError: If no dead letter is at that state.
+        """
+
+        outcome = self._repository.requeue_inbox(
+            bot_key,
+            inbox_id,
+            expected_replay_count=expected_replay_count,
+            now=self._clock.now(),
+        )
+        # Reaching for a replay means something already failed five times, so
+        # the intervention is recorded with what it actually did.
+        _LOGGER.warning(
+            "messaging.inbox.replayed",
+            bot_key=bot_key,
+            inbox_id=inbox_id,
+            expected_replay_count=expected_replay_count,
+            outcome=outcome.value,
+        )
+        return RequeuedItem(
+            id=inbox_id,
+            queue=MessagingQueue.INBOX,
+            outcome=outcome,
+        )
 
     def outbox_dead_letters(
         self,
@@ -259,8 +412,48 @@ class MessagingAdministration:
             MessagingConflictError: If the item is not an outbox dead letter.
         """
 
-        _LOGGER.warning("messaging.outbox.resent", bot_key=bot_key, outbox_id=outbox_id)
-        self._repository.replay_outbox(bot_key, outbox_id, now=self._clock.now())
+        self.requeue_outbox(bot_key, outbox_id, expected_replay_count=None)
+
+    def requeue_outbox(
+        self,
+        bot_key: str,
+        outbox_id: UUID,
+        *,
+        expected_replay_count: int | None,
+    ) -> RequeuedItem:
+        """Resend one delivery dead letter under the observed state.
+
+        Args:
+            bot_key: Bot and environment persistence scope selected by config.
+            outbox_id: Delivery dead letter the caller chose to resend.
+            expected_replay_count: Manual resend count shown when the caller
+                decided, or None to accept any delivery dead letter.
+
+        Returns:
+            Whether this call started a cycle or replayed a done transition.
+
+        Raises:
+            MessagingConflictError: If no delivery dead letter is at that state.
+        """
+
+        outcome = self._repository.requeue_outbox(
+            bot_key,
+            outbox_id,
+            expected_replay_count=expected_replay_count,
+            now=self._clock.now(),
+        )
+        _LOGGER.warning(
+            "messaging.outbox.resent",
+            bot_key=bot_key,
+            outbox_id=outbox_id,
+            expected_replay_count=expected_replay_count,
+            outcome=outcome.value,
+        )
+        return RequeuedItem(
+            id=outbox_id,
+            queue=MessagingQueue.OUTBOX,
+            outcome=outcome,
+        )
 
     def text_latency_report(
         self,
@@ -331,9 +524,13 @@ def downtime_gap(health: MessagingHealth, *, now: datetime) -> timedelta | None:
 
 __all__ = [
     "DEFAULT_PAIRING_LIFETIME",
+    "INBOX_REQUEUE_COMMAND",
+    "OUTBOX_REQUEUE_COMMAND",
     "TELEGRAM_UPDATE_RETENTION",
     "MessagingAdministration",
+    "MessagingOperationsSnapshot",
     "PairingCode",
     "TextLatencyReport",
     "downtime_gap",
+    "requeue_command_key",
 ]

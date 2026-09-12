@@ -40,6 +40,18 @@ from money_tracker.domain import (
     YearMonth,
     initial_taxonomy,
 )
+from money_tracker.messaging import (
+    BotEnvironment,
+    DeadLetter,
+    MessagingHealth,
+    MessagingOperationsSnapshot,
+    MessagingQueue,
+    MessagingScope,
+    OutboxDeadLetter,
+    RequeuedItem,
+    RequeueOutcome,
+)
+from money_tracker.persistence.messaging import MessagingConflictError
 from money_tracker.web import WebSettings, create_app
 from money_tracker.web.mutations import (
     BudgetMutationAdapter,
@@ -48,6 +60,8 @@ from money_tracker.web.mutations import (
     CategoryReviewWriter,
     ExpenseMutationAdapter,
     ExpenseWriter,
+    MessagingOperationsAdapter,
+    MessagingOperationsWriter,
     ReceiptReviewMutationAdapter,
     ReceiptReviewWriter,
 )
@@ -428,6 +442,125 @@ class RecordingReceiptReviewWriter:
         return self._metadata()
 
 
+INBOX_ID = UUID("00000000-0000-0000-0000-0000000007d1")
+OUTBOX_ID = UUID("00000000-0000-0000-0000-0000000007d2")
+BOT_SCOPE = MessagingScope.for_environment(BotEnvironment.TEST)
+
+
+@dataclass
+class RecordingMessagingOperations:
+    """In-memory durable messaging state without a Bot API transport."""
+
+    requeues: list[tuple[str, UUID, int | None]] = field(default_factory=list)
+    scopes: list[str] = field(default_factory=list)
+    owner_paired: bool = True
+    inbox_replay_count: int = 1
+    outbox_replay_count: int = 0
+    conflict: bool = False
+
+    def operations_snapshot(
+        self,
+        bot_key: str,
+        *,
+        environment: BotEnvironment,
+    ) -> MessagingOperationsSnapshot:
+        """Return fixed content-free state and record the trusted scope."""
+
+        self.scopes.append(bot_key)
+        return MessagingOperationsSnapshot(
+            environment=environment,
+            owner_paired=self.owner_paired,
+            health=MessagingHealth(
+                bot_key=bot_key,
+                next_offset=412,
+                pending_inbox=2,
+                retrying_inbox=1,
+                inbox_dead_letters=1,
+                pending_outbox=0,
+                retrying_outbox=0,
+                outbox_dead_letters=1,
+                active_actions=3,
+                last_observed_at=datetime(2026, 9, 12, 17, 55, tzinfo=UTC),
+                last_poll_at=datetime(2026, 9, 12, 18, tzinfo=UTC),
+                oldest_inbox_at=datetime(2026, 9, 12, 17, 40, tzinfo=UTC),
+                oldest_outbox_at=None,
+            ),
+            downtime_exceeds_update_retention=False,
+            inbox_dead_letters=(
+                DeadLetter(
+                    id=INBOX_ID,
+                    update_id=907,
+                    source_reference="telegram:telegram-test:907",
+                    attempt_count=5,
+                    replay_count=self.inbox_replay_count,
+                    last_error_code="model_unavailable",
+                    accepted_at=datetime(2026, 9, 12, 17, 40, tzinfo=UTC),
+                ),
+            ),
+            outbox_dead_letters=(
+                OutboxDeadLetter(
+                    id=OUTBOX_ID,
+                    response_kind="draft",
+                    attempt_count=5,
+                    replay_count=self.outbox_replay_count,
+                    last_error_code="telegram_unavailable",
+                    created_at=datetime(2026, 9, 12, 17, 45, tzinfo=UTC),
+                ),
+            ),
+        )
+
+    def requeue_inbox(
+        self,
+        bot_key: str,
+        inbox_id: UUID,
+        *,
+        expected_replay_count: int | None,
+    ) -> RequeuedItem:
+        """Record one pinned inbox requeue inside the trusted scope."""
+
+        return self._requeue(
+            bot_key,
+            inbox_id,
+            expected_replay_count,
+            queue=MessagingQueue.INBOX,
+        )
+
+    def requeue_outbox(
+        self,
+        bot_key: str,
+        outbox_id: UUID,
+        *,
+        expected_replay_count: int | None,
+    ) -> RequeuedItem:
+        """Record one pinned outbox resend inside the trusted scope."""
+
+        return self._requeue(
+            bot_key,
+            outbox_id,
+            expected_replay_count,
+            queue=MessagingQueue.OUTBOX,
+        )
+
+    def _requeue(
+        self,
+        bot_key: str,
+        item_id: UUID,
+        expected_replay_count: int | None,
+        *,
+        queue: MessagingQueue,
+    ) -> RequeuedItem:
+        """Apply the configured outcome and record the exact request."""
+
+        self.requeues.append((bot_key, item_id, expected_replay_count))
+        if self.conflict:
+            raise MessagingConflictError("only a dead letter can be requeued")
+        return RequeuedItem(
+            id=item_id,
+            queue=queue,
+            outcome=RequeueOutcome.APPLIED,
+        )
+
+
 class FixedIds:
     """Stable identifier source for adapter composition in boundary tests."""
 
@@ -445,6 +578,7 @@ def _app(
     budget_writer: BudgetWriter | None = None,
     category_review_writer: CategoryReviewWriter | None = None,
     receipt_writer: ReceiptReviewWriter | None = None,
+    messaging_operations: MessagingOperationsWriter | None = None,
 ) -> FastAPI:
     """Compose an application with real middleware and an in-memory read port."""
 
@@ -465,6 +599,10 @@ def _app(
         ),
         receipts=ReceiptReviewMutationAdapter(
             receipt_writer or RecordingReceiptReviewWriter()
+        ),
+        messaging=MessagingOperationsAdapter(
+            messaging_operations or RecordingMessagingOperations(),
+            scope=BOT_SCOPE,
         ),
         readiness_check=lambda: ready,
     )
@@ -774,12 +912,18 @@ def test_compiled_dashboard_is_served_from_the_api_origin(tmp_path: Path) -> Non
     response = client.get("/")
     links = {
         route: client.get(route)
-        for route in ("/movimenti", "/categorie", "/budget", "/scontrini")
+        for route in (
+            "/movimenti",
+            "/categorie",
+            "/budget",
+            "/scontrini",
+            "/messaggistica",
+        )
     }
 
     assert response.status_code == 200
     assert "Money Tracker" in response.text
-    assert [link.status_code for link in links.values()] == [200, 200, 200, 200]
+    assert all(link.status_code == 200 for link in links.values())
     assert all(link.text == response.text for link in links.values())
 
 
@@ -1018,3 +1162,177 @@ def test_receipt_review_rejects_an_unknown_field_without_transitioning() -> None
     assert response.status_code == 422
     assert response.json()["code"] == "request_invalid"
     assert writer.transitions == []
+
+
+def test_messaging_state_is_content_free_and_names_no_bot_key() -> None:
+    """Give the operator counters and failures, never owner text or a scope."""
+
+    operations = RecordingMessagingOperations()
+
+    response = _client(_app(messaging_operations=operations)).get("/api/v1/messaging")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "environment": "test",
+        "owner_paired": True,
+        "next_offset": 412,
+        "last_poll_at": "2026-09-12T18:00:00Z",
+        "last_observed_at": "2026-09-12T17:55:00Z",
+        "downtime_exceeds_update_retention": False,
+        "active_actions": 3,
+        "inbox": {
+            "pending": 2,
+            "retrying": 1,
+            "dead_letters": 1,
+            "oldest_at": "2026-09-12T17:40:00Z",
+        },
+        "outbox": {
+            "pending": 0,
+            "retrying": 0,
+            "dead_letters": 1,
+            "oldest_at": None,
+        },
+        "inbox_dead_letters": [
+            {
+                "inbox_id": str(INBOX_ID),
+                "update_id": 907,
+                "attempt_count": 5,
+                "replay_count": 1,
+                "last_error_code": "model_unavailable",
+                "accepted_at": "2026-09-12T17:40:00Z",
+            }
+        ],
+        "outbox_dead_letters": [
+            {
+                "outbox_id": str(OUTBOX_ID),
+                "response_kind": "draft",
+                "attempt_count": 5,
+                "replay_count": 0,
+                "last_error_code": "telegram_unavailable",
+                "created_at": "2026-09-12T17:45:00Z",
+            }
+        ],
+    }
+    assert "bot_key" not in response.text
+    assert "source_reference" not in response.text
+    assert "telegram-test" not in response.text
+    assert operations.scopes == ["telegram-test"]
+
+
+def test_requeue_requires_the_transition_wide_command_key() -> None:
+    """Bind each requeue to the queue, the item, and the observed count."""
+
+    operations = RecordingMessagingOperations()
+    client = _client(_app(messaging_operations=operations))
+    token = client.get("/api/v1/csrf", headers={"origin": ORIGIN}).json()["token"]
+
+    refused = client.post(
+        f"/api/v1/messaging/inbox/{INBOX_ID}/replay",
+        json={"expected_replay_count": 1},
+        headers={
+            "origin": ORIGIN,
+            "x-csrf-token": token,
+            "Idempotency-Key": f"messaging-replay:{INBOX_ID}",
+        },
+    )
+    accepted = client.post(
+        f"/api/v1/messaging/inbox/{INBOX_ID}/replay",
+        json={"expected_replay_count": 1},
+        headers={
+            "origin": ORIGIN,
+            "x-csrf-token": token,
+            "Idempotency-Key": f"messaging-replay:{INBOX_ID}:1",
+        },
+    )
+
+    assert refused.status_code == 409
+    assert refused.json()["code"] == "messaging_conflict"
+    assert accepted.status_code == 200
+    assert accepted.json() == {
+        "id": str(INBOX_ID),
+        "queue": "inbox",
+        "outcome": "applied",
+    }
+    assert operations.requeues == [("telegram-test", INBOX_ID, 1)]
+
+
+def test_a_resend_uses_its_own_command_family_and_trusted_scope() -> None:
+    """Keep an outbox key from ever naming an inbox item, or another bot."""
+
+    operations = RecordingMessagingOperations()
+    client = _client(_app(messaging_operations=operations))
+    token = client.get("/api/v1/csrf", headers={"origin": ORIGIN}).json()["token"]
+
+    crossed = client.post(
+        f"/api/v1/messaging/outbox/{OUTBOX_ID}/resend",
+        json={"expected_replay_count": 0},
+        headers={
+            "origin": ORIGIN,
+            "x-csrf-token": token,
+            "Idempotency-Key": f"messaging-replay:{OUTBOX_ID}:0",
+        },
+    )
+    accepted = client.post(
+        f"/api/v1/messaging/outbox/{OUTBOX_ID}/resend",
+        json={"expected_replay_count": 0},
+        headers={
+            "origin": ORIGIN,
+            "x-csrf-token": token,
+            "Idempotency-Key": f"messaging-resend:{OUTBOX_ID}:0",
+        },
+    )
+
+    assert crossed.status_code == 409
+    assert accepted.status_code == 200
+    assert accepted.json()["queue"] == "outbox"
+    assert operations.requeues == [("telegram-test", OUTBOX_ID, 0)]
+
+
+def test_a_requeue_refused_by_messaging_is_one_bounded_conflict() -> None:
+    """Never let a missing, foreign, or progressed item be told apart."""
+
+    operations = RecordingMessagingOperations(conflict=True)
+    client = _client(_app(messaging_operations=operations))
+    token = client.get("/api/v1/csrf", headers={"origin": ORIGIN}).json()["token"]
+
+    response = client.post(
+        f"/api/v1/messaging/inbox/{INBOX_ID}/replay",
+        json={"expected_replay_count": 1},
+        headers={
+            "origin": ORIGIN,
+            "x-csrf-token": token,
+            "Idempotency-Key": f"messaging-replay:{INBOX_ID}:1",
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "type": "about:blank",
+        "title": "Coda già aggiornata",
+        "status": 409,
+        "detail": "Ricarica lo stato della messaggistica prima di riprovare.",
+        "code": "messaging_conflict",
+        "instance": f"/api/v1/messaging/inbox/{INBOX_ID}/replay",
+    }
+
+
+def test_a_requeue_body_cannot_name_a_bot_or_an_offset() -> None:
+    """Refuse any field beyond the state the page displayed."""
+
+    operations = RecordingMessagingOperations()
+    client = _client(_app(messaging_operations=operations))
+    token = client.get("/api/v1/csrf", headers={"origin": ORIGIN}).json()["token"]
+
+    response = client.post(
+        f"/api/v1/messaging/inbox/{INBOX_ID}/replay",
+        json={"expected_replay_count": 1, "bot_key": "telegram-production"},
+        headers={
+            "origin": ORIGIN,
+            "x-csrf-token": token,
+            "Idempotency-Key": f"messaging-replay:{INBOX_ID}:1",
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["code"] == "request_invalid"
+    assert operations.requeues == []

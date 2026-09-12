@@ -30,7 +30,9 @@ Step 5 is active. Its implemented slices provide the loopback FastAPI host,
 monthly overview and transaction register, audited manual create/correct/post/
 cancel workflows, the multi-allocation editor for both reconciling dimensions,
 the monthly budget planner, owner review of pending category proposals,
-compiled React shell, browser security policy, and
+consultation and mandatory review of retained receipt metadata, browser
+inspection and pinned requeue of the durable messaging queues, compiled React
+shell, browser security policy, and
 host unit. The remaining control-plane views, wider analytics, advice exposure,
 and browser E2E acceptance are still planned within Step 5. Receipt extraction
 remains assigned to Step 6.
@@ -168,7 +170,7 @@ boundary is not end-to-end encrypted and must not be described as local storage.
 ```text
 Money Tracker workstation
 ├── Host processes
-│   ├── FastAPI application and compiled React UI        [overview/movements/budgets/category review implemented]
+│   ├── FastAPI application and compiled React UI        [overview/movements/budgets/category review/receipts/messaging implemented]
 │   ├── Telegram gateway                                [implemented; unit template checked in]
 │   ├── Sequential workflow worker                      [implemented; unit template checked in]
 │   │   ├── typed dispatcher, router, and text graphs  [implemented library]
@@ -202,8 +204,8 @@ Money Tracker workstation
 | `worker` | Claim the oldest eligible durable work unit, translate it into the normalized channel message, dispatch it once, and commit result, response, correlation, and completion together; commit failure notice with retry or dead-letter state | Messaging repository port, finance read ports, a narrow dispatch port, and the response renderer | No authoritative state; every identifier it creates is derived from the inbox row so a recovered attempt reproduces the same logical response | systemd host service, separate failure domain from the gateway; holds no Bot API credential and imports no transport type |
 | `presentation` | Render typed dispatch outcomes, processing failures, committed movement facts, and paused review questions as Italian owner text and bounded controls | Dispatcher outcome contracts, messaging control values, and pure domain values; no model, transport, or repository import | No state; owns the callback code vocabulary and the response-kind names embedded in outbox logical keys | Worker library; content is a function of committed state only, so a replayed render reproduces the same logical response |
 | `api.contracts` | Define strict, versioned finance request/response, mutation-header, and problem wire shapes | Pydantic and domain response values; no web framework | No state; stable JSON field semantics only | Shared by the FastAPI adapter; no credentials or private media fields |
-| `web` | Compose versioned HTTP reads and writes, static UI serving, health, and browser policy | FastAPI, narrow application ports, typed settings, strict wire contracts, and `web.mutations` | No authoritative data; injects the sole trusted profile and owns only HTTP semantics | Host user service on IPv4 loopback; exact Host/Origin, closed CORS, CSRF, CSP, bounded problems, and no secret endpoint |
-| `web.mutations` | Translate strict browser movement commands into existing audited finance use cases | `ExpenseWriter` protocol, finance request contracts, ID port, and canonical command hashes | No state; owns trusted web actor/source construction, not persistence or lifecycle policy | In-process API adapter; profile and command key are injected, and responses omit both |
+| `web` | Compose versioned HTTP reads and writes, static UI serving, health, and browser policy | FastAPI, narrow application ports, typed settings, strict wire contracts, and `web.mutations` | No authoritative data; injects the sole trusted profile and bot scope and owns only HTTP semantics | Host user service on IPv4 loopback; exact Host/Origin, closed CORS, CSRF, CSP, bounded problems, no Bot API credential, and no secret endpoint |
+| `web.mutations` | Translate strict browser movement, budget, category-review, receipt-review, and messaging-requeue commands into existing audited use cases | Narrow writer protocols, request contracts, ID port, canonical command hashes, and the trusted messaging scope | No state; owns trusted web actor/source construction, not persistence or lifecycle policy | In-process API adapter; profile, bot scope, and command key are injected, and responses omit all three |
 | `backup` | Create verified encrypted authoritative snapshots, report their freshness, and restore only into explicitly empty isolated targets | Restic and PostgreSQL client executables, psycopg identity/receipt queries, private archive and configuration paths | Snapshot contents and the versioned integrity manifest in the owner repository; no finance state of its own | Host CLI under an exclusive lock; absolute-path and owner-only input checks, recovery secret passed only by file path, failures name no argument or environment |
 | `administration` | Expose bounded local profile bootstrap, funding-source configuration, receipt storage/registration, and one-shot dispatch of every Step 3 text route | Database URL, absolute archive setting, application services, the workflow dispatcher, and local model adapter | No independent state; emits safe identifiers, grounded facts, and reason codes only | Host CLI; active-profile preflight for specialists, explicit trusted correlations, no private paths or message content in JSON |
 | `persistence.finance` | Bootstrap profile/taxonomy, persist complete expense and budget aggregates, append balance-safe wallet movements, validate/store pending proposals, and register/transition receipt metadata transactionally | psycopg and narrow application repository contracts | Finance tables, allocations, budgets/overrides, wallet ledger, proposals, versioned receipt metadata, audit, and idempotency records | Dedicated application PostgreSQL; no receipt bytes or paths; optimistic versions protect mutable aggregates |
@@ -283,8 +285,8 @@ catalog is promoted; every identifier carries a `candidate-` prefix.
 | --- | --- | --- | --- | --- |
 | Workflow dispatcher, root router, and text specialists (implemented) | Route one intent and coordinate expense/refund, correction/undo, category review, query, or advice | Typed normalized work unit/outcome, versioned schemas, scoped tool registries, trusted correlations | Namespaced checkpoint references and workflow IDs; no domain ownership | Administration CLI and worker; mutation paths call replay-safe application services |
 | Telegram Bot API transport (implemented) | Validate the bot, long poll, obtain file metadata, acknowledge callbacks, and deliver outbox messages | Bounded HTTPS client and messaging services | No authoritative finance data or correctness state | Gateway host service; separate production/test token selected from a private environment file |
-| FastAPI adapter (partial) | Expose monthly overview/register, manual lifecycle, budget planning, pending category review, receipt metadata review, health, CSRF bootstrap, compiled UI, and later REST resources | Narrow reporting, finance, budget, category-review, and receipt-review adapters | No independent data | Implemented on loopback with Host/Origin, CSRF, idempotency, optimistic concurrency, proposal-wide and transition-wide command identity, and bounded errors |
-| React dashboard (partial) | Display the overview, transaction register, budget planner, pending category proposals, and retained receipt metadata; edit the multi-allocation manual lifecycle, monthly budgets, deterministic category decisions, and the mandatory receipt review; later edit wallet and operational state | Same-origin REST API | Browser session/UI state only | Compiled static assets; no secrets or receipt images; labelled controls, lifecycle history, responsive wrapping navigation, and accessible chart table alternative |
+| FastAPI adapter (partial) | Expose monthly overview/register, manual lifecycle, budget planning, pending category review, receipt metadata review, messaging operations, health, CSRF bootstrap, compiled UI, and later REST resources | Narrow reporting, finance, budget, category-review, receipt-review, and messaging-operations adapters | No independent data | Implemented on loopback with Host/Origin, CSRF, idempotency, optimistic concurrency, proposal-wide and transition-wide command identity, and bounded errors |
+| React dashboard (partial) | Display the overview, transaction register, budget planner, pending category proposals, retained receipt metadata, and durable messaging state; edit the multi-allocation manual lifecycle, monthly budgets, deterministic category decisions, the mandatory receipt review, and both queue requeues; later edit wallet and settings state | Same-origin REST API | Browser session/UI state only | Compiled static assets; no secrets, receipt images, or message content; labelled controls, lifecycle history, responsive wrapping navigation, and accessible chart table alternative |
 | Local model gateway | Provide typed chat, schema and tool capabilities | OpenAI-compatible local endpoint | No persistent domain data | Replaceable host inference process |
 | Receipt extractor adapter | Produce a versioned structured receipt draft | Selected local OCR/VLM pipeline | No authoritative data until validated | Local-only; selection remains evaluation-gated |
 | Langfuse adapter | Record redacted traces and experiment scores | Local Langfuse SDK | Observability copies, not source of truth | Optional development/evaluation profile |
@@ -298,8 +300,10 @@ administration and health commands are all implemented:
 
 | Component | Responsibility | Interface/dependencies | Data ownership | Deployment/security |
 | --- | --- | --- | --- | --- |
-| `messaging.contracts` | Define normalized inbox, outbox, pairing, pending-action, retry, dead-letter, and health values | Pure Python contracts and time/identifier values | No infrastructure state | Shared host library; contains no Bot API token or raw update |
-| `messaging.service` (ingestion, pairing, and worker implemented) | Authorize/normalize ingestion, consume one-use pairing, coordinate claim/dispatch/retry/replay/delivery, and summarize content-free text latency | Messaging repository port, response renderer, dispatch port, and durable acceptance/send timestamps | Application policy only | Gateway/worker/admin host processes; owner scope comes only from binding records, pairing codes are never retained in clear, and latency output contains no messages or identities |
+| `messaging.contracts` | Define normalized inbox, outbox, pairing, pending-action, retry, dead-letter, requeue, and health values | Pure Python contracts and time/identifier values | No infrastructure state | Shared host library; contains no Bot API token or raw update |
+| `messaging.scope` | Select one bot environment and derive the stable key that scopes its durable rows | One process environment variable and the environment enum | No state; the derivation is the single source of the bot key | Every messaging process, including the web host, which must know its scope without holding a credential |
+| `messaging.errors` | Name the failures the durable messaging port may raise | Nothing but the standard library | No state | Imported by callers that depend on the port rather than on PostgreSQL |
+| `messaging.service` (ingestion, pairing, worker, and operator surface implemented) | Authorize/normalize ingestion, consume one-use pairing, coordinate claim/dispatch/retry/replay/delivery, compose the content-free operations snapshot, and summarize text latency | Messaging repository port, response renderer, dispatch port, and durable acceptance/send timestamps | Application policy only, including which requeue transitions a caller may pin | Gateway/worker/admin/API host processes; owner scope comes only from binding records, pairing codes are never retained in clear, and no output contains messages or identities |
 | `persistence.messaging` | Implement the AD-018 transactions and uniqueness/lease rules | psycopg and the dedicated application PostgreSQL | Entire `messaging` schema | Least-privilege application role; content is private and included in authoritative backup |
 | `telegram.transport` | Implement the official HTTPS Bot API methods with bounded timeouts and redacted failures | `httpx` and configured Bot API base URL/token | No durable state | Gateway only; production/test configuration is mutually exclusive |
 | `telegram.gateway` | Run independent ingress and outbox loops | Bot API transport and messaging service | No in-memory correctness state | systemd host service; no model or finance repository dependency |
@@ -528,6 +532,37 @@ an original. Extraction and the product draft-preview workflow remain planned.
 6. The web object graph contains no media store, extractor, or deletion path,
    so this surface cannot widen beyond metadata consultation and the two
    audited transitions without a new component and a new decision.
+
+### Current browser messaging operations
+
+1. The browser loads one bot's durable state through a control-plane adapter
+   whose scope is bound at composition time. The trusted `MessagingScope` comes
+   from configuration, no adapter method accepts a scope, and the web process
+   holds no Bot API credential.
+2. `MessagingAdministration` composes one content-free snapshot: environment,
+   whether an owner is paired, the persisted offset, both queue depths with
+   their oldest waiting item, active correlations, whether the downtime gap
+   exceeds the Bot API's 24-hour retention, and both dead-letter queues.
+3. Every value crossing the boundary is a count, an age, a bounded reason code,
+   or a stable local identifier. The dead-letter projections carry no owner text
+   at all, so the same facts are safe in a page and in a journal. The response
+   also omits the bot key and the inbox source reference.
+4. A requeue request carries only the `replay_count` the page displayed. Its
+   HTTP command key names that transition, `messaging-replay:{inbox_id}:{count}`
+   or `messaging-resend:{outbox_id}:{count}`, and the adapter refuses any other
+   value.
+5. The repository locks the row, applies the requeue only from the pinned
+   state, and reports a repeat of that same transition as already done rather
+   than requeuing twice. Every other outcome is one bounded conflict, so a
+   foreign, missing, already progressed, or wrongly keyed request cannot be told
+   apart.
+6. Replay preserves the source reference, so a work item that already committed
+   a finance mutation returns its first result. Resend keeps the same logical
+   response row and starts a fresh bounded delivery cycle, which the page warns
+   can produce a duplicate physical Telegram message.
+7. The web object graph contains no Bot API transport, no pairing mutation, no
+   offset control, and no deletion path, so this surface cannot widen beyond
+   consultation and the two requeue commands without a new component.
 
 ### Current local receipt-media storage
 
@@ -1159,6 +1194,16 @@ preflight without coupling Telegram recovery to dashboard availability.
   command. The key names the receipt and the version the caller observed, so a
   retry of one decision replays it while a different decision taken from the
   same displayed state conflicts.
+- Durable messaging state is scoped by bot environment rather than by profile.
+  The scope is bound at composition time from configuration and no HTTP
+  argument accepts one, so a request cannot name another bot.
+- A messaging requeue is not a financial write and claims no entry in the
+  general command table: that table is claimed in the same transaction as the
+  finance state it protects, while a requeue commits in the messaging schema
+  through a different repository. Its durable pin is the row's own
+  `replay_count`, checked and advanced inside the one transaction that requeues
+  it, and its HTTP key names that exact transition. A repeat of the same
+  transition is reported as already applied instead of requeuing twice.
 - Callback and free-text follow-up map to explicit pending actions and workflow
   IDs instead of assuming one global chat thread.
 
@@ -1169,18 +1214,21 @@ preflight without coupling Telegram recovery to dashboard availability.
 - Host validation occurs before routing to block DNS rebinding. A present Origin
   must match exactly, and the service emits no CORS permission headers.
 - Unsafe methods require an allowed Origin plus equal random values in an
-  HttpOnly, same-site cookie and the `X-CSRF-Token` header. Every finance
-  mutation additionally requires `Idempotency-Key`; movements and budgets use
+  HttpOnly, same-site cookie and the `X-CSRF-Token` header. Every mutation
+  additionally requires `Idempotency-Key`; movements and budgets use
   their command keys and optimistic versions, category decisions require the
-  proposal-wide key already claimed by the review transaction, and receipt
+  proposal-wide key already claimed by the review transaction, receipt
   review decisions require the transition-wide key that names the receipt and
-  the version the page displayed.
+  the version the page displayed, and messaging requeues require the
+  transition-wide key that names the queue, the item, and the requeue count the
+  page displayed.
 - API responses are `no-store`. CSP restricts content and connections to the
   same origin; framing, referrers, and MIME sniffing are disabled. Interactive API schema endpoints are absent.
 - Static serving exposes only the compiled index and asset directory. Every
   client route is mounted so a reload or bookmark reaches the same shell. The
-  API returns no credential, profile identity, receipt path or content digest,
-  owner text, or raw database diagnostic, and no route returns receipt bytes.
+  API returns no credential, profile identity, bot key, receipt path or content
+  digest, owner text, or raw database diagnostic, and no route returns receipt
+  bytes or Telegram message content.
 - V1 intentionally trusts other processes running as the workstation owner.
   LAN or remote access requires authentication, TLS, a new threat model, and an
   ADR rather than a wider allowlist.

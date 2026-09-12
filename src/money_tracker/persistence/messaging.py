@@ -18,6 +18,7 @@ from money_tracker.messaging.contracts import (
     InboxClaim,
     InboxStatus,
     MessagingHealth,
+    MessagingQueue,
     NormalizedTelegramUpdate,
     OutboundButton,
     OutboundWork,
@@ -30,9 +31,14 @@ from money_tracker.messaging.contracts import (
     PendingActionDraft,
     PendingActionStatus,
     PendingActionTarget,
+    RequeueOutcome,
     WorkflowResult,
     require_aware,
     validate_bot_key,
+)
+from money_tracker.messaging.errors import (
+    MessagingConflictError,
+    MessagingLeaseError,
 )
 from money_tracker.structured_logging import get_logger
 
@@ -43,14 +49,6 @@ OUTBOX_SEND_MESSAGE = "send_message"
 OUTBOX_REVOKE_CONTROLS = "revoke_controls"
 _ERROR_CODE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
-
-
-class MessagingConflictError(RuntimeError):
-    """Report a stable identity reused with different durable content."""
-
-
-class MessagingLeaseError(RuntimeError):
-    """Report an expired, stale, or otherwise invalid worker lease."""
 
 
 class PostgresMessagingRepository:
@@ -386,24 +384,130 @@ class PostgresMessagingRepository:
     def replay_inbox(self, bot_key: str, inbox_id: UUID, *, now: datetime) -> None:
         """Replay one dead letter only inside the selected bot scope."""
 
+        self.requeue_inbox(
+            bot_key,
+            inbox_id,
+            expected_replay_count=None,
+            now=now,
+        )
+
+    def requeue_inbox(
+        self,
+        bot_key: str,
+        inbox_id: UUID,
+        *,
+        expected_replay_count: int | None,
+        now: datetime,
+    ) -> RequeueOutcome:
+        """Return one dead letter to the queue under the state it was chosen in.
+
+        Pinning `expected_replay_count` makes the command the transition rather
+        than the row. Without it a stale view can requeue an item a second time
+        after the first requeue already failed again, which is a different
+        decision than the one the caller made.
+
+        Args:
+            bot_key: Bot and environment persistence scope selected by config.
+            inbox_id: Dead letter the operator chose to retry.
+            expected_replay_count: Replay count the caller observed, or None to
+                accept any dead letter, which is what the unattended operator
+                command does.
+            now: Aware instant the item becomes eligible again.
+
+        Returns:
+            Whether this call requeued the item or found its transition done.
+
+        Raises:
+            MessagingConflictError: If no dead letter in this bot scope is at
+                the observed state. A foreign, missing, or already progressed
+                item is deliberately indistinguishable.
+        """
+
+        validate_bot_key(bot_key)
         require_aware(now, field="now")
         with self._connect() as connection:
-            result = connection.execute(
-                "UPDATE messaging.telegram_inbox SET status = 'pending', "
-                "attempt_count = 0, replay_count = replay_count + 1, "
-                "next_attempt_at = %s, last_error_code = NULL "
-                "WHERE id = %s AND bot_key = %s AND status = 'dead_letter'",
-                (now, inbox_id, bot_key),
+            observed = connection.execute(
+                "SELECT status, replay_count FROM messaging.telegram_inbox "
+                "WHERE id = %s AND bot_key = %s FOR UPDATE",
+                (inbox_id, bot_key),
+            ).fetchone()
+            outcome = self._requeue_outcome(
+                observed,
+                bot_key=bot_key,
+                queue=MessagingQueue.INBOX,
+                item_id=inbox_id,
+                expected_replay_count=expected_replay_count,
             )
-            if result.rowcount != 1:
-                _LOGGER.warning(
-                    "messaging.replay_refused",
-                    bot_key=bot_key,
-                    inbox_id=inbox_id,
+            if outcome is RequeueOutcome.APPLIED:
+                connection.execute(
+                    "UPDATE messaging.telegram_inbox SET status = 'pending', "
+                    "attempt_count = 0, replay_count = replay_count + 1, "
+                    "next_attempt_at = %s, last_error_code = NULL "
+                    "WHERE id = %s AND bot_key = %s",
+                    (now, inbox_id, bot_key),
                 )
-                raise MessagingConflictError(
-                    "only an inbox dead letter can be replayed"
-                )
+            return outcome
+
+    @staticmethod
+    def _requeue_outcome(
+        observed: DictRow | None,
+        *,
+        bot_key: str,
+        queue: MessagingQueue,
+        item_id: UUID,
+        expected_replay_count: int | None,
+    ) -> RequeueOutcome:
+        """Decide what a pinned requeue of one locked row may do.
+
+        Both queues answer this the same way, and both refuse for the same
+        reasons, so the refusal is recorded once here rather than by each
+        caller. The record carries the observed state and counts but never the
+        message the row belongs to.
+
+        Args:
+            observed: Locked status and replay count, or None when no row in
+                this bot scope has that identifier.
+            bot_key: Bot and environment persistence scope.
+            queue: Which durable queue the item belongs to.
+            item_id: Identifier the caller named.
+            expected_replay_count: Replay count the caller observed, or None.
+
+        Returns:
+            Whether the caller may apply the requeue or already has.
+
+        Raises:
+            MessagingConflictError: If the observed state allows neither.
+        """
+
+        if observed is not None:
+            status = cast(str, observed["status"])
+            replay_count = cast(int, observed["replay_count"])
+            pinned = expected_replay_count is not None
+            if status == "dead_letter" and (
+                not pinned or replay_count == expected_replay_count
+            ):
+                return RequeueOutcome.APPLIED
+            if pinned and replay_count == cast(int, expected_replay_count) + 1:
+                # The pinned transition is already durable, whatever the item
+                # did afterwards, so repeating the request must not add a
+                # second requeue the caller never asked for.
+                return RequeueOutcome.REPLAYED
+        _LOGGER.warning(
+            "messaging.requeue_refused",
+            bot_key=bot_key,
+            queue=queue.value,
+            item_id=item_id,
+            expected_replay_count=expected_replay_count,
+            observed_status=(
+                None if observed is None else cast(str, observed["status"])
+            ),
+            observed_replay_count=(
+                None if observed is None else cast(int, observed["replay_count"])
+            ),
+        )
+        raise MessagingConflictError(
+            f"only a {queue.value} dead letter can be requeued"
+        )
 
     def _connect(self) -> Connection[DictRow]:
         """Open a dictionary-row PostgreSQL connection."""
@@ -651,19 +755,63 @@ class PostgresMessagingRepository:
     def replay_outbox(self, bot_key: str, outbox_id: UUID, *, now: datetime) -> None:
         """Return one scoped delivery dead letter to a fresh attempt cycle."""
 
+        self.requeue_outbox(
+            bot_key,
+            outbox_id,
+            expected_replay_count=None,
+            now=now,
+        )
+
+    def requeue_outbox(
+        self,
+        bot_key: str,
+        outbox_id: UUID,
+        *,
+        expected_replay_count: int | None,
+        now: datetime,
+    ) -> RequeueOutcome:
+        """Start a fresh delivery cycle under the state the caller observed.
+
+        Args:
+            bot_key: Bot and environment persistence scope selected by config.
+            outbox_id: Delivery dead letter the operator chose to resend.
+            expected_replay_count: Manual resend count the caller observed, or
+                None to accept any delivery dead letter.
+            now: Aware instant the response becomes deliverable again.
+
+        Returns:
+            Whether this call started a cycle or found its transition done.
+
+        Raises:
+            MessagingConflictError: If no delivery dead letter in this bot
+                scope is at the observed state.
+        """
+
         validate_bot_key(bot_key)
         require_aware(now, field="now")
         with self._connect() as connection:
-            result = connection.execute(
-                "UPDATE messaging.telegram_outbox SET status = 'pending', "
-                "attempt_count = 0, replay_count = replay_count + 1, "
-                "next_attempt_at = %s, claim_token = NULL, claimed_until = NULL, "
-                "last_error_code = NULL "
-                "WHERE id = %s AND bot_key = %s AND status = 'dead_letter'",
-                (now, outbox_id, bot_key),
+            observed = connection.execute(
+                "SELECT status, replay_count FROM messaging.telegram_outbox "
+                "WHERE id = %s AND bot_key = %s FOR UPDATE",
+                (outbox_id, bot_key),
+            ).fetchone()
+            outcome = self._requeue_outcome(
+                observed,
+                bot_key=bot_key,
+                queue=MessagingQueue.OUTBOX,
+                item_id=outbox_id,
+                expected_replay_count=expected_replay_count,
             )
-            if result.rowcount != 1:
-                raise MessagingConflictError("only an outbox dead letter can be resent")
+            if outcome is RequeueOutcome.APPLIED:
+                connection.execute(
+                    "UPDATE messaging.telegram_outbox SET status = 'pending', "
+                    "attempt_count = 0, replay_count = replay_count + 1, "
+                    "next_attempt_at = %s, claim_token = NULL, "
+                    "claimed_until = NULL, last_error_code = NULL "
+                    "WHERE id = %s AND bot_key = %s",
+                    (now, outbox_id, bot_key),
+                )
+            return outcome
 
     def enqueue_notice(self, notice: OutboxMessageDraft, *, now: datetime) -> UUID:
         """Queue one owner message that no inbound work unit asked for.
@@ -1406,3 +1554,13 @@ class PostgresMessagingRepository:
             raise MessagingConflictError(
                 "pending action identity has different target content"
             )
+
+
+__all__ = [
+    "MAX_AUTOMATIC_ATTEMPTS",
+    "OUTBOX_REVOKE_CONTROLS",
+    "OUTBOX_SEND_MESSAGE",
+    "MessagingConflictError",
+    "MessagingLeaseError",
+    "PostgresMessagingRepository",
+]

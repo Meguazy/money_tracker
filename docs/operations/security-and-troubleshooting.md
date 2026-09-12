@@ -1,6 +1,6 @@
 # Security and Troubleshooting
 
-- Status: implemented Steps 1–4 controls plus the first Step 5 web controls
+- Status: implemented Steps 1–4 controls plus the current Step 5 web controls
 - Scope: one-owner local workstation, accepted Telegram boundary, and loopback web boundary
 
 ## Trust boundaries
@@ -79,22 +79,26 @@ other secrets through the bot.
 
 ## Local web controls
 
-Loopback binding alone does not remove browser threats. The first Step 5 slice
-implements these controls:
+Loopback binding alone does not remove browser threats. The implemented Step 5
+surface enforces these controls:
 
 - typed configuration refuses every non-IPv4-loopback listener;
 - exact Host and Origin allowlists reject DNS rebinding and cross-origin reads;
 - CORS remains closed; no permission header is emitted;
 - unsafe methods require an allowed Origin and matching random HttpOnly-cookie
   and header values;
+- movement mutations require a separate `Idempotency-Key` and observed
+  optimistic version where applicable;
+- strict bodies, active owner-scoped references, and domain lifecycle rules are
+  validated before authoritative replacement;
 - API responses are `no-store`; the compiled UI and API share one origin and
   receive restrictive CSP,
   referrer, MIME-sniffing, and framing headers;
 - API responses return no environment, profile identity, private path, or secret.
 
-Future receipt and mutation routes must still validate IDs, versions, file
-paths, content types, and decoded image limits. LAN or remote access requires a
-new authentication/TLS threat model and ADR.
+Future receipt routes must still validate IDs, versions, file paths, content
+types, and decoded image limits. LAN or remote access requires a new
+authentication/TLS threat model and ADR.
 
 ## Media controls
 

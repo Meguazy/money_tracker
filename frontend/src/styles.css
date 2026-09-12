@@ -73,6 +73,35 @@ body {
   border-radius: 99rem;
 }
 
+.main-nav {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  border: 1px solid rgb(255 255 255 / 14%);
+  border-radius: 99rem;
+  background: rgb(0 0 0 / 12%);
+}
+
+.main-nav a {
+  padding: 0.45rem 0.8rem;
+  border-radius: 99rem;
+  color: #d9e1dc;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.main-nav a:hover,
+.main-nav a.active {
+  color: #172838;
+  background: #efb34c;
+}
+
+.main-nav a:focus-visible {
+  outline: 3px solid #fffdfa;
+  outline-offset: 2px;
+}
+
 .page {
   width: min(1180px, calc(100% - 2rem));
   margin: 0 auto;
@@ -128,6 +157,7 @@ body {
 .metric,
 .chart-card,
 .table-card,
+.editor-card,
 .empty-state {
   border: 1px solid rgb(23 40 56 / 9%);
   box-shadow: 0 18px 42px rgb(23 40 56 / 7%);
@@ -194,6 +224,16 @@ body {
   padding: 1rem;
 }
 
+.editor-card {
+  padding: clamp(1rem, 4vw, 2rem);
+  background:
+    linear-gradient(135deg, rgb(255 253 250 / 98%), rgb(248 242 228 / 98%));
+}
+
+.transaction-table td {
+  vertical-align: top;
+}
+
 .budget-chart {
   width: 100%;
   min-height: 360px;
@@ -218,6 +258,10 @@ body {
   }
 
   .local-state {
+    display: none;
+  }
+
+  .brand-note {
     display: none;
   }
 }

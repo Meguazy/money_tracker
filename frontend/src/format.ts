@@ -5,6 +5,28 @@ const eur = new Intl.NumberFormat("it-IT", {
   currency: "EUR",
 });
 
+const occurredAt = new Intl.DateTimeFormat("it-IT", {
+  dateStyle: "medium",
+  timeStyle: "short",
+  timeZone: "Europe/Rome",
+});
+
+export function parseEuroToMinorUnits(value: string): number | null {
+  const match = /^(-?)([0-9]+)(?:[,.]([0-9]{1,2}))?$/.exec(value.trim());
+  if (match === null) {
+    return null;
+  }
+  const whole = Number(match[2]);
+  const cents = Number((match[3] ?? "").padEnd(2, "0"));
+  const absolute = whole * 100 + cents;
+  const result = match[1] === "-" ? -absolute : absolute;
+  return Number.isSafeInteger(result) && result !== 0 ? result : null;
+}
+
+export function formatOccurredAt(value: string): string {
+  return occurredAt.format(new Date(value));
+}
+
 export function formatMoney(value: Money): string {
   return eur.format(value.minor_units / 100);
 }
@@ -30,4 +52,21 @@ export function currentRomeMonth(now: Date = new Date()): string {
     throw new Error("Il calendario locale non è disponibile.");
   }
   return `${year}-${month}`;
+}
+
+export function currentLocalDateTime(now: Date = new Date()): string {
+  const values = Object.fromEntries(
+    new Intl.DateTimeFormat("en-CA", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+      timeZone: "Europe/Rome",
+    })
+      .formatToParts(now)
+      .map((part) => [part.type, part.value]),
+  );
+  return `${values.year}-${values.month}-${values.day}T${values.hour}:${values.minute}`;
 }

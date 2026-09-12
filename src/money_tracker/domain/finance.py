@@ -171,6 +171,35 @@ class Expense:
         if payment_total != self.amount:
             raise ReconciliationError("payment allocations do not equal expense total")
 
+    def require_active_references(
+        self,
+        *,
+        taxonomy: Taxonomy,
+        funding_sources: tuple[FundingSource, ...],
+    ) -> None:
+        """Require allocations to reference active owner-scoped records.
+
+        Args:
+            taxonomy: Complete validated category view for the profile.
+            funding_sources: Authorized funding sources for the profile.
+
+        Raises:
+            DomainError: If a category or funding source is unavailable,
+                inactive, or owned by another profile.
+        """
+
+        for category_allocation in self.category_allocations:
+            category = taxonomy.category(category_allocation.category_id)
+            if category.status is not CategoryStatus.ACTIVE:
+                raise DomainError("posted allocation requires an active category")
+        sources = {source.id: source for source in funding_sources}
+        for payment_allocation in self.payment_allocations:
+            source = sources.get(payment_allocation.funding_source_id)
+            if source is None or source.status is not FundingSourceStatus.ACTIVE:
+                raise DomainError("posted allocation requires an active funding source")
+            if source.profile_id != self.profile_id:
+                raise DomainError("funding source belongs to another profile")
+
     def post(
         self,
         *,
@@ -198,17 +227,10 @@ class Expense:
         if self.status not in {ExpenseStatus.DRAFT, ExpenseStatus.NEEDS_REVIEW}:
             raise InvalidTransitionError("only draft or needs-review expense can post")
         self.require_reconciled()
-        for category_allocation in self.category_allocations:
-            category = taxonomy.category(category_allocation.category_id)
-            if category.status is not CategoryStatus.ACTIVE:
-                raise DomainError("posted allocation requires an active category")
-        sources = {source.id: source for source in funding_sources}
-        for payment_allocation in self.payment_allocations:
-            source = sources.get(payment_allocation.funding_source_id)
-            if source is None or source.status is not FundingSourceStatus.ACTIVE:
-                raise DomainError("posted allocation requires an active funding source")
-            if source.profile_id != self.profile_id:
-                raise DomainError("funding source belongs to another profile")
+        self.require_active_references(
+            taxonomy=taxonomy,
+            funding_sources=funding_sources,
+        )
         if self.receipt_id is not None and not receipt_approved:
             raise DomainError("receipt-backed expense requires owner approval")
         return replace(self, status=ExpenseStatus.POSTED, version=self.version + 1)
@@ -247,20 +269,22 @@ class Expense:
         """Abandon a draft that will never be posted.
 
         Distinct from `void`, which reverses a movement that already counted
-        and therefore stays reconciled. A discarded draft never counted and may
-        have no purpose dimension at all, so it reaches its own terminal state
-        rather than weakening what `voided` guarantees. History keeps the
-        abandoned attempt visible instead of deleting it.
+        and therefore stays reconciled. Draft and needs-review movements never
+        counted and may have no purpose dimension at all, so they reach their
+        own terminal state rather than weakening what `voided` guarantees.
+        History keeps the abandoned attempt visible instead of deleting it.
 
         Returns:
             A new discarded aggregate.
 
         Raises:
-            InvalidTransitionError: If the expense is not a draft.
+            InvalidTransitionError: If the expense is not awaiting posting.
         """
 
-        if self.status is not ExpenseStatus.DRAFT:
-            raise InvalidTransitionError("only a draft expense can be discarded")
+        if self.status not in {ExpenseStatus.DRAFT, ExpenseStatus.NEEDS_REVIEW}:
+            raise InvalidTransitionError(
+                "only a draft or needs-review expense can be discarded"
+            )
         return replace(self, status=ExpenseStatus.DISCARDED, version=self.version + 1)
 
     def corrected(

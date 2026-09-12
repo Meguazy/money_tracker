@@ -5,13 +5,13 @@
   PostgreSQL, migrations/checkpoint bootstrap, optional healthy Langfuse,
   capability evaluation, profile-scoped receipt storage, one-shot Step 3
   dispatch, durable Telegram gateway/worker, pairing,
-  health/replay/resend/latency, the local monthly dashboard/API, and checked-in
-  host service units
+  health/replay/resend/latency, the local monthly dashboard/API, manual movement
+  lifecycle, and checked-in host service units
 - Implemented Step 2: authoritative finance schema and transactional
   expense, wallet, budget, pending category-proposal, and versioned receipt-review
   repository operations, a safe local receipt-media adapter, and verified
   encrypted backup with an isolated restore drill
-- Planned operations: remaining dashboard workflows and analytics, web advice,
+- Planned operations: remaining dashboard workflows, wider analytics, web advice,
   browser E2E acceptance, backup scheduling and clean-machine restore,
   workflow-worker receipt wiring, and media deletion
 
@@ -64,9 +64,10 @@ the referenced file or entry point exists in the repository.
   sequential worker entry points, one-use pairing, health, scoped dead-letter
   replay, Italian response rendering, and host unit templates passed real owner
   workflows, restart/reboot, latency, and fault acceptance on 2026-09-11.
-- The FastAPI process, monthly overview endpoint, compiled React overview, local
-  browser controls, and API user-service template are implemented. Other Step
-  5 views and full browser acceptance remain open.
+- The FastAPI process, monthly overview and transaction endpoints, compiled
+  React overview/register, audited manual lifecycle, local browser controls,
+  and API user-service template are implemented. Split-allocation editing,
+  other Step 5 views, and full browser acceptance remain open.
 - Langfuse 4.26.0 and every dependency are pinned by digest. The non-cluster
   repair and health checks pass with the pre-existing volumes preserved.
 - Installed model paths remain workstation-owned and outside the repository.
@@ -88,8 +89,9 @@ the referenced file or entry point exists in the repository.
   clean-machine drill exists yet.
 - The private test bot passed real owner workflows, unauthorized-user checks,
   five fault injections, p95 latency, and an unattended reboot with all Step 4
-  host services. No production bot exists. The dashboard beyond its monthly
-  overview, media deletion, and receipt extraction do not exist yet.
+  host services. No production bot exists. The dashboard beyond its overview
+  and transaction register, media deletion, and receipt extraction do not exist
+  yet.
 
 ## When to update these guides
 

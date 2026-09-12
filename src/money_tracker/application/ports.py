@@ -220,6 +220,14 @@ class ReportingRepository(Protocol):
     def get_funding_sources(self, profile_id: UUID) -> tuple[FundingSource, ...]:
         """Return the profile's configured funding sources."""
 
+    def get_expenses(
+        self,
+        profile_id: UUID,
+        *,
+        period: YearMonth,
+    ) -> tuple[Expense, ...]:
+        """Return every movement state occurring in one calendar month."""
+
     def get_posted_expenses(
         self,
         profile_id: UUID,

@@ -1,7 +1,8 @@
 import { AppShell, Group, Text } from "@mantine/core";
-import { Navigate, Route, Routes } from "react-router-dom";
+import { NavLink, Navigate, Route, Routes } from "react-router-dom";
 
 import { OverviewPage } from "./OverviewPage";
+import { TransactionsPage } from "./TransactionsPage";
 
 export function App() {
   return (
@@ -20,12 +21,28 @@ export function App() {
               <Text className="brand-note">locale · privato · verificabile</Text>
             </div>
           </Group>
+          <nav aria-label="Navigazione principale" className="main-nav">
+            <NavLink
+              className={({ isActive }) => (isActive ? "active" : "")}
+              end
+              to="/"
+            >
+              Quadro
+            </NavLink>
+            <NavLink
+              className={({ isActive }) => (isActive ? "active" : "")}
+              to="/movimenti"
+            >
+              Movimenti
+            </NavLink>
+          </nav>
           <Text className="local-state">127.0.0.1</Text>
         </Group>
       </AppShell.Header>
       <AppShell.Main>
         <Routes>
           <Route element={<OverviewPage />} path="/" />
+          <Route element={<TransactionsPage />} path="/movimenti" />
           <Route element={<Navigate replace to="/" />} path="*" />
         </Routes>
       </AppShell.Main>

@@ -31,6 +31,7 @@ from money_tracker.application.reporting import (
     MonthlyOverview,
     PeriodSplit,
     ReportingService,
+    TransactionRegister,
 )
 from money_tracker.application.review import (
     OWNER_REVIEW_PROVENANCE,
@@ -56,6 +57,7 @@ __all__ = [
     "ReceiptMetadataService",
     "ReportingRepository",
     "ReportingService",
+    "TransactionRegister",
     "BudgetsAtRisk",
     "CategoryBudget",
     "CategorySpending",

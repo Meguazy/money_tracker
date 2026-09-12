@@ -90,8 +90,7 @@ class LocalBrowserProtectionMiddleware:
                     )
                 )
                 if str(scope.get("path", "")).startswith("/api/") and not any(
-                    name.lower() == b"cache-control"
-                    for name, _ in response_headers
+                    name.lower() == b"cache-control" for name, _ in response_headers
                 ):
                     response_headers.append((b"cache-control", b"no-store"))
                 message["headers"] = response_headers

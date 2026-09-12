@@ -187,6 +187,11 @@ class FinanceService:
             category_allocations=category_allocations,
             payment_allocations=payment_allocations,
         )
+        if corrected.status is ExpenseStatus.POSTED:
+            corrected.require_active_references(
+                taxonomy=self._repository.get_taxonomy(profile_id),
+                funding_sources=self._repository.get_funding_sources(profile_id),
+            )
         return self._replace_idempotently(
             corrected,
             expected_version=expected_version,
@@ -214,11 +219,12 @@ class FinanceService:
 
         The owner has a single intent here and one control for it. The domain
         has two transitions, because voiding reverses something that already
-        counted and a draft never did, so only a posted movement can be voided
-        and only a draft can be discarded. Resolving that from the stored
-        status keeps the distinction where it belongs and off the owner, who
-        would otherwise be offered a control that cannot work: every Telegram
-        movement starts as a draft, and asking to void one raised
+        counted and an unposted movement never did, so only a posted movement
+        can be voided and draft or needs-review movements can be discarded.
+        Resolving that from the stored status keeps the distinction where it
+        belongs and off the owner, who would otherwise be offered a control
+        that cannot work: every Telegram movement starts as a draft, and asking
+        to void one raised
         `InvalidTransitionError` and answered with a clarification.
 
         One command key covers both, so a redelivered callback returns the
@@ -251,13 +257,16 @@ class FinanceService:
         if replayed is not None:
             return replayed
         current = self._repository.get_expense(profile_id, expense_id)
-        drafted = current.status is ExpenseStatus.DRAFT
-        ended = current.discard() if drafted else current.void()
+        unposted = current.status in {
+            ExpenseStatus.DRAFT,
+            ExpenseStatus.NEEDS_REVIEW,
+        }
+        ended = current.discard() if unposted else current.void()
         return self._replace_idempotently(
             ended,
             expected_version=expected_version,
             prior_version=current.version,
-            action="discard" if drafted else "void",
+            action="discard" if unposted else "void",
             idempotency_key=idempotency_key,
             command_type="cancel_expense",
             request_hash=request_hash,

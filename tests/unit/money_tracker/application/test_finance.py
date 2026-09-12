@@ -17,6 +17,7 @@ from money_tracker.domain import (
     AuditEvent,
     BalanceMode,
     CategoryAllocation,
+    DomainError,
     Expense,
     ExpenseStatus,
     FundingClass,
@@ -313,6 +314,53 @@ def test_correction_replaces_both_dimensions_and_preserves_identity() -> None:
     assert repository.audits[-1].action == "correct"
 
 
+def test_posted_correction_rejects_unavailable_funding_source() -> None:
+    """Keep authoritative corrections within active owner-scoped references."""
+
+    service, repository, expense, source = _fixture()
+    repository.expenses[expense.id] = expense
+    posted = service.post_expense(
+        profile_id=expense.profile_id,
+        expense_id=expense.id,
+        expected_version=1,
+        idempotency_key="posting:before-invalid-correction",
+        request_hash="c" * 64,
+        actor="owner",
+        reason="approved",
+    )
+    repository.sources = ()
+
+    with pytest.raises(
+        DomainError,
+        match="posted allocation requires an active funding source",
+    ):
+        service.correct_expense(
+            profile_id=expense.profile_id,
+            expense_id=expense.id,
+            expected_version=posted.version,
+            amount=Money(1500),
+            occurred_at=expense.occurred_at,
+            description="Invalid corrected source",
+            merchant=None,
+            category_allocations=(
+                CategoryAllocation(
+                    expense.category_allocations[0].category_id,
+                    Money(1500),
+                    "owner:web:v1",
+                    owner_override=True,
+                ),
+            ),
+            payment_allocations=(PaymentAllocation(source.id, Money(1500)),),
+            idempotency_key="correct:invalid-source",
+            request_hash="d" * 64,
+            actor="owner",
+            reason="manual web correction",
+        )
+
+    assert repository.expenses[expense.id] == posted
+    assert repository.audits[-1].action == "post"
+
+
 def test_cancelling_a_posted_movement_voids_and_appends_audit() -> None:
     """Undo by status transition without deleting the stored record."""
 
@@ -367,6 +415,29 @@ def test_cancelling_a_draft_discards_it_instead_of_failing() -> None:
     assert cancelled.status is ExpenseStatus.DISCARDED
     assert repository.expenses[expense.id] == cancelled
     assert [event.action for event in repository.audits] == ["discard"]
+
+
+def test_cancelling_needs_review_discards_it_instead_of_voiding() -> None:
+    """Keep the browser's cancel action valid for every unposted state."""
+
+    service, repository, expense, _ = _fixture()
+    review = expense.mark_needs_review()
+    repository.expenses[expense.id] = review
+
+    cancelled = service.cancel_expense(
+        profile_id=expense.profile_id,
+        expense_id=expense.id,
+        expected_version=review.version,
+        idempotency_key="undo:needs-review",
+        request_hash="e" * 64,
+        actor="owner",
+        reason="manual browser cancellation",
+    )
+
+    assert cancelled.status is ExpenseStatus.DISCARDED
+    assert repository.expenses[expense.id] == cancelled
+    assert repository.audits[-1].action == "discard"
+    assert repository.audits[-1].prior_version == review.version
 
 
 def test_cancelling_twice_returns_the_first_result_without_a_second_audit() -> None:

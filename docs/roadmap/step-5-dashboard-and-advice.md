@@ -2,12 +2,13 @@
 
 Part of the [delivery roadmap](../roadmap.md).
 
-Status: **In progress (2026-09-11).** The first vertical slice implements the
-loopback same-origin host, a deterministic monthly overview, and the accessible
-React shell. The remaining views, mutations, wider analytics, advice surface,
-and complete browser E2E acceptance are still open. No model, prompt, routing
-threshold, tool contract, or taxonomy policy changed, so EVD-004 remains the
-promoted text baseline.
+Status: **In progress (2026-09-12).** The implemented vertical slices provide
+the loopback same-origin host, deterministic monthly overview and transaction
+register, accessible React shell, and audited manual create, correct, post, and
+cancel workflows. The remaining control-plane views, wider analytics, advice
+surface, split-allocation editor, and complete browser E2E acceptance are still
+open. No model, prompt, routing threshold, tool contract, or taxonomy policy
+changed, so EVD-004 remains the promoted text baseline.
 
 ## Deliverables
 
@@ -70,11 +71,39 @@ promoted text baseline.
   reads its exact value through the HTTP endpoint. Frontend typecheck, component
   tests, production build, and a runtime dependency audit pass.
 
+### Transaction register and manual lifecycle slice (2026-09-12)
+
+- `ReportingService.transaction_register` reads every lifecycle state for one
+  month plus taxonomy and funding-source references. The response retains
+  exact dual allocations and optimistic versions while omitting profile,
+  idempotency, source-reference, and private-media data.
+- The same-origin API adds `GET /api/v1/transactions` and strict create,
+  complete-replacement, post, and cancel routes. A narrow web adapter injects
+  trusted profile, actor, source reference, aggregate ID, and transport command
+  key before calling the existing audited, replay-safe `FinanceService`.
+- Unsafe requests exercise the already documented Origin and double-submit
+  CSRF policy. Every mutation also requires `Idempotency-Key`; optimistic or
+  idempotency conflicts return bounded 409 problems, invalid domain transitions
+  return bounded 422 problems, and cancellation preserves history by discarding
+  draft/needs-review movements or voiding posted movements.
+- The domain now revalidates active owner-scoped category and funding-source
+  references when an already posted movement is corrected.
+- The React `/movimenti` view provides labelled manual entry, correction,
+  registration and cancellation controls; lifecycle, allocation and reference
+  facts; loading, empty, failure and retry states; and exact string-to-cent
+  conversion without binary floating-point arithmetic. The first editor
+  intentionally supports one category and one funding source, while the API and
+  register preserve arbitrary reconciled allocation sets.
+- Unit/component tests cover the register, strict browser boundary, deep link,
+  accessible manual form, exact cents, lifecycle actions, and failure recovery.
+  A real PostgreSQL HTTP integration test creates, replays, corrects, posts,
+  replays, reads, voids, and verifies the resulting monthly total.
+
 ### Work still required before completion
 
-- Add transactions and manual create/correct workflows through existing
-  application services, then receipt metadata/review, taxonomy proposals,
-  budgets, funding sources/wallets, messaging operations, and settings views.
+- Add visual editing of multiple allocations, then receipt metadata/review,
+  taxonomy proposals, budgets, funding sources/wallets, messaging operations,
+  and settings views.
 - Extend deterministic reads from the current month to day, ISO week, year,
   comparison, and validated custom ranges, retaining purpose and funding
   breakdowns.

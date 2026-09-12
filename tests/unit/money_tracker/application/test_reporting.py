@@ -70,6 +70,24 @@ class InMemoryReporting:
         self.reads.append("funding_sources")
         return self.sources
 
+    def get_expenses(
+        self, profile_id: UUID, *, period: YearMonth
+    ) -> tuple[Expense, ...]:
+        """Return every movement state in reverse occurrence order."""
+
+        self.reads.append("expenses")
+        start, end = period.bounds()
+        matching = (
+            expense for expense in self.expenses if start <= expense.occurred_at < end
+        )
+        return tuple(
+            sorted(
+                matching,
+                key=lambda expense: (expense.occurred_at, str(expense.id)),
+                reverse=True,
+            )
+        )
+
     def get_posted_expenses(
         self, profile_id: UUID, *, period: YearMonth
     ) -> tuple[Expense, ...]:
@@ -472,3 +490,26 @@ def test_monthly_overview_reconciles_each_dimension_without_double_counting() ->
     assert result.budgets[0][1].remaining == Money(3000)
     assert result.unbudgeted_category_names == ()
     assert repository.reads.count("posted_expenses") == 1
+
+
+def test_transaction_register_keeps_every_state_and_display_reference() -> None:
+    """Show the complete lifecycle while retaining trusted category/source names."""
+
+    posted = _posted("Spesa alimentare", 2000, day=10)
+    draft = replace(
+        _posted("Abbonamenti", 1200, day=11),
+        status=ExpenseStatus.DRAFT,
+    )
+    outside = _posted("Cibo e accessori", 900, month=8)
+    repository = InMemoryReporting(expenses=(posted, draft, outside))
+
+    result = ReportingService(repository).transaction_register(
+        profile_id=PROFILE,
+        period=PERIOD,
+    )
+
+    assert result.period == PERIOD
+    assert result.expenses == (draft, posted)
+    assert result.taxonomy is TAXONOMY
+    assert result.funding_sources == (CARD, VOUCHERS)
+    assert repository.reads == ["expenses", "taxonomy", "funding_sources"]

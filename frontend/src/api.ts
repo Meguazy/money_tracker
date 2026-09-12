@@ -31,20 +31,94 @@ export type MonthlyOverview = {
   unbudgeted_categories: string[];
 };
 
+export type ExpenseStatus =
+  | "draft"
+  | "needs_review"
+  | "posted"
+  | "voided"
+  | "discarded";
+
+export type CategoryReference = {
+  id: string;
+  name: string;
+  parent_id: string | null;
+  status: "active" | "archived";
+};
+
+export type FundingSourceReference = {
+  id: string;
+  name: string;
+  funding_class: FundingClass;
+  balance_mode: "untracked" | "ledger";
+  status: "active" | "archived";
+  is_default: boolean;
+};
+
+export type Transaction = {
+  id: string;
+  amount: Money;
+  occurred_at: string;
+  description: string;
+  merchant: string | null;
+  status: ExpenseStatus;
+  category_allocations: Array<{
+    category_id: string;
+    category_name: string | null;
+    amount: Money;
+    provenance: string;
+    evidence: string | null;
+    owner_override: boolean;
+  }>;
+  payment_allocations: Array<{
+    funding_source_id: string;
+    funding_source_name: string | null;
+    amount: Money;
+  }>;
+  receipt_id: string | null;
+  version: number;
+};
+
+export type TransactionRegister = {
+  period: { year: number; month: number };
+  transactions: Transaction[];
+  categories: CategoryReference[];
+  funding_sources: FundingSourceReference[];
+};
+
+export type ExpenseInput = {
+  amount: Money;
+  occurred_at: string;
+  description: string;
+  merchant: string | null;
+  category_allocations: Array<{
+    category_id: string;
+    amount: Money;
+    provenance: string;
+    owner_override: boolean;
+  }>;
+  payment_allocations: Array<{
+    funding_source_id: string;
+    amount: Money;
+  }>;
+  original_expense_id?: string | null;
+  receipt_id?: string | null;
+};
+
+export type ExpenseMutation = {
+  id: string;
+  status: ExpenseStatus;
+  version: number;
+};
+
 type ProblemDetails = {
   detail?: string;
 };
 
-export async function loadMonthlyOverview(
-  period: string,
-  signal?: AbortSignal,
-): Promise<MonthlyOverview> {
-  const response = await fetch(
-    `/api/v1/overview/monthly?period=${encodeURIComponent(period)}`,
-    { signal },
-  );
+let csrfTokenRequest: Promise<string> | null = null;
+
+async function responseJson<T>(response: Response): Promise<T> {
   if (!response.ok) {
-    let detail = "Non è stato possibile caricare i dati.";
+    let detail = "Non è stato possibile completare la richiesta.";
     try {
       const problem = (await response.json()) as ProblemDetails;
       if (typeof problem.detail === "string" && problem.detail.length > 0) {
@@ -55,5 +129,93 @@ export async function loadMonthlyOverview(
     }
     throw new Error(detail);
   }
-  return (await response.json()) as MonthlyOverview;
+  return (await response.json()) as T;
+}
+
+export async function loadMonthlyOverview(
+  period: string,
+  signal?: AbortSignal,
+): Promise<MonthlyOverview> {
+  const response = await fetch(
+    `/api/v1/overview/monthly?period=${encodeURIComponent(period)}`,
+    { signal },
+  );
+  return responseJson<MonthlyOverview>(response);
+}
+
+export async function loadTransactions(
+  period: string,
+  signal?: AbortSignal,
+): Promise<TransactionRegister> {
+  const response = await fetch(
+    `/api/v1/transactions?period=${encodeURIComponent(period)}`,
+    { signal },
+  );
+  return responseJson<TransactionRegister>(response);
+}
+
+async function csrfToken(): Promise<string> {
+  csrfTokenRequest ??= fetch("/api/v1/csrf")
+    .then((response) => responseJson<{ token: string }>(response))
+    .then(({ token }) => token)
+    .catch((error: unknown) => {
+      csrfTokenRequest = null;
+      throw error;
+    });
+  return csrfTokenRequest;
+}
+
+async function mutateExpense(
+  path: string,
+  method: "POST" | "PUT",
+  body: unknown,
+): Promise<ExpenseMutation> {
+  const token = await csrfToken();
+  const response = await fetch(path, {
+    method,
+    headers: {
+      "Content-Type": "application/json",
+      "Idempotency-Key": crypto.randomUUID(),
+      "X-CSRF-Token": token,
+    },
+    body: JSON.stringify(body),
+  });
+  return responseJson<ExpenseMutation>(response);
+}
+
+export function createExpense(input: ExpenseInput): Promise<ExpenseMutation> {
+  return mutateExpense("/api/v1/expenses", "POST", input);
+}
+
+export function replaceExpense(
+  expenseId: string,
+  input: ExpenseInput & { expected_version: number },
+): Promise<ExpenseMutation> {
+  return mutateExpense(
+    `/api/v1/expenses/${encodeURIComponent(expenseId)}`,
+    "PUT",
+    input,
+  );
+}
+
+export function postExpense(
+  expenseId: string,
+  expectedVersion: number,
+): Promise<ExpenseMutation> {
+  return mutateExpense(
+    `/api/v1/expenses/${encodeURIComponent(expenseId)}/post`,
+    "POST",
+    { expected_version: expectedVersion, receipt_approved: false },
+  );
+}
+
+export function cancelExpense(
+  expenseId: string,
+  expectedVersion: number,
+): Promise<ExpenseMutation> {
+  return mutateExpense(
+    `/api/v1/expenses/${encodeURIComponent(expenseId)}/cancel`,
+    "POST",
+    { expected_version: expectedVersion },
+  );
 }

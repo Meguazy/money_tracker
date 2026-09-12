@@ -1,8 +1,8 @@
 # AD-009: Local FastAPI and React Web Application
 
 - Status: accepted
-- Implementation: first FastAPI/React monthly slice, HTTP security, and host
-  deployment implemented; remaining Step 5 control plane in progress
+- Implementation: monthly overview, transaction/manual-lifecycle slice, HTTP
+  security, and host deployment implemented; remaining Step 5 surface in progress
 - Date: 2026-09-01
 
 ## Context
@@ -50,12 +50,14 @@ is injected from trusted runtime context rather than accepted in request bodies.
 The framework-independent `api.contracts` component defines strict Pydantic
 finance request, response, mutation-header, and problem schemas. Step 5 adds a
 separate `web` adapter so framework and browser policy do not leak into domain
-or application code. Its first endpoint depends only on a narrow
-`MonthlyOverviewReader`; production composition supplies `ReportingService` and
-`PostgresFinanceRepository`. The adapter owns no data. It injects the only V1
-profile from trusted startup state and maps domain money to integer-minor-unit
-JSON without exposing profile identity, repository details, private paths, or
-secrets.
+or application code. Reads depend only on a narrow `DashboardReader`;
+production composition supplies `ReportingService` and
+`PostgresFinanceRepository`. Mutations pass through
+`ExpenseMutationAdapter` to the existing `FinanceService`; the adapter injects
+the trusted profile, actor, source reference, generated aggregate ID, and
+transport command key. It owns no data. Responses map domain money to integer
+minor-unit JSON without exposing profile identity, repository details,
+idempotency or source references, private paths, or secrets.
 
 `ReportingService.monthly_overview` composes existing posted-payment and budget
 reads. Its total comes from the mutually exclusive funding split, while budget
@@ -63,22 +65,32 @@ positions come from category allocations. The dimensions reconcile to the same
 movements independently and are never added together, preserving the AD-007
 no-double-count contract.
 
-The FastAPI composition exposes `/api/v1/overview/monthly`, content-free
-liveness/readiness, and CSRF bootstrap. Interactive schema endpoints are
-disabled. Configuration rejects non-IPv4-loopback listeners, non-loopback Host
-values, and non-exact HTTP loopback origins. Middleware validates Host before
+The FastAPI composition exposes `/api/v1/overview/monthly`,
+`/api/v1/transactions`, strict manual expense create/replace/post/cancel
+resources, content-free liveness/readiness, and CSRF bootstrap. Browser JSON is
+validated without coercion; every write requires a separate idempotency header,
+uses optimistic concurrency where an aggregate already exists, and maps
+application/domain/database failures to bounded problem details. Corrections of
+posted movements revalidate active owner-scoped references before persistence.
+Interactive schema endpoints are disabled. Configuration rejects
+non-IPv4-loopback listeners, non-loopback Host values, and non-exact HTTP
+loopback origins. Middleware validates Host before
 routing, rejects any present disallowed Origin, grants no CORS access, and
 requires allowed Origin plus equal HttpOnly-cookie/header tokens for every
 unsafe method. API responses are `no-store`; all responses receive CSP, no-referrer,
 no-sniff, and anti-framing headers.
 
 `frontend/` implements the accepted stack: React and TypeScript built by Vite,
-TanStack Query for the monthly server read, React Router for the shell, Mantine
-for UI, and ECharts with SVG rendering for the budget comparison. The Italian
-view includes an explicit month label, exact EUR rendering, loading, empty, and
-error states, keyboard focus, a labelled chart, and an equivalent table. The
-compiled `dist` is served by FastAPI on the API origin; arbitrary repository or
-receipt files are not mounted.
+TanStack Query for server reads and mutation invalidation, React Router for the
+shell, Mantine for UI, and ECharts with SVG rendering for the budget comparison.
+The Italian overview includes an explicit month label, exact EUR rendering,
+loading, empty, and error states, keyboard focus, a labelled chart, and an
+equivalent table. The `/movimenti` view renders every monthly lifecycle state
+and its exact allocations, and exposes labelled create, correct, post, and
+cancel controls with retry feedback. Its initial form edits one category and
+one funding source and refuses to flatten existing multi-allocation movements.
+The compiled `dist` is served by FastAPI on the API origin; arbitrary
+repository or receipt files are not mounted.
 
 `money-tracker-api` is a host entry point and
 `money-tracker-api.service` is a hardened systemd user-service template. The
@@ -88,9 +100,10 @@ runbook records operation and rollback.
 
 Unit tests cover exact contracts, trusted profile scope, deterministic
 reconciliation, invalid periods, dependency health, Host, Origin, CSRF, static
-serving, and deployment templates. A real PostgreSQL integration test creates
-and posts an expense through `FinanceService`, then reads its exact value through
-the HTTP route. Frontend typecheck, component tests, production build, and a
-runtime dependency audit pass. This is partial Step 5 evidence: the remaining
-resources, mutations, range analytics, advice surface, and full browser E2E
-acceptance are still required before this decision is fully implemented.
+serving/deep links, strict mutation validation, and deployment templates. Real
+PostgreSQL integration tests cover the monthly read and the complete manual
+create/replay/correct/post/replay/void HTTP lifecycle. Frontend typecheck,
+component tests, production build, and a runtime dependency audit pass. This is
+partial Step 5 evidence: multi-allocation editing, remaining control-plane
+resources, range analytics, advice surface, and full browser E2E acceptance are
+still required before this decision is fully implemented.

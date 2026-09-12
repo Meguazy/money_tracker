@@ -26,11 +26,12 @@ v6, tool-selection v5, routing confidence 0.5, and
 `explicit-finance-scope-v1`. The durable Telegram runtime passed owner-driven
 workflow, authorization, latency, fault, and reboot acceptance on 2026-09-11.
 
-Step 5 is active. Its first vertical slice implements the loopback FastAPI host,
-monthly overview read model and endpoint, compiled React shell, browser security
-policy, and host unit. The remaining control-plane views, mutations, wider
-analytics, advice exposure, and browser E2E acceptance are still planned within
-Step 5. Receipt extraction remains assigned to Step 6.
+Step 5 is active. Its implemented slices provide the loopback FastAPI host,
+monthly overview and transaction register, audited manual create/correct/post/
+cancel workflows, compiled React shell, browser security policy, and host unit.
+Split-allocation editing, remaining control-plane views, wider analytics, advice
+exposure, and browser E2E acceptance are still planned within Step 5. Receipt
+extraction remains assigned to Step 6.
 
 ### Quality goals
 
@@ -118,7 +119,7 @@ boundary is not end-to-end encrypted and must not be described as local storage.
 | Application to inference | OpenAI-compatible HTTP | Messages, schemas, tool calls, model settings | Implemented basic chat |
 | Application to Langfuse | SDK over local HTTP/OTLP | Redacted graph/model observations and aggregate scores | Implemented, optional and healthy |
 | Telegram gateway to Bot API | HTTPS long polling and send methods | Updates, callback queries, messages, and bounded file metadata; no Step 4 file download | Implemented and owner-accepted against the real private test bot |
-| Browser to application API | Same-origin HTTP JSON | Monthly overview and health implemented; remaining finance, review, analytics, and operations resources planned | First Step 5 slice implemented |
+| Browser to application API | Same-origin HTTP JSON | Monthly overview, transaction register, manual lifecycle, CSRF, and health implemented; remaining review, analytics, and operations resources planned | Step 5 slices implemented |
 | Application to PostgreSQL | PostgreSQL protocol | Checkpoints, authoritative finance aggregates, normalized messaging offsets/inbox/outbox, pairing, actions, retries, and dead letters | Implemented foundation, finance repositories, and Step 4 messaging persistence |
 | Application to receipt archive | Private host filesystem | Fully decoded original JPEG/PNG/WebP keyed and verified by content hash; no derivatives | Local adapter/admin CLI implemented; API/worker wiring, deletion, and backup planned |
 | Backup process to repository | Restic repository protocol | Database dump, receipts and recovery configuration | Implemented and restore-tested; scheduling planned |
@@ -165,7 +166,7 @@ boundary is not end-to-end encrypted and must not be described as local storage.
 ```text
 Money Tracker workstation
 ├── Host processes
-│   ├── FastAPI application and compiled React UI        [monthly slice implemented]
+│   ├── FastAPI application and compiled React UI        [overview/movements implemented]
 │   ├── Telegram gateway                                [implemented; unit template checked in]
 │   ├── Sequential workflow worker                      [implemented; unit template checked in]
 │   │   ├── typed dispatcher, router, and text graphs  [implemented library]
@@ -197,7 +198,8 @@ Money Tracker workstation
 | `worker` | Claim the oldest eligible durable work unit, translate it into the normalized channel message, dispatch it once, and commit result, response, correlation, and completion together; commit failure notice with retry or dead-letter state | Messaging repository port, finance read ports, a narrow dispatch port, and the response renderer | No authoritative state; every identifier it creates is derived from the inbox row so a recovered attempt reproduces the same logical response | systemd host service, separate failure domain from the gateway; holds no Bot API credential and imports no transport type |
 | `presentation` | Render typed dispatch outcomes, processing failures, committed movement facts, and paused review questions as Italian owner text and bounded controls | Dispatcher outcome contracts, messaging control values, and pure domain values; no model, transport, or repository import | No state; owns the callback code vocabulary and the response-kind names embedded in outbox logical keys | Worker library; content is a function of committed state only, so a replayed render reproduces the same logical response |
 | `api.contracts` | Define strict, versioned finance request/response, mutation-header, and problem wire shapes | Pydantic and domain response values; no web framework | No state; stable JSON field semantics only | Shared by the FastAPI adapter; no credentials or private media fields |
-| `web` | Compose versioned HTTP reads, static UI serving, health, and browser policy | FastAPI, narrow application read ports, typed settings, and strict wire contracts | No authoritative data; injects the sole trusted profile and owns only HTTP semantics | Host user service on IPv4 loopback; exact Host/Origin, closed CORS, CSRF, CSP, and no secret endpoint |
+| `web` | Compose versioned HTTP reads and writes, static UI serving, health, and browser policy | FastAPI, narrow application ports, typed settings, strict wire contracts, and `web.mutations` | No authoritative data; injects the sole trusted profile and owns only HTTP semantics | Host user service on IPv4 loopback; exact Host/Origin, closed CORS, CSRF, CSP, bounded problems, and no secret endpoint |
+| `web.mutations` | Translate strict browser movement commands into existing audited finance use cases | `ExpenseWriter` protocol, finance request contracts, ID port, and canonical command hashes | No state; owns trusted web actor/source construction, not persistence or lifecycle policy | In-process API adapter; profile and command key are injected, and responses omit both |
 | `backup` | Create verified encrypted authoritative snapshots, report their freshness, and restore only into explicitly empty isolated targets | Restic and PostgreSQL client executables, psycopg identity/receipt queries, private archive and configuration paths | Snapshot contents and the versioned integrity manifest in the owner repository; no finance state of its own | Host CLI under an exclusive lock; absolute-path and owner-only input checks, recovery secret passed only by file path, failures name no argument or environment |
 | `administration` | Expose bounded local profile bootstrap, funding-source configuration, receipt storage/registration, and one-shot dispatch of every Step 3 text route | Database URL, absolute archive setting, application services, the workflow dispatcher, and local model adapter | No independent state; emits safe identifiers, grounded facts, and reason codes only | Host CLI; active-profile preflight for specialists, explicit trusted correlations, no private paths or message content in JSON |
 | `persistence.finance` | Bootstrap profile/taxonomy, persist complete expense and budget aggregates, append balance-safe wallet movements, validate/store pending proposals, and register/transition receipt metadata transactionally | psycopg and narrow application repository contracts | Finance tables, allocations, budgets/overrides, wallet ledger, proposals, versioned receipt metadata, audit, and idempotency records | Dedicated application PostgreSQL; no receipt bytes or paths; optimistic versions protect mutable aggregates |
@@ -277,8 +279,8 @@ catalog is promoted; every identifier carries a `candidate-` prefix.
 | --- | --- | --- | --- | --- |
 | Workflow dispatcher, root router, and text specialists (implemented) | Route one intent and coordinate expense/refund, correction/undo, category review, query, or advice | Typed normalized work unit/outcome, versioned schemas, scoped tool registries, trusted correlations | Namespaced checkpoint references and workflow IDs; no domain ownership | Administration CLI and worker; mutation paths call replay-safe application services |
 | Telegram Bot API transport (implemented) | Validate the bot, long poll, obtain file metadata, acknowledge callbacks, and deliver outbox messages | Bounded HTTPS client and messaging services | No authoritative finance data or correctness state | Gateway host service; separate production/test token selected from a private environment file |
-| FastAPI adapter (partial) | Expose monthly overview, health, CSRF bootstrap, compiled UI, and later REST resources | Narrow application services | No independent data | Implemented on loopback with Host/Origin and CSRF protection |
-| React dashboard (partial) | Display the monthly overview now and later edit finance, review, budget, wallet and operational state | Same-origin REST API | Browser session/UI state only | Compiled static assets; no secrets; accessible chart table alternative |
+| FastAPI adapter (partial) | Expose monthly overview/register, manual lifecycle, health, CSRF bootstrap, compiled UI, and later REST resources | Narrow reporting and finance ports | No independent data | Implemented on loopback with Host/Origin, CSRF, idempotency, optimistic concurrency, and bounded errors |
+| React dashboard (partial) | Display the overview and transaction register, edit the single-allocation manual lifecycle, and later edit review, budget, wallet and operational state | Same-origin REST API | Browser session/UI state only | Compiled static assets; no secrets; labelled controls, lifecycle history, and accessible chart table alternative |
 | Local model gateway | Provide typed chat, schema and tool capabilities | OpenAI-compatible local endpoint | No persistent domain data | Replaceable host inference process |
 | Receipt extractor adapter | Produce a versioned structured receipt draft | Selected local OCR/VLM pipeline | No authoritative data until validated | Local-only; selection remains evaluation-gated |
 | Langfuse adapter | Record redacted traces and experiment scores | Local Langfuse SDK | Observability copies, not source of truth | Optional development/evaluation profile |
@@ -786,35 +788,42 @@ migration local to each bounded workflow.
 
 ### Current version-one finance wire contracts
 
-1. A future transport adapter validates the canonical `Idempotency-Key` header
+1. The web transport adapter validates the canonical `Idempotency-Key` header
    separately from a strict expense request body; unknown fields and a
    caller-supplied profile scope are rejected.
 2. Exact signed cents, EUR, aware occurrence time, stable UUID references, and
    non-zero movement semantics are validated before application dispatch.
-3. A real domain expense maps to a response with stable IDs, ISO timestamp,
-   lifecycle status, allocations, and optimistic version, but no command key,
-   repository detail, media path, or secret.
+3. Register reads map real domain expenses to stable IDs, ISO timestamps,
+   lifecycle status, allocations, and optimistic versions. Mutation responses
+   return only identity, lifecycle, and version; neither shape carries a command
+   key, trusted profile, source reference, repository detail, media path, or
+   secret.
 4. Failures use a bounded problem-details schema and the
    `application/problem+json` media type.
 
-### Current local monthly dashboard request
+### Current local overview and movement requests
 
 1. The browser requests the compiled shell and then an exact `YYYY-MM` overview
-   from the same origin.
+   or movement register from the same origin.
 2. Middleware rejects an unapproved Host or present Origin before routing. An
    unsafe method additionally needs an allowed Origin and matching CSRF cookie
-   and header; the current overview itself is read-only.
+   and header.
 3. Runtime composition selects the sole profile and supplies the narrow
-   `MonthlyOverviewReader`; no HTTP value can change owner scope.
-4. `ReportingService` reads posted expenses, funding sources, taxonomy, and
-   budgets from PostgreSQL. Funding and category dimensions reconcile
-   independently and the response carries exact EUR minor units.
-5. TanStack Query renders Italian loading, error, empty, and result states.
-   ECharts displays the budget comparison, and the adjacent table exposes the
-   same exact values without requiring the chart.
+   `DashboardReader` and movement adapter; no HTTP value can change owner scope.
+4. `ReportingService` reads posted overview facts or every monthly lifecycle
+   state plus editor references from PostgreSQL. Both responses carry exact EUR
+   minor units, and the overview dimensions reconcile independently.
+5. A create, complete replacement, post, or cancel request is validated
+   strictly, bound to an idempotency key and observed version where applicable,
+   and delegated to `FinanceService`. Persistence changes aggregate and audit
+   state atomically; cancellation keeps the record as discarded or voided.
+6. TanStack Query renders Italian loading, error, empty, and result states and
+   invalidates both monthly reads after a successful write. ECharts and its
+   adjacent table expose the same overview values; the movement table retains
+   complete lifecycle and allocation facts.
 
-The adapter owns no state, mutation, model call, or receipt access. Other Step
-5 routes remain planned rather than implicit in this first slice.
+The adapters own no authoritative state, model call, or receipt access. Other
+Step 5 resources remain planned rather than implicit in these slices.
 
 ### Current authoritative backup and restore drill
 
@@ -1081,15 +1090,16 @@ preflight without coupling Telegram recovery to dashboard availability.
 - Callback and free-text follow-up map to explicit pending actions and workflow
   IDs instead of assuming one global chat thread.
 
-### Local web browser security contract (first slice implemented)
+### Local web browser security contract (implemented surface)
 
 - Typed configuration accepts only an IPv4 loopback listener, exact loopback
   Host names, exact HTTP origins, and an absolute compiled-asset directory.
 - Host validation occurs before routing to block DNS rebinding. A present Origin
   must match exactly, and the service emits no CORS permission headers.
 - Unsafe methods require an allowed Origin plus equal random values in an
-  HttpOnly, same-site cookie and the `X-CSRF-Token` header. The first monthly
-  endpoint is read-only; the middleware contract already covers later writes.
+  HttpOnly, same-site cookie and the `X-CSRF-Token` header. Movement mutations
+  additionally require `Idempotency-Key` and use optimistic versions for
+  existing aggregates.
 - API responses are `no-store`. CSP restricts content and connections to the
   same origin; framing, referrers, and MIME sniffing are disabled. Interactive API schema endpoints are absent.
 - Static serving exposes only the compiled index and asset directory. The API
@@ -1288,15 +1298,15 @@ environment file.
   EVD-004 Step 3 text-role promotion implemented; later roles remain gated.
 - [AD-013: Host runtime and encrypted backup](decisions/AD-013-local-runtime-and-backup.md):
   Compose topology, encrypted Restic backup, verification, retention, and the
-  isolated restore drill, accepted Step 4 host units, and initial Step 5 API unit
+  isolated restore drill, accepted Step 4 host units, and Step 5 API unit
   implemented; scheduling and the clean-machine restore remain planned.
 - [AD-011: Evaluation-gated receipt extraction](decisions/AD-011-receipt-extraction.md):
   private original-media boundary implemented; extractor evaluation and review
   workflow planned.
 - [AD-009: Local FastAPI and React web application](decisions/AD-009-local-web-application.md):
-  strict version-one finance wire contracts plus the first FastAPI/React monthly
-  slice, HTTP security, and host deployment implemented; remaining Step 5
-  resources and acceptance planned.
+  strict version-one finance wire contracts, monthly overview and manual
+  lifecycle slices, HTTP security, and host deployment implemented; remaining
+  Step 5 resources and acceptance planned.
 - [AD-014: Private content-addressed receipt archive](decisions/AD-014-private-receipt-archive.md):
   safe local adapter, versioned review state, and real filesystem/PostgreSQL
   integration implemented; administration CLI wiring and encrypted archive
@@ -1355,8 +1365,9 @@ Quantitative evaluation gates are maintained in
   but automatic scheduling, off-device secret verification, and a clean-machine
   restore remain later release work.
 - The real Telegram evidence uses a private test bot, not a production bot. The
-  Step 5 monthly dashboard has component and real PostgreSQL HTTP coverage but
-  still lacks complete browser E2E and installed-service acceptance.
+  Step 5 overview and movement workflows have component and real PostgreSQL HTTP
+  coverage but still lack complete browser E2E and installed-service
+  acceptance.
 
 ### Target architecture risks
 

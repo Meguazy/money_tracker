@@ -243,14 +243,15 @@ def test_post_rejects_inactive_or_cross_profile_references() -> None:
         draft.post(taxonomy=initial_taxonomy(), funding_sources=(other_profile,))
 
 
-def test_needs_review_transition_is_one_way_until_posting() -> None:
-    """Expose an incomplete draft for review and reject repeated transitions."""
+def test_needs_review_can_be_discarded_but_not_reentered() -> None:
+    """Allow owner cancellation while rejecting a repeated review transition."""
 
     draft, _ = _draft(category_amounts=(), payment_amounts=())
     review = draft.mark_needs_review()
     assert review.status is ExpenseStatus.NEEDS_REVIEW
     with pytest.raises(InvalidTransitionError, match="only a draft"):
         review.mark_needs_review()
+    assert review.discard().status is ExpenseStatus.DISCARDED
 
 
 def test_occurrence_time_and_original_refund_link_are_validated() -> None:

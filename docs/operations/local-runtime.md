@@ -1,6 +1,6 @@
 # Local Runtime
 
-- Status: Steps 1–4 runtime accepted; Step 5 API/dashboard slice implemented
+- Status: Steps 1–4 runtime accepted; Step 5 API/dashboard slices implemented
   with complete control-plane acceptance still in progress
 - Target platform: Ubuntu workstation, RTX 5070 Ti 16 GB VRAM
 
@@ -55,7 +55,7 @@ in this table:
 | Service | Host/container | Responsibility | Core? |
 | --- | --- | --- | --- |
 | Application PostgreSQL | Docker Compose | Implemented finance source of truth, audit, workflow checkpoints, and durable messaging queues | Yes |
-| FastAPI/UI service | Host systemd user service | Implemented same-origin health and monthly overview API plus compiled dashboard; remaining views planned | Yes during Step 5 |
+| FastAPI/UI service | Host systemd user service | Implemented same-origin health, monthly overview/register, audited manual lifecycle, and compiled dashboard; remaining views planned | Yes during Step 5 |
 | Telegram gateway | Host systemd user service | Accepted authorized long polling, durable ingest, safe file metadata, callback acknowledgement, outbox dispatch | Yes |
 | Workflow worker | Host systemd user service | Accepted sequential routing/workflow processing | Yes |
 | llama.cpp server | Host systemd user service | Implemented unit for local promoted text inference | Yes for agent work |
@@ -78,8 +78,8 @@ steady-state sequence is:
    dropping updates.
 3. llama.cpp loads the pinned model and exposes capability health.
 4. Workflow worker starts/retries and processes durable inbox work one at a time.
-5. FastAPI serves liveness, readiness, the monthly overview, and compiled UI;
-   the remaining control-plane operations arrive in later Step 5 slices.
+5. FastAPI serves liveness, readiness, monthly overview/register, manual
+   lifecycle mutations, and compiled UI; remaining operations arrive later.
 6. Langfuse starts only when the operator selects development/evaluation mode.
 
 The checked-in systemd user units use explicit working directories and

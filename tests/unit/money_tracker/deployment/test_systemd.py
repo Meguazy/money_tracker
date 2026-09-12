@@ -132,7 +132,9 @@ def test_installer_bootstraps_gateway_before_requiring_completed_pairing(
     (checkout / "frontend" / "dist" / "assets").mkdir(parents=True)
     (checkout / "frontend" / "dist" / "index.html").write_text("dashboard")
     for entrypoint in (
-        "money-tracker-api", "money-tracker-telegram", "money-tracker-worker"
+        "money-tracker-api",
+        "money-tracker-telegram",
+        "money-tracker-worker",
     ):
         path = checkout / ".venv" / "bin" / entrypoint
         path.write_text("#!/usr/bin/env bash\nexit 0\n")

@@ -1187,6 +1187,39 @@ class PostgresFinanceRepository:
             version=row[5],
         )
 
+    def get_expenses(
+        self,
+        profile_id: UUID,
+        *,
+        period: YearMonth,
+    ) -> tuple[Expense, ...]:
+        """Load every movement state whose occurrence falls in one month.
+
+        This control-plane read intentionally includes terminal and incomplete
+        states that analytics exclude. Filtering remains in PostgreSQL so a
+        browser request never loads the owner's full history.
+
+        Args:
+            profile_id: Trusted owner scope.
+            period: Rome calendar month to inspect.
+
+        Returns:
+            Reconstructed aggregates newest first, with a stable identifier
+            tie-breaker.
+        """
+
+        start, end = period.bounds()
+        with connect(self._database_url) as connection:
+            rows = connection.execute(
+                "SELECT id FROM finance.expenses WHERE profile_id = %s "
+                "AND occurred_at >= %s AND occurred_at < %s "
+                "ORDER BY occurred_at DESC, id DESC",
+                (profile_id, start, end),
+            ).fetchall()
+            return tuple(
+                self._load_expense(connection, profile_id, row[0]) for row in rows
+            )
+
     def get_posted_expenses(
         self,
         profile_id: UUID,

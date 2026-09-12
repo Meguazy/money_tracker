@@ -9,13 +9,15 @@ from collections.abc import Sequence
 import uvicorn
 from psycopg import Error as PsycopgError
 
-from money_tracker.application import ReportingService
+from money_tracker.application import FinanceService, ReportingService
+from money_tracker.application.runtime import SystemClock, UUID4Generator
 from money_tracker.logging_safety import configure_safe_logging
 from money_tracker.persistence.database import database_url_from_env
 from money_tracker.persistence.finance import PostgresFinanceRepository
 from money_tracker.process_exit import exit_code_for, failure_reason
 from money_tracker.web.app import create_app
 from money_tracker.web.config import WebSettings
+from money_tracker.web.mutations import ExpenseMutationAdapter
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -51,10 +53,19 @@ def main(argv: Sequence[str] | None = None) -> None:
                 "the web service requires exactly one active owner profile"
             )
         profile_id = profiles[0]
+        ids = UUID4Generator()
         app = create_app(
             settings=settings,
             profile_id=profile_id,
             reporting=ReportingService(repository),
+            mutations=ExpenseMutationAdapter(
+                FinanceService(
+                    repository,
+                    clock=SystemClock(),
+                    ids=ids,
+                ),
+                ids=ids,
+            ),
             readiness_check=lambda: repository.profile_exists(profile_id),
         )
         uvicorn.run(

@@ -132,6 +132,27 @@ class MonthlyOverview:
     unbudgeted_category_names: tuple[str, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class TransactionRegister:
+    """Control-plane movements and their display references for one month.
+
+    Unlike analytics, the register retains draft, needs-review, voided, and
+    discarded records so the owner can understand and operate the complete
+    lifecycle. It owns no data and grants no mutation authority.
+
+    Attributes:
+        period: Rome calendar month selected by the owner.
+        expenses: Complete aggregates ordered newest first by persistence.
+        taxonomy: Category names needed to render stable allocation IDs.
+        funding_sources: Funding-source names needed to render payment IDs.
+    """
+
+    period: YearMonth
+    expenses: tuple[Expense, ...]
+    taxonomy: Taxonomy
+    funding_sources: tuple[FundingSource, ...]
+
+
 class ReportingService:
     """Execute the read-only tools the bounded agent routes may call."""
 
@@ -317,6 +338,29 @@ class ReportingService:
             unbudgeted_category_names=risks.unbudgeted_category_names,
         )
 
+    def transaction_register(
+        self,
+        *,
+        profile_id: UUID,
+        period: YearMonth,
+    ) -> TransactionRegister:
+        """Return every movement state and its display references for a month.
+
+        Args:
+            profile_id: Trusted owner scope supplied by runtime composition.
+            period: Rome calendar month to inspect.
+
+        Returns:
+            Complete movement lifecycle records plus category and funding names.
+        """
+
+        return TransactionRegister(
+            period=period,
+            expenses=self._repository.get_expenses(profile_id, period=period),
+            taxonomy=self._repository.get_taxonomy(profile_id),
+            funding_sources=self._repository.get_funding_sources(profile_id),
+        )
+
     @staticmethod
     def _period_split_from(
         period: YearMonth,
@@ -420,4 +464,5 @@ __all__ = [
     "MonthlyOverview",
     "PeriodSplit",
     "ReportingService",
+    "TransactionRegister",
 ]

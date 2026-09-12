@@ -84,11 +84,13 @@ Build the locked frontend, then run the same-origin production service:
     cd ..
     uv run --env-file .env money-tracker-api run
 
-The current Step 5 slice serves `http://127.0.0.1:8000/`, the monthly overview
-endpoint, and content-free health endpoints. It requires exactly one profile.
+The current Step 5 slices serve `http://127.0.0.1:8000/`, the monthly overview,
+`/movimenti`, the monthly transaction register, audited manual lifecycle
+mutations, and content-free health endpoints. They require exactly one profile.
 The complete configuration, browser protections, systemd procedure, and real
-PostgreSQL test are in [Local Web Operations](operations/web.md). Other control
-plane views and mutations remain unimplemented.
+PostgreSQL workflow test are in [Local Web Operations](operations/web.md).
+Split-allocation editing and the remaining control-plane views are still
+unimplemented.
 
 ## Bootstrapping the owner profile
 

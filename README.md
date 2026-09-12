@@ -5,10 +5,11 @@ LangChain, LangGraph, llama.cpp, PostgreSQL, and self-hosted observability.
 Steps 0–4 are complete: the repository contains the deterministic finance
 domain, PostgreSQL persistence, evaluated text workflows, durable private-owner
 Telegram channel, encrypted backup, and reboot/fault acceptance. Step 5 is in
-progress. Its first slice provides a protected loopback FastAPI host and an
-accessible monthly React overview; the remaining dashboard views, mutations,
-analytics, advice surface, receipt extraction, and release hardening remain
-open.
+progress. Its implemented slices provide a protected loopback FastAPI host,
+accessible monthly overview and transaction register, and audited manual
+movement creation, correction, registration, and cancellation. The remaining
+dashboard views, wider analytics, advice surface, receipt extraction, and
+release hardening remain open.
 
 ## Current scaffold quick start
 
@@ -44,13 +45,14 @@ local server running:
 The same dispatcher now runs behind the accepted durable Telegram gateway and
 worker. Pairing, recovery, and real-bot evidence are in the Telegram runbook.
 
-Build and run the implemented monthly dashboard:
+Build and run the implemented local dashboard:
 
     cd frontend && npm ci && npm run build && cd ..
     uv run --env-file .env money-tracker-api run
 
-Then open `http://127.0.0.1:8000/`. See the local web runbook for the exact
-browser security and systemd contract.
+Then open `http://127.0.0.1:8000/` for the monthly overview or
+`http://127.0.0.1:8000/movimenti` for the transaction register. See the local
+web runbook for the exact browser security and systemd contract.
 
 With Restic and matching PostgreSQL client tools installed and an external
 repository configured, create a verified encrypted backup of the authoritative

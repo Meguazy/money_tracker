@@ -68,6 +68,7 @@ export type Transaction = {
     provenance: string;
     evidence: string | null;
     owner_override: boolean;
+    receipt_line_id: string | null;
   }>;
   payment_allocations: Array<{
     funding_source_id: string;
@@ -94,7 +95,9 @@ export type ExpenseInput = {
     category_id: string;
     amount: Money;
     provenance: string;
+    evidence?: string | null;
     owner_override: boolean;
+    receipt_line_id?: string | null;
   }>;
   payment_allocations: Array<{
     funding_source_id: string;

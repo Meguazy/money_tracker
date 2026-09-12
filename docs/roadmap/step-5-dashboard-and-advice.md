@@ -4,11 +4,12 @@ Part of the [delivery roadmap](../roadmap.md).
 
 Status: **In progress (2026-09-12).** The implemented vertical slices provide
 the loopback same-origin host, deterministic monthly overview and transaction
-register, accessible React shell, and audited manual create, correct, post, and
-cancel workflows. The remaining control-plane views, wider analytics, advice
-surface, split-allocation editor, and complete browser E2E acceptance are still
-open. No model, prompt, routing threshold, tool contract, or taxonomy policy
-changed, so EVD-004 remains the promoted text baseline.
+register, accessible React shell, audited manual create, correct, post, and
+cancel workflows, and the multi-allocation editor for both reconciling
+dimensions. The remaining control-plane views, wider analytics, advice surface,
+and complete browser E2E acceptance are still open. No model, prompt, routing
+threshold, tool contract, or taxonomy policy changed, so EVD-004 remains the
+promoted text baseline.
 
 ## Deliverables
 
@@ -92,18 +93,60 @@ changed, so EVD-004 remains the promoted text baseline.
   registration and cancellation controls; lifecycle, allocation and reference
   facts; loading, empty, failure and retry states; and exact string-to-cent
   conversion without binary floating-point arithmetic. The first editor
-  intentionally supports one category and one funding source, while the API and
-  register preserve arbitrary reconciled allocation sets.
+  intentionally supported one category and one funding source, while the API and
+  register preserved arbitrary reconciled allocation sets. The slice below
+  removed that limit.
 - Unit/component tests cover the register, strict browser boundary, deep link,
   accessible manual form, exact cents, lifecycle actions, and failure recovery.
   A real PostgreSQL HTTP integration test creates, replays, corrects, posts,
   replays, reads, voids, and verifies the resulting monthly total.
 
+### Multi-allocation editor slice (2026-09-12)
+
+- The `/movimenti` editor now holds both reconciling dimensions as independent
+  row lists. The owner adds and removes category and funding-source rows, and
+  each dimension reports its own exact sum, its own difference from the total,
+  and its own errors, because AD-007 reconciles the two dimensions separately
+  rather than against each other.
+- Sums use `BigInt` over the already exact parsed cents, so no split is decided
+  by binary floating-point arithmetic, and a restored amount is rendered from
+  integer digits instead of a division.
+- A correction loads every stored allocation. A row whose category the owner
+  does not change keeps its `provenance`, `evidence`, and `owner_override`,
+  so a workflow classification is not silently relabelled as an owner
+  decision. A recategorized row takes owner provenance but keeps its
+  `receipt_line_id`: that field records which purchased line the money came
+  from, which recategorizing does not change.
+- `TransactionCategoryAllocationContract` therefore exposes `receipt_line_id`.
+  It is a stable allocation-scoped identifier, not a private media path, and
+  the register still returns no profile, source reference, or receipt bytes.
+- Editing rows offer only active references. An archived category or funding
+  source appears solely in the historical row that already uses it, as a
+  disabled option with a named warning, so existing history stays readable
+  while a new allocation cannot select a reference the domain refuses when the
+  movement is posted.
+- The form refuses a duplicate reference, an allocation whose sign differs from
+  the total, an unparseable amount, and a dimension left without rows, which a
+  `needs_review` draft carrying no resolved category legitimately reaches.
+  Native validation reports an empty control, and the alert list reports what
+  it cannot.
+- Component tests cover the exact two-by-two create, complete correction
+  preservation, metadata replacement on a recategorized row, separate
+  reconciliation errors, duplicates, wrong signs, invalid amounts, the
+  category-less review draft, archived references, keyboard row removal, and
+  API failure recovery. A web unit test pins the exact split contract including
+  `receipt_line_id`.
+- A real PostgreSQL HTTP test creates a two-category and two-source movement,
+  reads back both exact dimensions, keeps an unreconciled draft editable while
+  refusing to post it, refuses an unreconciled correction of a posted movement,
+  rewrites the split into three categories and two sources, and verifies through
+  the real `FinanceService` and `PostgresFinanceRepository` that the stored
+  allocations and the monthly personal/benefit split match exactly.
+
 ### Work still required before completion
 
-- Add visual editing of multiple allocations, then receipt metadata/review,
-  taxonomy proposals, budgets, funding sources/wallets, messaging operations,
-  and settings views.
+- Add receipt metadata/review, taxonomy proposals, budgets, funding
+  sources/wallets, messaging operations, and settings views.
 - Extend deterministic reads from the current month to day, ISO week, year,
   comparison, and validated custom ranges, retaining purpose and funding
   breakdowns.

@@ -6,7 +6,7 @@
   capability evaluation, profile-scoped receipt storage, one-shot Step 3
   dispatch, durable Telegram gateway/worker, pairing,
   health/replay/resend/latency, the local monthly dashboard/API, manual movement
-  lifecycle, and checked-in host service units
+  lifecycle with multi-allocation editing, and checked-in host service units
 - Implemented Step 2: authoritative finance schema and transactional
   expense, wallet, budget, pending category-proposal, and versioned receipt-review
   repository operations, a safe local receipt-media adapter, and verified
@@ -65,9 +65,10 @@ the referenced file or entry point exists in the repository.
   replay, Italian response rendering, and host unit templates passed real owner
   workflows, restart/reboot, latency, and fault acceptance on 2026-09-11.
 - The FastAPI process, monthly overview and transaction endpoints, compiled
-  React overview/register, audited manual lifecycle, local browser controls,
-  and API user-service template are implemented. Split-allocation editing,
-  other Step 5 views, and full browser acceptance remain open.
+  React overview/register, audited manual lifecycle, multi-allocation editing
+  of both reconciling dimensions, local browser controls, and API user-service
+  template are implemented. The other Step 5 views and full browser acceptance
+  remain open.
 - Langfuse 4.26.0 and every dependency are pinned by digest. The non-cluster
   repair and health checks pass with the pre-existing volumes preserved.
 - Installed model paths remain workstation-owned and outside the repository.

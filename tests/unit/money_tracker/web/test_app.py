@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import cast
 from uuid import UUID, uuid4
+from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -15,10 +17,14 @@ from money_tracker.application.ports import IdGenerator
 from money_tracker.domain import (
     BalanceMode,
     BudgetStatus,
+    CategoryAllocation,
+    Expense,
+    ExpenseStatus,
     FundingClass,
     FundingClassSplit,
     FundingSource,
     Money,
+    PaymentAllocation,
     YearMonth,
     initial_taxonomy,
 )
@@ -28,6 +34,10 @@ from money_tracker.web.mutations import ExpenseMutationAdapter, ExpenseWriter
 PROFILE_ID = uuid4()
 PERIOD = YearMonth(2026, 9)
 ORIGIN = "http://localhost:8000"
+ROME = ZoneInfo("Europe/Rome")
+EXPENSE_ID = UUID("00000000-0000-0000-0000-000000000301")
+SOURCE_ID = UUID("00000000-0000-0000-0000-000000000201")
+RECEIPT_LINE_ID = UUID("00000000-0000-0000-0000-000000000401")
 
 
 @dataclass
@@ -78,15 +88,59 @@ class OverviewReader:
         profile_id: UUID,
         period: YearMonth,
     ) -> TransactionRegister:
-        """Return an empty lifecycle register with the real baseline taxonomy."""
+        """Return one split movement over the real baseline taxonomy."""
 
         self.requested_profile = profile_id
         self.requested_period = period
+        taxonomy = initial_taxonomy()
+        food = taxonomy.resolve_active("Spesa alimentare")
+        home = taxonomy.resolve_active("Prodotti casa, arredo e manutenzione")
+        source = FundingSource(
+            id=SOURCE_ID,
+            profile_id=profile_id,
+            name="Carta",
+            funding_class=FundingClass.PERSONAL_FUNDS,
+            balance_mode=BalanceMode.UNTRACKED,
+            is_default=True,
+        )
         return TransactionRegister(
             period=period,
-            expenses=(),
-            taxonomy=initial_taxonomy(),
-            funding_sources=(),
+            expenses=(
+                Expense(
+                    id=EXPENSE_ID,
+                    profile_id=profile_id,
+                    amount=Money(5000),
+                    occurred_at=datetime(2026, 9, 12, 10, 30, tzinfo=ROME),
+                    description="Spesa mista",
+                    merchant="Mercato",
+                    status=ExpenseStatus.DRAFT,
+                    category_allocations=(
+                        CategoryAllocation(
+                            category_id=food.id,
+                            amount=Money(3000),
+                            provenance="workflow-category-fit:v6",
+                            evidence="pesche",
+                            receipt_line_id=RECEIPT_LINE_ID,
+                        ),
+                        CategoryAllocation(
+                            category_id=home.id,
+                            amount=Money(2000),
+                            provenance="owner:web:v1",
+                            owner_override=True,
+                        ),
+                    ),
+                    payment_allocations=(
+                        PaymentAllocation(
+                            funding_source_id=source.id,
+                            amount=Money(5000),
+                        ),
+                    ),
+                    source_reference="web:unit",
+                    idempotency_key="web:unit",
+                ),
+            ),
+            taxonomy=taxonomy,
+            funding_sources=(source,),
         )
 
 
@@ -176,13 +230,53 @@ def test_transaction_register_uses_trusted_scope_and_safe_references() -> None:
 
     assert response.status_code == 200
     assert response.json()["period"] == {"year": 2026, "month": 9}
-    assert response.json()["transactions"] == []
     assert response.json()["categories"]
-    assert response.json()["funding_sources"] == []
+    assert [source["name"] for source in response.json()["funding_sources"]] == [
+        "Carta"
+    ]
     assert reader.requested_profile == PROFILE_ID
     assert reader.requested_period == PERIOD
     assert "profile_id" not in response.text
     assert "source_reference" not in response.text
+
+
+def test_split_allocations_keep_exact_cents_and_their_receipt_line() -> None:
+    """Give the editor every allocation with the metadata a correction must keep."""
+
+    taxonomy = initial_taxonomy()
+    home = taxonomy.resolve_active("Prodotti casa, arredo e manutenzione")
+
+    response = _client(_app()).get("/api/v1/transactions?period=2026-09")
+
+    transaction = response.json()["transactions"][0]
+    assert transaction["amount"] == {"minor_units": 5000, "currency": "EUR"}
+    assert transaction["category_allocations"] == [
+        {
+            "category_id": str(taxonomy.resolve_active("Spesa alimentare").id),
+            "category_name": "Spesa alimentare",
+            "amount": {"minor_units": 3000, "currency": "EUR"},
+            "provenance": "workflow-category-fit:v6",
+            "evidence": "pesche",
+            "owner_override": False,
+            "receipt_line_id": str(RECEIPT_LINE_ID),
+        },
+        {
+            "category_id": str(home.id),
+            "category_name": "Prodotti casa, arredo e manutenzione",
+            "amount": {"minor_units": 2000, "currency": "EUR"},
+            "provenance": "owner:web:v1",
+            "evidence": None,
+            "owner_override": True,
+            "receipt_line_id": None,
+        },
+    ]
+    assert transaction["payment_allocations"] == [
+        {
+            "funding_source_id": str(SOURCE_ID),
+            "funding_source_name": "Carta",
+            "amount": {"minor_units": 5000, "currency": "EUR"},
+        }
+    ]
 
 
 def test_invalid_period_returns_a_bounded_problem() -> None:

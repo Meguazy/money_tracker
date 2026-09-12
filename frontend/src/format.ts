@@ -23,6 +23,24 @@ export function parseEuroToMinorUnits(value: string): number | null {
   return Number.isSafeInteger(result) && result !== 0 ? result : null;
 }
 
+function exactEuroDigits(minorUnits: bigint): string {
+  const sign = minorUnits < 0n ? "-" : "";
+  const absolute = minorUnits < 0n ? -minorUnits : minorUnits;
+  const digits = absolute.toString().padStart(3, "0");
+  return `${sign}${digits.slice(0, -2)},${digits.slice(-2)}`;
+}
+
+export function minorUnitsToEuroInput(minorUnits: number): string {
+  if (!Number.isSafeInteger(minorUnits)) {
+    throw new Error("L'importo non è rappresentabile in centesimi esatti.");
+  }
+  return exactEuroDigits(BigInt(minorUnits));
+}
+
+export function formatExactEuro(minorUnits: bigint): string {
+  return `${exactEuroDigits(minorUnits)} €`;
+}
+
 export function formatOccurredAt(value: string): string {
   return occurredAt.format(new Date(value));
 }

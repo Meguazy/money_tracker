@@ -1,17 +1,17 @@
 # Local Web Operations
 
-- Status: Step 5 overview and manual-movement slices implemented; complete control plane and
-  release acceptance still in progress
+- Status: Step 5 overview, manual-movement, and multi-allocation editing slices
+  implemented; complete control plane and release acceptance still in progress
 - Binding decision: [AD-009](../arc42/decisions/AD-009-local-web-application.md)
 - Delivery evidence: [Step 5](../roadmap/step-5-dashboard-and-advice.md)
 
 The implemented local service serves one compiled React application and its
 versioned JSON API from the same origin. It provides the monthly overview,
-complete monthly transaction register, manual movement lifecycle, liveness,
-readiness, and CSRF bootstrap endpoints. Receipt review, taxonomy, budgets and
-wallet administration, messaging operations, settings, wider date ranges,
-split-allocation editing, and advice remain Step 5 work and must not be
-described as available.
+complete monthly transaction register, manual movement lifecycle with
+multi-allocation editing, liveness, readiness, and CSRF bootstrap endpoints.
+Receipt review, taxonomy, budgets and wallet administration, messaging
+operations, settings, wider date ranges, and advice remain Step 5 work and must
+not be described as available.
 
 ## Ownership and boundaries
 
@@ -45,10 +45,18 @@ With the application database migrated and exactly one profile present, run:
     uv run --env-file .env money-tracker-api run
 
 Open `http://127.0.0.1:8000/` or `http://localhost:8000/` for the overview;
-use `/movimenti` for the register and manual lifecycle. The editor supports one
-category and one funding source per edit; it displays but deliberately refuses
-to flatten existing split allocations. Do not publish or forward this port. V1
-has no login, TLS, LAN listener, or remote-access threat model.
+use `/movimenti` for the register and manual lifecycle. The editor adds and
+removes category and funding-source rows, reconciles each dimension against the
+total separately, and shows each sum and its difference in exact cents. An
+archived category or funding source can never be selected: it appears as a
+disabled option only in the historical row that already uses it. Do not publish
+or forward this port. V1 has no login, TLS, LAN listener, or remote-access
+threat model.
+
+A movement that reaches the editor without a resolved category, such as a draft
+left for review, opens with no category row. Add one before saving: the form
+refuses an empty dimension, a duplicate reference, an amount whose sign differs
+from the total, and any split that does not reconcile.
 
 For frontend development, keep the API on port 8000 and run Vite separately:
 
@@ -137,8 +145,16 @@ The isolated real-PostgreSQL HTTP check is:
     RUN_POSTGRES_INTEGRATION_TESTS=1 uv run --env-file .env pytest -q \
       tests/integration/money_tracker/web/test_api.py
 
-This test covers exact monthly reads and the real create/replay/correct/post/
-replay/void lifecycle. It uses isolated identifiers and cleans up its schemas.
+This test covers exact monthly reads, the real create/replay/correct/post/
+replay/void lifecycle, and a multi-category multi-source movement: its exact
+split is read back, an unreconciled draft stays editable but cannot be
+registered, an unreconciled correction of a posted movement is refused, and the
+rewritten split is verified in PostgreSQL. It uses isolated identifiers and
+cleans up its schemas.
+
+A draft may legitimately be unreconciled, so both allocation dimensions are
+enforced when a movement is registered, not while it is still being edited.
+Registering an unreconciled movement returns a bounded 422 and changes nothing.
 
 To withdraw the web surface, stop and disable only
 `money-tracker-api.service`. No migration rollback is needed. Manual movements

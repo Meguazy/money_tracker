@@ -230,6 +230,38 @@ body {
     linear-gradient(135deg, rgb(255 253 250 / 98%), rgb(248 242 228 / 98%));
 }
 
+.allocation-fieldset {
+  border: 1px solid rgb(23 40 56 / 14%);
+  border-radius: 0.9rem;
+  background: rgb(255 253 250 / 70%);
+}
+
+.allocation-fieldset legend {
+  color: #172838;
+  font-size: 0.85rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.allocation-row {
+  border: 1px solid rgb(23 40 56 / 10%);
+  background: #fffdfa;
+}
+
+.allocation-row:focus-within {
+  border-color: #efb34c;
+  box-shadow: 0 0 0 2px rgb(239 179 76 / 35%);
+}
+
+.form-errors {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.form-errors li + li {
+  margin-top: 0.35rem;
+}
+
 .transaction-table td {
   vertical-align: top;
 }
@@ -263,6 +295,15 @@ body {
 
   .brand-note {
     display: none;
+  }
+
+  .allocation-fieldset {
+    padding-right: 0.75rem;
+    padding-left: 0.75rem;
+  }
+
+  .allocation-row {
+    padding: 0.65rem;
   }
 }
 

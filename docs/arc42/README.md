@@ -28,10 +28,11 @@ workflow, authorization, latency, fault, and reboot acceptance on 2026-09-11.
 
 Step 5 is active. Its implemented slices provide the loopback FastAPI host,
 monthly overview and transaction register, audited manual create/correct/post/
-cancel workflows, compiled React shell, browser security policy, and host unit.
-Split-allocation editing, remaining control-plane views, wider analytics, advice
-exposure, and browser E2E acceptance are still planned within Step 5. Receipt
-extraction remains assigned to Step 6.
+cancel workflows, the multi-allocation editor for both reconciling dimensions,
+compiled React shell, browser security policy, and host unit. The remaining
+control-plane views, wider analytics, advice exposure, and browser E2E
+acceptance are still planned within Step 5. Receipt extraction remains assigned
+to Step 6.
 
 ### Quality goals
 
@@ -280,7 +281,7 @@ catalog is promoted; every identifier carries a `candidate-` prefix.
 | Workflow dispatcher, root router, and text specialists (implemented) | Route one intent and coordinate expense/refund, correction/undo, category review, query, or advice | Typed normalized work unit/outcome, versioned schemas, scoped tool registries, trusted correlations | Namespaced checkpoint references and workflow IDs; no domain ownership | Administration CLI and worker; mutation paths call replay-safe application services |
 | Telegram Bot API transport (implemented) | Validate the bot, long poll, obtain file metadata, acknowledge callbacks, and deliver outbox messages | Bounded HTTPS client and messaging services | No authoritative finance data or correctness state | Gateway host service; separate production/test token selected from a private environment file |
 | FastAPI adapter (partial) | Expose monthly overview/register, manual lifecycle, health, CSRF bootstrap, compiled UI, and later REST resources | Narrow reporting and finance ports | No independent data | Implemented on loopback with Host/Origin, CSRF, idempotency, optimistic concurrency, and bounded errors |
-| React dashboard (partial) | Display the overview and transaction register, edit the single-allocation manual lifecycle, and later edit review, budget, wallet and operational state | Same-origin REST API | Browser session/UI state only | Compiled static assets; no secrets; labelled controls, lifecycle history, and accessible chart table alternative |
+| React dashboard (partial) | Display the overview and transaction register, edit the multi-allocation manual lifecycle, and later edit review, budget, wallet and operational state | Same-origin REST API | Browser session/UI state only | Compiled static assets; no secrets; labelled controls, lifecycle history, and accessible chart table alternative |
 | Local model gateway | Provide typed chat, schema and tool capabilities | OpenAI-compatible local endpoint | No persistent domain data | Replaceable host inference process |
 | Receipt extractor adapter | Produce a versioned structured receipt draft | Selected local OCR/VLM pipeline | No authoritative data until validated | Local-only; selection remains evaluation-gated |
 | Langfuse adapter | Record redacted traces and experiment scores | Local Langfuse SDK | Observability copies, not source of truth | Optional development/evaluation profile |
@@ -1304,9 +1305,9 @@ environment file.
   private original-media boundary implemented; extractor evaluation and review
   workflow planned.
 - [AD-009: Local FastAPI and React web application](decisions/AD-009-local-web-application.md):
-  strict version-one finance wire contracts, monthly overview and manual
-  lifecycle slices, HTTP security, and host deployment implemented; remaining
-  Step 5 resources and acceptance planned.
+  strict version-one finance wire contracts, monthly overview, manual
+  lifecycle and multi-allocation editing slices, HTTP security, and host
+  deployment implemented; remaining Step 5 resources and acceptance planned.
 - [AD-014: Private content-addressed receipt archive](decisions/AD-014-private-receipt-archive.md):
   safe local adapter, versioned review state, and real filesystem/PostgreSQL
   integration implemented; administration CLI wiring and encrypted archive

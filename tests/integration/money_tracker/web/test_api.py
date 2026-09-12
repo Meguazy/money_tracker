@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from hashlib import sha256
-from uuid import uuid4
+from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -283,3 +283,233 @@ def test_manual_expense_workflow_is_replay_safe_and_visible(
         ]
         == 0
     )
+
+
+@pytest.mark.postgres
+def test_multi_allocation_movement_survives_correction_in_real_postgresql(
+    postgres_url: str,
+) -> None:
+    """Split both dimensions, refuse unreconciled posting, and persist a rewrite."""
+
+    upgrade_database(postgres_url)
+    repository = PostgresFinanceRepository(postgres_url)
+    profile = Profile(uuid4())
+    now = SystemClock().now()
+    taxonomy = initial_taxonomy()
+    repository.bootstrap_profile(profile, taxonomy=taxonomy, occurred_at=now)
+    food = taxonomy.resolve_active("Spesa alimentare")
+    home = taxonomy.resolve_active("Prodotti casa, arredo e manutenzione")
+    dining = taxonomy.resolve_active("Bar, ristoranti e asporto")
+    card = FundingSource(
+        id=uuid4(),
+        profile_id=profile.id,
+        name="Carta split web",
+        funding_class=FundingClass.PERSONAL_FUNDS,
+        balance_mode=BalanceMode.UNTRACKED,
+        is_default=True,
+    )
+    vouchers = FundingSource(
+        id=uuid4(),
+        profile_id=profile.id,
+        name="Buoni pasto split web",
+        funding_class=FundingClass.BENEFIT,
+        balance_mode=BalanceMode.UNTRACKED,
+    )
+    repository.create_funding_source(card, occurred_at=now)
+    repository.create_funding_source(vouchers, occurred_at=now)
+    ids = UUID4Generator()
+    app = create_app(
+        settings=WebSettings(static_dir=None),
+        profile_id=profile.id,
+        reporting=ReportingService(repository),
+        mutations=ExpenseMutationAdapter(
+            FinanceService(repository, clock=SystemClock(), ids=ids),
+            ids=ids,
+        ),
+        readiness_check=lambda: repository.profile_exists(profile.id),
+    )
+    client = TestClient(app, base_url="http://localhost:8000")
+    csrf = client.get(
+        "/api/v1/csrf",
+        headers={"origin": "http://localhost:8000"},
+    ).json()["token"]
+
+    def mutation_headers(command_key: str) -> dict[str, str]:
+        """Return the exact browser mutation boundary headers."""
+
+        return {
+            "origin": "http://localhost:8000",
+            "x-csrf-token": csrf,
+            "Idempotency-Key": command_key,
+        }
+
+    created = client.post(
+        "/api/v1/expenses",
+        json={
+            "amount": {"minor_units": 5000, "currency": "EUR"},
+            "occurred_at": "2026-09-12T13:00:00+02:00",
+            "description": "Spesa mista",
+            "merchant": "Mercato",
+            "category_allocations": [
+                {
+                    "category_id": str(food.id),
+                    "amount": {"minor_units": 3000, "currency": "EUR"},
+                    "provenance": "owner:web:v1",
+                    "owner_override": True,
+                },
+                {
+                    "category_id": str(home.id),
+                    "amount": {"minor_units": 2000, "currency": "EUR"},
+                    "provenance": "owner:web:v1",
+                    "owner_override": True,
+                },
+            ],
+            "payment_allocations": [
+                {
+                    "funding_source_id": str(vouchers.id),
+                    "amount": {"minor_units": 3000, "currency": "EUR"},
+                },
+                {
+                    "funding_source_id": str(card.id),
+                    "amount": {"minor_units": 2000, "currency": "EUR"},
+                },
+            ],
+        },
+        headers=mutation_headers("integration-web-split-create"),
+    )
+
+    assert created.status_code == 201
+    expense_id = created.json()["id"]
+
+    register = client.get(
+        "/api/v1/transactions?period=2026-09",
+        headers={"origin": "http://localhost:8000"},
+    )
+    transaction = register.json()["transactions"][0]
+    assert len(transaction["category_allocations"]) == 2
+    assert {
+        item["category_name"]: item["amount"]["minor_units"]
+        for item in transaction["category_allocations"]
+    } == {"Spesa alimentare": 3000, "Prodotti casa, arredo e manutenzione": 2000}
+    assert len(transaction["payment_allocations"]) == 2
+    assert {
+        item["funding_source_name"]: item["amount"]["minor_units"]
+        for item in transaction["payment_allocations"]
+    } == {"Buoni pasto split web": 3000, "Carta split web": 2000}
+    assert all(
+        item["receipt_line_id"] is None for item in transaction["category_allocations"]
+    )
+
+    unreconciled = {
+        "amount": {"minor_units": 6000, "currency": "EUR"},
+        "occurred_at": "2026-09-12T13:00:00+02:00",
+        "description": "Ripartizione non riconciliata",
+        "merchant": "Mercato",
+        "category_allocations": [
+            {
+                "category_id": str(food.id),
+                "amount": {"minor_units": 2500, "currency": "EUR"},
+                "provenance": "owner:web:v1",
+                "owner_override": True,
+            }
+        ],
+        "payment_allocations": [
+            {
+                "funding_source_id": str(card.id),
+                "amount": {"minor_units": 6000, "currency": "EUR"},
+            }
+        ],
+        "expected_version": 1,
+    }
+    drafted = client.put(
+        f"/api/v1/expenses/{expense_id}",
+        json=unreconciled,
+        headers=mutation_headers("integration-web-split-draft-mismatch"),
+    )
+    refused_posting = client.post(
+        f"/api/v1/expenses/{expense_id}/post",
+        json={"expected_version": 2, "receipt_approved": False},
+        headers=mutation_headers("integration-web-split-refused-post"),
+    )
+
+    assert drafted.status_code == 200
+    assert drafted.json()["version"] == 2
+    assert refused_posting.status_code == 422
+    assert refused_posting.json()["code"] == "expense_invalid"
+    assert repository.get_expense(profile.id, UUID(expense_id)).status.value == "draft"
+
+    corrected = client.put(
+        f"/api/v1/expenses/{expense_id}",
+        json={
+            "amount": {"minor_units": 6000, "currency": "EUR"},
+            "occurred_at": "2026-09-12T13:00:00+02:00",
+            "description": "Spesa mista corretta",
+            "merchant": "Mercato",
+            "category_allocations": [
+                {
+                    "category_id": str(food.id),
+                    "amount": {"minor_units": 2500, "currency": "EUR"},
+                    "provenance": "owner:web:v1",
+                    "owner_override": True,
+                },
+                {
+                    "category_id": str(home.id),
+                    "amount": {"minor_units": 2500, "currency": "EUR"},
+                    "provenance": "owner:web:v1",
+                    "owner_override": True,
+                },
+                {
+                    "category_id": str(dining.id),
+                    "amount": {"minor_units": 1000, "currency": "EUR"},
+                    "provenance": "owner:web:v1",
+                    "owner_override": True,
+                },
+            ],
+            "payment_allocations": [
+                {
+                    "funding_source_id": str(vouchers.id),
+                    "amount": {"minor_units": 1000, "currency": "EUR"},
+                },
+                {
+                    "funding_source_id": str(card.id),
+                    "amount": {"minor_units": 5000, "currency": "EUR"},
+                },
+            ],
+            "expected_version": 2,
+        },
+        headers=mutation_headers("integration-web-split-correct"),
+    )
+
+    assert corrected.status_code == 200
+    assert corrected.json()["version"] == 3
+
+    posted = client.post(
+        f"/api/v1/expenses/{expense_id}/post",
+        json={"expected_version": 3, "receipt_approved": False},
+        headers=mutation_headers("integration-web-split-post"),
+    )
+    assert posted.status_code == 200
+    assert posted.json()["status"] == "posted"
+
+    refused_correction = client.put(
+        f"/api/v1/expenses/{expense_id}",
+        json={**unreconciled, "expected_version": posted.json()["version"]},
+        headers=mutation_headers("integration-web-split-posted-mismatch"),
+    )
+    assert refused_correction.status_code == 422
+    assert refused_correction.json()["code"] == "expense_invalid"
+
+    stored = repository.get_expense(profile.id, UUID(expense_id))
+    assert {
+        item.category_id: item.amount.minor_units
+        for item in stored.category_allocations
+    } == {food.id: 2500, home.id: 2500, dining.id: 1000}
+    assert {
+        item.funding_source_id: item.amount.minor_units
+        for item in stored.payment_allocations
+    } == {vouchers.id: 1000, card.id: 5000}
+
+    overview = client.get("/api/v1/overview/monthly?period=2026-09").json()
+    assert overview["posted_total"]["minor_units"] == 6000
+    assert overview["funding_split"]["personal_funds"]["minor_units"] == 5000
+    assert overview["funding_split"]["benefit"]["minor_units"] == 1000

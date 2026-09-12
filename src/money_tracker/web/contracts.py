@@ -157,6 +157,7 @@ class TransactionCategoryAllocationContract(_WebContract):
     provenance: str
     evidence: str | None
     owner_override: bool
+    receipt_line_id: UUID | None
 
 
 class TransactionPaymentAllocationContract(_WebContract):
@@ -206,6 +207,7 @@ class TransactionContract(_WebContract):
                     provenance=item.provenance,
                     evidence=item.evidence,
                     owner_override=item.owner_override,
+                    receipt_line_id=item.receipt_line_id,
                 )
                 for item in expense.category_allocations
             ),

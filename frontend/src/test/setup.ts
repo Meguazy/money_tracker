@@ -23,6 +23,11 @@ Object.defineProperty(window, "ResizeObserver", {
   value: TestResizeObserver,
 });
 
+Object.defineProperty(Element.prototype, "scrollIntoView", {
+  writable: true,
+  value: () => undefined,
+});
+
 Object.defineProperty(window, "matchMedia", {
   writable: true,
   value: (query: string) => ({

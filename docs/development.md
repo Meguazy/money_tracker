@@ -86,11 +86,11 @@ Build the locked frontend, then run the same-origin production service:
 
 The current Step 5 slices serve `http://127.0.0.1:8000/`, the monthly overview,
 `/movimenti`, the monthly transaction register, audited manual lifecycle
-mutations, and content-free health endpoints. They require exactly one profile.
-The complete configuration, browser protections, systemd procedure, and real
-PostgreSQL workflow test are in [Local Web Operations](operations/web.md).
-Split-allocation editing and the remaining control-plane views are still
-unimplemented.
+mutations with multi-allocation editing, and content-free health endpoints. They
+require exactly one profile. The complete configuration, browser protections,
+systemd procedure, and real PostgreSQL workflow test are in
+[Local Web Operations](operations/web.md). The remaining control-plane views are
+still unimplemented.
 
 ## Bootstrapping the owner profile
 

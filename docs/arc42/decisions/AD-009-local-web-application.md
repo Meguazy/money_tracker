@@ -1,8 +1,9 @@
 # AD-009: Local FastAPI and React Web Application
 
 - Status: accepted
-- Implementation: monthly overview, transaction/manual-lifecycle slice, HTTP
-  security, and host deployment implemented; remaining Step 5 surface in progress
+- Implementation: monthly overview, transaction/manual-lifecycle and
+  multi-allocation editing slices, HTTP security, and host deployment
+  implemented; remaining Step 5 surface in progress
 - Date: 2026-09-01
 
 ## Context
@@ -87,10 +88,26 @@ The Italian overview includes an explicit month label, exact EUR rendering,
 loading, empty, and error states, keyboard focus, a labelled chart, and an
 equivalent table. The `/movimenti` view renders every monthly lifecycle state
 and its exact allocations, and exposes labelled create, correct, post, and
-cancel controls with retry feedback. Its initial form edits one category and
-one funding source and refuses to flatten existing multi-allocation movements.
-The compiled `dist` is served by FastAPI on the API origin; arbitrary
-repository or receipt files are not mounted.
+cancel controls with retry feedback.
+
+Its editor holds the AD-007 dimensions as two independent row lists that the
+owner extends and shortens. Each dimension reconciles against the movement
+total on its own and reports its own exact sum, difference, and errors, because
+the two dimensions answer different questions and are never added together.
+Sums are computed with `BigInt` over already exact parsed cents, and a restored
+amount is rendered from integer digits, so no split depends on binary
+floating-point arithmetic. A correction loads every stored allocation; a row
+the owner leaves classified keeps its provenance, evidence, and override flag,
+while a recategorized row takes owner provenance and keeps its receipt line,
+which identifies the purchased line rather than the chosen purpose. The
+transaction contract therefore exposes `receipt_line_id`, a stable
+allocation-scoped identifier that reveals no private media path. Editing rows
+offer only active references; an archived category or source stays visible as a
+named, disabled option solely in the historical row that already uses it, so
+history remains readable while a new allocation cannot select a reference
+`require_active_references` would refuse. The compiled `dist` is served by
+FastAPI on the API origin; arbitrary repository or receipt files are not
+mounted.
 
 `money-tracker-api` is a host entry point and
 `money-tracker-api.service` is a hardened systemd user-service template. The
@@ -98,12 +115,15 @@ environment generator/upgrader owns its non-secret loopback settings, and the
 installer refuses missing locked entry points or compiled assets. The local web
 runbook records operation and rollback.
 
-Unit tests cover exact contracts, trusted profile scope, deterministic
-reconciliation, invalid periods, dependency health, Host, Origin, CSRF, static
-serving/deep links, strict mutation validation, and deployment templates. Real
-PostgreSQL integration tests cover the monthly read and the complete manual
-create/replay/correct/post/replay/void HTTP lifecycle. Frontend typecheck,
-component tests, production build, and a runtime dependency audit pass. This is
-partial Step 5 evidence: multi-allocation editing, remaining control-plane
-resources, range analytics, advice surface, and full browser E2E acceptance are
-still required before this decision is fully implemented.
+Unit tests cover exact contracts including the split allocation shape, trusted
+profile scope, deterministic reconciliation, invalid periods, dependency health,
+Host, Origin, CSRF, static serving/deep links, strict mutation validation, and
+deployment templates. Real PostgreSQL integration tests cover the monthly read,
+the complete manual create/replay/correct/post/replay/void HTTP lifecycle, and a
+multi-category multi-source movement whose rewrite, refused unreconciled
+posting, and refused unreconciled correction of a posted movement are verified
+against the real `FinanceService` and `PostgresFinanceRepository`. Frontend
+typecheck, component tests, production build, and a runtime dependency audit
+pass. This is partial Step 5 evidence: the remaining control-plane resources,
+range analytics, advice surface, and full browser E2E acceptance are still
+required before this decision is fully implemented.

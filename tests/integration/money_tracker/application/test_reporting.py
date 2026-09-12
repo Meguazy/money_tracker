@@ -238,6 +238,7 @@ def test_budget_status_reads_a_real_stored_budget(postgres_url: str) -> None:
             category_id=category.id,
             recurring_target=Money(5000),
         ),
+        idempotency_key="reporting-budget-abbonamenti",
         actor="test",
         reason="reporting fixture",
     )
@@ -271,6 +272,7 @@ def test_the_survey_loads_every_stored_budget_worst_first(
                 category_id=taxonomy.resolve_active(name).id,
                 recurring_target=Money(target),
             ),
+            idempotency_key=f"reporting-budget:{name}",
             actor="test",
             reason="reporting fixture",
         )

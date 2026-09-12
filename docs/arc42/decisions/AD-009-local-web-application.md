@@ -1,9 +1,9 @@
 # AD-009: Local FastAPI and React Web Application
 
 - Status: accepted
-- Implementation: monthly overview, transaction/manual-lifecycle and
-  multi-allocation editing slices, HTTP security, and host deployment
-  implemented; remaining Step 5 surface in progress
+- Implementation: monthly overview, transaction/manual-lifecycle,
+  multi-allocation editing and budget-planning slices, HTTP security, and host
+  deployment implemented; remaining Step 5 surface in progress
 - Date: 2026-09-01
 
 ## Context
@@ -68,7 +68,8 @@ no-double-count contract.
 
 The FastAPI composition exposes `/api/v1/overview/monthly`,
 `/api/v1/transactions`, strict manual expense create/replace/post/cancel
-resources, content-free liveness/readiness, and CSRF bootstrap. Browser JSON is
+resources, monthly budget read/create/replace resources, content-free
+liveness/readiness, and CSRF bootstrap. Browser JSON is
 validated without coercion; every write requires a separate idempotency header,
 uses optimistic concurrency where an aggregate already exists, and maps
 application/domain/database failures to bounded problem details. Corrections of
@@ -109,6 +110,20 @@ history remains readable while a new allocation cannot select a reference
 FastAPI on the API origin; arbitrary repository or receipt files are not
 mounted.
 
+Budget resources are addressed by their stable category rather than by the
+budget row, so the browser is never handed an identifier it has no route for.
+`ReportingService.budget_plan` adds the stored targets, explicit overrides, and
+optimistic version that a correction must quote, which the overview
+deliberately omits because it reports positions rather than offering edits.
+`BudgetMutationAdapter` translates the strict request into
+`FinanceAdministrationService`, injecting the trusted profile, actor, and
+generated aggregate identifier exactly as the movement adapter does; wallet
+entries stay outside it because their balance authority is separate and Step 5
+exposes no browser route for them. Budget creation and replacement became
+replay-safe in the same change, claiming the general command table described in
+AD-005, so this decision's rule that a reused mutation key retries the identical
+command holds for every implemented resource instead of only for movements.
+
 `money-tracker-api` is a host entry point and
 `money-tracker-api.service` is a hardened systemd user-service template. The
 environment generator/upgrader owns its non-secret loopback settings, and the
@@ -118,11 +133,15 @@ runbook records operation and rollback.
 Unit tests cover exact contracts including the split allocation shape, trusted
 profile scope, deterministic reconciliation, invalid periods, dependency health,
 Host, Origin, CSRF, static serving/deep links, strict mutation validation, and
-deployment templates. Real PostgreSQL integration tests cover the monthly read,
-the complete manual create/replay/correct/post/replay/void HTTP lifecycle, and a
+deployment templates, plus budget plan ordering, its correction version, the
+exact budget wire shape, trusted scope injection, and a refused profile field in
+a budget body. Real PostgreSQL integration tests cover the monthly read, the
+complete manual create/replay/correct/post/replay/void HTTP lifecycle, a
 multi-category multi-source movement whose rewrite, refused unreconciled
 posting, and refused unreconciled correction of a posted movement are verified
-against the real `FinanceService` and `PostgresFinanceRepository`. Frontend
+against the real `FinanceService` and `PostgresFinanceRepository`, and a budget
+configured, replayed, read for an overridden month, refused under a reused key
+and a stale version, then verified in the database and in the overview. Frontend
 typecheck, component tests, production build, and a runtime dependency audit
 pass. This is partial Step 5 evidence: the remaining control-plane resources,
 range analytics, advice surface, and full browser E2E acceptance are still

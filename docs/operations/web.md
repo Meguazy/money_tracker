@@ -1,15 +1,16 @@
 # Local Web Operations
 
-- Status: Step 5 overview, manual-movement, and multi-allocation editing slices
-  implemented; complete control plane and release acceptance still in progress
+- Status: Step 5 overview, manual-movement, multi-allocation editing, and
+  budget-planning slices implemented; complete control plane and release
+  acceptance still in progress
 - Binding decision: [AD-009](../arc42/decisions/AD-009-local-web-application.md)
 - Delivery evidence: [Step 5](../roadmap/step-5-dashboard-and-advice.md)
 
 The implemented local service serves one compiled React application and its
 versioned JSON API from the same origin. It provides the monthly overview,
 complete monthly transaction register, manual movement lifecycle with
-multi-allocation editing, liveness, readiness, and CSRF bootstrap endpoints.
-Receipt review, taxonomy, budgets and wallet administration, messaging
+multi-allocation editing, monthly budget planning, liveness, readiness, and CSRF
+bootstrap endpoints. Receipt review, taxonomy, wallet administration, messaging
 operations, settings, wider date ranges, and advice remain Step 5 work and must
 not be described as available.
 
@@ -18,9 +19,11 @@ not be described as available.
 `money-tracker-api` is a host process. It owns HTTP composition and browser
 policy, but no finance data. `ReportingService` computes exact reads;
 `ExpenseMutationAdapter` translates strict browser commands into the existing
-`FinanceService`; and `PostgresFinanceRepository` owns authoritative storage
-and audit. The React application owns only ephemeral browser state and receives
-neither a profile identifier nor credentials. The production build is read-only
+`FinanceService`; `BudgetMutationAdapter` translates budget commands into the
+existing `FinanceAdministrationService`; and `PostgresFinanceRepository` owns
+authoritative storage and audit. Wallet entries have no browser route. The
+React application owns only ephemeral browser state and receives neither a
+profile identifier nor credentials. The production build is read-only
 input to FastAPI; receipt originals are outside the static root.
 
 The process requires exactly one bootstrapped profile and refuses to start when
@@ -58,6 +61,13 @@ left for review, opens with no category row. Add one before saving: the form
 refuses an empty dimension, a duplicate reference, an amount whose sign differs
 from the total, and any split that does not reconcile.
 
+Use `/budget` to set the monthly targets the overview compares against. Until a
+target exists there, the overview's budget comparison is empty by design and
+every spent category is reported as unbudgeted. A budget has one recurring
+target plus optional per-month exceptions and never rolls over: each month
+starts from its own target. Budgets are addressed by category, so correcting one
+replaces its complete plan under the version the page displayed.
+
 For frontend development, keep the API on port 8000 and run Vite separately:
 
     cd frontend
@@ -85,13 +95,16 @@ listener and allowed origins.
 
 | Route | Purpose | Content |
 | --- | --- | --- |
-| `GET /`, `GET /movimenti` | Compiled React shell | Static application only; both routes support direct browser navigation. |
+| `GET /`, `GET /movimenti`, `GET /budget` | Compiled React shell | Static application only; every route supports direct browser navigation. |
 | `GET /api/v1/overview/monthly?period=YYYY-MM` | Deterministic monthly overview | Exact posted total, funding class/source split, budgets, and unbudgeted categories. |
 | `GET /api/v1/transactions?period=YYYY-MM` | Monthly lifecycle register | Every movement state, exact allocations, optimistic versions, and safe category/source references. |
 | `POST /api/v1/expenses` | Create a manual draft | Strict complete movement body; returns safe ID, state, and version. |
 | `PUT /api/v1/expenses/{id}` | Correct a movement | Strict complete replacement plus `expected_version`. |
 | `POST /api/v1/expenses/{id}/post` | Register a draft | Expected version and explicit receipt approval flag. |
 | `POST /api/v1/expenses/{id}/cancel` | Cancel without deletion | Discards a draft/needs-review movement or voids a posted movement under its expected version. |
+| `GET /api/v1/budgets?period=YYYY-MM` | Monthly budget plan | Configured targets worst position first, their overrides and versions, and the categories still available. |
+| `POST /api/v1/budgets` | Configure a category budget | Strict recurring target plus optional month overrides. |
+| `PUT /api/v1/budgets/{category_id}` | Replace a budget plan | Strict complete replacement plus `expected_version`. |
 | `GET /api/v1/health/live` | Process liveness | Content-free healthy state. |
 | `GET /api/v1/health/ready` | Database/profile readiness | Healthy state or bounded problem details. |
 | `GET /api/v1/csrf` | Prepare unsafe browser requests | Random double-submit value and HttpOnly same-site cookie. |
@@ -110,8 +123,11 @@ paths, owner text, or credentials.
   the `money_tracker_csrf` HttpOnly cookie and `X-CSRF-Token` header.
 - Every mutation additionally requires a non-empty `Idempotency-Key`. Reuse the
   same key only to retry the identical command; a changed command conflicts.
-  Correction, registration, and cancellation also carry the version observed
-  by the browser, so stale tabs receive 409 and must reload before retrying.
+  This holds for budget writes as well as movement writes: both claim the same
+  general command table, so a retried request applies once.
+  Correction, registration, cancellation, and budget replacement also carry the
+  version observed by the browser, so stale tabs receive 409 and must reload
+  before retrying.
 - API responses are marked `no-store`. Responses also set a same-origin content
   security policy, deny framing and referrers, and disable MIME sniffing.
 - The API has no secret-returning endpoint. Do not add token, database URL,
@@ -146,10 +162,12 @@ The isolated real-PostgreSQL HTTP check is:
       tests/integration/money_tracker/web/test_api.py
 
 This test covers exact monthly reads, the real create/replay/correct/post/
-replay/void lifecycle, and a multi-category multi-source movement: its exact
-split is read back, an unreconciled draft stays editable but cannot be
-registered, an unreconciled correction of a posted movement is refused, and the
-rewritten split is verified in PostgreSQL. It uses isolated identifiers and
+replay/void lifecycle, a multi-category multi-source movement whose exact split
+is read back, whose unreconciled draft stays editable but cannot be registered,
+whose unreconciled correction of a posted movement is refused, and whose
+rewritten split is verified in PostgreSQL, and a budget configured, replayed,
+read for an overridden month, refused under a reused key and a stale version,
+then verified in the database and the overview. It uses isolated identifiers and
 cleans up its schemas.
 
 A draft may legitimately be unreconciled, so both allocation dimensions are
@@ -158,7 +176,8 @@ Registering an unreconciled movement returns a bounded 422 and changes nothing.
 
 To withdraw the web surface, stop and disable only
 `money-tracker-api.service`. No migration rollback is needed. Manual movements
-already committed through the service are authoritative finance history: keep
+already committed through the service are authoritative finance history, and so
+are the configured budgets: keep
 them and the Telegram services running, and correct or cancel them only through
 normal audited use cases. Re-enable the last known-good build and unit rather
 than deleting `frontend/dist` while the service is active.

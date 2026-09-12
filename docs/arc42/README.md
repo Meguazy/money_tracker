@@ -29,10 +29,10 @@ workflow, authorization, latency, fault, and reboot acceptance on 2026-09-11.
 Step 5 is active. Its implemented slices provide the loopback FastAPI host,
 monthly overview and transaction register, audited manual create/correct/post/
 cancel workflows, the multi-allocation editor for both reconciling dimensions,
-compiled React shell, browser security policy, and host unit. The remaining
-control-plane views, wider analytics, advice exposure, and browser E2E
-acceptance are still planned within Step 5. Receipt extraction remains assigned
-to Step 6.
+the monthly budget planner, compiled React shell, browser security policy, and
+host unit. The remaining control-plane views, wider analytics, advice exposure,
+and browser E2E acceptance are still planned within Step 5. Receipt extraction
+remains assigned to Step 6.
 
 ### Quality goals
 
@@ -120,7 +120,7 @@ boundary is not end-to-end encrypted and must not be described as local storage.
 | Application to inference | OpenAI-compatible HTTP | Messages, schemas, tool calls, model settings | Implemented basic chat |
 | Application to Langfuse | SDK over local HTTP/OTLP | Redacted graph/model observations and aggregate scores | Implemented, optional and healthy |
 | Telegram gateway to Bot API | HTTPS long polling and send methods | Updates, callback queries, messages, and bounded file metadata; no Step 4 file download | Implemented and owner-accepted against the real private test bot |
-| Browser to application API | Same-origin HTTP JSON | Monthly overview, transaction register, manual lifecycle, CSRF, and health implemented; remaining review, analytics, and operations resources planned | Step 5 slices implemented |
+| Browser to application API | Same-origin HTTP JSON | Monthly overview, transaction register, manual lifecycle, budget planning, CSRF, and health implemented; remaining review, analytics, and operations resources planned | Step 5 slices implemented |
 | Application to PostgreSQL | PostgreSQL protocol | Checkpoints, authoritative finance aggregates, normalized messaging offsets/inbox/outbox, pairing, actions, retries, and dead letters | Implemented foundation, finance repositories, and Step 4 messaging persistence |
 | Application to receipt archive | Private host filesystem | Fully decoded original JPEG/PNG/WebP keyed and verified by content hash; no derivatives | Local adapter/admin CLI implemented; API/worker wiring, deletion, and backup planned |
 | Backup process to repository | Restic repository protocol | Database dump, receipts and recovery configuration | Implemented and restore-tested; scheduling planned |
@@ -193,7 +193,7 @@ Money Tracker workstation
 | `observability` | Enable and flush optional Langfuse callbacks | Langfuse SDK and environment keys | Buffered telemetry until flush | Local Langfuse only |
 | `persistence` | Apply versioned migrations, bootstrap persistent LangGraph checkpoints, and implement finance/messaging repositories | Alembic, psycopg, PostgreSQL checkpointer | Foundation schemas, workflow checkpoints, finance aggregates, and durable messaging state | Host administration CLI and shared host library; least-privilege loopback database role |
 | `domain` | Enforce exact money, expense/refund, dual-allocation, taxonomy, wallet, budget, receipt-metadata, and audit contracts | Pure Python value objects and policies; no framework or infrastructure import | No infrastructure state | Shared host-process library; deterministic validation of untrusted inputs |
-| `application` | Coordinate idempotent expense lifecycle and receipt registration/review, audited wallet/budget mutations, pending proposal submission, owner category decisions, and read-only reporting through narrow ports | Finance, administration, proposal, review, reporting, and receipt-metadata repository ports plus clock and ID contracts | Command, concurrency, review-boundary, and audit semantics, not stored state | Shared by CLI, API, and worker; profile scope comes from trusted caller context; node creation is reachable only through an owner decision, and receipt deletion is not exposed |
+| `application` | Coordinate idempotent expense lifecycle and receipt registration/review, audited wallet entries, replay-safe budget planning, pending proposal submission, owner category decisions, and read-only reporting through narrow ports | Finance, administration, proposal, review, reporting, and receipt-metadata repository ports plus clock and ID contracts | Command, concurrency, review-boundary, and audit semantics, not stored state | Shared by CLI, API, and worker; profile scope comes from trusted caller context; node creation is reachable only through an owner decision, and receipt deletion is not exposed |
 | `workflows` | Own the bounded intent taxonomy, normalized channel work unit, deterministic pre-routing, strict versioned model boundaries, policy vetoes, and post-model read-selection policies, deterministic allocation resolution, draft and correction preparation, stable creation/correction/undo command identities, and the strict-schema retry boundary behind a narrow model port | Pydantic, `zoneinfo`, and pure domain values; no LangGraph, model client, repository, or transport import | Routing destinations, authority classes, stable routing and resolution reason codes, and the product calendar; no persistent state | Shared by the implemented worker; a model can select no deterministic route and supply no profile/timezone/authorization field, no resolved instant, no amount sign, and no funding-source identifier; reason codes carry no owner text |
 | `runtime` | Assemble the compiled root-router, expense/refund, correction/undo, category-review, and read graphs; dispatch one normalized work unit to exactly one specialist; adapt the local endpoint to the structured-output port | LangGraph, LangChain, application services, the persistent checkpointer, and `workflows` contracts | No domain state of its own; checkpoint contents remain owned by each graph state contract | Host administration CLI and worker; dispatcher trusts only injected profile/correlation context and emits no presentation text |
 | `worker` | Claim the oldest eligible durable work unit, translate it into the normalized channel message, dispatch it once, and commit result, response, correlation, and completion together; commit failure notice with retry or dead-letter state | Messaging repository port, finance read ports, a narrow dispatch port, and the response renderer | No authoritative state; every identifier it creates is derived from the inbox row so a recovered attempt reproduces the same logical response | systemd host service, separate failure domain from the gateway; holds no Bot API credential and imports no transport type |
@@ -280,8 +280,8 @@ catalog is promoted; every identifier carries a `candidate-` prefix.
 | --- | --- | --- | --- | --- |
 | Workflow dispatcher, root router, and text specialists (implemented) | Route one intent and coordinate expense/refund, correction/undo, category review, query, or advice | Typed normalized work unit/outcome, versioned schemas, scoped tool registries, trusted correlations | Namespaced checkpoint references and workflow IDs; no domain ownership | Administration CLI and worker; mutation paths call replay-safe application services |
 | Telegram Bot API transport (implemented) | Validate the bot, long poll, obtain file metadata, acknowledge callbacks, and deliver outbox messages | Bounded HTTPS client and messaging services | No authoritative finance data or correctness state | Gateway host service; separate production/test token selected from a private environment file |
-| FastAPI adapter (partial) | Expose monthly overview/register, manual lifecycle, health, CSRF bootstrap, compiled UI, and later REST resources | Narrow reporting and finance ports | No independent data | Implemented on loopback with Host/Origin, CSRF, idempotency, optimistic concurrency, and bounded errors |
-| React dashboard (partial) | Display the overview and transaction register, edit the multi-allocation manual lifecycle, and later edit review, budget, wallet and operational state | Same-origin REST API | Browser session/UI state only | Compiled static assets; no secrets; labelled controls, lifecycle history, and accessible chart table alternative |
+| FastAPI adapter (partial) | Expose monthly overview/register, manual lifecycle, budget planning, health, CSRF bootstrap, compiled UI, and later REST resources | Narrow reporting and finance ports | No independent data | Implemented on loopback with Host/Origin, CSRF, idempotency, optimistic concurrency, and bounded errors |
+| React dashboard (partial) | Display the overview and transaction register, edit the multi-allocation manual lifecycle and monthly budgets, and later edit review, wallet and operational state | Same-origin REST API | Browser session/UI state only | Compiled static assets; no secrets; labelled controls, lifecycle history, and accessible chart table alternative |
 | Local model gateway | Provide typed chat, schema and tool capabilities | OpenAI-compatible local endpoint | No persistent domain data | Replaceable host inference process |
 | Receipt extractor adapter | Produce a versioned structured receipt draft | Selected local OCR/VLM pipeline | No authoritative data until validated | Local-only; selection remains evaluation-gated |
 | Langfuse adapter | Record redacted traces and experiment scores | Local Langfuse SDK | Observability copies, not source of truth | Optional development/evaluation profile |
@@ -1306,8 +1306,9 @@ environment file.
   workflow planned.
 - [AD-009: Local FastAPI and React web application](decisions/AD-009-local-web-application.md):
   strict version-one finance wire contracts, monthly overview, manual
-  lifecycle and multi-allocation editing slices, HTTP security, and host
-  deployment implemented; remaining Step 5 resources and acceptance planned.
+  lifecycle, multi-allocation editing and budget-planning slices, HTTP
+  security, and host deployment implemented; remaining Step 5 resources and
+  acceptance planned.
 - [AD-014: Private content-addressed receipt archive](decisions/AD-014-private-receipt-archive.md):
   safe local adapter, versioned review state, and real filesystem/PostgreSQL
   integration implemented; administration CLI wiring and encrypted archive

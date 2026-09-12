@@ -1,6 +1,7 @@
 import { AppShell, Group, Text } from "@mantine/core";
 import { NavLink, Navigate, Route, Routes } from "react-router-dom";
 
+import { BudgetsPage } from "./BudgetsPage";
 import { OverviewPage } from "./OverviewPage";
 import { TransactionsPage } from "./TransactionsPage";
 
@@ -35,6 +36,12 @@ export function App() {
             >
               Movimenti
             </NavLink>
+            <NavLink
+              className={({ isActive }) => (isActive ? "active" : "")}
+              to="/budget"
+            >
+              Budget
+            </NavLink>
           </nav>
           <Text className="local-state">127.0.0.1</Text>
         </Group>
@@ -43,6 +50,7 @@ export function App() {
         <Routes>
           <Route element={<OverviewPage />} path="/" />
           <Route element={<TransactionsPage />} path="/movimenti" />
+          <Route element={<BudgetsPage />} path="/budget" />
           <Route element={<Navigate replace to="/" />} path="*" />
         </Routes>
       </AppShell.Main>

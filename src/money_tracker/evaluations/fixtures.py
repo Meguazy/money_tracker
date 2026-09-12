@@ -271,6 +271,7 @@ def create_budget(
             category_id=category.id,
             recurring_target=Money(recurring_target),
         ),
+        idempotency_key=f"eval-budget:{owner.profile.id}:{category.id}",
         actor="eval",
         reason="evaluation fixture",
     )

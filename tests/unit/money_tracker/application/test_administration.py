@@ -9,7 +9,9 @@ from uuid import UUID, uuid4
 import pytest
 
 from money_tracker.application import (
+    AggregateNotFoundError,
     FinanceAdministrationService,
+    IdempotencyConflictError,
     OptimisticConcurrencyError,
 )
 from money_tracker.domain import (
@@ -53,6 +55,9 @@ class _AdministrationRepository:
     budgets: dict[tuple[UUID, UUID], MonthlyBudget] = field(default_factory=dict)
     wallet_entries: list[WalletEntry] = field(default_factory=list)
     audits: list[AuditEvent] = field(default_factory=list)
+    claims: dict[tuple[UUID, str], tuple[str, str, tuple[UUID, UUID]]] = field(
+        default_factory=dict
+    )
 
     def append_wallet_entry(
         self,
@@ -74,15 +79,41 @@ class _AdministrationRepository:
 
         return self.budgets.get((profile_id, category_id))
 
+    def get_idempotent_budget_command(
+        self,
+        *,
+        profile_id: UUID,
+        idempotency_key: str,
+        command_type: str,
+        request_hash: str,
+    ) -> MonthlyBudget | None:
+        """Return the budget an identical replayed command already stored."""
+
+        prior = self.claims.get((profile_id, idempotency_key))
+        if prior is None:
+            return None
+        if prior[:2] != (command_type, request_hash):
+            raise IdempotencyConflictError("command key reused for other content")
+        return self.budgets[prior[2]]
+
     def save_budget(
         self,
         budget: MonthlyBudget,
         *,
         expected_version: int | None,
+        idempotency_key: str,
+        command_type: str,
+        request_hash: str,
         audit_event: AuditEvent,
     ) -> None:
-        """Create or replace a budget using optimistic concurrency."""
+        """Claim the command key, then save the budget and its audit together."""
 
+        claim = (budget.profile_id, idempotency_key)
+        prior = self.claims.get(claim)
+        if prior is not None:
+            if prior[:2] != (command_type, request_hash):
+                raise IdempotencyConflictError("command key reused for other content")
+            return
         key = (budget.profile_id, budget.category_id)
         current = self.budgets.get(key)
         if expected_version is None:
@@ -90,6 +121,7 @@ class _AdministrationRepository:
                 raise OptimisticConcurrencyError("budget already exists")
         elif current is None or current.version != expected_version:
             raise OptimisticConcurrencyError("stale budget version")
+        self.claims[claim] = (command_type, request_hash, key)
         self.budgets[key] = budget
         self.audits.append(audit_event)
 
@@ -160,6 +192,7 @@ def test_create_budget_persists_complete_aggregate_and_audit() -> None:
 
     result = service.create_budget(
         budget,
+        idempotency_key="budget-create",
         actor="owner",
         reason="set monthly target",
     )
@@ -182,6 +215,7 @@ def test_create_budget_rejects_non_initial_version_without_writes() -> None:
     with pytest.raises(ValueError, match="version 1"):
         service.create_budget(
             _budget(version=2),
+            idempotency_key="budget-invalid",
             actor="owner",
             reason="invalid import",
         )
@@ -204,6 +238,7 @@ def test_replace_budget_replaces_overrides_and_increments_version() -> None:
         expected_version=1,
         recurring_target=Money(30_000),
         overrides=((YearMonth(2027, 1), Money(35_000)),),
+        idempotency_key="budget-replace",
         actor="owner",
         reason="annual revision",
     )
@@ -233,6 +268,7 @@ def test_replace_budget_conflict_keeps_state_and_audit_unchanged() -> None:
             expected_version=1,
             recurring_target=Money(40_000),
             overrides=(),
+            idempotency_key="budget-stale",
             actor="owner",
             reason="stale screen",
         )
@@ -247,16 +283,113 @@ def test_replace_missing_budget_fails_before_audit_creation() -> None:
     repository = _AdministrationRepository()
     service = _service(repository)
 
-    with pytest.raises(LookupError, match="does not exist"):
+    with pytest.raises(AggregateNotFoundError, match="does not exist"):
         service.replace_budget(
             profile_id=uuid4(),
             category_id=uuid4(),
             expected_version=1,
             recurring_target=Money(10_000),
             overrides=(),
+            idempotency_key="budget-missing",
             actor="owner",
             reason="missing category budget",
         )
 
     assert repository.budgets == {}
     assert repository.audits == []
+
+
+def test_replayed_budget_creation_returns_the_first_result_once() -> None:
+    """Retry one identical create without configuring a second budget."""
+
+    repository = _AdministrationRepository()
+    service = _service(repository)
+    budget = _budget()
+
+    first = service.create_budget(
+        budget,
+        idempotency_key="budget-retry",
+        actor="owner",
+        reason="set monthly target",
+    )
+    replayed = service.create_budget(
+        budget,
+        idempotency_key="budget-retry",
+        actor="owner",
+        reason="set monthly target",
+    )
+
+    assert replayed == first
+    assert len(repository.budgets) == 1
+    assert len(repository.audits) == 1
+
+
+def test_reusing_a_budget_command_key_for_other_content_conflicts() -> None:
+    """Refuse a changed plan under a key that already settled a decision."""
+
+    repository = _AdministrationRepository()
+    current = _budget()
+    repository.budgets[(current.profile_id, current.category_id)] = current
+    service = _service(repository)
+
+    service.replace_budget(
+        profile_id=current.profile_id,
+        category_id=current.category_id,
+        expected_version=1,
+        recurring_target=Money(30_000),
+        overrides=(),
+        idempotency_key="budget-reused",
+        actor="owner",
+        reason="annual revision",
+    )
+
+    with pytest.raises(IdempotencyConflictError):
+        service.replace_budget(
+            profile_id=current.profile_id,
+            category_id=current.category_id,
+            expected_version=2,
+            recurring_target=Money(45_000),
+            overrides=(),
+            idempotency_key="budget-reused",
+            actor="owner",
+            reason="second revision",
+        )
+
+    assert len(repository.audits) == 1
+
+
+def test_override_order_does_not_change_one_budget_command() -> None:
+    """Treat two orderings of the same plan as one replayed decision."""
+
+    repository = _AdministrationRepository()
+    current = _budget()
+    repository.budgets[(current.profile_id, current.category_id)] = current
+    service = _service(repository)
+    overrides = (
+        (YearMonth(2027, 1), Money(35_000)),
+        (YearMonth(2026, 12), Money(50_000)),
+    )
+
+    first = service.replace_budget(
+        profile_id=current.profile_id,
+        category_id=current.category_id,
+        expected_version=1,
+        recurring_target=Money(30_000),
+        overrides=overrides,
+        idempotency_key="budget-order",
+        actor="owner",
+        reason="festive revision",
+    )
+    replayed = service.replace_budget(
+        profile_id=current.profile_id,
+        category_id=current.category_id,
+        expected_version=1,
+        recurring_target=Money(30_000),
+        overrides=tuple(reversed(overrides)),
+        idempotency_key="budget-order",
+        actor="owner",
+        reason="festive revision",
+    )
+
+    assert replayed == first
+    assert len(repository.audits) == 1

@@ -1,6 +1,11 @@
 """Transactional use cases coordinating the pure domain and external ports."""
 
-from money_tracker.application.administration import FinanceAdministrationService
+from money_tracker.application.administration import (
+    CREATE_BUDGET_COMMAND,
+    REPLACE_BUDGET_COMMAND,
+    FinanceAdministrationService,
+    budget_request_hash,
+)
 from money_tracker.application.errors import (
     AggregateNotFoundError,
     IdempotencyConflictError,
@@ -25,6 +30,8 @@ from money_tracker.application.receipt_media import (
 )
 from money_tracker.application.receipts import ReceiptMetadataService
 from money_tracker.application.reporting import (
+    BudgetPlan,
+    BudgetPlanEntry,
     BudgetsAtRisk,
     CategoryBudget,
     CategorySpending,
@@ -39,7 +46,9 @@ from money_tracker.application.review import (
 )
 
 __all__ = [
+    "CREATE_BUDGET_COMMAND",
     "OWNER_REVIEW_PROVENANCE",
+    "REPLACE_BUDGET_COMMAND",
     "AggregateNotFoundError",
     "Clock",
     "CategoryProposalRepository",
@@ -58,6 +67,8 @@ __all__ = [
     "ReportingRepository",
     "ReportingService",
     "TransactionRegister",
+    "BudgetPlan",
+    "BudgetPlanEntry",
     "BudgetsAtRisk",
     "CategoryBudget",
     "CategorySpending",
@@ -66,4 +77,5 @@ __all__ = [
     "ReceiptMediaError",
     "ReceiptMediaStore",
     "StoredReceiptMedia",
+    "budget_request_hash",
 ]

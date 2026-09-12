@@ -10,7 +10,11 @@ from zoneinfo import ZoneInfo
 import pytest
 from fastapi.testclient import TestClient
 
-from money_tracker.application import FinanceService, ReportingService
+from money_tracker.application import (
+    FinanceAdministrationService,
+    FinanceService,
+    ReportingService,
+)
 from money_tracker.application.runtime import SystemClock, UUID4Generator
 from money_tracker.domain import (
     BalanceMode,
@@ -27,7 +31,10 @@ from money_tracker.domain import (
 from money_tracker.persistence.database import upgrade_database
 from money_tracker.persistence.finance import PostgresFinanceRepository
 from money_tracker.web import WebSettings, create_app
-from money_tracker.web.mutations import ExpenseMutationAdapter
+from money_tracker.web.mutations import (
+    BudgetMutationAdapter,
+    ExpenseMutationAdapter,
+)
 from money_tracker.workflows import posting_request_hash
 
 ROME = ZoneInfo("Europe/Rome")
@@ -122,6 +129,10 @@ def test_monthly_endpoint_reads_real_postgresql_state(postgres_url: str) -> None
             ),
             ids=ids,
         ),
+        budgets=BudgetMutationAdapter(
+            FinanceAdministrationService(repository, clock=SystemClock(), ids=ids),
+            ids=ids,
+        ),
         readiness_check=lambda: repository.profile_exists(profile.id),
     )
 
@@ -168,6 +179,10 @@ def test_manual_expense_workflow_is_replay_safe_and_visible(
         reporting=ReportingService(repository),
         mutations=ExpenseMutationAdapter(
             FinanceService(repository, clock=SystemClock(), ids=ids),
+            ids=ids,
+        ),
+        budgets=BudgetMutationAdapter(
+            FinanceAdministrationService(repository, clock=SystemClock(), ids=ids),
             ids=ids,
         ),
         readiness_check=lambda: repository.profile_exists(profile.id),
@@ -324,6 +339,10 @@ def test_multi_allocation_movement_survives_correction_in_real_postgresql(
         reporting=ReportingService(repository),
         mutations=ExpenseMutationAdapter(
             FinanceService(repository, clock=SystemClock(), ids=ids),
+            ids=ids,
+        ),
+        budgets=BudgetMutationAdapter(
+            FinanceAdministrationService(repository, clock=SystemClock(), ids=ids),
             ids=ids,
         ),
         readiness_check=lambda: repository.profile_exists(profile.id),
@@ -513,3 +532,232 @@ def test_multi_allocation_movement_survives_correction_in_real_postgresql(
     assert overview["posted_total"]["minor_units"] == 6000
     assert overview["funding_split"]["personal_funds"]["minor_units"] == 5000
     assert overview["funding_split"]["benefit"]["minor_units"] == 1000
+
+
+@pytest.mark.postgres
+def test_budget_plan_is_configured_and_corrected_in_real_postgresql(
+    postgres_url: str,
+) -> None:
+    """Configure, replay, correct, and measure one budget through HTTP."""
+
+    upgrade_database(postgres_url)
+    repository = PostgresFinanceRepository(postgres_url)
+    profile = Profile(uuid4())
+    now = SystemClock().now()
+    taxonomy = initial_taxonomy()
+    repository.bootstrap_profile(profile, taxonomy=taxonomy, occurred_at=now)
+    food = taxonomy.resolve_active("Spesa alimentare")
+    card = FundingSource(
+        id=uuid4(),
+        profile_id=profile.id,
+        name="Carta budget web",
+        funding_class=FundingClass.PERSONAL_FUNDS,
+        balance_mode=BalanceMode.UNTRACKED,
+        is_default=True,
+    )
+    repository.create_funding_source(card, occurred_at=now)
+    _store_posted_expense(repository, profile=profile, source=card)
+    ids = UUID4Generator()
+    app = create_app(
+        settings=WebSettings(static_dir=None),
+        profile_id=profile.id,
+        reporting=ReportingService(repository),
+        mutations=ExpenseMutationAdapter(
+            FinanceService(repository, clock=SystemClock(), ids=ids),
+            ids=ids,
+        ),
+        budgets=BudgetMutationAdapter(
+            FinanceAdministrationService(repository, clock=SystemClock(), ids=ids),
+            ids=ids,
+        ),
+        readiness_check=lambda: repository.profile_exists(profile.id),
+    )
+    client = TestClient(app, base_url="http://localhost:8000")
+    csrf = client.get(
+        "/api/v1/csrf",
+        headers={"origin": "http://localhost:8000"},
+    ).json()["token"]
+
+    def mutation_headers(command_key: str) -> dict[str, str]:
+        """Return the exact browser mutation boundary headers."""
+
+        return {
+            "origin": "http://localhost:8000",
+            "x-csrf-token": csrf,
+            "Idempotency-Key": command_key,
+        }
+
+    empty = client.get("/api/v1/budgets?period=2026-09")
+    assert empty.status_code == 200
+    assert empty.json()["entries"] == []
+    assert "Spesa alimentare" in {
+        item["name"] for item in empty.json()["budgetable_categories"]
+    }
+
+    create_payload = {
+        "category_id": str(food.id),
+        "recurring_target": {"minor_units": 40000, "currency": "EUR"},
+        "overrides": [
+            {
+                "period": {"year": 2026, "month": 12},
+                "target": {"minor_units": 60000, "currency": "EUR"},
+            }
+        ],
+    }
+    created = client.post(
+        "/api/v1/budgets",
+        json=create_payload,
+        headers=mutation_headers("integration-web-budget-create"),
+    )
+    replayed = client.post(
+        "/api/v1/budgets",
+        json=create_payload,
+        headers=mutation_headers("integration-web-budget-create"),
+    )
+
+    assert created.status_code == 201
+    assert created.json() == {"category_id": str(food.id), "version": 1}
+    assert replayed.status_code == 201
+    assert replayed.json() == created.json()
+
+    plan = client.get("/api/v1/budgets?period=2026-09").json()
+    assert len(plan["entries"]) == 1
+    entry = plan["entries"][0]
+    assert entry["category_name"] == "Spesa alimentare"
+    assert entry["target"] == {"minor_units": 40000, "currency": "EUR"}
+    assert entry["posted_spend"] == {"minor_units": 4250, "currency": "EUR"}
+    assert entry["remaining"] == {"minor_units": 35750, "currency": "EUR"}
+    assert entry["version"] == 1
+    assert "Spesa alimentare" not in {
+        item["name"] for item in plan["budgetable_categories"]
+    }
+
+    december = client.get("/api/v1/budgets?period=2026-12").json()["entries"][0]
+    assert december["target"] == {"minor_units": 60000, "currency": "EUR"}
+    assert december["posted_spend"] == {"minor_units": 0, "currency": "EUR"}
+
+    reused_key = client.put(
+        f"/api/v1/budgets/{food.id}",
+        json={
+            "recurring_target": {"minor_units": 999, "currency": "EUR"},
+            "overrides": [],
+            "expected_version": 1,
+        },
+        headers=mutation_headers("integration-web-budget-create"),
+    )
+    assert reused_key.status_code == 409
+    assert reused_key.json()["code"] == "budget_conflict"
+
+    corrected = client.put(
+        f"/api/v1/budgets/{food.id}",
+        json={
+            "recurring_target": {"minor_units": 30000, "currency": "EUR"},
+            "overrides": [],
+            "expected_version": 1,
+        },
+        headers=mutation_headers("integration-web-budget-correct"),
+    )
+    stale = client.put(
+        f"/api/v1/budgets/{food.id}",
+        json={
+            "recurring_target": {"minor_units": 20000, "currency": "EUR"},
+            "overrides": [],
+            "expected_version": 1,
+        },
+        headers=mutation_headers("integration-web-budget-stale"),
+    )
+
+    assert corrected.status_code == 200
+    assert corrected.json() == {"category_id": str(food.id), "version": 2}
+    assert stale.status_code == 409
+    assert stale.json()["code"] == "budget_conflict"
+
+    stored = repository.get_budget(profile.id, food.id)
+    assert stored is not None
+    assert stored.recurring_target == Money(30000)
+    assert stored.overrides == ()
+    assert stored.version == 2
+
+    overview = client.get("/api/v1/overview/monthly?period=2026-09").json()
+    assert overview["budgets"] == [
+        {
+            "category_name": "Spesa alimentare",
+            "target": {"minor_units": 30000, "currency": "EUR"},
+            "posted_spend": {"minor_units": 4250, "currency": "EUR"},
+            "remaining": {"minor_units": 25750, "currency": "EUR"},
+        }
+    ]
+    assert overview["unbudgeted_categories"] == []
+
+
+@pytest.mark.postgres
+def test_budget_routes_refuse_unknown_and_inactive_categories(
+    postgres_url: str,
+) -> None:
+    """Keep a budget attached to an active owner-scoped category only."""
+
+    upgrade_database(postgres_url)
+    repository = PostgresFinanceRepository(postgres_url)
+    profile = Profile(uuid4())
+    now = SystemClock().now()
+    taxonomy = initial_taxonomy()
+    repository.bootstrap_profile(profile, taxonomy=taxonomy, occurred_at=now)
+    ids = UUID4Generator()
+    app = create_app(
+        settings=WebSettings(static_dir=None),
+        profile_id=profile.id,
+        reporting=ReportingService(repository),
+        mutations=ExpenseMutationAdapter(
+            FinanceService(repository, clock=SystemClock(), ids=ids),
+            ids=ids,
+        ),
+        budgets=BudgetMutationAdapter(
+            FinanceAdministrationService(repository, clock=SystemClock(), ids=ids),
+            ids=ids,
+        ),
+        readiness_check=lambda: repository.profile_exists(profile.id),
+    )
+    client = TestClient(app, base_url="http://localhost:8000")
+    csrf = client.get(
+        "/api/v1/csrf",
+        headers={"origin": "http://localhost:8000"},
+    ).json()["token"]
+    headers = {
+        "origin": "http://localhost:8000",
+        "x-csrf-token": csrf,
+        "Idempotency-Key": "integration-web-budget-unknown",
+    }
+
+    unknown = client.post(
+        "/api/v1/budgets",
+        json={
+            "category_id": str(uuid4()),
+            "recurring_target": {"minor_units": 40000, "currency": "EUR"},
+        },
+        headers=headers,
+    )
+    missing = client.put(
+        f"/api/v1/budgets/{taxonomy.resolve_active('Abbonamenti').id}",
+        json={
+            "recurring_target": {"minor_units": 40000, "currency": "EUR"},
+            "overrides": [],
+            "expected_version": 1,
+        },
+        headers={**headers, "Idempotency-Key": "integration-web-budget-missing"},
+    )
+    negative = client.post(
+        "/api/v1/budgets",
+        json={
+            "category_id": str(taxonomy.resolve_active("Abbonamenti").id),
+            "recurring_target": {"minor_units": -100, "currency": "EUR"},
+        },
+        headers={**headers, "Idempotency-Key": "integration-web-budget-negative"},
+    )
+
+    assert unknown.status_code == 404
+    assert unknown.json()["code"] == "budget_not_found"
+    assert missing.status_code == 404
+    assert missing.json()["code"] == "budget_not_found"
+    assert negative.status_code == 422
+    assert negative.json()["code"] == "budget_invalid"
+    assert repository.get_budgets(profile.id) == ()

@@ -113,6 +113,38 @@ export type ExpenseMutation = {
   version: number;
 };
 
+export type BudgetOverride = {
+  period: { year: number; month: number };
+  target: Money;
+};
+
+export type BudgetPlanEntry = {
+  category_id: string;
+  category_name: string;
+  recurring_target: Money;
+  overrides: BudgetOverride[];
+  target: Money;
+  posted_spend: Money;
+  remaining: Money;
+  version: number;
+};
+
+export type BudgetPlan = {
+  period: { year: number; month: number };
+  entries: BudgetPlanEntry[];
+  budgetable_categories: CategoryReference[];
+};
+
+export type BudgetInput = {
+  recurring_target: Money;
+  overrides: BudgetOverride[];
+};
+
+export type BudgetMutation = {
+  category_id: string;
+  version: number;
+};
+
 type ProblemDetails = {
   detail?: string;
 };
@@ -168,11 +200,11 @@ async function csrfToken(): Promise<string> {
   return csrfTokenRequest;
 }
 
-async function mutateExpense(
+async function mutate<T>(
   path: string,
   method: "POST" | "PUT",
   body: unknown,
-): Promise<ExpenseMutation> {
+): Promise<T> {
   const token = await csrfToken();
   const response = await fetch(path, {
     method,
@@ -183,7 +215,47 @@ async function mutateExpense(
     },
     body: JSON.stringify(body),
   });
-  return responseJson<ExpenseMutation>(response);
+  return responseJson<T>(response);
+}
+
+function mutateExpense(
+  path: string,
+  method: "POST" | "PUT",
+  body: unknown,
+): Promise<ExpenseMutation> {
+  return mutate<ExpenseMutation>(path, method, body);
+}
+
+export async function loadBudgetPlan(
+  period: string,
+  signal?: AbortSignal,
+): Promise<BudgetPlan> {
+  const response = await fetch(
+    `/api/v1/budgets?period=${encodeURIComponent(period)}`,
+    { signal },
+  );
+  return responseJson<BudgetPlan>(response);
+}
+
+export function createBudget(
+  categoryId: string,
+  input: BudgetInput,
+): Promise<BudgetMutation> {
+  return mutate<BudgetMutation>("/api/v1/budgets", "POST", {
+    category_id: categoryId,
+    ...input,
+  });
+}
+
+export function replaceBudget(
+  categoryId: string,
+  input: BudgetInput & { expected_version: number },
+): Promise<BudgetMutation> {
+  return mutate<BudgetMutation>(
+    `/api/v1/budgets/${encodeURIComponent(categoryId)}`,
+    "PUT",
+    input,
+  );
 }
 
 export function createExpense(input: ExpenseInput): Promise<ExpenseMutation> {

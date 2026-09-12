@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import cast
@@ -12,7 +12,13 @@ from zoneinfo import ZoneInfo
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from money_tracker.application import MonthlyOverview, PeriodSplit, TransactionRegister
+from money_tracker.application import (
+    BudgetPlan,
+    BudgetPlanEntry,
+    MonthlyOverview,
+    PeriodSplit,
+    TransactionRegister,
+)
 from money_tracker.application.ports import IdGenerator
 from money_tracker.domain import (
     BalanceMode,
@@ -24,12 +30,18 @@ from money_tracker.domain import (
     FundingClassSplit,
     FundingSource,
     Money,
+    MonthlyBudget,
     PaymentAllocation,
     YearMonth,
     initial_taxonomy,
 )
 from money_tracker.web import WebSettings, create_app
-from money_tracker.web.mutations import ExpenseMutationAdapter, ExpenseWriter
+from money_tracker.web.mutations import (
+    BudgetMutationAdapter,
+    BudgetWriter,
+    ExpenseMutationAdapter,
+    ExpenseWriter,
+)
 
 PROFILE_ID = uuid4()
 PERIOD = YearMonth(2026, 9)
@@ -38,6 +50,7 @@ ROME = ZoneInfo("Europe/Rome")
 EXPENSE_ID = UUID("00000000-0000-0000-0000-000000000301")
 SOURCE_ID = UUID("00000000-0000-0000-0000-000000000201")
 RECEIPT_LINE_ID = UUID("00000000-0000-0000-0000-000000000401")
+BUDGET_ID = UUID("00000000-0000-0000-0000-000000000501")
 
 
 @dataclass
@@ -143,6 +156,92 @@ class OverviewReader:
             funding_sources=(source,),
         )
 
+    def budget_plan(
+        self,
+        *,
+        profile_id: UUID,
+        period: YearMonth,
+    ) -> BudgetPlan:
+        """Return one configured budget and the categories still available."""
+
+        self.requested_profile = profile_id
+        self.requested_period = period
+        taxonomy = initial_taxonomy()
+        food = taxonomy.resolve_active("Spesa alimentare")
+        return BudgetPlan(
+            period=period,
+            entries=(
+                BudgetPlanEntry(
+                    budget=MonthlyBudget(
+                        id=BUDGET_ID,
+                        profile_id=profile_id,
+                        category_id=food.id,
+                        recurring_target=Money(40000),
+                        overrides=((YearMonth(2026, 12), Money(60000)),),
+                        version=3,
+                    ),
+                    category_name=food.name,
+                    status=BudgetStatus(
+                        period,
+                        Money(40000),
+                        Money(45000),
+                        Money(-5000),
+                    ),
+                ),
+            ),
+            budgetable_categories=(taxonomy.resolve_active("Cura personale"),),
+        )
+
+
+@dataclass
+class RecordingBudgetWriter:
+    """In-memory budget writer that records the translated command."""
+
+    created: MonthlyBudget | None = None
+    replaced: tuple[UUID, int, Money, tuple[tuple[YearMonth, Money], ...]] | None = None
+    command_keys: list[str] = field(default_factory=list)
+
+    def create_budget(
+        self,
+        budget: MonthlyBudget,
+        *,
+        idempotency_key: str,
+        actor: str,
+        reason: str,
+    ) -> MonthlyBudget:
+        """Record the aggregate the adapter built from a browser request."""
+
+        del actor, reason
+        self.created = budget
+        self.command_keys.append(idempotency_key)
+        return budget
+
+    def replace_budget(
+        self,
+        *,
+        profile_id: UUID,
+        category_id: UUID,
+        expected_version: int,
+        recurring_target: Money,
+        overrides: tuple[tuple[YearMonth, Money], ...],
+        idempotency_key: str,
+        actor: str,
+        reason: str,
+    ) -> MonthlyBudget:
+        """Record the replacement plan and return the advanced aggregate."""
+
+        del actor, reason
+        self.replaced = (category_id, expected_version, recurring_target, overrides)
+        self.command_keys.append(idempotency_key)
+        return MonthlyBudget(
+            id=BUDGET_ID,
+            profile_id=profile_id,
+            category_id=category_id,
+            recurring_target=recurring_target,
+            overrides=overrides,
+            version=expected_version + 1,
+        )
+
 
 class FixedIds:
     """Stable identifier source for adapter composition in boundary tests."""
@@ -158,6 +257,7 @@ def _app(
     *,
     static_dir: Path | None = None,
     ready: bool = True,
+    budget_writer: BudgetWriter | None = None,
 ) -> FastAPI:
     """Compose an application with real middleware and an in-memory read port."""
 
@@ -167,6 +267,10 @@ def _app(
         reporting=reader or OverviewReader(),
         mutations=ExpenseMutationAdapter(
             cast(ExpenseWriter, object()),
+            ids=cast(IdGenerator, FixedIds()),
+        ),
+        budgets=BudgetMutationAdapter(
+            budget_writer or cast(BudgetWriter, object()),
             ids=cast(IdGenerator, FixedIds()),
         ),
         readiness_check=lambda: ready,
@@ -386,3 +490,128 @@ def test_compiled_dashboard_is_served_from_the_api_origin(tmp_path: Path) -> Non
     assert response.status_code == 200
     assert "Money Tracker" in response.text
     assert deep_link.text == response.text
+
+
+def test_budget_plan_exposes_targets_overrides_and_the_correction_version() -> None:
+    """Give the planner what a replacement must quote, and nothing more."""
+
+    taxonomy = initial_taxonomy()
+    food = taxonomy.resolve_active("Spesa alimentare")
+
+    response = _client(_app()).get("/api/v1/budgets?period=2026-09")
+
+    assert response.status_code == 200
+    assert response.json()["period"] == {"year": 2026, "month": 9}
+    assert response.json()["entries"] == [
+        {
+            "category_id": str(food.id),
+            "category_name": "Spesa alimentare",
+            "recurring_target": {"minor_units": 40000, "currency": "EUR"},
+            "overrides": [
+                {
+                    "period": {"year": 2026, "month": 12},
+                    "target": {"minor_units": 60000, "currency": "EUR"},
+                }
+            ],
+            "target": {"minor_units": 40000, "currency": "EUR"},
+            "posted_spend": {"minor_units": 45000, "currency": "EUR"},
+            "remaining": {"minor_units": -5000, "currency": "EUR"},
+            "version": 3,
+        }
+    ]
+    assert [item["name"] for item in response.json()["budgetable_categories"]] == [
+        "Cura personale"
+    ]
+    assert "profile_id" not in response.text
+    assert str(BUDGET_ID) not in response.text
+
+
+def test_budget_creation_injects_trusted_scope_and_exact_targets() -> None:
+    """Build the aggregate from trusted context, never from request identity."""
+
+    writer = RecordingBudgetWriter()
+    taxonomy = initial_taxonomy()
+    food = taxonomy.resolve_active("Spesa alimentare")
+    client = _client(_app(budget_writer=writer))
+    issued = client.get("/api/v1/csrf", headers={"origin": ORIGIN})
+
+    response = client.post(
+        "/api/v1/budgets",
+        json={
+            "category_id": str(food.id),
+            "recurring_target": {"minor_units": 40000, "currency": "EUR"},
+            "overrides": [
+                {
+                    "period": {"year": 2026, "month": 12},
+                    "target": {"minor_units": 60000, "currency": "EUR"},
+                }
+            ],
+        },
+        headers={
+            "origin": ORIGIN,
+            "x-csrf-token": issued.json()["token"],
+            "Idempotency-Key": "unit-budget-create",
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json() == {"category_id": str(food.id), "version": 1}
+    assert writer.created is not None
+    assert writer.created.profile_id == PROFILE_ID
+    assert writer.created.recurring_target == Money(40000)
+    assert writer.created.overrides == ((YearMonth(2026, 12), Money(60000)),)
+    assert writer.command_keys == ["unit-budget-create"]
+
+
+def test_budget_replacement_quotes_the_observed_version() -> None:
+    """Send the complete plan and the version the browser actually saw."""
+
+    writer = RecordingBudgetWriter()
+    taxonomy = initial_taxonomy()
+    food = taxonomy.resolve_active("Spesa alimentare")
+    client = _client(_app(budget_writer=writer))
+    issued = client.get("/api/v1/csrf", headers={"origin": ORIGIN})
+
+    response = client.put(
+        f"/api/v1/budgets/{food.id}",
+        json={
+            "recurring_target": {"minor_units": 50000, "currency": "EUR"},
+            "overrides": [],
+            "expected_version": 3,
+        },
+        headers={
+            "origin": ORIGIN,
+            "x-csrf-token": issued.json()["token"],
+            "Idempotency-Key": "unit-budget-replace",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"category_id": str(food.id), "version": 4}
+    assert writer.replaced == (food.id, 3, Money(50000), ())
+
+
+def test_budget_mutation_rejects_a_profile_field_in_the_request_body() -> None:
+    """Refuse owner identity from the browser instead of silently ignoring it."""
+
+    writer = RecordingBudgetWriter()
+    client = _client(_app(budget_writer=writer))
+    issued = client.get("/api/v1/csrf", headers={"origin": ORIGIN})
+
+    response = client.post(
+        "/api/v1/budgets",
+        json={
+            "category_id": str(uuid4()),
+            "recurring_target": {"minor_units": 40000, "currency": "EUR"},
+            "profile_id": str(uuid4()),
+        },
+        headers={
+            "origin": ORIGIN,
+            "x-csrf-token": issued.json()["token"],
+            "Idempotency-Key": "unit-budget-unknown-field",
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["code"] == "request_invalid"
+    assert writer.created is None

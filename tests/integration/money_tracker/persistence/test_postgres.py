@@ -18,6 +18,7 @@ from money_tracker.application import (
     IdempotencyConflictError,
     OptimisticConcurrencyError,
     ReceiptMetadataService,
+    budget_request_hash,
 )
 from money_tracker.application.runtime import SystemClock, UUID4Generator
 from money_tracker.domain import (
@@ -251,6 +252,21 @@ def _generic_audit(
         current_version=current_version,
         reason="repository integration",
     )
+
+
+def _budget_command(budget: MonthlyBudget, *, key: str, action: str) -> dict[str, str]:
+    """Build one distinct command identity for a budget write."""
+
+    return {
+        "idempotency_key": key,
+        "command_type": action,
+        "request_hash": budget_request_hash(
+            profile_id=budget.profile_id,
+            category_id=budget.category_id,
+            recurring_target=budget.recurring_target,
+            overrides=budget.overrides,
+        ),
+    }
 
 
 @pytest.mark.postgres
@@ -856,6 +872,7 @@ def test_budget_round_trip_and_stale_version_conflict(postgres_url: str) -> None
     )
     repository.save_budget(
         budget,
+        **_budget_command(budget, key="budget-create", action="create_budget"),
         expected_version=None,
         audit_event=_generic_audit(
             profile_id=profile.id,
@@ -874,6 +891,7 @@ def test_budget_round_trip_and_stale_version_conflict(postgres_url: str) -> None
     )
     repository.save_budget(
         updated,
+        **_budget_command(updated, key="budget-replace", action="replace_budget"),
         expected_version=1,
         audit_event=_generic_audit(
             profile_id=profile.id,
@@ -890,6 +908,7 @@ def test_budget_round_trip_and_stale_version_conflict(postgres_url: str) -> None
     with pytest.raises(OptimisticConcurrencyError, match="changed"):
         repository.save_budget(
             stale,
+            **_budget_command(stale, key="budget-stale", action="replace_budget"),
             expected_version=1,
             audit_event=_generic_audit(
                 profile_id=profile.id,
@@ -1006,6 +1025,7 @@ def test_duplicate_budget_create_preserves_original_and_single_audit(
     )
     repository.save_budget(
         original,
+        **_budget_command(original, key="budget-original", action="create_budget"),
         expected_version=None,
         audit_event=_generic_audit(
             profile_id=profile.id,
@@ -1021,6 +1041,9 @@ def test_duplicate_budget_create_preserves_original_and_single_audit(
     with pytest.raises(OptimisticConcurrencyError, match="already exists"):
         repository.save_budget(
             duplicate,
+            **_budget_command(
+                duplicate, key="budget-duplicate", action="create_budget"
+            ),
             expected_version=None,
             audit_event=_generic_audit(
                 profile_id=profile.id,
@@ -1056,6 +1079,7 @@ def test_concurrent_budget_replacements_allow_exactly_one_winner(
     )
     repository.save_budget(
         original,
+        **_budget_command(original, key="budget-original", action="create_budget"),
         expected_version=None,
         audit_event=_generic_audit(
             profile_id=profile.id,
@@ -1079,6 +1103,11 @@ def test_concurrent_budget_replacements_allow_exactly_one_winner(
         try:
             repository.save_budget(
                 candidate,
+                **_budget_command(
+                    candidate,
+                    key=f"budget-race:{candidate.recurring_target.minor_units}",
+                    action="replace_budget",
+                ),
                 expected_version=1,
                 audit_event=_generic_audit(
                     profile_id=profile.id,
@@ -1731,3 +1760,70 @@ def test_receipt_repository_rejects_noninitial_version(
 
     with pytest.raises(AggregateNotFoundError, match="does not exist"):
         repository.get_receipt_metadata(profile.id, metadata.id)
+
+
+@pytest.mark.postgres
+def test_replayed_budget_command_writes_once_and_returns_the_stored_plan(
+    postgres_url: str,
+) -> None:
+    """Share the general command table so a retried budget cannot apply twice."""
+
+    upgrade_database(postgres_url)
+    repository, profile, _, category_id = _repository_fixture(postgres_url)
+    budget = MonthlyBudget(
+        id=uuid4(),
+        profile_id=profile.id,
+        category_id=category_id,
+        recurring_target=Money(20_000),
+        overrides=((YearMonth(2026, 10), Money(25_000)),),
+    )
+    command = _budget_command(budget, key="budget-replay", action="create_budget")
+
+    repository.save_budget(
+        budget,
+        **command,
+        expected_version=None,
+        audit_event=_generic_audit(
+            profile_id=profile.id,
+            aggregate_type="monthly_budget",
+            aggregate_id=budget.id,
+            action="create",
+            prior_version=None,
+            current_version=1,
+        ),
+    )
+    replayed = repository.get_idempotent_budget_command(
+        profile_id=profile.id,
+        idempotency_key="budget-replay",
+        command_type="create_budget",
+        request_hash=command["request_hash"],
+    )
+    repository.save_budget(
+        budget,
+        **command,
+        expected_version=None,
+        audit_event=_generic_audit(
+            profile_id=profile.id,
+            aggregate_type="monthly_budget",
+            aggregate_id=budget.id,
+            action="create",
+            prior_version=None,
+            current_version=1,
+        ),
+    )
+
+    assert replayed == budget
+    assert repository.get_budget(profile.id, category_id) == budget
+    with connect(postgres_url) as connection:
+        assert connection.execute(
+            "SELECT count(*) FROM finance.audit_events "
+            "WHERE aggregate_type = 'monthly_budget'"
+        ).fetchone() == (1,)
+
+    with pytest.raises(IdempotencyConflictError):
+        repository.get_idempotent_budget_command(
+            profile_id=profile.id,
+            idempotency_key="budget-replay",
+            command_type="create_budget",
+            request_hash="0" * 64,
+        )

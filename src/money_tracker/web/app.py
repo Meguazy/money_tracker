@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Protocol
 from uuid import UUID
@@ -23,14 +24,19 @@ from money_tracker.api.contracts import (
 )
 from money_tracker.application import (
     AggregateNotFoundError,
+    BudgetPlan,
     IdempotencyConflictError,
     MonthlyOverview,
     OptimisticConcurrencyError,
     TransactionRegister,
 )
-from money_tracker.domain import DomainError, Expense, YearMonth
+from money_tracker.domain import DomainError, YearMonth
 from money_tracker.web.config import WebSettings
 from money_tracker.web.contracts import (
+    BudgetCreateRequest,
+    BudgetMutationResponse,
+    BudgetPlanResponse,
+    BudgetReplaceRequest,
     CsrfTokenResponse,
     ExpenseCancelRequest,
     ExpenseMutationResponse,
@@ -40,7 +46,10 @@ from money_tracker.web.contracts import (
     MonthlyOverviewResponse,
     TransactionRegisterResponse,
 )
-from money_tracker.web.mutations import ExpenseMutationAdapter
+from money_tracker.web.mutations import (
+    BudgetMutationAdapter,
+    ExpenseMutationAdapter,
+)
 from money_tracker.web.security import (
     CSRF_COOKIE_NAME,
     BrowserSecurityPolicy,
@@ -70,6 +79,14 @@ class DashboardReader(Protocol):
     ) -> TransactionRegister:
         """Return complete movement lifecycle facts for one month."""
 
+    def budget_plan(
+        self,
+        *,
+        profile_id: UUID,
+        period: YearMonth,
+    ) -> BudgetPlan:
+        """Return the stored budget plan and its position for one month."""
+
 
 def create_app(
     *,
@@ -77,6 +94,7 @@ def create_app(
     profile_id: UUID,
     reporting: DashboardReader,
     mutations: ExpenseMutationAdapter,
+    budgets: BudgetMutationAdapter,
     readiness_check: Callable[[], bool],
 ) -> FastAPI:
     """Compose the local web adapter around narrow application reads.
@@ -86,6 +104,7 @@ def create_app(
         profile_id: Trusted single-owner scope, never accepted from a request.
         reporting: Read-only application service for dashboard facts.
         mutations: Browser adapter over audited, replay-safe finance use cases.
+        budgets: Browser adapter over audited, replay-safe budget use cases.
         readiness_check: Content-free database/schema readiness probe.
 
     Returns:
@@ -243,6 +262,8 @@ def create_app(
                 command_key=idempotency_key.strip(),
                 request=payload,
             ),
+            render=ExpenseMutationResponse.from_domain,
+            problems=_EXPENSE_PROBLEMS,
             command_key=idempotency_key,
             instance=f"{API_V1_PREFIX}/expenses",
         )
@@ -271,6 +292,8 @@ def create_app(
                 command_key=idempotency_key.strip(),
                 request=payload,
             ),
+            render=ExpenseMutationResponse.from_domain,
+            problems=_EXPENSE_PROBLEMS,
             command_key=idempotency_key,
             instance=f"{API_V1_PREFIX}/expenses/{expense_id}",
         )
@@ -296,6 +319,8 @@ def create_app(
                 command_key=idempotency_key.strip(),
                 request=request,
             ),
+            render=ExpenseMutationResponse.from_domain,
+            problems=_EXPENSE_PROBLEMS,
             command_key=idempotency_key,
             instance=f"{API_V1_PREFIX}/expenses/{expense_id}/post",
         )
@@ -321,8 +346,85 @@ def create_app(
                 command_key=idempotency_key.strip(),
                 request=request,
             ),
+            render=ExpenseMutationResponse.from_domain,
+            problems=_EXPENSE_PROBLEMS,
             command_key=idempotency_key,
             instance=f"{API_V1_PREFIX}/expenses/{expense_id}/cancel",
+        )
+
+    @router.get("/budgets", response_model=BudgetPlanResponse)
+    def budget_plan(period: str) -> BudgetPlanResponse | JSONResponse:
+        """Return the stored budget plan and its position in one month."""
+
+        parsed = _parse_period(period)
+        if parsed is None:
+            return _problem(
+                status=422,
+                title="Periodo non valido",
+                detail="Il periodo deve usare il formato YYYY-MM.",
+                code="period_invalid",
+                instance=f"{API_V1_PREFIX}/budgets",
+            )
+        try:
+            result = reporting.budget_plan(profile_id=profile_id, period=parsed)
+        except PsycopgError:
+            return _database_problem(f"{API_V1_PREFIX}/budgets")
+        return BudgetPlanResponse.from_application(result)
+
+    @router.post("/budgets", response_model=BudgetMutationResponse, status_code=201)
+    async def create_budget(
+        http_request: Request,
+        idempotency_key: Annotated[
+            str,
+            Header(alias="Idempotency-Key", min_length=1, max_length=200),
+        ],
+    ) -> BudgetMutationResponse | JSONResponse:
+        """Attach a first budget to one active category."""
+
+        try:
+            payload = BudgetCreateRequest.model_validate_json(await http_request.body())
+        except ValidationError:
+            return _invalid_body(f"{API_V1_PREFIX}/budgets")
+        return _execute_mutation(
+            lambda: budgets.create(
+                profile_id=profile_id,
+                command_key=idempotency_key.strip(),
+                request=payload,
+            ),
+            render=BudgetMutationResponse.from_domain,
+            problems=_BUDGET_PROBLEMS,
+            command_key=idempotency_key,
+            instance=f"{API_V1_PREFIX}/budgets",
+        )
+
+    @router.put("/budgets/{category_id}", response_model=BudgetMutationResponse)
+    async def replace_budget(
+        category_id: UUID,
+        http_request: Request,
+        idempotency_key: Annotated[
+            str,
+            Header(alias="Idempotency-Key", min_length=1, max_length=200),
+        ],
+    ) -> BudgetMutationResponse | JSONResponse:
+        """Replace one complete budget plan under optimistic concurrency."""
+
+        try:
+            payload = BudgetReplaceRequest.model_validate_json(
+                await http_request.body()
+            )
+        except ValidationError:
+            return _invalid_body(f"{API_V1_PREFIX}/budgets/{category_id}")
+        return _execute_mutation(
+            lambda: budgets.replace(
+                profile_id=profile_id,
+                category_id=category_id,
+                command_key=idempotency_key.strip(),
+                request=payload,
+            ),
+            render=BudgetMutationResponse.from_domain,
+            problems=_BUDGET_PROBLEMS,
+            command_key=idempotency_key,
+            instance=f"{API_V1_PREFIX}/budgets/{category_id}",
         )
 
     app.include_router(router)
@@ -340,12 +442,58 @@ def _parse_period(value: str) -> YearMonth | None:
     return YearMonth(int(match.group("year")), int(match.group("month")))
 
 
-def _execute_mutation(
-    operation: Callable[[], Expense],
+@dataclass(frozen=True, slots=True)
+class _MutationProblems:
+    """Owner-facing wording for one mutable resource's bounded failures.
+
+    Only the words differ between resources; the failure classes and their
+    status codes are the same contract, so they are mapped in one place.
+
+    Attributes:
+        not_found: Title and detail for an identifier outside owner scope.
+        conflict: Title and detail for a stale version or reused command key.
+        invalid: Title and detail for a refused domain rule.
+        code_prefix: Stable machine-readable problem-code subject.
+    """
+
+    not_found: tuple[str, str]
+    conflict: tuple[str, str]
+    invalid: tuple[str, str]
+    code_prefix: str
+
+
+_EXPENSE_PROBLEMS = _MutationProblems(
+    not_found=("Movimento non trovato", "Il movimento richiesto non esiste."),
+    conflict=("Conflitto sul movimento", "Ricarica i dati prima di riprovare."),
+    invalid=(
+        "Movimento non valido",
+        "Controlla importo, allocazioni e stato del movimento.",
+    ),
+    code_prefix="expense",
+)
+
+_BUDGET_PROBLEMS = _MutationProblems(
+    not_found=(
+        "Budget non trovato",
+        "La categoria richiesta non esiste o non ha un budget.",
+    ),
+    conflict=("Conflitto sul budget", "Ricarica i dati prima di riprovare."),
+    invalid=(
+        "Budget non valido",
+        "Il budget richiede una categoria attiva e importi positivi.",
+    ),
+    code_prefix="budget",
+)
+
+
+def _execute_mutation[AggregateT, ResponseT](
+    operation: Callable[[], AggregateT],
     *,
+    render: Callable[[AggregateT], ResponseT],
+    problems: _MutationProblems,
     command_key: str,
     instance: str,
-) -> ExpenseMutationResponse | JSONResponse:
+) -> ResponseT | JSONResponse:
     """Run one use case and map typed failures to bounded HTTP problems."""
 
     if not command_key.strip():
@@ -361,30 +509,30 @@ def _execute_mutation(
     except AggregateNotFoundError:
         return _problem(
             status=404,
-            title="Movimento non trovato",
-            detail="Il movimento richiesto non esiste.",
-            code="expense_not_found",
+            title=problems.not_found[0],
+            detail=problems.not_found[1],
+            code=f"{problems.code_prefix}_not_found",
             instance=instance,
         )
     except (IdempotencyConflictError, OptimisticConcurrencyError):
         return _problem(
             status=409,
-            title="Conflitto sul movimento",
-            detail="Ricarica i dati prima di riprovare.",
-            code="expense_conflict",
+            title=problems.conflict[0],
+            detail=problems.conflict[1],
+            code=f"{problems.code_prefix}_conflict",
             instance=instance,
         )
     except DomainError:
         return _problem(
             status=422,
-            title="Movimento non valido",
-            detail="Controlla importo, allocazioni e stato del movimento.",
-            code="expense_invalid",
+            title=problems.invalid[0],
+            detail=problems.invalid[1],
+            code=f"{problems.code_prefix}_invalid",
             instance=instance,
         )
     except PsycopgError:
         return _database_problem(instance)
-    return ExpenseMutationResponse.from_domain(result)
+    return render(result)
 
 
 def _database_problem(instance: str) -> JSONResponse:

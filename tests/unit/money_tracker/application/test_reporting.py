@@ -513,3 +513,51 @@ def test_transaction_register_keeps_every_state_and_display_reference() -> None:
     assert result.taxonomy is TAXONOMY
     assert result.funding_sources == (CARD, VOUCHERS)
     assert repository.reads == ["expenses", "taxonomy", "funding_sources"]
+
+
+def test_budget_plan_orders_by_position_and_names_what_is_unbudgeted() -> None:
+    """Put the worst position first and offer every category still free."""
+
+    repository = InMemoryReporting(
+        expenses=(
+            _posted("Abbonamenti", 1500),
+            _posted("Spesa alimentare", 9000),
+        ),
+        budgets=(
+            _budget("Abbonamenti", 5000),
+            _budget("Spesa alimentare", 4000),
+        ),
+    )
+
+    plan = _service(repository).budget_plan(profile_id=PROFILE, period=PERIOD)
+
+    assert [entry.category_name for entry in plan.entries] == [
+        "Spesa alimentare",
+        "Abbonamenti",
+    ]
+    assert plan.entries[0].status.remaining == Money(-5000)
+    assert plan.entries[1].status.remaining == Money(3500)
+    budgeted = {entry.budget.category_id for entry in plan.entries}
+    assert budgeted.isdisjoint(category.id for category in plan.budgetable_categories)
+    assert "Cura personale" in {
+        category.name for category in plan.budgetable_categories
+    }
+
+
+def test_budget_plan_carries_the_version_a_replacement_must_quote() -> None:
+    """Expose stored identity and overrides, not only the monthly position."""
+
+    budget = replace(
+        _budget("Abbonamenti", 5000),
+        overrides=((YearMonth(2026, 9), Money(12_000)),),
+        version=4,
+    )
+    repository = InMemoryReporting(budgets=(budget,))
+
+    plan = _service(repository).budget_plan(profile_id=PROFILE, period=PERIOD)
+
+    entry = plan.entries[0]
+    assert entry.budget.version == 4
+    assert entry.budget.overrides == ((YearMonth(2026, 9), Money(12_000)),)
+    assert entry.status.target == Money(12_000)
+    assert entry.status.posted_spend == Money(0)

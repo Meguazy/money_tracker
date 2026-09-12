@@ -13,9 +13,14 @@ from money_tracker.domain import (
     Expense,
     ExpenseStatus,
     Money,
+    MonthlyBudget,
     PaymentAllocation,
+    YearMonth,
 )
 from money_tracker.web.contracts import (
+    BudgetCreateRequest,
+    BudgetReplaceRequest,
+    BudgetWriteRequest,
     ExpenseCancelRequest,
     ExpensePostRequest,
     ExpenseReplaceRequest,
@@ -214,6 +219,120 @@ class ExpenseMutationAdapter:
         )
 
 
+class BudgetWriter(Protocol):
+    """Expose only the budget operations the browser is allowed to reach."""
+
+    def create_budget(
+        self,
+        budget: MonthlyBudget,
+        *,
+        idempotency_key: str,
+        actor: str,
+        reason: str,
+    ) -> MonthlyBudget:
+        """Create or replay one category budget."""
+
+    def replace_budget(
+        self,
+        *,
+        profile_id: UUID,
+        category_id: UUID,
+        expected_version: int,
+        recurring_target: Money,
+        overrides: tuple[tuple[YearMonth, Money], ...],
+        idempotency_key: str,
+        actor: str,
+        reason: str,
+    ) -> MonthlyBudget:
+        """Replace or replay one complete budget plan."""
+
+
+class BudgetMutationAdapter:
+    """Translate strict browser budget commands into existing use cases.
+
+    Wallet entries stay out of this adapter deliberately. They are a separate
+    authority with their own balance consequences, and Step 5 exposes no
+    browser route for them.
+    """
+
+    def __init__(self, writer: BudgetWriter, *, ids: IdGenerator) -> None:
+        """Bind budget translation to replaceable application ports.
+
+        Args:
+            writer: Existing audited, replay-safe budget use cases.
+            ids: Identifier source for newly created budget aggregates.
+        """
+
+        self._writer = writer
+        self._ids = ids
+
+    def create(
+        self,
+        *,
+        profile_id: UUID,
+        command_key: str,
+        request: BudgetCreateRequest,
+    ) -> MonthlyBudget:
+        """Attach a first budget to one active category.
+
+        Args:
+            profile_id: Trusted owner scope from process composition.
+            command_key: Transport idempotency key.
+            request: Validated complete target and override plan.
+
+        Returns:
+            Newly created budget or the prior identical result.
+        """
+
+        return self._writer.create_budget(
+            MonthlyBudget(
+                id=self._ids.new(),
+                profile_id=profile_id,
+                category_id=request.category_id,
+                recurring_target=Money(request.recurring_target.minor_units),
+                overrides=_overrides_from_request(request),
+            ),
+            idempotency_key=command_key,
+            actor=WEB_ACTOR,
+            reason="manual browser budget creation",
+        )
+
+    def replace(
+        self,
+        *,
+        profile_id: UUID,
+        category_id: UUID,
+        command_key: str,
+        request: BudgetReplaceRequest,
+    ) -> MonthlyBudget:
+        """Replace the complete plan under optimistic concurrency."""
+
+        return self._writer.replace_budget(
+            profile_id=profile_id,
+            category_id=category_id,
+            expected_version=request.expected_version,
+            recurring_target=Money(request.recurring_target.minor_units),
+            overrides=_overrides_from_request(request),
+            idempotency_key=command_key,
+            actor=WEB_ACTOR,
+            reason="manual browser budget correction",
+        )
+
+
+def _overrides_from_request(
+    request: BudgetWriteRequest,
+) -> tuple[tuple[YearMonth, Money], ...]:
+    """Build validated domain override pairs from one strict browser plan."""
+
+    return tuple(
+        (
+            YearMonth(item.period.year, item.period.month),
+            Money(item.target.minor_units),
+        )
+        for item in request.overrides
+    )
+
+
 def _expense_from_request(
     request: ExpenseCreateRequest,
     *,
@@ -256,4 +375,10 @@ def _expense_from_request(
     )
 
 
-__all__ = ["ExpenseMutationAdapter", "ExpenseWriter", "WEB_ACTOR"]
+__all__ = [
+    "WEB_ACTOR",
+    "BudgetMutationAdapter",
+    "BudgetWriter",
+    "ExpenseMutationAdapter",
+    "ExpenseWriter",
+]

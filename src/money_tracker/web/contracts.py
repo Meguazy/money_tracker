@@ -8,7 +8,12 @@ from uuid import UUID
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
 from money_tracker.api.contracts import ExpenseCreateRequest, MoneyContract
-from money_tracker.application import MonthlyOverview, TransactionRegister
+from money_tracker.application import (
+    BudgetPlan,
+    BudgetPlanEntry,
+    MonthlyOverview,
+    TransactionRegister,
+)
 from money_tracker.domain import (
     BalanceMode,
     BudgetStatus,
@@ -18,6 +23,7 @@ from money_tracker.domain import (
     FundingClass,
     FundingSourceStatus,
     Money,
+    MonthlyBudget,
     YearMonth,
 )
 
@@ -281,6 +287,116 @@ class TransactionRegisterResponse(_WebContract):
                 )
             ),
         )
+
+
+class BudgetOverrideContract(_WebContract):
+    """One explicit monthly target replacing the recurring one."""
+
+    period: PeriodContract
+    target: MoneyContract
+
+
+class BudgetPlanEntryContract(_WebContract):
+    """One configured budget with the identity a correction must quote."""
+
+    category_id: UUID
+    category_name: str
+    recurring_target: MoneyContract
+    overrides: tuple[BudgetOverrideContract, ...]
+    target: MoneyContract
+    posted_spend: MoneyContract
+    remaining: MoneyContract
+    version: int = Field(ge=1)
+
+    @classmethod
+    def from_application(cls, entry: BudgetPlanEntry) -> Self:
+        """Map one budget position without exposing profile or budget identity.
+
+        The stable category, not the budget row, addresses the resource, so the
+        browser never learns an identifier it has no route for.
+        """
+
+        return cls(
+            category_id=entry.budget.category_id,
+            category_name=entry.category_name,
+            recurring_target=MoneyContract(
+                minor_units=entry.budget.recurring_target.minor_units,
+            ),
+            overrides=tuple(
+                BudgetOverrideContract(
+                    period=PeriodContract.from_domain(period),
+                    target=MoneyContract(minor_units=target.minor_units),
+                )
+                for period, target in entry.budget.overrides
+            ),
+            target=MoneyContract(minor_units=entry.status.target.minor_units),
+            posted_spend=MoneyContract(
+                minor_units=entry.status.posted_spend.minor_units,
+            ),
+            remaining=MoneyContract(minor_units=entry.status.remaining.minor_units),
+            version=entry.budget.version,
+        )
+
+
+class BudgetPlanResponse(_WebContract):
+    """Stored monthly budget plan and the categories still available."""
+
+    period: PeriodContract
+    entries: tuple[BudgetPlanEntryContract, ...]
+    budgetable_categories: tuple[CategoryReferenceContract, ...]
+
+    @classmethod
+    def from_application(cls, plan: BudgetPlan) -> Self:
+        """Map the plan read model into the control-plane wire shape."""
+
+        return cls(
+            period=PeriodContract.from_domain(plan.period),
+            entries=tuple(
+                BudgetPlanEntryContract.from_application(entry)
+                for entry in plan.entries
+            ),
+            budgetable_categories=tuple(
+                CategoryReferenceContract(
+                    id=category.id,
+                    name=category.name,
+                    parent_id=category.parent_id,
+                    status=category.status,
+                )
+                for category in plan.budgetable_categories
+            ),
+        )
+
+
+class BudgetMutationResponse(_WebContract):
+    """Return only the identity and version needed after a budget mutation."""
+
+    category_id: UUID
+    version: int = Field(ge=1)
+
+    @classmethod
+    def from_domain(cls, budget: MonthlyBudget) -> Self:
+        """Map an aggregate without returning trusted profile or budget rows."""
+
+        return cls(category_id=budget.category_id, version=budget.version)
+
+
+class BudgetWriteRequest(_WebContract):
+    """Complete recurring target and override plan for one category."""
+
+    recurring_target: MoneyContract
+    overrides: tuple[BudgetOverrideContract, ...] = ()
+
+
+class BudgetCreateRequest(BudgetWriteRequest):
+    """First budget attached to one active category."""
+
+    category_id: UUID
+
+
+class BudgetReplaceRequest(BudgetWriteRequest):
+    """Full budget replacement under optimistic concurrency."""
+
+    expected_version: int = Field(ge=1)
 
 
 class ExpenseReplaceRequest(ExpenseCreateRequest):

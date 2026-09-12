@@ -5,11 +5,11 @@ Part of the [delivery roadmap](../roadmap.md).
 Status: **In progress (2026-09-12).** The implemented vertical slices provide
 the loopback same-origin host, deterministic monthly overview and transaction
 register, accessible React shell, audited manual create, correct, post, and
-cancel workflows, and the multi-allocation editor for both reconciling
-dimensions. The remaining control-plane views, wider analytics, advice surface,
-and complete browser E2E acceptance are still open. No model, prompt, routing
-threshold, tool contract, or taxonomy policy changed, so EVD-004 remains the
-promoted text baseline.
+cancel workflows, the multi-allocation editor for both reconciling dimensions,
+and the monthly budget planner. The remaining control-plane views, wider
+analytics, advice surface, and complete browser E2E acceptance are still open.
+No model, prompt, routing threshold, tool contract, or taxonomy policy changed,
+so EVD-004 remains the promoted text baseline.
 
 ## Deliverables
 
@@ -143,10 +143,52 @@ promoted text baseline.
   the real `FinanceService` and `PostgresFinanceRepository` that the stored
   allocations and the monthly personal/benefit split match exactly.
 
+### Monthly budget planner slice (2026-09-12)
+
+- The overview has rendered budget positions since the first slice, but nothing
+  outside the tests could configure one: no CLI command and no API route reached
+  `FinanceAdministrationService`. `/budget` closes that gap, so the budget
+  comparison now measures targets the owner actually set.
+- `ReportingService.budget_plan` composes the existing posted-spend and budget
+  reads. Unlike the overview it also returns each aggregate's stable category,
+  explicit overrides, and optimistic version, because the control plane has to
+  correct the stored plan rather than only display it. Entries keep the
+  overview's ordering, worst position first.
+- `create_budget` and `replace_budget` are now replay-safe. They claim the same
+  general `finance.idempotency_records` table the movement commands use, keyed
+  by a canonical digest of scope, category, recurring target, and overrides.
+  Override order does not change the digest, so two orderings of one plan are a
+  single decision. This keeps the AD-009 rule that reusing a mutation key
+  retries the identical command true for every implemented resource rather than
+  only for movements.
+- `replace_budget` now raises `AggregateNotFoundError` instead of a bare
+  `LookupError`, so the web boundary maps one typed application failure.
+- The API adds `GET /api/v1/budgets`, `POST /api/v1/budgets`, and
+  `PUT /api/v1/budgets/{category_id}`. A budget is addressed by its stable
+  category, so the browser never receives a budget row identifier it has no
+  route for, and the responses carry no profile identity. Bounded problems
+  distinguish a missing budget, a conflict, and a refused domain rule.
+- The React `/budget` view lists each exact position with its remaining amount,
+  configures a target for any category that has none, and corrects a stored plan
+  under the version it displayed. Month overrides are added and removed as rows,
+  amounts convert through exact cents, and the form refuses a non-positive
+  target, a month without an amount, and two exceptions for one month.
+- Unit tests cover plan ordering and the version a correction must quote, the
+  exact wire shape, trusted scope injection, a refused profile field in a
+  request body, replayed creation, a reused key with changed content, and
+  override-order equivalence. Component tests cover listing, creation,
+  correction with stored overrides, validation, keyboard removal, API failure,
+  retry, and the empty state.
+- Real PostgreSQL tests configure a budget over HTTP, replay it, read the exact
+  position for its month and for an overridden month, refuse a key reused for
+  other content, refuse a stale version, and verify the corrected plan in the
+  database and in the monthly overview. A repository test proves one replayed
+  command writes a single audit row.
+
 ### Work still required before completion
 
-- Add receipt metadata/review, taxonomy proposals, budgets, funding
-  sources/wallets, messaging operations, and settings views.
+- Add receipt metadata/review, taxonomy proposals, funding sources/wallets,
+  messaging operations, and settings views.
 - Extend deterministic reads from the current month to day, ISO week, year,
   comparison, and validated custom ranges, retaining purpose and funding
   breakdowns.

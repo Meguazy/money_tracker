@@ -1169,12 +1169,82 @@ class PostgresFinanceRepository:
             ).fetchone()
             if row is None:
                 return None
-            override_rows = connection.execute(
-                "SELECT year, month, target_minor, currency "
-                "FROM finance.monthly_budget_overrides WHERE budget_id = %s "
-                "ORDER BY year, month",
-                (row[0],),
-            ).fetchall()
+            return self._budget_with_overrides(connection, row)
+
+    def get_idempotent_budget_command(
+        self,
+        *,
+        profile_id: UUID,
+        idempotency_key: str,
+        command_type: str,
+        request_hash: str,
+    ) -> MonthlyBudget | None:
+        """Return the budget an identical replayed command already stored.
+
+        Args:
+            profile_id: Trusted owner scope.
+            idempotency_key: Stable external command key.
+            command_type: Exact budget command the caller intends.
+            request_hash: Canonical category and exact target digest.
+
+        Returns:
+            Stored budget, or None when the key has never been claimed.
+
+        Raises:
+            IdempotencyConflictError: If the key names different semantics.
+        """
+
+        self._validate_command_identity(idempotency_key, command_type, request_hash)
+        with connect(self._database_url) as connection:
+            prior = connection.execute(
+                "SELECT command_type, request_hash, aggregate_id "
+                "FROM finance.idempotency_records "
+                "WHERE profile_id = %s AND idempotency_key = %s",
+                (profile_id, idempotency_key),
+            ).fetchone()
+            if prior is None:
+                return None
+            self._require_identical_budget_command(
+                prior,
+                command_type=command_type,
+                request_hash=request_hash,
+            )
+            row = connection.execute(
+                "SELECT id, profile_id, category_id, target_minor, currency, version "
+                "FROM finance.monthly_budgets WHERE id = %s AND profile_id = %s",
+                (prior[2], profile_id),
+            ).fetchone()
+            if row is None:
+                raise AggregateNotFoundError("claimed budget no longer exists")
+            return self._budget_with_overrides(connection, row)
+
+    @staticmethod
+    def _require_identical_budget_command(
+        prior: tuple[object, ...],
+        *,
+        command_type: str,
+        request_hash: str,
+    ) -> None:
+        """Refuse reuse of a command key for another budget mutation."""
+
+        if prior[:2] != (command_type, request_hash):
+            raise IdempotencyConflictError(
+                "idempotency key was used for different request content"
+            )
+
+    @staticmethod
+    def _budget_with_overrides(
+        connection: Connection[Any],
+        row: tuple[Any, ...],
+    ) -> MonthlyBudget:
+        """Attach every explicit monthly override to one budget row."""
+
+        override_rows = connection.execute(
+            "SELECT year, month, target_minor, currency "
+            "FROM finance.monthly_budget_overrides WHERE budget_id = %s "
+            "ORDER BY year, month",
+            (row[0],),
+        ).fetchall()
         return MonthlyBudget(
             id=row[0],
             profile_id=row[1],
@@ -1269,49 +1339,69 @@ class PostgresFinanceRepository:
                 "ORDER BY category_id",
                 (profile_id,),
             ).fetchall()
-            budgets: list[MonthlyBudget] = []
-            for row in rows:
-                override_rows = connection.execute(
-                    "SELECT year, month, target_minor, currency "
-                    "FROM finance.monthly_budget_overrides WHERE budget_id = %s "
-                    "ORDER BY year, month",
-                    (row[0],),
-                ).fetchall()
-                budgets.append(
-                    MonthlyBudget(
-                        id=row[0],
-                        profile_id=row[1],
-                        category_id=row[2],
-                        recurring_target=Money(row[3], row[4]),
-                        overrides=tuple(
-                            (YearMonth(item[0], item[1]), Money(item[2], item[3]))
-                            for item in override_rows
-                        ),
-                        version=row[5],
-                    )
-                )
-        return tuple(budgets)
+            return tuple(self._budget_with_overrides(connection, row) for row in rows)
 
     def save_budget(
         self,
         budget: MonthlyBudget,
         *,
         expected_version: int | None,
+        idempotency_key: str,
+        command_type: str,
+        request_hash: str,
         audit_event: AuditEvent,
     ) -> None:
-        """Create or replace a complete budget and audit atomically.
+        """Claim one command key and save a complete budget and audit atomically.
+
+        The claim shares the general command table with the movement commands,
+        so a retried browser or administrative request cannot apply the same
+        budget decision twice even when its first response was never seen.
 
         Args:
             budget: Complete target and override state.
             expected_version: ``None`` for create, otherwise observed version.
+            idempotency_key: Stable external command key.
+            command_type: Exact budget command being claimed.
+            request_hash: Canonical category and exact target digest.
             audit_event: Matching immutable audit event.
 
         Raises:
             AggregateNotFoundError: If the category is inactive or outside scope.
+            IdempotencyConflictError: If the key names different semantics.
             OptimisticConcurrencyError: If create conflicts or version is stale.
         """
 
+        self._validate_command_identity(idempotency_key, command_type, request_hash)
         with connect(self._database_url) as connection:
+            claimed = connection.execute(
+                "INSERT INTO finance.idempotency_records "
+                "(profile_id, idempotency_key, command_type, request_hash, "
+                "aggregate_id, created_at) VALUES (%s, %s, %s, %s, %s, %s) "
+                "ON CONFLICT DO NOTHING RETURNING aggregate_id",
+                (
+                    budget.profile_id,
+                    idempotency_key,
+                    command_type,
+                    request_hash,
+                    budget.id,
+                    audit_event.occurred_at,
+                ),
+            ).fetchone()
+            if claimed is None:
+                prior = connection.execute(
+                    "SELECT command_type, request_hash, aggregate_id "
+                    "FROM finance.idempotency_records "
+                    "WHERE profile_id = %s AND idempotency_key = %s",
+                    (budget.profile_id, idempotency_key),
+                ).fetchone()
+                if prior is None:
+                    raise IdempotencyConflictError("idempotency claim disappeared")
+                self._require_identical_budget_command(
+                    prior,
+                    command_type=command_type,
+                    request_hash=request_hash,
+                )
+                return
             category = connection.execute(
                 "SELECT 1 FROM finance.categories "
                 "WHERE id = %s AND profile_id = %s AND status = 'active'",

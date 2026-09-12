@@ -122,14 +122,27 @@ class FinanceAdministrationRepository(Protocol):
     def get_budget(self, profile_id: UUID, category_id: UUID) -> MonthlyBudget | None:
         """Load the budget attached to one category when configured."""
 
+    def get_idempotent_budget_command(
+        self,
+        *,
+        profile_id: UUID,
+        idempotency_key: str,
+        command_type: str,
+        request_hash: str,
+    ) -> MonthlyBudget | None:
+        """Return the budget an identical replayed command already stored."""
+
     def save_budget(
         self,
         budget: MonthlyBudget,
         *,
         expected_version: int | None,
+        idempotency_key: str,
+        command_type: str,
+        request_hash: str,
         audit_event: AuditEvent,
     ) -> None:
-        """Create or replace a complete budget under optimistic concurrency."""
+        """Claim one command key and create or replace a budget atomically."""
 
 
 class CategoryProposalRepository(Protocol):

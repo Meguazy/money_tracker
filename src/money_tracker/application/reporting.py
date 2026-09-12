@@ -25,6 +25,7 @@ from money_tracker.application.ports import ReportingRepository
 from money_tracker.domain import (
     BudgetStatus,
     Category,
+    CategoryStatus,
     Expense,
     FundingClassSplit,
     FundingSource,
@@ -105,6 +106,45 @@ class BudgetsAtRisk:
     period: YearMonth
     statuses: tuple[tuple[str, BudgetStatus], ...]
     unbudgeted_category_names: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class BudgetPlanEntry:
+    """One configured budget, its identity, and its position in one month.
+
+    Unlike the analytics views, this entry carries the aggregate itself. The
+    control plane has to offer the owner a correction of the stored plan, which
+    needs the stable identifier, every explicit override, and the optimistic
+    version that a replacement must quote.
+
+    Attributes:
+        budget: Complete stored aggregate, including its version.
+        category_name: Active display name of the budgeted category.
+        status: Effective target, posted spend, and signed remaining amount for
+            the reported month.
+    """
+
+    budget: MonthlyBudget
+    category_name: str
+    status: BudgetStatus
+
+
+@dataclass(frozen=True, slots=True)
+class BudgetPlan:
+    """Every configured budget for one month plus what may still be budgeted.
+
+    Attributes:
+        period: Rome calendar month reported.
+        entries: Configured budgets ordered by signed remaining amount, so an
+            overspent budget precedes a comfortable one exactly as the overview
+            orders them.
+        budgetable_categories: Active categories that have no budget yet, which
+            is what the owner may still configure.
+    """
+
+    period: YearMonth
+    entries: tuple[BudgetPlanEntry, ...]
+    budgetable_categories: tuple[Category, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -361,6 +401,66 @@ class ReportingService:
             funding_sources=self._repository.get_funding_sources(profile_id),
         )
 
+    def budget_plan(
+        self,
+        *,
+        profile_id: UUID,
+        period: YearMonth,
+    ) -> BudgetPlan:
+        """Return the stored budget plan and its position in one month.
+
+        The overview answers how the configured budgets are doing. This read
+        additionally exposes each aggregate's identity, overrides, and version,
+        because the control plane must be able to correct the plan and not only
+        display it.
+
+        Args:
+            profile_id: Trusted owner scope supplied by runtime composition.
+            period: Rome calendar month to report.
+
+        Returns:
+            Configured budgets worst position first, plus the active categories
+            that have no budget yet.
+        """
+
+        expenses = self._repository.get_posted_expenses(profile_id, period=period)
+        taxonomy = self._repository.get_taxonomy(profile_id)
+        budgets = self._repository.get_budgets(profile_id)
+        entries = tuple(
+            BudgetPlanEntry(
+                budget=budget,
+                category_name=taxonomy.category(budget.category_id).name,
+                status=budget_status(
+                    budget,
+                    period=period,
+                    posted_spend=posted_category_spend(
+                        expenses,
+                        category_id=budget.category_id,
+                        taxonomy=taxonomy,
+                    ),
+                ),
+            )
+            for budget in budgets
+        )
+        budgeted = {budget.category_id for budget in budgets}
+        return BudgetPlan(
+            period=period,
+            entries=tuple(
+                sorted(entries, key=lambda item: item.status.remaining.minor_units)
+            ),
+            budgetable_categories=tuple(
+                sorted(
+                    (
+                        category
+                        for category in taxonomy.categories
+                        if category.status is CategoryStatus.ACTIVE
+                        and category.id not in budgeted
+                    ),
+                    key=lambda item: (item.name, str(item.id)),
+                )
+            ),
+        )
+
     @staticmethod
     def _period_split_from(
         period: YearMonth,
@@ -458,6 +558,8 @@ class ReportingService:
 
 
 __all__ = [
+    "BudgetPlan",
+    "BudgetPlanEntry",
     "BudgetsAtRisk",
     "CategoryBudget",
     "CategorySpending",

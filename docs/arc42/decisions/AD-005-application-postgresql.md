@@ -2,7 +2,7 @@
 
 - Status: accepted
 - Implementation: foundation, finance schema, expense/wallet/budget repository
-  operations, replay-safe correction/undo/category-review command claims,
+  operations, replay-safe correction/undo/category-review/budget command claims,
   pending-proposal persistence, receipt review, and durable messaging
   persistence implemented; remaining adapters planned
 - Date: 2026-09-01
@@ -52,6 +52,11 @@ Category-review decisions use the same table with one proposal-wide key: the
 claim and the selected terminal transition commit together, an identical replay
 returns the first movement or successor proposal, and a competing branch
 conflicts without a second finance write.
+Budget creation and replacement claim that table too, keyed by a canonical
+digest of scope, category, recurring target, and overrides, so a retried
+browser or administrative request writes one budget and one audit row. The
+table is general rather than expense-shaped, which is why a second command
+family needed no migration.
 Roadmap Step 4 migration `20260909_0005` adds environment-scoped offsets,
 minimum normalized inbox rows, bounded claim/retry/dead-letter state, unique
 logical outbox messages, hashed one-use pairing, owner bindings, and scoped

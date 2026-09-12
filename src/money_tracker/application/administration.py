@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import replace
 from uuid import UUID
 
+from money_tracker.application.errors import AggregateNotFoundError
 from money_tracker.application.ports import (
     Clock,
     FinanceAdministrationRepository,
@@ -17,6 +20,55 @@ from money_tracker.domain import (
     WalletEntry,
     YearMonth,
 )
+
+CREATE_BUDGET_COMMAND = "create_budget"
+REPLACE_BUDGET_COMMAND = "replace_budget"
+
+
+def budget_request_hash(
+    *,
+    profile_id: UUID,
+    category_id: UUID,
+    recurring_target: Money,
+    overrides: tuple[tuple[YearMonth, Money], ...],
+) -> str:
+    """Hash the complete semantics of one budget command.
+
+    The digest covers the scope, the budgeted category, and every exact target
+    the command would store. Version is deliberately absent, because a replay
+    must match the first attempt even though that attempt advanced it. Override
+    months are sorted so that two orderings of the same plan are one command
+    rather than two.
+
+    Args:
+        profile_id: Trusted owner scope.
+        category_id: Budgeted stable category.
+        recurring_target: Default exact monthly target.
+        overrides: Explicit month and exact target pairs.
+
+    Returns:
+        Lowercase SHA-256 of the canonical command representation.
+    """
+
+    canonical = json.dumps(
+        {
+            "category_id": str(category_id),
+            "overrides": sorted(
+                [
+                    [period.year, period.month, target.minor_units, target.currency]
+                    for period, target in overrides
+                ]
+            ),
+            "profile_id": str(profile_id),
+            "recurring_target": [
+                recurring_target.minor_units,
+                recurring_target.currency,
+            ],
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 class FinanceAdministrationService:
@@ -77,6 +129,7 @@ class FinanceAdministrationService:
         self,
         budget: MonthlyBudget,
         *,
+        idempotency_key: str,
         actor: str,
         reason: str,
     ) -> MonthlyBudget:
@@ -84,24 +137,43 @@ class FinanceAdministrationService:
 
         Args:
             budget: Validated initial budget at version one.
+            idempotency_key: Stable external command key for replay safety.
             actor: Trusted owner or administrative actor.
             reason: Non-sensitive audit explanation.
 
         Returns:
-            Persisted budget.
+            Persisted budget, or the budget an identical replay already stored.
 
         Raises:
             ValueError: If the supplied budget is not an initial version.
+            IdempotencyConflictError: If the key named different semantics.
         """
 
         if budget.version != 1:
             raise ValueError("new budget must start at version 1")
+        request_hash = budget_request_hash(
+            profile_id=budget.profile_id,
+            category_id=budget.category_id,
+            recurring_target=budget.recurring_target,
+            overrides=budget.overrides,
+        )
+        replayed = self._repository.get_idempotent_budget_command(
+            profile_id=budget.profile_id,
+            idempotency_key=idempotency_key,
+            command_type=CREATE_BUDGET_COMMAND,
+            request_hash=request_hash,
+        )
+        if replayed is not None:
+            return replayed
         audit = self._budget_audit(
             budget, action="create", actor=actor, reason=reason, prior_version=None
         )
         self._repository.save_budget(
             budget,
             expected_version=None,
+            idempotency_key=idempotency_key,
+            command_type=CREATE_BUDGET_COMMAND,
+            request_hash=request_hash,
             audit_event=audit,
         )
         return budget
@@ -114,6 +186,7 @@ class FinanceAdministrationService:
         expected_version: int,
         recurring_target: Money,
         overrides: tuple[tuple[YearMonth, Money], ...],
+        idempotency_key: str,
         actor: str,
         reason: str,
     ) -> MonthlyBudget:
@@ -125,19 +198,36 @@ class FinanceAdministrationService:
             expected_version: Version observed by the caller.
             recurring_target: Replacement ``Money`` value.
             overrides: Replacement ``YearMonth``/``Money`` pairs.
+            idempotency_key: Stable external command key for replay safety.
             actor: Trusted owner or administrative actor.
             reason: Non-sensitive audit explanation.
 
         Returns:
-            Replaced budget with its version incremented.
+            Replaced budget with its version incremented, or the budget an
+            identical replay already stored.
 
         Raises:
-            LookupError: If the category has no configured budget.
+            AggregateNotFoundError: If the category has no configured budget.
+            IdempotencyConflictError: If the key named different semantics.
         """
 
+        request_hash = budget_request_hash(
+            profile_id=profile_id,
+            category_id=category_id,
+            recurring_target=recurring_target,
+            overrides=overrides,
+        )
+        replayed = self._repository.get_idempotent_budget_command(
+            profile_id=profile_id,
+            idempotency_key=idempotency_key,
+            command_type=REPLACE_BUDGET_COMMAND,
+            request_hash=request_hash,
+        )
+        if replayed is not None:
+            return replayed
         current = self._repository.get_budget(profile_id, category_id)
         if current is None:
-            raise LookupError("budget does not exist")
+            raise AggregateNotFoundError("budget does not exist in profile")
         updated = replace(
             current,
             recurring_target=recurring_target,
@@ -154,6 +244,9 @@ class FinanceAdministrationService:
         self._repository.save_budget(
             updated,
             expected_version=expected_version,
+            idempotency_key=idempotency_key,
+            command_type=REPLACE_BUDGET_COMMAND,
+            request_hash=request_hash,
             audit_event=audit,
         )
         return updated

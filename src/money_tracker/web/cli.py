@@ -9,7 +9,11 @@ from collections.abc import Sequence
 import uvicorn
 from psycopg import Error as PsycopgError
 
-from money_tracker.application import FinanceService, ReportingService
+from money_tracker.application import (
+    FinanceAdministrationService,
+    FinanceService,
+    ReportingService,
+)
 from money_tracker.application.runtime import SystemClock, UUID4Generator
 from money_tracker.logging_safety import configure_safe_logging
 from money_tracker.persistence.database import database_url_from_env
@@ -17,7 +21,10 @@ from money_tracker.persistence.finance import PostgresFinanceRepository
 from money_tracker.process_exit import exit_code_for, failure_reason
 from money_tracker.web.app import create_app
 from money_tracker.web.config import WebSettings
-from money_tracker.web.mutations import ExpenseMutationAdapter
+from money_tracker.web.mutations import (
+    BudgetMutationAdapter,
+    ExpenseMutationAdapter,
+)
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -60,6 +67,14 @@ def main(argv: Sequence[str] | None = None) -> None:
             reporting=ReportingService(repository),
             mutations=ExpenseMutationAdapter(
                 FinanceService(
+                    repository,
+                    clock=SystemClock(),
+                    ids=ids,
+                ),
+                ids=ids,
+            ),
+            budgets=BudgetMutationAdapter(
+                FinanceAdministrationService(
                     repository,
                     clock=SystemClock(),
                     ids=ids,

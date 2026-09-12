@@ -24,6 +24,7 @@ the step document, which is the only place any of them is written down.
 | [3](roadmap/step-3-evaluated-text-workflows.md) | Evaluated text workflows | Complete (2026-09-09) |
 | [4](roadmap/step-4-durable-telegram-mvp.md) | Durable Telegram MVP | Complete (2026-09-11) |
 | [5](roadmap/step-5-dashboard-and-advice.md) | Local dashboard, budgets, analytics, and advice | In progress (2026-09-12) |
+| [5.5](roadmap/step-5-5-llm-traceability.md) | Full LLM call traceability in Langfuse | Planned |
 | [6](roadmap/step-6-evaluated-receipt-workflow.md) | Evaluated receipt workflow | Planned |
 | [7](roadmap/step-7-hardening-and-release.md) | Operational hardening and personal V1 release | Planned |
 
@@ -31,6 +32,10 @@ Each row mirrors the status line of the step document it links to, and the two
 are updated in the same change. Status changes require evidence links in the
 step document, which is where the evidence itself lives. A step is complete only
 when all exit criteria pass; merged code alone is insufficient.
+
+Step 5.5 was inserted between existing steps rather than renumbering the ones
+after it, because dated evaluation records name Steps 6 and 7 and those records
+are evidence rather than plans. Read the numbers as an order, not as a count.
 
 ## Rules that apply to every step
 

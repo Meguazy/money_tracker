@@ -8,8 +8,9 @@ register, accessible React shell, audited manual create, correct, post, and
 cancel workflows, the multi-allocation editor for both reconciling dimensions,
 the monthly budget planner, owner review of pending category proposals,
 consultation and mandatory review of retained receipt metadata, and browser
-inspection and requeue of the durable messaging queues. The
-remaining control-plane views, wider
+inspection and requeue of the durable messaging queues. Daily, ISO-week,
+monthly, annual, and bounded custom-range analytics now expose separate purpose
+and funding views. The remaining control-plane views, merchant/comparison
 analytics, advice surface, and complete browser E2E acceptance are still open.
 No model, prompt, routing threshold, tool contract, or taxonomy policy changed,
 so EVD-004 remains the promoted text baseline.
@@ -374,13 +375,60 @@ so EVD-004 remains the promoted text baseline.
   model-visible contract, prompt, threshold, tool, or taxonomy policy changed;
   EVD-004 remains the promoted baseline.
 
+### Calendar analytics slice (2026-09-13)
+
+- `money_tracker.domain.periods` owns day, Monday-to-Sunday ISO week, calendar
+  month, calendar year, and custom interval resolution in `Europe/Rome`.
+  Periods are closed local-date ranges converted to half-open aware instants at
+  the repository boundary, so the 23-hour and 25-hour daylight-saving days
+  remain one calendar day. Custom input is ordered and capped at 366 days.
+- `ReportingService.range_overview` reads posted movements through a new bounded
+  repository method without replacing the monthly method the promoted tools
+  call. It returns one payment-derived total, its funding-class and
+  funding-source views, and a direct-category partition ordered by absolute
+  spend. Parent names are display context only: no parent roll-up is added to a
+  child figure, so purpose entries sum to the movement total exactly once.
+- Monthly budget positions appear only when the resolved dates cover one whole
+  calendar month, including a custom selection with those exact dates. A day,
+  week, partial month, or year receives no prorated target and the browser says
+  why.
+- `GET /api/v1/overview/range` accepts exactly the parameter set belonging to
+  the named granularity, resolves it through the domain calendar policy, and
+  returns the resolved dates and ISO numbering. Unknown granularities,
+  malformed dates, reversed or oversized ranges, and unrepresentable upper
+  bounds are bounded 422 problems. Profile scope remains composition-owned.
+- The React `/analisi` page selects all five granularities, submits one stable
+  selection at a time, and shows exact summary cards plus purpose, source, and
+  applicable monthly-budget tables. The tables explain that the two
+  reconciling dimensions are views of the same money and that source
+  consumption is not a wallet balance. Loading, empty, dependency-failure, and
+  retry states are explicit; controls and tables are labelled and keyboard
+  operable, and the route supports reload and bookmarking.
+  The shell lazy-loads every page behind an announced fallback; the monthly
+  chart loads only when budget data needs it, with ECharts and `zrender`
+  emitted separately so every production JavaScript chunk remains below
+  Vite's warning threshold.
+- Domain and application unit tests cover ISO year changes, daylight-saving
+  bounds, leap years, whole-month recognition, the custom-range limit, posted
+  filtering, signed exact splits, source zeros, category partitioning, and
+  budget applicability. Web unit tests pin every query shape and bounded
+  refusal. Component tests cover the exact tables, ISO-week and custom
+  selection, monthly-only budgets, empty data, and keyboard retry.
+- A real PostgreSQL HTTP test posts a split movement and two boundary
+  movements through `FinanceService`, then proves that an ISO week crossing
+  New Year includes only its own rows and preserves both exact dimensions. A
+  whole-month custom read includes its additional row and compares the parent
+  budget against child allocations without adding the unrelated purpose.
+- No migration, model-visible tool contract, prompt, routing threshold, or
+  taxonomy policy changed. The monthly tool read remains untouched, so no
+  evaluation gate is triggered and EVD-004 remains the promoted baseline.
+
 ### Work still required before completion
 
 - Add category rename/archive management, funding sources/wallets, and settings
   views.
-- Extend deterministic reads from the current month to day, ISO week, year,
-  comparison, and validated custom ranges, retaining purpose and funding
-  breakdowns.
+- Add merchant breakdowns and explicit period-over-period comparison without
+  changing the promoted model-visible tool contract accidentally.
 - Expose the already promoted read-only advice capabilities without widening
   their mutation authority; rerun and record any evaluation required by a
   changed model-visible contract.

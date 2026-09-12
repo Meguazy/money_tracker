@@ -72,6 +72,23 @@ export function currentRomeMonth(now: Date = new Date()): string {
   return `${year}-${month}`;
 }
 
+export function currentRomeDate(now: Date = new Date()): string {
+  const values = Object.fromEntries(
+    new Intl.DateTimeFormat("en-CA", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      timeZone: "Europe/Rome",
+    })
+      .formatToParts(now)
+      .map((part) => [part.type, part.value]),
+  );
+  if (values.year === undefined || values.month === undefined || values.day === undefined) {
+    throw new Error("Il calendario locale non è disponibile.");
+  }
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
 export function currentLocalDateTime(now: Date = new Date()): string {
   const values = Object.fromEntries(
     new Intl.DateTimeFormat("en-CA", {

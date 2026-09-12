@@ -31,6 +31,44 @@ export type MonthlyOverview = {
   unbudgeted_categories: string[];
 };
 
+export type PeriodGranularity = "day" | "week" | "month" | "year" | "custom";
+
+export type RangeSelection =
+  | { granularity: "day" | "week"; day: string }
+  | { granularity: "month"; month: string }
+  | { granularity: "year"; year: string }
+  | { granularity: "custom"; start: string; end: string };
+
+export type RangeOverview = {
+  period: {
+    granularity: PeriodGranularity;
+    start: string;
+    end: string;
+    day_count: number;
+    iso_year: number | null;
+    iso_week: number | null;
+  };
+  posted_total: Money;
+  funding_split: {
+    personal_funds: Money;
+    benefit: Money;
+    other: Money;
+  };
+  funding_sources: FundingSourceSpend[];
+  categories: Array<{
+    category_id: string;
+    category_name: string;
+    parent_name: string | null;
+    amount: Money;
+  }>;
+  movement_count: number;
+  budgets: {
+    period: { year: number; month: number };
+    positions: BudgetPosition[];
+    unbudgeted_categories: string[];
+  } | null;
+};
+
 export type ExpenseStatus =
   "draft" | "needs_review" | "posted" | "voided" | "discarded";
 
@@ -219,6 +257,17 @@ export async function loadMonthlyOverview(
     { signal },
   );
   return responseJson<MonthlyOverview>(response);
+}
+
+export async function loadRangeOverview(
+  selection: RangeSelection,
+  signal?: AbortSignal,
+): Promise<RangeOverview> {
+  const parameters = new URLSearchParams(selection);
+  const response = await fetch(`/api/v1/overview/range?${parameters.toString()}`, {
+    signal,
+  });
+  return responseJson<RangeOverview>(response);
 }
 
 export async function loadTransactions(

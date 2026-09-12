@@ -60,7 +60,7 @@ describe("OverviewPage", () => {
     expect(screen.getByText(/20,00\s€/)).toBeInTheDocument();
     expect(screen.getByText(/30,00\s€/)).toBeInTheDocument();
     expect(
-      screen.getByRole("img", { name: /grafico dei budget/i }),
+      await screen.findByRole("img", { name: /grafico dei budget/i }),
     ).toHaveAttribute("tabindex", "0");
     expect(screen.getByRole("table")).toHaveAccessibleName(/alternativa tabellare/i);
     expect(

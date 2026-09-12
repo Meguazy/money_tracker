@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Literal, Self, cast
 from uuid import UUID
 
@@ -12,7 +13,9 @@ from money_tracker.application import (
     BudgetPlan,
     BudgetPlanEntry,
     CategoryReviewQueue,
+    MonthlyBudgetPositions,
     MonthlyOverview,
+    RangeOverview,
     TransactionRegister,
 )
 from money_tracker.domain import (
@@ -26,8 +29,10 @@ from money_tracker.domain import (
     FundingSourceStatus,
     Money,
     MonthlyBudget,
+    PeriodGranularity,
     ReceiptMetadata,
     ReceiptStatus,
+    ResolvedPeriod,
     YearMonth,
 )
 from money_tracker.messaging import (
@@ -144,6 +149,128 @@ class MonthlyOverviewResponse(_WebContract):
                 for name, status in overview.budgets
             ),
             unbudgeted_categories=overview.unbudgeted_category_names,
+        )
+
+
+class ResolvedPeriodContract(_WebContract):
+    """One reporting period as the Rome calendar policy resolved it.
+
+    The browser sends a selection and receives the resolved calendar facts
+    back. Nothing here is recomputed client-side: an ISO week's numbering is
+    not derivable from its dates without repeating the calendar rule, and the
+    week containing 31 December 2025 belongs to ISO year 2026.
+    """
+
+    granularity: PeriodGranularity
+    start: date
+    end: date
+    day_count: int
+    iso_year: int | None
+    iso_week: int | None
+
+    @classmethod
+    def from_domain(cls, period: ResolvedPeriod) -> Self:
+        """Build the wire period from a resolved domain value."""
+
+        return cls(
+            granularity=period.granularity,
+            start=period.interval.start,
+            end=period.interval.end,
+            day_count=period.interval.day_count,
+            iso_year=period.iso_year,
+            iso_week=period.iso_week,
+        )
+
+
+class CategorySpendContract(_WebContract):
+    """Exact posted spend allocated directly to one category.
+
+    The parent is named for display only. Each entry carries the allocations
+    that name its own category and never a descendant's, so the entries are a
+    partition of the purpose dimension rather than overlapping roll-ups.
+    """
+
+    category_id: UUID
+    category_name: str
+    parent_name: str | None
+    amount: MoneyContract
+
+
+class MonthlyBudgetPositionsContract(_WebContract):
+    """Budget positions, present only for a whole calendar month."""
+
+    period: PeriodContract
+    positions: tuple[BudgetPositionContract, ...]
+    unbudgeted_categories: tuple[str, ...]
+
+    @classmethod
+    def from_application(cls, budgets: MonthlyBudgetPositions) -> Self:
+        """Build the monthly budget block from deterministic positions."""
+
+        return cls(
+            period=PeriodContract.from_domain(budgets.period),
+            positions=tuple(
+                BudgetPositionContract.from_domain(name, status)
+                for name, status in budgets.statuses
+            ),
+            unbudgeted_categories=budgets.unbudgeted_category_names,
+        )
+
+
+class RangeOverviewResponse(_WebContract):
+    """Deterministic posted facts over any resolved Rome calendar period.
+
+    `budgets` is null whenever the period is not exactly one calendar month.
+    A monthly budget has no rollover, so there is no defined position for a
+    day, a week, a year, or a partial or multi-month interval, and the field is
+    omitted rather than filled with a prorated figure the owner never set.
+    """
+
+    period: ResolvedPeriodContract
+    posted_total: MoneyContract
+    funding_split: FundingClassSplitContract
+    funding_sources: tuple[FundingSourceSpendContract, ...]
+    categories: tuple[CategorySpendContract, ...]
+    movement_count: int
+    budgets: MonthlyBudgetPositionsContract | None
+
+    @classmethod
+    def from_application(cls, overview: RangeOverview) -> Self:
+        """Map the range read without exposing profile identity."""
+
+        return cls(
+            period=ResolvedPeriodContract.from_domain(overview.period),
+            posted_total=MoneyContract(
+                minor_units=overview.posted_total.minor_units,
+            ),
+            funding_split=FundingClassSplitContract.from_amounts(
+                personal=overview.split.personal_funds,
+                benefit=overview.split.benefit,
+                other=overview.split.other,
+            ),
+            funding_sources=tuple(
+                FundingSourceSpendContract(
+                    name=source.name,
+                    funding_class=source.funding_class,
+                    amount=MoneyContract(minor_units=amount.minor_units),
+                )
+                for source, amount in overview.sources
+            ),
+            categories=tuple(
+                CategorySpendContract(
+                    category_id=entry.category.id,
+                    category_name=entry.category.name,
+                    parent_name=entry.parent_name,
+                    amount=MoneyContract(minor_units=entry.amount.minor_units),
+                )
+                for entry in overview.categories
+            ),
+            movement_count=overview.movement_count,
+            budgets=(
+                None
+                if overview.budgets is None
+                else MonthlyBudgetPositionsContract.from_application(overview.budgets)
+            ),
         )
 
 
@@ -833,6 +960,7 @@ __all__ = [
     "CategoryReviewDecisionRequest",
     "CategoryReviewQueueResponse",
     "CategoryReviewReuseRequest",
+    "CategorySpendContract",
     "CsrfTokenResponse",
     "ExpenseCancelRequest",
     "ExpenseMutationResponse",
@@ -842,12 +970,15 @@ __all__ = [
     "FundingSourceReferenceContract",
     "FundingSourceSpendContract",
     "HealthResponse",
+    "MonthlyBudgetPositionsContract",
     "MonthlyOverviewResponse",
     "PeriodContract",
+    "RangeOverviewResponse",
     "ReceiptContract",
     "ReceiptMutationResponse",
     "ReceiptRegisterResponse",
     "ReceiptReviewRequest",
+    "ResolvedPeriodContract",
     "TransactionCategoryAllocationContract",
     "TransactionContract",
     "TransactionPaymentAllocationContract",

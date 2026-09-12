@@ -30,6 +30,7 @@ from money_tracker.domain import (
     FundingClass,
     FundingSource,
     Money,
+    MonthlyBudget,
     PaymentAllocation,
     Profile,
     ReceiptMetadata,
@@ -133,6 +134,66 @@ def _store_posted_expense(
     )
 
 
+def _store_split_posted_expense(
+    repository: PostgresFinanceRepository,
+    *,
+    profile: Profile,
+    occurred_at: datetime,
+    category_allocations: tuple[tuple[UUID, int], ...],
+    payment_allocations: tuple[tuple[UUID, int], ...],
+) -> None:
+    """Post one reconciled split movement through the real application service."""
+
+    total = sum(amount for _, amount in category_allocations)
+    assert total == sum(amount for _, amount in payment_allocations)
+    reference = f"integration:web:analytics:{uuid4()}"
+    expense = Expense(
+        id=uuid4(),
+        profile_id=profile.id,
+        amount=Money(total),
+        occurred_at=occurred_at,
+        description="movimento analitico",
+        merchant=None,
+        status=ExpenseStatus.DRAFT,
+        category_allocations=tuple(
+            CategoryAllocation(
+                category_id=category_id,
+                amount=Money(amount),
+                provenance="test",
+            )
+            for category_id, amount in category_allocations
+        ),
+        payment_allocations=tuple(
+            PaymentAllocation(
+                funding_source_id=funding_source_id,
+                amount=Money(amount),
+            )
+            for funding_source_id, amount in payment_allocations
+        ),
+        source_reference=reference,
+        idempotency_key=reference,
+    )
+    finance = FinanceService(repository, clock=SystemClock(), ids=UUID4Generator())
+    created = finance.create_expense(
+        expense,
+        request_hash=sha256(reference.encode()).hexdigest(),
+        actor="test",
+        reason="web range analytics fixture",
+    )
+    finance.post_expense(
+        profile_id=profile.id,
+        expense_id=created.id,
+        expected_version=created.version,
+        idempotency_key=f"posting:{created.id}",
+        request_hash=posting_request_hash(
+            profile_id=profile.id,
+            expense_id=created.id,
+        ),
+        actor="test",
+        reason="web range analytics fixture",
+    )
+
+
 @pytest.mark.postgres
 def test_monthly_endpoint_reads_real_postgresql_state(postgres_url: str) -> None:
     """Serve exact posted facts through HTTP and the production read adapter."""
@@ -195,6 +256,140 @@ def test_monthly_endpoint_reads_real_postgresql_state(postgres_url: str) -> None
     }
     assert response.json()["funding_split"]["personal_funds"]["minor_units"] == 4250
     assert response.json()["unbudgeted_categories"] == ["Spesa alimentare"]
+
+
+@pytest.mark.postgres
+def test_range_analytics_resolve_calendar_and_both_dimensions_in_postgresql(
+    postgres_url: str,
+) -> None:
+    """Read an ISO week and whole month through HTTP over real stored splits."""
+
+    upgrade_database(postgres_url)
+    repository = PostgresFinanceRepository(postgres_url)
+    profile = Profile(uuid4())
+    now = SystemClock().now()
+    taxonomy = initial_taxonomy()
+    repository.bootstrap_profile(profile, taxonomy=taxonomy, occurred_at=now)
+    card = FundingSource(
+        id=uuid4(),
+        profile_id=profile.id,
+        name="Carta analytics web",
+        funding_class=FundingClass.PERSONAL_FUNDS,
+        balance_mode=BalanceMode.UNTRACKED,
+        is_default=True,
+    )
+    vouchers = FundingSource(
+        id=uuid4(),
+        profile_id=profile.id,
+        name="Buoni analytics web",
+        funding_class=FundingClass.BENEFIT,
+        balance_mode=BalanceMode.UNTRACKED,
+    )
+    repository.create_funding_source(card, occurred_at=now)
+    repository.create_funding_source(vouchers, occurred_at=now)
+    food = taxonomy.resolve_active("Spesa alimentare")
+    home = taxonomy.resolve_active("Prodotti casa, arredo e manutenzione")
+    food_root = taxonomy.resolve_active("Alimentazione")
+    _store_split_posted_expense(
+        repository,
+        profile=profile,
+        occurred_at=datetime(2025, 12, 28, 12, tzinfo=ROME),
+        category_allocations=((food.id, 700),),
+        payment_allocations=((card.id, 700),),
+    )
+    _store_split_posted_expense(
+        repository,
+        profile=profile,
+        occurred_at=datetime(2025, 12, 31, 12, tzinfo=ROME),
+        category_allocations=((food.id, 3000), (home.id, 2000)),
+        payment_allocations=((card.id, 3500), (vouchers.id, 1500)),
+    )
+    _store_split_posted_expense(
+        repository,
+        profile=profile,
+        occurred_at=datetime(2026, 1, 5, 12, tzinfo=ROME),
+        category_allocations=((food.id, 900),),
+        payment_allocations=((card.id, 900),),
+    )
+    FinanceAdministrationService(
+        repository,
+        clock=SystemClock(),
+        ids=UUID4Generator(),
+    ).create_budget(
+        MonthlyBudget(
+            id=uuid4(),
+            profile_id=profile.id,
+            category_id=food_root.id,
+            recurring_target=Money(6000),
+        ),
+        idempotency_key=f"integration-web-analytics-budget:{uuid4()}",
+        actor="test",
+        reason="web range analytics fixture",
+    )
+    ids = UUID4Generator()
+    app = create_app(
+        settings=WebSettings(static_dir=None),
+        profile_id=profile.id,
+        reporting=ReportingService(repository),
+        mutations=ExpenseMutationAdapter(
+            FinanceService(repository, clock=SystemClock(), ids=ids),
+            ids=ids,
+        ),
+        budgets=BudgetMutationAdapter(
+            FinanceAdministrationService(repository, clock=SystemClock(), ids=ids),
+            ids=ids,
+        ),
+        category_reviews=CategoryReviewMutationAdapter(
+            CategoryReviewService(repository, repository, clock=SystemClock(), ids=ids)
+        ),
+        receipts=ReceiptReviewMutationAdapter(
+            ReceiptMetadataService(repository, clock=SystemClock(), ids=ids)
+        ),
+        messaging=_messaging(postgres_url),
+        readiness_check=lambda: repository.profile_exists(profile.id),
+    )
+    client = TestClient(app, base_url="http://localhost:8000")
+
+    week = client.get(
+        "/api/v1/overview/range?granularity=week&day=2025-12-31",
+    )
+    whole_month = client.get(
+        "/api/v1/overview/range?granularity=custom&start=2025-12-01&end=2025-12-31",
+    )
+
+    assert week.status_code == 200
+    assert week.json()["period"] == {
+        "granularity": "week",
+        "start": "2025-12-29",
+        "end": "2026-01-04",
+        "day_count": 7,
+        "iso_year": 2026,
+        "iso_week": 1,
+    }
+    assert week.json()["posted_total"]["minor_units"] == 5000
+    assert week.json()["movement_count"] == 1
+    assert week.json()["funding_split"]["personal_funds"]["minor_units"] == 3500
+    assert week.json()["funding_split"]["benefit"]["minor_units"] == 1500
+    assert {
+        item["category_name"]: item["amount"]["minor_units"]
+        for item in week.json()["categories"]
+    } == {
+        "Spesa alimentare": 3000,
+        "Prodotti casa, arredo e manutenzione": 2000,
+    }
+    assert week.json()["budgets"] is None
+    assert "profile_id" not in week.text
+    assert whole_month.status_code == 200
+    assert whole_month.json()["posted_total"]["minor_units"] == 5700
+    assert whole_month.json()["budgets"]["period"] == {"year": 2025, "month": 12}
+    assert whole_month.json()["budgets"]["positions"] == [
+        {
+            "category_name": "Alimentazione",
+            "target": {"minor_units": 6000, "currency": "EUR"},
+            "posted_spend": {"minor_units": 3700, "currency": "EUR"},
+            "remaining": {"minor_units": 2300, "currency": "EUR"},
+        }
+    ]
 
 
 @pytest.mark.postgres

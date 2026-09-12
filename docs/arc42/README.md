@@ -27,14 +27,15 @@ v6, tool-selection v5, routing confidence 0.5, and
 workflow, authorization, latency, fault, and reboot acceptance on 2026-09-11.
 
 Step 5 is active. Its implemented slices provide the loopback FastAPI host,
-monthly overview and transaction register, audited manual create/correct/post/
-cancel workflows, the multi-allocation editor for both reconciling dimensions,
-the monthly budget planner, owner review of pending category proposals,
-consultation and mandatory review of retained receipt metadata, browser
-inspection and pinned requeue of the durable messaging queues, compiled React
-shell, browser security policy, and
-host unit. The remaining control-plane views, wider analytics, advice exposure,
-and browser E2E acceptance are still planned within Step 5. Receipt extraction
+monthly overview, calendar analytics, and transaction register, audited manual
+create/correct/post/cancel workflows, the multi-allocation editor for both
+reconciling dimensions, the monthly budget planner, owner review of pending
+category proposals, consultation and mandatory review of retained receipt
+metadata, browser inspection and pinned requeue of the durable messaging queues,
+compiled React shell, browser security policy, and host unit. The remaining
+control-plane views, merchant analytics, explicit period comparisons, advice
+exposure, and browser E2E acceptance are still planned within Step 5.
+Receipt extraction
 remains assigned to Step 6.
 
 ### Quality goals
@@ -170,7 +171,7 @@ boundary is not end-to-end encrypted and must not be described as local storage.
 ```text
 Money Tracker workstation
 ├── Host processes
-│   ├── FastAPI application and compiled React UI        [overview/movements/budgets/category review/receipts/messaging implemented]
+│   ├── FastAPI application and compiled React UI        [overview/analytics/movements/budgets/category review/receipts/messaging implemented]
 │   ├── Telegram gateway                                [implemented; unit template checked in]
 │   ├── Sequential workflow worker                      [implemented; unit template checked in]
 │   │   ├── typed dispatcher, router, and text graphs  [implemented library]
@@ -285,9 +286,10 @@ catalog is promoted; every identifier carries a `candidate-` prefix.
 | --- | --- | --- | --- | --- |
 | Workflow dispatcher, root router, and text specialists (implemented) | Route one intent and coordinate expense/refund, correction/undo, category review, query, or advice | Typed normalized work unit/outcome, versioned schemas, scoped tool registries, trusted correlations | Namespaced checkpoint references and workflow IDs; no domain ownership | Administration CLI and worker; mutation paths call replay-safe application services |
 | Telegram Bot API transport (implemented) | Validate the bot, long poll, obtain file metadata, acknowledge callbacks, and deliver outbox messages | Bounded HTTPS client and messaging services | No authoritative finance data or correctness state | Gateway host service; separate production/test token selected from a private environment file |
-| FastAPI adapter (partial) | Expose monthly overview/register, manual lifecycle, budget planning, pending category review, receipt metadata review, messaging operations, health, CSRF bootstrap, compiled UI, and later REST resources | Narrow reporting, finance, budget, category-review, receipt-review, and messaging-operations adapters | No independent data | Implemented on loopback with Host/Origin, CSRF, idempotency, optimistic concurrency, proposal-wide and transition-wide command identity, and bounded errors |
-| React dashboard (partial) | Display the overview, transaction register, budget planner, pending category proposals, retained receipt metadata, and durable messaging state; edit the multi-allocation manual lifecycle, monthly budgets, deterministic category decisions, the mandatory receipt review, and both queue requeues; later edit wallet and settings state | Same-origin REST API | Browser session/UI state only | Compiled static assets; no secrets, receipt images, or message content; labelled controls, lifecycle history, responsive wrapping navigation, and accessible chart table alternative |
+| FastAPI adapter (partial) | Expose monthly and calendar-range overviews, transaction register, manual lifecycle, budget planning, pending category review, receipt metadata review, messaging operations, health, CSRF bootstrap, compiled UI, and later REST resources | Narrow reporting, finance, budget, category-review, receipt-review, and messaging-operations adapters | No independent data | Implemented on loopback with Host/Origin, CSRF, idempotency, optimistic concurrency, proposal-wide and transition-wide command identity, and bounded errors |
+| React dashboard (partial) | Display the monthly overview, calendar analytics, transaction register, budget planner, pending category proposals, retained receipt metadata, and durable messaging state; edit the multi-allocation manual lifecycle, monthly budgets, deterministic category decisions, the mandatory receipt review, and both queue requeues; later edit wallet and settings state | Same-origin REST API | Browser session/UI state only | Route-split compiled static assets with the chart engine isolated from its renderer; no secrets, receipt images, or message content; accessible loading fallbacks, labelled controls, lifecycle history, responsive wrapping navigation, and chart/table alternatives |
 | Local model gateway | Provide typed chat, schema and tool capabilities | OpenAI-compatible local endpoint | No persistent domain data | Replaceable host inference process |
+| Calendar period resolver (implemented) | Resolve strict day, ISO-week, month, year, and bounded inclusive custom selections into half-open query intervals | Pure domain date values used by reporting and the web adapter; no framework or repository dependency | No persistent data | In-process domain component; Europe/Rome calendar semantics, DST-safe boundaries, and a 366-day custom-range ceiling |
 | Receipt extractor adapter | Produce a versioned structured receipt draft | Selected local OCR/VLM pipeline | No authoritative data until validated | Local-only; selection remains evaluation-gated |
 | Langfuse adapter | Record redacted traces and experiment scores | Local Langfuse SDK | Observability copies, not source of truth | Optional development/evaluation profile |
 
@@ -1465,10 +1467,10 @@ environment file.
   implemented; extractor evaluation and the extracted-draft preview workflow
   planned.
 - [AD-009: Local FastAPI and React web application](decisions/AD-009-local-web-application.md):
-  strict version-one finance wire contracts, monthly overview, manual
-  lifecycle, multi-allocation editing, budget planning, category review,
-  receipt metadata review, HTTP security, and host deployment implemented;
-  remaining Step 5 resources and acceptance planned.
+  strict version-one finance wire contracts, monthly overview, calendar
+  analytics, manual lifecycle, multi-allocation editing, budget planning,
+  category review, receipt metadata review, HTTP security, and host deployment
+  implemented; remaining Step 5 resources and acceptance planned.
 - [AD-014: Private content-addressed receipt archive](decisions/AD-014-private-receipt-archive.md):
   safe local adapter, replay-safe versioned review state, and real
   filesystem/PostgreSQL integration implemented; administration CLI wiring,

@@ -31,14 +31,16 @@ from money_tracker.domain import (
     FundingSource,
     Money,
     MonthlyBudget,
+    ResolvedPeriod,
     Taxonomy,
     TaxonomyError,
     YearMonth,
     budget_status,
     posted_category_spend,
     posted_funding_class_split,
+    sum_money,
 )
-from money_tracker.domain.finance import posted_funding_source_spend
+from money_tracker.domain.finance import ExpenseStatus, posted_funding_source_spend
 
 
 @dataclass(frozen=True, slots=True)
@@ -170,6 +172,85 @@ class MonthlyOverview:
     split: PeriodSplit
     budgets: tuple[tuple[str, BudgetStatus], ...]
     unbudgeted_category_names: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class CategorySpendEntry:
+    """Posted spend allocated directly to one category over a period.
+
+    Entries partition the purpose dimension: every posted category allocation
+    belongs to exactly one entry, so the entries sum to the period total
+    without a parent and its children being counted twice. A parent is named
+    for display only; its own figure never includes a child's.
+
+    Attributes:
+        category: Category the allocations name, active or archived.
+        parent_name: Display name of the root category, or None at the root.
+        amount: Exact signed sum of the allocations assigned to it.
+    """
+
+    category: Category
+    parent_name: str | None
+    amount: Money
+
+
+@dataclass(frozen=True, slots=True)
+class MonthlyBudgetPositions:
+    """Budget positions for a period that is exactly one calendar month.
+
+    A monthly budget has no rollover, so a target compares against one month
+    and against nothing else. There is no honest position for a day, a week,
+    a year, or a partial or multi-month interval, and this read reports the
+    absence instead of prorating a target into a number the owner never set.
+
+    Attributes:
+        period: Calendar month the positions belong to.
+        statuses: Configured positions paired with their category names,
+            worst position first, exactly as the monthly overview orders them.
+        unbudgeted_category_names: Active purposes with spend and no
+            applicable direct or parent budget.
+    """
+
+    period: YearMonth
+    statuses: tuple[tuple[str, BudgetStatus], ...]
+    unbudgeted_category_names: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class RangeOverview:
+    """Deterministic posted facts for any resolved Rome calendar period.
+
+    The monthly overview answers the same question for one month and keeps
+    its own shape, because the model-visible tools read through it. This read
+    accepts every granularity the control plane offers and adds the purpose
+    dimension the monthly overview never exposed as amounts.
+
+    The two AD-007 dimensions are reported side by side and never added to
+    each other. `posted_total` comes from the payment dimension, `categories`
+    from the purpose dimension, and a posted movement reconciles both to its
+    own total, so the two views describe the same money from two angles
+    rather than two sums to combine.
+
+    Attributes:
+        period: Resolved granularity and closed Rome interval reported.
+        posted_total: Net posted consumption over the interval, refunds
+            signed, derived from the payment dimension.
+        split: The same total separated into personal funds and benefits.
+        sources: Configured sources and their net posted payment totals,
+            including zero consumption. These are not wallet balances.
+        categories: Purpose dimension, largest absolute spend first.
+        movement_count: How many posted movements the figures come from.
+        budgets: Monthly budget positions when the interval is exactly one
+            calendar month, otherwise None.
+    """
+
+    period: ResolvedPeriod
+    posted_total: Money
+    split: FundingClassSplit
+    sources: tuple[tuple[FundingSource, Money], ...]
+    categories: tuple[CategorySpendEntry, ...]
+    movement_count: int
+    budgets: MonthlyBudgetPositions | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -378,6 +459,74 @@ class ReportingService:
             unbudgeted_category_names=risks.unbudgeted_category_names,
         )
 
+    def range_overview(
+        self,
+        *,
+        profile_id: UUID,
+        period: ResolvedPeriod,
+    ) -> RangeOverview:
+        """Summarize posted movements over any resolved calendar period.
+
+        The period arrives already resolved, because deciding which Rome days
+        a day, an ISO week, a month, a year, or a validated custom interval
+        covers is calendar policy and belongs in the domain rather than in
+        this service or in the adapter that called it.
+
+        Args:
+            profile_id: Trusted owner scope supplied by runtime composition.
+            period: Resolved granularity and closed Rome interval to report.
+
+        Returns:
+            Exact posted total, both reconciling dimensions, and the monthly
+            budget positions when, and only when, the interval is one whole
+            calendar month.
+        """
+
+        expenses = self._repository.get_posted_expenses_in_range(
+            profile_id,
+            interval=period.interval,
+        )
+        taxonomy = self._repository.get_taxonomy(profile_id)
+        sources = self._repository.get_funding_sources(profile_id)
+        split = posted_funding_class_split(expenses, funding_sources=sources)
+        month = period.calendar_month
+        budgets = None
+        if month is not None:
+            risks = self._budgets_at_risk_from(
+                month,
+                expenses=expenses,
+                taxonomy=taxonomy,
+                budgets=self._repository.get_budgets(profile_id),
+            )
+            budgets = MonthlyBudgetPositions(
+                period=month,
+                statuses=risks.statuses,
+                unbudgeted_category_names=risks.unbudgeted_category_names,
+            )
+        return RangeOverview(
+            period=period,
+            posted_total=split.personal_funds + split.benefit + split.other,
+            split=split,
+            sources=tuple(
+                (
+                    source,
+                    posted_funding_source_spend(
+                        expenses,
+                        funding_source_id=source.id,
+                    ),
+                )
+                for source in sorted(
+                    sources,
+                    key=lambda item: (item.name, str(item.id)),
+                )
+            ),
+            categories=self._category_entries(expenses, taxonomy=taxonomy),
+            movement_count=sum(
+                1 for expense in expenses if expense.status is ExpenseStatus.POSTED
+            ),
+            budgets=budgets,
+        )
+
     def transaction_register(
         self,
         *,
@@ -459,6 +608,50 @@ class ReportingService:
                     key=lambda item: (item.name, str(item.id)),
                 )
             ),
+        )
+
+    @staticmethod
+    def _category_entries(
+        expenses: tuple[Expense, ...],
+        *,
+        taxonomy: Taxonomy,
+    ) -> tuple[CategorySpendEntry, ...]:
+        """Partition posted spend across the categories actually allocated.
+
+        Allocations are grouped by the category they name, never rolled into
+        an ancestor, so a receipt parent and its lines cannot both appear.
+        The result is ordered by largest absolute amount so an overview leads
+        with what the money went to, with the display name breaking ties.
+        """
+
+        amounts: dict[UUID, list[Money]] = {}
+        for expense in expenses:
+            if expense.status is not ExpenseStatus.POSTED:
+                continue
+            for allocation in expense.category_allocations:
+                amounts.setdefault(allocation.category_id, []).append(allocation.amount)
+        entries = []
+        for category_id, allocated in amounts.items():
+            category = taxonomy.category(category_id)
+            parent = category.parent_id
+            entries.append(
+                CategorySpendEntry(
+                    category=category,
+                    parent_name=(
+                        None if parent is None else taxonomy.category(parent).name
+                    ),
+                    amount=sum_money(tuple(allocated)),
+                )
+            )
+        return tuple(
+            sorted(
+                entries,
+                key=lambda item: (
+                    -abs(item.amount.minor_units),
+                    item.category.name,
+                    str(item.category.id),
+                ),
+            )
         )
 
     @staticmethod
@@ -562,9 +755,12 @@ __all__ = [
     "BudgetPlanEntry",
     "BudgetsAtRisk",
     "CategoryBudget",
+    "CategorySpendEntry",
     "CategorySpending",
+    "MonthlyBudgetPositions",
     "MonthlyOverview",
     "PeriodSplit",
+    "RangeOverview",
     "ReportingService",
     "TransactionRegister",
 ]

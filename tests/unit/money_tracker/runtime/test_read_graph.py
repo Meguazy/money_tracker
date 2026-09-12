@@ -16,6 +16,7 @@ from money_tracker.application import ReportingService
 from money_tracker.domain import (
     BalanceMode,
     CategoryAllocation,
+    DateRange,
     Expense,
     ExpenseStatus,
     FundingClass,
@@ -108,6 +109,19 @@ class InMemoryReporting:
         """Return posted movements occurring in the requested month."""
 
         start, end = period.bounds()
+        return tuple(
+            expense
+            for expense in self.expenses
+            if expense.status is ExpenseStatus.POSTED
+            and start <= expense.occurred_at < end
+        )
+
+    def get_posted_expenses_in_range(
+        self, profile_id: UUID, *, interval: DateRange
+    ) -> tuple[Expense, ...]:
+        """Return posted movements occurring in the requested interval."""
+
+        start, end = interval.bounds()
         return tuple(
             expense
             for expense in self.expenses

@@ -1,8 +1,9 @@
 # AD-009: Local FastAPI and React Web Application
 
 - Status: accepted
-- Implementation: monthly overview, transaction/manual-lifecycle,
-  multi-allocation editing, budget-planning, category-review,
+- Implementation: monthly overview, calendar analytics,
+  transaction/manual-lifecycle, multi-allocation editing, budget-planning,
+  category-review,
   receipt-metadata-review, and messaging-operations slices, HTTP security, and
   host deployment implemented; remaining Step 5 surface in progress
 - Date: 2026-09-01
@@ -67,8 +68,26 @@ positions come from category allocations. The dimensions reconcile to the same
 movements independently and are never added together, preserving the AD-007
 no-double-count contract.
 
+Calendar analytics use the pure `domain.periods` component to resolve one
+strict day, ISO week, month, year, or inclusive custom date selection into a
+half-open timezone-aware instant interval. Calendar boundaries are interpreted
+in
+`Europe/Rome`, including daylight-saving transitions, and custom intervals
+are limited to 366 days. `ReportingService.range_overview` reads posted
+movements through the range extension of `DashboardReader`; the repository
+owns only the timestamp query, while the application service computes purpose
+and funding projections from the same immutable movement set.
+
+Budget positions remain monthly contracts. The range response includes them
+only when the selected interval is exactly one complete calendar month,
+including a custom selection with those exact boundaries. Day, week, year,
+partial-month, and multi-month results return no budget positions rather than
+inventing prorated targets. The existing monthly overview and model-visible
+monthly reporting tool remain unchanged.
+
 The FastAPI composition exposes `/api/v1/overview/monthly`,
-`/api/v1/transactions`, strict manual expense create/replace/post/cancel
+`/api/v1/overview/range`, `/api/v1/transactions`, and strict manual expense
+create/replace/post/cancel
 resources, monthly budget read/create/replace resources, content-free
 liveness/readiness, and CSRF bootstrap. Browser JSON is
 validated without coercion; every write requires a separate idempotency header,
@@ -86,9 +105,18 @@ no-sniff, and anti-framing headers.
 `frontend/` implements the accepted stack: React and TypeScript built by Vite,
 TanStack Query for server reads and mutation invalidation, React Router for the
 shell, Mantine for UI, and ECharts with SVG rendering for the budget comparison.
+Production routes load as independent lazy chunks behind an accessible
+`Suspense` fallback. The monthly budget chart loads ECharts only when that
+view has configured budgets, and Rollup isolates `zrender` from the chart
+engine so every emitted JavaScript chunk stays below the production warning
+threshold while the equivalent table remains available in the route chunk.
 The Italian overview includes an explicit month label, exact EUR rendering,
 loading, empty, and error states, keyboard focus, a labelled chart, and an
-equivalent table. The `/movimenti` view renders every monthly lifecycle state
+equivalent table. The `/analisi` view exposes the calendar selectors, resolved
+inclusive dates, exact purpose and funding-source tables, and monthly budget
+positions only where that contract applies. It provides loading, empty, error,
+retry, keyboard, reload, and bookmark behavior without accepting profile scope.
+The `/movimenti` view renders every monthly lifecycle state
 and its exact allocations, and exposes labelled create, correct, post, and
 cancel controls with retry feedback.
 
@@ -239,8 +267,14 @@ owner's text or the bot key, replays the work item, repeats that request and
 receives `replayed`, refuses a stale count, an unknown item, and a crossed key
 with the identical problem, resends the response, and proves through the
 repository that one requeue happened per queue and that the recovered work item
-kept its source reference. Frontend
-typecheck, component tests, production build, and a runtime dependency audit
+kept its source reference. A real PostgreSQL calendar-analytics test posts a
+movement split across purpose and funding dimensions, excludes movements on
+both sides of an ISO-week boundary, and verifies exact whole-month custom-range
+budget aggregation through the production service and repository.
+
+Frontend typecheck, component tests, production build, and a runtime dependency
+audit
 pass. This is partial Step 5 evidence: the remaining control-plane resources,
-range analytics, advice surface, and full browser E2E acceptance are still
-required before this decision is fully implemented.
+merchant analytics, explicit period comparisons, advice surface, and full
+implemented.
+browser E2E acceptance are still required before this decision is fully

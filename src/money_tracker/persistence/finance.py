@@ -23,6 +23,7 @@ from money_tracker.domain import (
     CategoryProposal,
     CategoryProposalStatus,
     CategoryStatus,
+    DateRange,
     Expense,
     ExpenseStatus,
     FundingClass,
@@ -1590,6 +1591,41 @@ class PostgresFinanceRepository:
         """
 
         start, end = period.bounds()
+        with connect(self._database_url) as connection:
+            rows = connection.execute(
+                "SELECT id FROM finance.expenses WHERE profile_id = %s "
+                "AND status = 'posted' AND occurred_at >= %s AND occurred_at < %s "
+                "ORDER BY occurred_at, id",
+                (profile_id, start, end),
+            ).fetchall()
+            return tuple(
+                self._load_expense(connection, profile_id, row[0]) for row in rows
+            )
+
+    def get_posted_expenses_in_range(
+        self,
+        profile_id: UUID,
+        *,
+        interval: DateRange,
+    ) -> tuple[Expense, ...]:
+        """Load every posted movement occurring in one Rome date interval.
+
+        The predicate is the same half-open instant comparison the monthly
+        read uses; only the bounds differ, and they come from the domain
+        calendar policy rather than from arithmetic performed here. Filtering
+        stays in PostgreSQL so a wider period does not mean loading an
+        owner's whole history into the process.
+
+        Args:
+            profile_id: Trusted owner scope.
+            interval: Closed Rome calendar interval already validated as
+                ordered and bounded.
+
+        Returns:
+            Reconstructed aggregates in a stable occurrence order.
+        """
+
+        start, end = interval.bounds()
         with connect(self._database_url) as connection:
             rows = connection.execute(
                 "SELECT id FROM finance.expenses WHERE profile_id = %s "

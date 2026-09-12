@@ -3,9 +3,10 @@
 - Status: accepted V1 domain baseline
 - Implementation: core domain, taxonomy, finance persistence, proposal decisions,
   receipt metadata review state, private original-media storage, strict finance
-  wire contracts, and the first FastAPI monthly read are implemented. Receipt
-  extraction/deletion, worker media wiring, web mutations, and remaining Step 5
-  views are planned.
+  wire contracts, manual web mutations, monthly budgeting, and deterministic
+  day/week/month/year/custom-range reads are implemented. Receipt
+  extraction/deletion, worker media wiring, and remaining Step 5 views are
+  planned.
 
 This document defines business semantics. Database tables, ORM classes, API
 wire shapes, and graph state may differ internally, but they must preserve these

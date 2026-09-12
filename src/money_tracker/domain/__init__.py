@@ -44,6 +44,18 @@ from money_tracker.domain.funding import (
     wallet_balance,
 )
 from money_tracker.domain.money import Money, sum_money
+from money_tracker.domain.periods import (
+    MAX_RANGE_DAYS,
+    DateRange,
+    PeriodGranularity,
+    ResolvedPeriod,
+    month_range,
+    resolve_custom,
+    resolve_day,
+    resolve_iso_week,
+    resolve_month,
+    resolve_year,
+)
 from money_tracker.domain.profile import Profile
 from money_tracker.domain.receipts import ReceiptMetadata, ReceiptStatus
 from money_tracker.domain.taxonomy_seed import TAXONOMY_VERSION, initial_taxonomy
@@ -57,6 +69,7 @@ __all__ = [
     "CategoryProposal",
     "CategoryProposalStatus",
     "CategoryStatus",
+    "DateRange",
     "DomainError",
     "Expense",
     "ExpenseStatus",
@@ -65,14 +78,17 @@ __all__ = [
     "FundingSource",
     "FundingSourceStatus",
     "InvalidTransitionError",
+    "MAX_RANGE_DAYS",
     "MAX_REVIEW_PROPOSALS",
     "Money",
     "MonthlyBudget",
     "PaymentAllocation",
+    "PeriodGranularity",
     "Profile",
     "ReceiptMetadata",
     "ReceiptStatus",
     "ReconciliationError",
+    "ResolvedPeriod",
     "TAXONOMY_VERSION",
     "Taxonomy",
     "TaxonomyError",
@@ -83,10 +99,16 @@ __all__ = [
     "YearMonth",
     "budget_status",
     "initial_taxonomy",
+    "month_range",
     "normalize_category_name",
     "posted_category_spend",
     "posted_funding_class_split",
     "require_available_balance",
+    "resolve_custom",
+    "resolve_day",
+    "resolve_iso_week",
+    "resolve_month",
+    "resolve_year",
     "sum_money",
     "wallet_balance",
 ]

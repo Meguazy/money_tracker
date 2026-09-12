@@ -5,8 +5,9 @@
   PostgreSQL, migrations/checkpoint bootstrap, optional healthy Langfuse,
   capability evaluation, profile-scoped receipt storage, one-shot Step 3
   dispatch, durable Telegram gateway/worker, pairing,
-  health/replay/resend/latency, the local monthly dashboard/API, manual movement
-  lifecycle with multi-allocation editing, monthly budget planning,
+  health/replay/resend/latency, the local monthly dashboard/API, calendar
+  analytics, manual movement lifecycle with multi-allocation editing, monthly
+  budget planning,
   category-proposal review, receipt metadata consultation and its mandatory
   review, browser inspection and requeue of the durable messaging queues, and
   checked-in host service units
@@ -14,8 +15,9 @@
   expense, wallet, budget, pending category-proposal, and versioned receipt-review
   repository operations, a safe local receipt-media adapter, and verified
   encrypted backup with an isolated restore drill
-- Planned operations: remaining dashboard workflows, wider analytics, web advice,
-  browser E2E acceptance, backup scheduling and clean-machine restore,
+- Planned operations: remaining dashboard workflows, merchant analytics,
+  explicit period comparisons, web advice, browser E2E acceptance, backup
+  scheduling and clean-machine restore,
   workflow-worker receipt wiring, receipt extraction, and media deletion
 
 These guides describe accepted operational behavior and the controls future

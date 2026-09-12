@@ -13,12 +13,16 @@ import {
   Title,
 } from "@mantine/core";
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 
 import type { MonthlyOverview } from "./api";
 import { loadMonthlyOverview } from "./api";
-import { BudgetChart } from "./BudgetChart";
 import { currentRomeMonth, formatMoney, monthLabel } from "./format";
+
+const BudgetChart = lazy(() =>
+  import("./BudgetChart").then((module) => ({ default: module.BudgetChart })),
+);
+
 
 type OverviewLoader = (
   period: string,
@@ -143,7 +147,11 @@ function OverviewContent({
         ) : (
           <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="xl">
             <Card className="chart-card" radius="lg">
-              <BudgetChart budgets={overview.budgets} />
+              <Suspense
+                fallback={<Text aria-live="polite">Caricamento del grafico…</Text>}
+              >
+                <BudgetChart budgets={overview.budgets} />
+              </Suspense>
             </Card>
             <BudgetTable overview={overview} />
           </SimpleGrid>

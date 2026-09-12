@@ -16,9 +16,12 @@ from money_tracker.application import (
     BudgetPlan,
     BudgetPlanEntry,
     CategoryReviewQueue,
+    CategorySpendEntry,
+    MonthlyBudgetPositions,
     MonthlyOverview,
     PendingCategoryReview,
     PeriodSplit,
+    RangeOverview,
     TransactionRegister,
 )
 from money_tracker.application.ports import IdGenerator
@@ -37,6 +40,7 @@ from money_tracker.domain import (
     PaymentAllocation,
     ReceiptMetadata,
     ReceiptStatus,
+    ResolvedPeriod,
     YearMonth,
     initial_taxonomy,
 )
@@ -84,6 +88,61 @@ class OverviewReader:
 
     requested_profile: UUID | None = None
     requested_period: YearMonth | None = None
+    requested_range: ResolvedPeriod | None = None
+
+    def range_overview(
+        self,
+        *,
+        profile_id: UUID,
+        period: ResolvedPeriod,
+    ) -> RangeOverview:
+        """Return fixed exact facts over whatever period was resolved."""
+
+        self.requested_profile = profile_id
+        self.requested_range = period
+        taxonomy = initial_taxonomy()
+        food = taxonomy.resolve_active("Spesa alimentare")
+        month = period.calendar_month
+        return RangeOverview(
+            period=period,
+            posted_total=Money(5000),
+            split=FundingClassSplit(Money(2000), Money(3000), Money(0)),
+            sources=(
+                (
+                    FundingSource(
+                        id=SOURCE_ID,
+                        profile_id=profile_id,
+                        name="Carta",
+                        funding_class=FundingClass.PERSONAL_FUNDS,
+                        balance_mode=BalanceMode.UNTRACKED,
+                        is_default=True,
+                    ),
+                    Money(2000),
+                ),
+            ),
+            categories=(
+                CategorySpendEntry(
+                    category=food,
+                    parent_name="Alimentazione",
+                    amount=Money(5000),
+                ),
+            ),
+            movement_count=2,
+            budgets=(
+                None
+                if month is None
+                else MonthlyBudgetPositions(
+                    period=month,
+                    statuses=(
+                        (
+                            "Spesa alimentare",
+                            BudgetStatus(month, Money(8000), Money(5000), Money(3000)),
+                        ),
+                    ),
+                    unbudgeted_category_names=("Abbonamenti",),
+                )
+            ),
+        )
 
     def monthly_overview(
         self,
@@ -913,6 +972,7 @@ def test_compiled_dashboard_is_served_from_the_api_origin(tmp_path: Path) -> Non
     links = {
         route: client.get(route)
         for route in (
+            "/analisi",
             "/movimenti",
             "/categorie",
             "/budget",
@@ -1336,3 +1396,195 @@ def test_a_requeue_body_cannot_name_a_bot_or_an_offset() -> None:
     assert response.status_code == 422
     assert response.json()["code"] == "request_invalid"
     assert operations.requeues == []
+
+
+def test_range_overview_returns_both_dimensions_over_a_resolved_week() -> None:
+    """Answer a wider period without exposing profile identity or a budget."""
+
+    reader = OverviewReader()
+
+    response = _client(_app(reader)).get(
+        "/api/v1/overview/range?granularity=week&day=2025-12-31",
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "period": {
+            "granularity": "week",
+            "start": "2025-12-29",
+            "end": "2026-01-04",
+            "day_count": 7,
+            "iso_year": 2026,
+            "iso_week": 1,
+        },
+        "posted_total": {"minor_units": 5000, "currency": "EUR"},
+        "funding_split": {
+            "personal_funds": {"minor_units": 2000, "currency": "EUR"},
+            "benefit": {"minor_units": 3000, "currency": "EUR"},
+            "other": {"minor_units": 0, "currency": "EUR"},
+        },
+        "funding_sources": [
+            {
+                "name": "Carta",
+                "funding_class": "personal_funds",
+                "amount": {"minor_units": 2000, "currency": "EUR"},
+            }
+        ],
+        "categories": [
+            {
+                "category_id": str(
+                    initial_taxonomy().resolve_active("Spesa alimentare").id
+                ),
+                "category_name": "Spesa alimentare",
+                "parent_name": "Alimentazione",
+                "amount": {"minor_units": 5000, "currency": "EUR"},
+            }
+        ],
+        "movement_count": 2,
+        "budgets": None,
+    }
+    assert reader.requested_profile == PROFILE_ID
+    assert "profile_id" not in response.text
+    assert response.headers["cache-control"] == "no-store"
+
+
+def test_range_overview_resolves_every_offered_granularity() -> None:
+    """Let the domain calendar policy decide which Rome days each covers."""
+
+    reader = OverviewReader()
+    client = _client(_app(reader))
+    resolved = {}
+    for query in (
+        "granularity=day&day=2026-09-12",
+        "granularity=week&day=2026-09-12",
+        "granularity=month&month=2026-09",
+        "granularity=year&year=2026",
+        "granularity=custom&start=2026-09-01&end=2026-09-15",
+    ):
+        response = client.get(f"/api/v1/overview/range?{query}")
+        assert response.status_code == 200
+        period = response.json()["period"]
+        resolved[period["granularity"]] = (period["start"], period["end"])
+
+    assert resolved == {
+        "day": ("2026-09-12", "2026-09-12"),
+        "week": ("2026-09-07", "2026-09-13"),
+        "month": ("2026-09-01", "2026-09-30"),
+        "year": ("2026-01-01", "2026-12-31"),
+        "custom": ("2026-09-01", "2026-09-15"),
+    }
+
+
+def test_range_overview_reports_budgets_only_for_a_whole_calendar_month() -> None:
+    """Omit a position the monthly budget calendar does not define."""
+
+    client = _client(_app())
+
+    month = client.get("/api/v1/overview/range?granularity=month&month=2026-09")
+    spanning = client.get(
+        "/api/v1/overview/range?granularity=custom&start=2026-09-01&end=2026-09-30",
+    )
+    year = client.get("/api/v1/overview/range?granularity=year&year=2026")
+
+    assert month.json()["budgets"] == {
+        "period": {"year": 2026, "month": 9},
+        "positions": [
+            {
+                "category_name": "Spesa alimentare",
+                "target": {"minor_units": 8000, "currency": "EUR"},
+                "posted_spend": {"minor_units": 5000, "currency": "EUR"},
+                "remaining": {"minor_units": 3000, "currency": "EUR"},
+            }
+        ],
+        "unbudgeted_categories": ["Abbonamenti"],
+    }
+    assert spanning.json()["budgets"] == month.json()["budgets"]
+    assert year.json()["budgets"] is None
+
+
+def test_an_unsupported_granularity_is_one_bounded_problem() -> None:
+    """Refuse an unknown period vocabulary instead of guessing a default."""
+
+    response = _client(_app()).get(
+        "/api/v1/overview/range?granularity=quarter&day=2026-09-12",
+    )
+
+    assert response.status_code == 422
+    assert response.json()["code"] == "period_granularity_invalid"
+    assert response.json()["instance"] == "/api/v1/overview/range"
+
+
+def test_parameters_must_match_the_requested_granularity() -> None:
+    """Refuse an ambiguous selection rather than silently ignoring a value."""
+
+    client = _client(_app())
+
+    codes = {
+        client.get(f"/api/v1/overview/range?{query}").json()["code"]
+        for query in (
+            "granularity=day",
+            "granularity=day&day=2026-09-12&year=2026",
+            "granularity=month&day=2026-09-12",
+            "granularity=custom&start=2026-09-01",
+            "granularity=year&year=2026&end=2026-09-30",
+        )
+    }
+
+    assert codes == {"period_selection_invalid"}
+
+
+def test_a_malformed_period_value_is_refused_without_coercion() -> None:
+    """Accept exactly one representation of each calendar token."""
+
+    client = _client(_app())
+
+    codes = {
+        client.get(f"/api/v1/overview/range?{query}").json()["code"]
+        for query in (
+            "granularity=day&day=2026-9-12",
+            "granularity=day&day=20260912",
+            "granularity=day&day=2026-02-30",
+            "granularity=day&day=2026-W38-1",
+            "granularity=month&month=2026-13",
+            "granularity=year&year=26",
+            "granularity=custom&start=2026-09-01&end=domani",
+        )
+    }
+
+    assert codes == {"period_value_invalid"}
+
+
+def test_an_untrusted_custom_interval_is_bounded_and_ordered() -> None:
+    """Refuse a reversed or unbounded interval as a 422, never as a crash."""
+
+    client = _client(_app())
+
+    reversed_interval = client.get(
+        "/api/v1/overview/range?granularity=custom&start=2026-09-30&end=2026-09-01",
+    )
+    too_wide = client.get(
+        "/api/v1/overview/range?granularity=custom&start=2020-01-01&end=2026-12-31",
+    )
+    unrepresentable = client.get("/api/v1/overview/range?granularity=year&year=9999")
+
+    assert reversed_interval.status_code == 422
+    assert too_wide.status_code == 422
+    assert unrepresentable.status_code == 422
+    assert {
+        reversed_interval.json()["code"],
+        too_wide.json()["code"],
+        unrepresentable.json()["code"],
+    } == {"period_range_invalid"}
+
+
+def test_the_range_read_never_accepts_a_profile_from_the_browser() -> None:
+    """Keep owner scope a composition input on the wider read as well."""
+
+    reader = OverviewReader()
+
+    response = _client(_app(reader)).get(
+        f"/api/v1/overview/range?granularity=day&day=2026-09-12&profile_id={uuid4()}",
+    )
+
+    assert response.status_code == 200
+    assert reader.requested_profile == PROFILE_ID

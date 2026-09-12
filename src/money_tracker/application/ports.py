@@ -10,6 +10,7 @@ from money_tracker.domain import (
     AuditEvent,
     Category,
     CategoryProposal,
+    DateRange,
     Expense,
     FundingSource,
     MonthlyBudget,
@@ -255,6 +256,20 @@ class ReportingRepository(Protocol):
         period: YearMonth,
     ) -> tuple[Expense, ...]:
         """Return every posted movement occurring in one calendar month."""
+
+    def get_posted_expenses_in_range(
+        self,
+        profile_id: UUID,
+        *,
+        interval: DateRange,
+    ) -> tuple[Expense, ...]:
+        """Return every posted movement occurring in one calendar interval.
+
+        Kept beside the monthly read rather than replacing it, because the
+        monthly read is what the model-visible tools call and its contract
+        must not move. Both answer the same question over the same rows; only
+        the shape of the period differs.
+        """
 
     def get_budget(self, profile_id: UUID, category_id: UUID) -> MonthlyBudget | None:
         """Return one category budget, or None when none is configured."""

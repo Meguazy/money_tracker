@@ -1,23 +1,26 @@
 # Local Web Operations
 
 - Status: Step 5 overview, manual-movement, multi-allocation editing,
-  budget-planning, category-proposal review, receipt metadata review, and
-  messaging-operations slices implemented; complete control plane and release
+  budget-planning, calendar-analytics, category-proposal review, receipt
+  metadata review, and messaging-operations slices implemented; complete
+  control plane and release
   acceptance still in progress
 - Binding decision: [AD-009](../arc42/decisions/AD-009-local-web-application.md)
 - Delivery evidence: [Step 5](../roadmap/step-5-dashboard-and-advice.md)
 
 The implemented local service serves one compiled React application and its
-versioned JSON API from the same origin. It provides the monthly overview,
-complete monthly transaction register, manual movement lifecycle with
+versioned JSON API from the same origin. It provides the monthly overview and
+calendar analytics for deterministic day, ISO-week, month, year, and bounded
+custom ranges, the complete monthly transaction register, and manual movement
+lifecycle with
 multi-allocation editing, monthly budget planning, liveness, readiness, and CSRF
 bootstrap endpoints. It also exposes the pending category-proposal queue and
 the deterministic approve, reuse-active-category, and cancel decisions, the
 retained receipt metadata and its mandatory review, and the durable messaging
 queues with the two requeue commands. Category
-rename/archive, wallet administration, settings, wider
-date ranges, advice, and every receipt-extraction capability remain Step 5 or
-Step 6 work and must not be described as available.
+rename/archive, wallet administration, settings, merchant analytics, explicit
+period comparisons, advice, and every receipt-extraction capability remain
+Step 5 or Step 6 work and must not be described as available.
 
 ## Ownership and boundaries
 
@@ -146,8 +149,9 @@ listener and allowed origins.
 
 | Route | Purpose | Content |
 | --- | --- | --- |
-| `GET /`, `GET /movimenti`, `GET /budget`, `GET /categorie`, `GET /scontrini`, `GET /messaggistica` | Compiled React shell | Static application only; every route supports direct browser navigation, reload, and bookmarking. |
+| `GET /`, `GET /analisi`, `GET /movimenti`, `GET /budget`, `GET /categorie`, `GET /scontrini`, `GET /messaggistica` | Compiled React shell | Static application only; every route supports direct browser navigation, reload, and bookmarking. |
 | `GET /api/v1/overview/monthly?period=YYYY-MM` | Deterministic monthly overview | Exact posted total, funding class/source split, budgets, and unbudgeted categories. |
+| `GET /api/v1/overview/range` | Deterministic calendar analytics | One strict day, ISO-week, month, year, or bounded custom selector; exact posted total, purpose and funding breakdowns, and budget positions only for an exact whole month. |
 | `GET /api/v1/transactions?period=YYYY-MM` | Monthly lifecycle register | Every movement state, exact allocations, optimistic versions, and safe category/source references. |
 | `POST /api/v1/expenses` | Create a manual draft | Strict complete movement body; returns safe ID, state, and version. |
 | `PUT /api/v1/expenses/{id}` | Correct a movement | Strict complete replacement plus `expected_version`. |

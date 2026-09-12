@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 from typing import Annotated, Protocol
 from uuid import UUID
@@ -28,9 +29,20 @@ from money_tracker.application import (
     IdempotencyConflictError,
     MonthlyOverview,
     OptimisticConcurrencyError,
+    RangeOverview,
     TransactionRegister,
 )
-from money_tracker.domain import DomainError, YearMonth
+from money_tracker.domain import (
+    DomainError,
+    PeriodGranularity,
+    ResolvedPeriod,
+    YearMonth,
+    resolve_custom,
+    resolve_day,
+    resolve_iso_week,
+    resolve_month,
+    resolve_year,
+)
 from money_tracker.messaging import MessagingConflictError
 from money_tracker.structured_logging import get_logger
 from money_tracker.web.config import WebSettings
@@ -52,6 +64,7 @@ from money_tracker.web.contracts import (
     MessagingRequeueRequest,
     MessagingRequeueResponse,
     MonthlyOverviewResponse,
+    RangeOverviewResponse,
     ReceiptMutationResponse,
     ReceiptRegisterResponse,
     ReceiptReviewRequest,
@@ -72,6 +85,17 @@ from money_tracker.web.security import (
 )
 
 _PERIOD = re.compile(r"^(?P<year>[0-9]{4})-(?P<month>0[1-9]|1[0-2])$")
+_DAY = re.compile(
+    r"^(?P<year>[0-9]{4})-(?P<month>0[1-9]|1[0-2])-(?P<day>0[1-9]|[12][0-9]|3[01])$"
+)
+_YEAR = re.compile(r"^[0-9]{4}$")
+_PERIOD_PARAMETERS: dict[PeriodGranularity, frozenset[str]] = {
+    PeriodGranularity.DAY: frozenset({"day"}),
+    PeriodGranularity.WEEK: frozenset({"day"}),
+    PeriodGranularity.MONTH: frozenset({"month"}),
+    PeriodGranularity.YEAR: frozenset({"year"}),
+    PeriodGranularity.CUSTOM: frozenset({"start", "end"}),
+}
 
 
 class DashboardReader(Protocol):
@@ -100,6 +124,14 @@ class DashboardReader(Protocol):
         period: YearMonth,
     ) -> BudgetPlan:
         """Return the stored budget plan and its position for one month."""
+
+    def range_overview(
+        self,
+        *,
+        profile_id: UUID,
+        period: ResolvedPeriod,
+    ) -> RangeOverview:
+        """Return exact posted facts for any resolved calendar period."""
 
 
 _LOGGER = get_logger("money_tracker.web.app")
@@ -235,6 +267,43 @@ def create_app(
         except PsycopgError:
             return _database_problem(f"{API_V1_PREFIX}/overview/monthly")
         return MonthlyOverviewResponse.from_application(result)
+
+    @router.get("/overview/range", response_model=RangeOverviewResponse)
+    def range_overview(
+        granularity: str,
+        day: str | None = None,
+        month: str | None = None,
+        year: str | None = None,
+        start: str | None = None,
+        end: str | None = None,
+    ) -> RangeOverviewResponse | JSONResponse:
+        """Return exact posted facts for a day, week, month, year, or range."""
+
+        instance = f"{API_V1_PREFIX}/overview/range"
+        selection = _resolve_selection(
+            granularity=granularity,
+            day=day,
+            month=month,
+            year=year,
+            start=start,
+            end=end,
+        )
+        if isinstance(selection, _PeriodRejection):
+            return _problem(
+                status=422,
+                title="Periodo non valido",
+                detail=selection.detail,
+                code=selection.code,
+                instance=instance,
+            )
+        try:
+            result = reporting.range_overview(
+                profile_id=profile_id,
+                period=selection,
+            )
+        except PsycopgError:
+            return _database_problem(instance)
+        return RangeOverviewResponse.from_application(result)
 
     @router.get("/transactions", response_model=TransactionRegisterResponse)
     def transactions(period: str) -> TransactionRegisterResponse | JSONResponse:
@@ -711,6 +780,160 @@ def _parse_period(value: str) -> YearMonth | None:
 
 
 @dataclass(frozen=True, slots=True)
+class _PeriodRejection:
+    """One bounded reason a period selection was refused.
+
+    Attributes:
+        code: Stable machine-readable problem code, which is also what the
+            shared problem funnel records for the refusal.
+        detail: Owner-facing explanation carrying no request content.
+    """
+
+    code: str
+    detail: str
+
+
+_UNKNOWN_GRANULARITY = _PeriodRejection(
+    code="period_granularity_invalid",
+    detail="La granularità deve essere day, week, month, year o custom.",
+)
+_WRONG_PARAMETERS = _PeriodRejection(
+    code="period_selection_invalid",
+    detail="I parametri non corrispondono alla granularità richiesta.",
+)
+_MALFORMED_VALUE = _PeriodRejection(
+    code="period_value_invalid",
+    detail="Il periodo deve usare i formati YYYY-MM-DD, YYYY-MM o YYYY.",
+)
+_UNSUPPORTED_RANGE = _PeriodRejection(
+    code="period_range_invalid",
+    detail="L'intervallo deve essere ordinato e non può superare un anno.",
+)
+
+
+def _resolve_selection(
+    *,
+    granularity: str,
+    day: str | None,
+    month: str | None,
+    year: str | None,
+    start: str | None,
+    end: str | None,
+) -> ResolvedPeriod | _PeriodRejection:
+    """Turn untrusted query parameters into one resolved calendar period.
+
+    This adapter only parses and dispatches. Which Rome days a granularity
+    covers is decided by the domain calendar policy, so daylight saving and
+    ISO week numbering are not reasoned about here, and an interval that is
+    reversed or wider than the supported span is refused by the same domain
+    value however it was selected.
+
+    Args:
+        granularity: Requested granularity token.
+        day: Calendar day selecting a day or the ISO week containing it.
+        month: Calendar month token.
+        year: Calendar year token.
+        start: First day of a custom interval.
+        end: Last day of a custom interval.
+
+    Returns:
+        The resolved period, or the bounded reason it was refused.
+    """
+
+    try:
+        requested = PeriodGranularity(granularity)
+    except ValueError:
+        return _UNKNOWN_GRANULARITY
+    supplied = {
+        name
+        for name, value in (
+            ("day", day),
+            ("month", month),
+            ("year", year),
+            ("start", start),
+            ("end", end),
+        )
+        if value is not None
+    }
+    if supplied != _PERIOD_PARAMETERS[requested]:
+        return _WRONG_PARAMETERS
+    try:
+        return _resolve_parsed(
+            requested, day=day, month=month, year=year, start=start, end=end
+        )
+    except DomainError:
+        # DomainError derives from ValueError, so the domain refusal is
+        # matched before the parsing one or it would be reported as a
+        # malformed token.
+        return _UNSUPPORTED_RANGE
+    except ValueError:
+        return _MALFORMED_VALUE
+
+
+def _resolve_parsed(
+    granularity: PeriodGranularity,
+    *,
+    day: str | None,
+    month: str | None,
+    year: str | None,
+    start: str | None,
+    end: str | None,
+) -> ResolvedPeriod:
+    """Parse the tokens one granularity requires and resolve its period.
+
+    Args:
+        granularity: Already validated granularity.
+        day: Calendar day token when the granularity uses one.
+        month: Calendar month token when the granularity uses one.
+        year: Calendar year token when the granularity uses one.
+        start: First custom day token.
+        end: Last custom day token.
+
+    Returns:
+        The resolved calendar period.
+
+    Raises:
+        ValueError: If a token does not use its exact accepted format or does
+            not name a real calendar date.
+        DomainError: If the resulting interval is not supported.
+    """
+
+    if granularity is PeriodGranularity.DAY:
+        return resolve_day(_parse_day(day))
+    if granularity is PeriodGranularity.WEEK:
+        return resolve_iso_week(_parse_day(day))
+    if granularity is PeriodGranularity.MONTH:
+        parsed = _parse_period(month or "")
+        if parsed is None:
+            raise ValueError("month token is not a calendar month")
+        return resolve_month(parsed)
+    if granularity is PeriodGranularity.YEAR:
+        if year is None or _YEAR.fullmatch(year) is None:
+            raise ValueError("year token is not a calendar year")
+        return resolve_year(int(year))
+    return resolve_custom(start=_parse_day(start), end=_parse_day(end))
+
+
+def _parse_day(value: str | None) -> date:
+    """Parse one Rome calendar day without accepting an instant.
+
+    Args:
+        value: Query token to parse.
+
+    Returns:
+        The named calendar date.
+
+    Raises:
+        ValueError: If the token is absent, not exactly ``YYYY-MM-DD``, or
+            does not name a real day such as 30 February.
+    """
+
+    if value is None or _DAY.fullmatch(value) is None:
+        raise ValueError("day token is not a calendar date")
+    return date.fromisoformat(value)
+
+
+@dataclass(frozen=True, slots=True)
 class _MutationProblems:
     """Owner-facing wording for one mutable resource's bounded failures.
 
@@ -951,6 +1174,7 @@ def _mount_dashboard(app: FastAPI, static_dir: Path) -> None:
     app.mount("/assets", StaticFiles(directory=assets), name="dashboard-assets")
 
     @app.get("/", include_in_schema=False)
+    @app.get("/analisi", include_in_schema=False)
     @app.get("/movimenti", include_in_schema=False)
     @app.get("/categorie", include_in_schema=False)
     @app.get("/budget", include_in_schema=False)

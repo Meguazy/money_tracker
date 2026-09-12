@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-from datetime import datetime
+from datetime import date, datetime
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
@@ -14,6 +14,7 @@ from money_tracker.application.ports import ReportingRepository
 from money_tracker.domain import (
     BalanceMode,
     CategoryAllocation,
+    DateRange,
     Expense,
     ExpenseStatus,
     FundingClass,
@@ -21,10 +22,16 @@ from money_tracker.domain import (
     Money,
     MonthlyBudget,
     PaymentAllocation,
+    PeriodGranularity,
     Taxonomy,
     TaxonomyError,
     YearMonth,
     initial_taxonomy,
+    resolve_custom,
+    resolve_day,
+    resolve_iso_week,
+    resolve_month,
+    resolve_year,
 )
 
 PROFILE = uuid4()
@@ -95,6 +102,20 @@ class InMemoryReporting:
 
         self.reads.append("posted_expenses")
         start, end = period.bounds()
+        return tuple(
+            expense
+            for expense in self.expenses
+            if expense.status is ExpenseStatus.POSTED
+            and start <= expense.occurred_at < end
+        )
+
+    def get_posted_expenses_in_range(
+        self, profile_id: UUID, *, interval: DateRange
+    ) -> tuple[Expense, ...]:
+        """Return posted movements occurring in the requested interval."""
+
+        self.reads.append("posted_expenses_in_range")
+        start, end = interval.bounds()
         return tuple(
             expense
             for expense in self.expenses
@@ -561,3 +582,254 @@ def test_budget_plan_carries_the_version_a_replacement_must_quote() -> None:
     assert entry.budget.overrides == ((YearMonth(2026, 9), Money(12_000)),)
     assert entry.status.target == Money(12_000)
     assert entry.status.posted_spend == Money(0)
+
+
+def _split_posted(
+    allocations: tuple[tuple[str, int], ...],
+    payments: tuple[tuple[FundingSource, int], ...],
+    *,
+    day: int = 10,
+    month: int = 9,
+    year: int = 2026,
+) -> Expense:
+    """Build one posted movement whose two dimensions each reconcile alone."""
+
+    total = Money(sum(amount for _, amount in allocations))
+    return Expense(
+        id=uuid4(),
+        profile_id=PROFILE,
+        amount=total,
+        occurred_at=datetime(year, month, day, 12, tzinfo=ROME),
+        description="spesa mista",
+        merchant=None,
+        status=ExpenseStatus.POSTED,
+        category_allocations=tuple(
+            CategoryAllocation(
+                category_id=TAXONOMY.resolve_active(name).id,
+                amount=Money(amount),
+                provenance="test",
+            )
+            for name, amount in allocations
+        ),
+        payment_allocations=tuple(
+            PaymentAllocation(funding_source_id=source.id, amount=Money(amount))
+            for source, amount in payments
+        ),
+        source_reference=f"test:{uuid4()}",
+        idempotency_key=f"key:{uuid4()}",
+    )
+
+
+def test_range_overview_reports_both_dimensions_without_adding_them() -> None:
+    """Answer purpose and funding separately over one arbitrary interval."""
+
+    repository = InMemoryReporting(
+        expenses=(
+            _split_posted(
+                (("Spesa alimentare", 3000), ("Cura personale", 2000)),
+                ((CARD, 3500), (VOUCHERS, 1500)),
+                day=14,
+            ),
+            _posted("Spesa alimentare", 1000, day=20),
+        )
+    )
+
+    overview = _service(repository).range_overview(
+        profile_id=PROFILE,
+        period=resolve_custom(start=date(2026, 9, 14), end=date(2026, 9, 20)),
+    )
+
+    assert overview.posted_total == Money(6000)
+    assert overview.split.personal_funds == Money(4500)
+    assert overview.split.benefit == Money(1500)
+    assert [(entry.category.name, entry.amount) for entry in overview.categories] == [
+        ("Spesa alimentare", Money(4000)),
+        ("Cura personale", Money(2000)),
+    ]
+    assert sum(entry.amount.minor_units for entry in overview.categories) == 6000
+    assert overview.movement_count == 2
+
+
+def test_range_overview_names_the_parent_without_rolling_spend_into_it() -> None:
+    """Keep the purpose dimension a partition so nothing is counted twice."""
+
+    repository = InMemoryReporting(
+        expenses=(
+            _split_posted(
+                (("Spesa alimentare", 4000), ("Bar, ristoranti e asporto", 1000)),
+                ((CARD, 5000),),
+                day=14,
+            ),
+        )
+    )
+
+    overview = _service(repository).range_overview(
+        profile_id=PROFILE,
+        period=resolve_day(date(2026, 9, 14)),
+    )
+
+    assert [
+        (entry.category.name, entry.parent_name, entry.amount.minor_units)
+        for entry in overview.categories
+    ] == [
+        ("Spesa alimentare", "Alimentazione", 4000),
+        ("Bar, ristoranti e asporto", "Alimentazione", 1000),
+    ]
+    assert "Alimentazione" not in {entry.category.name for entry in overview.categories}
+    assert overview.posted_total == Money(5000)
+
+
+def test_range_overview_covers_exactly_the_selected_rome_days() -> None:
+    """Include a movement at the edge of a day and exclude the neighbours."""
+
+    repository = InMemoryReporting(
+        expenses=(
+            _posted("Abbonamenti", 100, day=13),
+            _posted("Abbonamenti", 200, day=14),
+            _posted("Abbonamenti", 400, day=15),
+        )
+    )
+
+    overview = _service(repository).range_overview(
+        profile_id=PROFILE,
+        period=resolve_day(date(2026, 9, 14)),
+    )
+
+    assert overview.posted_total == Money(200)
+    assert overview.movement_count == 1
+    assert overview.period.granularity is PeriodGranularity.DAY
+
+
+def test_range_overview_excludes_movements_that_are_not_posted() -> None:
+    """Report registered consumption only, exactly as the monthly read does."""
+
+    repository = InMemoryReporting(
+        expenses=(
+            replace(_posted("Abbonamenti", 900, day=14), status=ExpenseStatus.DRAFT),
+            _posted("Abbonamenti", 100, day=14),
+        )
+    )
+
+    overview = _service(repository).range_overview(
+        profile_id=PROFILE,
+        period=resolve_iso_week(date(2026, 9, 14)),
+    )
+
+    assert overview.posted_total == Money(100)
+    assert overview.movement_count == 1
+    assert overview.period.iso_year == 2026
+    assert overview.categories[0].amount == Money(100)
+
+
+def test_range_overview_reports_budget_positions_only_for_a_whole_month() -> None:
+    """Refuse to invent a budget position for a period with no target."""
+
+    repository = InMemoryReporting(
+        expenses=(_posted("Abbonamenti", 6000, day=14),),
+        budgets=(_budget("Abbonamenti", 5000),),
+    )
+    service = _service(repository)
+
+    month = service.range_overview(
+        profile_id=PROFILE,
+        period=resolve_month(YearMonth(2026, 9)),
+    )
+    week = service.range_overview(
+        profile_id=PROFILE,
+        period=resolve_iso_week(date(2026, 9, 14)),
+    )
+    year = service.range_overview(profile_id=PROFILE, period=resolve_year(2026))
+
+    assert month.budgets is not None
+    assert month.budgets.period == YearMonth(2026, 9)
+    assert month.budgets.statuses[0][1].remaining == Money(-1000)
+    assert week.budgets is None
+    assert year.budgets is None
+    assert year.posted_total == week.posted_total == month.posted_total
+
+
+def test_a_custom_interval_covering_one_month_keeps_its_budget_positions() -> None:
+    """Decide the budget question from the dates, not from how they arrived."""
+
+    repository = InMemoryReporting(
+        expenses=(_posted("Abbonamenti", 1000, day=14),),
+        budgets=(_budget("Abbonamenti", 5000),),
+    )
+
+    overview = _service(repository).range_overview(
+        profile_id=PROFILE,
+        period=resolve_custom(start=date(2026, 9, 1), end=date(2026, 9, 30)),
+    )
+
+    assert overview.budgets is not None
+    assert overview.budgets.period == YearMonth(2026, 9)
+    assert overview.budgets.statuses[0][1].posted_spend == Money(1000)
+
+
+def test_range_overview_reports_a_year_across_its_months() -> None:
+    """Answer an annual question without asking twelve monthly ones."""
+
+    repository = InMemoryReporting(
+        expenses=(
+            _posted("Abbonamenti", 1000, month=1, day=5),
+            _posted("Spesa alimentare", 2000, month=6, day=30),
+            _posted("Abbonamenti", 4000, month=12, day=31),
+        )
+    )
+
+    overview = _service(repository).range_overview(
+        profile_id=PROFILE,
+        period=resolve_year(2026),
+    )
+
+    assert overview.posted_total == Money(7000)
+    assert overview.movement_count == 3
+    assert [entry.category.name for entry in overview.categories] == [
+        "Abbonamenti",
+        "Spesa alimentare",
+    ]
+    assert overview.categories[0].amount == Money(5000)
+
+
+def test_range_overview_lists_every_source_including_unused_ones() -> None:
+    """Report a configured source with no consumption as zero, not as absent."""
+
+    repository = InMemoryReporting(expenses=(_posted("Abbonamenti", 1000, day=14),))
+
+    overview = _service(repository).range_overview(
+        profile_id=PROFILE,
+        period=resolve_day(date(2026, 9, 14)),
+    )
+
+    assert [(source.name, amount) for source, amount in overview.sources] == [
+        ("Buoni pasto", Money(0)),
+        ("Carta", Money(1000)),
+    ]
+
+
+def test_range_overview_reports_an_empty_period_without_inventing_figures() -> None:
+    """State an absent answer plainly rather than smoothing it into a zero."""
+
+    overview = _service(InMemoryReporting()).range_overview(
+        profile_id=PROFILE,
+        period=resolve_day(date(2026, 9, 14)),
+    )
+
+    assert overview.posted_total == Money(0)
+    assert overview.categories == ()
+    assert overview.movement_count == 0
+    assert overview.budgets is None
+
+
+def test_range_overview_reads_the_interval_rather_than_a_month() -> None:
+    """Keep the monthly read the tools call untouched by the range surface."""
+
+    repository = InMemoryReporting(expenses=(_posted("Abbonamenti", 100, day=14),))
+
+    _service(repository).range_overview(
+        profile_id=PROFILE,
+        period=resolve_day(date(2026, 9, 14)),
+    )
+
+    assert "posted_expenses_in_range" in repository.reads
+    assert "posted_expenses" not in repository.reads

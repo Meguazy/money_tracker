@@ -22,6 +22,9 @@ from money_tracker.messaging.contracts import (
     OutboxDeadLetter,
 )
 from money_tracker.messaging.ports import MessagingRepository
+from money_tracker.structured_logging import get_logger
+
+_LOGGER = get_logger("money_tracker.messaging.administration")
 
 DEFAULT_PAIRING_LIFETIME = timedelta(minutes=10)
 TELEGRAM_UPDATE_RETENTION = timedelta(hours=24)
@@ -146,6 +149,7 @@ class MessagingAdministration:
         """
 
         if lifetime <= timedelta(0):
+            _LOGGER.error("pairing.lifetime_invalid", bot_key=bot_key)
             raise ValueError("a pairing code must have a positive lifetime")
         now = self._clock.now()
         self._repository.ensure_bot(bot_key, environment=environment, now=now)
@@ -158,6 +162,16 @@ class MessagingAdministration:
             code_hash=hashlib.sha256(code.encode("utf-8")).hexdigest(),
             expires_at=expires_at,
             now=now,
+        )
+        # The code itself is a one-use secret and never reaches a record;
+        # that a code was issued, and when it stops working, is what an
+        # operator needs from the journal.
+        _LOGGER.info(
+            "pairing.code_issued",
+            bot_key=bot_key,
+            profile_id=profile_id,
+            environment=environment.value,
+            expires_at=expires_at,
         )
         return PairingCode(code=code, expires_at=expires_at)
 
@@ -207,6 +221,9 @@ class MessagingAdministration:
             MessagingConflictError: If the item is not a dead letter.
         """
 
+        # An operator reaching for replay means something already failed
+        # five times, so the action is recorded as a deliberate intervention.
+        _LOGGER.warning("messaging.inbox.replayed", bot_key=bot_key, inbox_id=inbox_id)
         self._repository.replay_inbox(bot_key, inbox_id, now=self._clock.now())
 
     def outbox_dead_letters(
@@ -242,6 +259,7 @@ class MessagingAdministration:
             MessagingConflictError: If the item is not an outbox dead letter.
         """
 
+        _LOGGER.warning("messaging.outbox.resent", bot_key=bot_key, outbox_id=outbox_id)
         self._repository.replay_outbox(bot_key, outbox_id, now=self._clock.now())
 
     def text_latency_report(

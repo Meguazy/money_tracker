@@ -25,7 +25,6 @@ crossing back out is the typed outcome.
 from __future__ import annotations
 
 import hashlib
-import logging
 import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -69,6 +68,7 @@ from money_tracker.presentation import (
     action_for_code,
 )
 from money_tracker.runtime.review_graph import review_question
+from money_tracker.structured_logging import get_logger, log_context
 from money_tracker.workflows import (
     CallbackAction,
     ChannelMessage,
@@ -82,7 +82,7 @@ from money_tracker.workflows import (
     outcome_facts,
 )
 
-_LOGGER = logging.getLogger("money_tracker.worker")
+_LOGGER = get_logger("money_tracker.worker.sequential")
 _CALLBACK = re.compile(
     r"^a:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-"
     r"[0-9a-f]{4}-[0-9a-f]{12}):([a-z][a-z0-9_]{0,15})$"
@@ -232,13 +232,37 @@ class SequentialWorker:
         )
         if claim is None:
             return False
+        # Everything below runs under the identity of this work unit, so a
+        # record emitted anywhere in dispatch, persistence, or rendering can be
+        # traced back to the update that caused it without being handed the
+        # identifiers itself.
+        with log_context(
+            inbox_id=claim.update.id,
+            update_id=claim.update.update_id,
+            attempt_count=claim.attempt_count,
+        ):
+            self._claim(claim)
+        return True
+
+    def _claim(self, claim: InboxClaim) -> None:
+        """Run one claimed item to a terminal state, whatever that state is.
+
+        Args:
+            claim: Leased inbox item this worker owns for the moment.
+        """
+
+        _LOGGER.info(
+            "work_unit.claimed",
+            has_image=claim.update.has_image,
+            callback=claim.update.callback_action is not None,
+        )
         try:
             self._process(claim)
         except MessagingLeaseError:
             # The lease expired while dispatch was running, so another claim
             # already owns this item. Failing it here would overwrite whatever
             # that claim is doing; the durable state is already correct.
-            _LOGGER.warning("Worker lost its inbox lease before completing")
+            _LOGGER.warning("work_unit.lease_lost")
         except (ModelConnectionError, OptimisticConcurrencyError) as error:
             self._fail(claim, _transient_code(error), transient=True)
         except (
@@ -249,17 +273,23 @@ class SequentialWorker:
             ValueError,
         ) as error:
             self._fail(claim, _permanent_code(error), transient=False)
-        return True
 
     def _process(self, claim: InboxClaim) -> None:
         """Dispatch one claimed item and commit everything it produced."""
 
         binding = self._repository.owner_binding(self._bot_key)
         if binding is None:
+            _LOGGER.error("work_unit.owner_binding.missing", bot_key=self._bot_key)
             raise ValueError("the bot has no owner binding for accepted work")
         profile_id = binding.profile_id
         correlation = self._correlate(claim, profile_id)
         message = self._message(claim, correlation)
+        _LOGGER.debug(
+            "work_unit.dispatching",
+            profile_id=profile_id,
+            correlated_action=correlation.action is not None,
+            latest_movement_id=correlation.latest_movement_id,
+        )
         outcome = self._dispatcher.dispatch(
             message,
             context=DispatchContext(
@@ -465,9 +495,12 @@ class SequentialWorker:
             revocations=revocations,
         )
         _LOGGER.info(
-            "Worker committed work unit outcome=%s response=%s",
-            outcome.status.value,
-            response.kind.value,
+            "work_unit.committed",
+            outcome=outcome.status.value,
+            response_kind=response.kind.value,
+            expense_id=outcome.expense_id,
+            proposal_id=outcome.proposal_id,
+            revocations=len(revocations),
         )
 
     def _revocations(
@@ -573,12 +606,18 @@ class SequentialWorker:
             response=self._response_draft(claim, response),
             now=now,
         )
-        _LOGGER.warning(
-            "Worker failed a work unit reason=%s transient=%s attempt=%d",
-            error_code,
-            transient,
-            claim.attempt_count,
-        )
+        # A terminal failure is a dead letter the owner has to act on, which
+        # is a different thing from a retry that has not run out of attempts.
+        fields: dict[str, object] = {
+            "reason_code": error_code,
+            "transient": transient,
+            "attempt_count": claim.attempt_count,
+            "retry_at": retry_at,
+        }
+        if terminal:
+            _LOGGER.error("work_unit.dead_lettered", **fields)
+        else:
+            _LOGGER.warning("work_unit.retry_scheduled", **fields)
 
 
 def _superseded_targets(

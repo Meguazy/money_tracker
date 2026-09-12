@@ -14,6 +14,9 @@ from money_tracker.persistence.database import (
     downgrade_database,
     upgrade_database,
 )
+from money_tracker.structured_logging import configure_logging, get_logger
+
+_LOGGER = get_logger("money_tracker.persistence.cli")
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -52,8 +55,10 @@ def main(argv: Sequence[str] | None = None) -> None:
         SystemExit: If destructive-foundation confirmation is absent.
     """
 
+    configure_logging()
     args = _parser().parse_args(argv)
     database_url = database_url_from_env()
+    _LOGGER.info("database.command.started", command=args.command)
 
     if args.command == "upgrade":
         upgrade_database(database_url)
@@ -67,12 +72,17 @@ def main(argv: Sequence[str] | None = None) -> None:
         return
     if args.command == "downgrade-foundation":
         if not args.confirm_empty_foundation:
+            _LOGGER.error("database.downgrade.unconfirmed")
             raise SystemExit(
                 "--confirm-empty-foundation is required; non-empty schemas are not "
                 "removed by this migration"
             )
+        # A downgrade removes schemas, so it is worth a record of its own
+        # even though the command already refuses a non-empty foundation.
+        _LOGGER.warning("database.downgrade.confirmed", revision="base")
         downgrade_database(database_url, "base")
         return
+    _LOGGER.error("database.command.unsupported", command=args.command)
     raise SystemExit(f"unsupported command: {args.command}")
 
 

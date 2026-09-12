@@ -31,6 +31,7 @@ from money_tracker.application import (
     TransactionRegister,
 )
 from money_tracker.domain import DomainError, YearMonth
+from money_tracker.structured_logging import get_logger
 from money_tracker.web.config import WebSettings
 from money_tracker.web.contracts import (
     BudgetCreateRequest,
@@ -86,6 +87,9 @@ class DashboardReader(Protocol):
         period: YearMonth,
     ) -> BudgetPlan:
         """Return the stored budget plan and its position for one month."""
+
+
+_LOGGER = get_logger("money_tracker.web.app")
 
 
 def create_app(
@@ -159,6 +163,9 @@ def create_app(
         try:
             available = readiness_check()
         except PsycopgError:
+            # The traceback is the only place the cause of an unreachable
+            # database appears; the response deliberately says nothing.
+            _LOGGER.exception("web.readiness.database_unavailable")
             available = False
         if not available:
             return _problem(
@@ -531,7 +538,9 @@ def _execute_mutation[AggregateT, ResponseT](
             instance=instance,
         )
     except PsycopgError:
+        _LOGGER.exception("web.mutation.database_unavailable", path=instance)
         return _database_problem(instance)
+    _LOGGER.info("web.mutation.applied", path=instance)
     return render(result)
 
 
@@ -567,8 +576,29 @@ def _problem(
     code: str,
     instance: str,
 ) -> JSONResponse:
-    """Render a bounded problem-details response."""
+    """Render a bounded problem-details response.
 
+    Every error this API returns is built here, so this is where each one is
+    recorded. A dependency failure is an error the owner has to act on; a
+    rejected request is the API working as designed and warns instead. The
+    stable code and the route are recorded, never the request body, because
+    the body is owner finance data.
+
+    Args:
+        status: HTTP status code.
+        title: Owner-facing title.
+        detail: Owner-facing explanation.
+        code: Stable machine-readable problem code.
+        instance: Route the problem concerns.
+
+    Returns:
+        The problem-details response to return to the browser.
+    """
+
+    if status >= 500:
+        _LOGGER.error("web.request.failed", status=status, code=code, path=instance)
+    else:
+        _LOGGER.warning("web.request.rejected", status=status, code=code, path=instance)
     problem = ProblemDetails(
         title=title,
         status=status,
@@ -589,6 +619,7 @@ def _mount_dashboard(app: FastAPI, static_dir: Path) -> None:
     index = static_dir / "index.html"
     assets = static_dir / "assets"
     if not index.is_file() or not assets.is_dir():
+        _LOGGER.error("web.dashboard.build_missing", static_dir=static_dir)
         raise ValueError(
             "compiled dashboard is missing; run npm ci and npm run build in frontend"
         )

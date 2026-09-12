@@ -7,6 +7,9 @@ from langgraph.graph import END, START, MessagesState, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
 from money_tracker.llm import create_chat_model
+from money_tracker.structured_logging import get_logger
+
+_LOGGER = get_logger("money_tracker.graph")
 
 SYSTEM_PROMPT = """You are a careful personal-finance assistant.
 Help the user understand spending and make practical decisions. Do not invent
@@ -40,9 +43,10 @@ def build_graph(
             A state update containing the assistant response.
         """
 
-        response = chat_model.invoke(
-            [SystemMessage(content=SYSTEM_PROMPT), *state["messages"]]
-        )
+        with _LOGGER.timed("assistant.turn", messages=len(state["messages"])):
+            response = chat_model.invoke(
+                [SystemMessage(content=SYSTEM_PROMPT), *state["messages"]]
+            )
         return {"messages": [response]}
 
     builder = StateGraph(MessagesState)

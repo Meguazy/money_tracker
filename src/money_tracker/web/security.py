@@ -11,6 +11,9 @@ from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from money_tracker.api.contracts import PROBLEM_MEDIA_TYPE, ProblemDetails
+from money_tracker.structured_logging import get_logger
+
+_LOGGER = get_logger("money_tracker.web.security")
 
 CSRF_COOKIE_NAME = "money_tracker_csrf"
 CSRF_HEADER_NAME = "x-csrf-token"
@@ -142,8 +145,26 @@ async def _send_problem(
     send: Send,
     code: str,
 ) -> None:
-    """Return one bounded problem without reflecting an untrusted header."""
+    """Return one bounded problem without reflecting an untrusted header.
 
+    Args:
+        scope: ASGI connection scope.
+        receive: ASGI receive channel.
+        send: ASGI send channel.
+        code: Stable machine-readable rejection code.
+    """
+
+    # A browser protection firing is worth seeing: on a loopback service it
+    # usually means a misconfigured origin rather than an attack, and either
+    # way the owner sees a failed page with no explanation. The record names
+    # the stable code and the path, never the rejected header value, which is
+    # attacker-controlled text.
+    _LOGGER.warning(
+        "web.request.blocked",
+        reason_code=code,
+        path=str(scope.get("path", "/")),
+        method=str(scope.get("method", "GET")).upper(),
+    )
     response = JSONResponse(
         ProblemDetails(
             title="Richiesta non consentita",

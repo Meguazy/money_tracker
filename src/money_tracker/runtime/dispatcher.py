@@ -34,6 +34,7 @@ from money_tracker.runtime.review_graph import (
     build_review_graph,
 )
 from money_tracker.runtime.router_graph import build_router_graph
+from money_tracker.structured_logging import get_logger, log_context
 from money_tracker.workflows import (
     DEFAULT_READ_SELECTION_POLICY,
     ChannelMessage,
@@ -62,6 +63,9 @@ from money_tracker.workflows import (
 from money_tracker.workflows.candidates import CategoryFitCandidate, ExtractionCandidate
 
 Graph = Any
+
+
+_LOGGER = get_logger("money_tracker.runtime.dispatcher")
 
 
 class DispatchConfigurationReader(
@@ -129,37 +133,93 @@ class WorkflowDispatcher:
                 follow-up names a checkpoint that does not exist.
         """
 
-        routed_state = cast(
-            RouterState,
-            self.router.invoke(
-                initial_router_state(message, context=context.routing),
-                _thread_config("router", message.source_reference),
-            ),
-        )
-        decision = routing_decision_from_state(routed_state)
-        if decision is None:
-            raise RuntimeError("router reached no decision")
-        if decision.intent is WorkflowIntent.CLARIFICATION:
-            return DispatchOutcome(
-                routing=decision,
-                status=DispatchStatus.CLARIFICATION,
-                clarification_reason=decision.reason.value,
-            )
-        if context.profile_id is None:
-            return DispatchOutcome(routing=decision, status=DispatchStatus.ROUTED)
+        # The source reference is the work unit's own identity, not owner
+        # content, so it is what correlates every record a dispatch produces.
+        with log_context(source_reference=message.source_reference):
+            return self._dispatch(message, context)
 
-        if decision.intent in {WorkflowIntent.EXPENSE, WorkflowIntent.REFUND}:
-            return self._dispatch_expense(message, context.profile_id, decision)
-        if decision.intent in {WorkflowIntent.QUERY, WorkflowIntent.ADVICE}:
-            return self._dispatch_read(message, context.profile_id, decision)
-        if decision.intent in {
-            WorkflowIntent.CORRECTION,
-            WorkflowIntent.UNDO,
-        }:
-            return self._dispatch_movement_change(message, context, decision)
-        if decision.intent is WorkflowIntent.CATEGORY_FOLLOW_UP:
-            return self._dispatch_review(message, context, decision)
-        return DispatchOutcome(routing=decision, status=DispatchStatus.ROUTED)
+    def _dispatch(
+        self,
+        message: ChannelMessage,
+        context: DispatchContext,
+    ) -> DispatchOutcome:
+        """Route and dispatch one message inside an established log context.
+
+        Args:
+            message: Channel-neutral work unit.
+            context: Trusted owner scope and correlation facts.
+
+        Returns:
+            One compact result suitable for a durable gateway boundary.
+
+        Raises:
+            RuntimeError: If a graph violates its state contract.
+        """
+
+        with _LOGGER.timed("routing") as routing_outcome:
+            routed_state = cast(
+                RouterState,
+                self.router.invoke(
+                    initial_router_state(message, context=context.routing),
+                    _thread_config("router", message.source_reference),
+                ),
+            )
+            decision = routing_decision_from_state(routed_state)
+            if decision is None:
+                _LOGGER.error("routing.no_decision")
+                raise RuntimeError("router reached no decision")
+            # Intent, confidence, and a stable reason code are routing
+            # telemetry by design; the message they were derived from is not.
+            routing_outcome["intent"] = decision.intent.value
+            routing_outcome["reason_code"] = decision.reason.value
+            routing_outcome["confidence"] = decision.confidence
+        with log_context(intent=decision.intent.value):
+            if decision.intent is WorkflowIntent.CLARIFICATION:
+                _LOGGER.info(
+                    "dispatch.clarification", reason_code=decision.reason.value
+                )
+                return DispatchOutcome(
+                    routing=decision,
+                    status=DispatchStatus.CLARIFICATION,
+                    clarification_reason=decision.reason.value,
+                )
+            if context.profile_id is None:
+                _LOGGER.debug("dispatch.routing_only")
+                return DispatchOutcome(routing=decision, status=DispatchStatus.ROUTED)
+            return self._specialist(message, context, decision)
+
+    def _specialist(
+        self,
+        message: ChannelMessage,
+        context: DispatchContext,
+        decision: RoutingDecision,
+    ) -> DispatchOutcome:
+        """Send an accepted route to the one specialist that serves it.
+
+        Args:
+            message: Channel-neutral work unit.
+            context: Trusted owner scope, with a profile already established.
+            decision: Accepted routing decision.
+
+        Returns:
+            The specialist's typed outcome.
+        """
+
+        assert context.profile_id is not None
+        with log_context(profile_id=context.profile_id):
+            if decision.intent in {WorkflowIntent.EXPENSE, WorkflowIntent.REFUND}:
+                return self._dispatch_expense(message, context.profile_id, decision)
+            if decision.intent in {WorkflowIntent.QUERY, WorkflowIntent.ADVICE}:
+                return self._dispatch_read(message, context.profile_id, decision)
+            if decision.intent in {
+                WorkflowIntent.CORRECTION,
+                WorkflowIntent.UNDO,
+            }:
+                return self._dispatch_movement_change(message, context, decision)
+            if decision.intent is WorkflowIntent.CATEGORY_FOLLOW_UP:
+                return self._dispatch_review(message, context, decision)
+            _LOGGER.warning("dispatch.no_specialist")
+            return DispatchOutcome(routing=decision, status=DispatchStatus.ROUTED)
 
     def _dispatch_expense(
         self,
@@ -169,7 +229,29 @@ class WorkflowDispatcher:
     ) -> DispatchOutcome:
         """Run a movement creation specialist and open any resulting review."""
 
-        final = cast(
+        with _LOGGER.timed("workflow.expense") as timing:
+            final = self._invoke_expense(message, profile_id, decision)
+            timing["outcome"] = final.get("outcome")
+        return self._expense_outcome(message, profile_id, decision, final)
+
+    def _invoke_expense(
+        self,
+        message: ChannelMessage,
+        profile_id: UUID,
+        decision: RoutingDecision,
+    ) -> ExpenseWorkflowState:
+        """Run the movement creation graph for one routed message.
+
+        Args:
+            message: Channel-neutral work unit.
+            profile_id: Trusted owner scope.
+            decision: Accepted routing decision.
+
+        Returns:
+            The graph's final state.
+        """
+
+        return cast(
             ExpenseWorkflowState,
             self.expense.invoke(
                 initial_expense_state(
@@ -180,6 +262,26 @@ class WorkflowDispatcher:
                 _thread_config("expense", message.source_reference),
             ),
         )
+
+    def _expense_outcome(
+        self,
+        message: ChannelMessage,
+        profile_id: UUID,
+        decision: RoutingDecision,
+        final: ExpenseWorkflowState,
+    ) -> DispatchOutcome:
+        """Open any review the movement opened and build the typed outcome.
+
+        Args:
+            message: Channel-neutral work unit.
+            profile_id: Trusted owner scope.
+            decision: Accepted routing decision.
+            final: Final expense graph state.
+
+        Returns:
+            The dispatch outcome for this movement.
+        """
+
         status = DispatchStatus(_required(final.get("outcome"), "outcome"))
         expense_id = _optional_uuid(final.get("expense_id"))
         proposal_id = _optional_uuid(final.get("proposal_id"))
@@ -188,6 +290,11 @@ class WorkflowDispatcher:
             and expense_id is not None
             and proposal_id is not None
         ):
+            _LOGGER.info(
+                "workflow.review.opened",
+                expense_id=expense_id,
+                proposal_id=proposal_id,
+            )
             self.review.invoke(
                 initial_review_state(
                     profile_id=profile_id,
@@ -197,6 +304,13 @@ class WorkflowDispatcher:
                 ),
                 _thread_config("category-review", str(proposal_id)),
             )
+        _LOGGER.info(
+            "workflow.expense.settled",
+            outcome=status.value,
+            expense_id=expense_id,
+            proposal_id=proposal_id,
+            clarification_reason=final.get("clarification_reason"),
+        )
         return DispatchOutcome(
             routing=decision,
             status=status,
@@ -213,7 +327,30 @@ class WorkflowDispatcher:
     ) -> DispatchOutcome:
         """Run one scoped read-only specialist."""
 
-        final = cast(
+        with _LOGGER.timed("workflow.read") as timing:
+            final = self._invoke_read(message, profile_id, decision)
+            timing["outcome"] = final.get("outcome")
+            timing["executed_tool"] = final.get("executed_tool")
+        return self._read_outcome(decision, final)
+
+    def _invoke_read(
+        self,
+        message: ChannelMessage,
+        profile_id: UUID,
+        decision: RoutingDecision,
+    ) -> ReadWorkflowState:
+        """Run the read-only graph for one routed question.
+
+        Args:
+            message: Channel-neutral work unit.
+            profile_id: Trusted owner scope.
+            decision: Accepted routing decision.
+
+        Returns:
+            The graph's final state.
+        """
+
+        return cast(
             ReadWorkflowState,
             self.read.invoke(
                 initial_read_state(
@@ -224,11 +361,34 @@ class WorkflowDispatcher:
                 _thread_config("read", message.source_reference),
             ),
         )
+
+    def _read_outcome(
+        self,
+        decision: RoutingDecision,
+        final: ReadWorkflowState,
+    ) -> DispatchOutcome:
+        """Build the typed outcome for one completed read workflow.
+
+        Args:
+            decision: Accepted routing decision.
+            final: Final read graph state.
+
+        Returns:
+            The dispatch outcome, carrying grounded facts when there are any.
+        """
+
         facts_json = final.get("answer_json")
         facts = (
             None if facts_json is None else cast(dict[str, Any], json.loads(facts_json))
         )
         tool_name = final.get("executed_tool")
+        # The answer itself is owner-facing content. Whether the workflow
+        # grounded it in a tool result is the part a journal needs.
+        _LOGGER.debug(
+            "workflow.read.settled",
+            executed_tool=tool_name,
+            grounded=facts is not None,
+        )
         return DispatchOutcome(
             routing=decision,
             status=DispatchStatus(_required(final.get("outcome"), "outcome")),
@@ -249,6 +409,10 @@ class WorkflowDispatcher:
         if target is None and decision.pending_action_id is not None:
             target = context.movement_for_action(decision.pending_action_id)
         if target is None:
+            _LOGGER.info(
+                "workflow.movement_change.unresolved",
+                reason_code=DispatchReason.MOVEMENT_TARGET_REQUIRED.value,
+            )
             return DispatchOutcome(
                 routing=decision,
                 status=DispatchStatus.CLARIFICATION,
@@ -266,9 +430,16 @@ class WorkflowDispatcher:
                 _thread_config("movement-change", message.source_reference),
             ),
         )
+        status = DispatchStatus(_required(final.get("outcome"), "outcome"))
+        _LOGGER.info(
+            "workflow.movement_change.settled",
+            outcome=status.value,
+            target_movement_id=target,
+            clarification_reason=final.get("clarification_reason"),
+        )
         return DispatchOutcome(
             routing=decision,
-            status=DispatchStatus(_required(final.get("outcome"), "outcome")),
+            status=status,
             expense_id=_optional_uuid(final.get("expense_id")),
             clarification_reason=final.get("clarification_reason"),
         )
@@ -286,6 +457,13 @@ class WorkflowDispatcher:
             proposal_id is None
             or proposal_id not in context.routing.pending_category_review_ids
         ):
+            # A stale button is the ordinary cause here: the review the owner
+            # tapped has already settled, so the decision has nowhere to land.
+            _LOGGER.info(
+                "workflow.review.not_pending",
+                proposal_id=proposal_id,
+                reason_code=DispatchReason.REVIEW_NOT_PENDING.value,
+            )
             return DispatchOutcome(
                 routing=decision,
                 status=DispatchStatus.CLARIFICATION,
@@ -293,6 +471,11 @@ class WorkflowDispatcher:
             )
         review_decision = review_decision_from_message(message)
         if review_decision is None:
+            _LOGGER.info(
+                "workflow.review.decision_required",
+                proposal_id=proposal_id,
+                reason_code=DispatchReason.REVIEW_DECISION_REQUIRED.value,
+            )
             return DispatchOutcome(
                 routing=decision,
                 status=DispatchStatus.CLARIFICATION,
@@ -309,12 +492,19 @@ class WorkflowDispatcher:
         outcome = final.get("outcome")
         current_proposal = UUID(_required(final.get("proposal_id"), "proposal_id"))
         if outcome is None:
+            _LOGGER.info("workflow.review.still_open", proposal_id=current_proposal)
             return DispatchOutcome(
                 routing=decision,
                 status=DispatchStatus.AWAITING_CATEGORY_APPROVAL,
                 proposal_id=current_proposal,
                 clarification_reason=final.get("clarification_reason"),
             )
+        _LOGGER.info(
+            "workflow.review.settled",
+            outcome=outcome,
+            proposal_id=current_proposal,
+            settled_category_id=final.get("settled_category_id"),
+        )
         return DispatchOutcome(
             routing=decision,
             status=DispatchStatus(outcome),
@@ -337,6 +527,7 @@ class _UnavailableSpecialist:
     def invoke(self, value: object, config: object) -> object:
         """Reject an invocation that profile gating should make unreachable."""
 
+        _LOGGER.critical("dispatch.specialist.unavailable")
         raise RuntimeError("routing-only dispatcher cannot invoke a specialist")
 
 

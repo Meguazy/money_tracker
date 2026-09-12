@@ -12,7 +12,6 @@ from uuid import UUID
 from psycopg import Error as PsycopgError
 
 from money_tracker.application.runtime import UUID4Generator
-from money_tracker.logging_safety import configure_safe_logging
 from money_tracker.messaging import (
     TELEGRAM_UPDATE_RETENTION,
     MessagingAdministration,
@@ -26,10 +25,17 @@ from money_tracker.process_exit import (
     failure_reason,
     shutdown_event,
 )
+from money_tracker.structured_logging import (
+    configure_logging,
+    get_logger,
+    log_context,
+)
 from money_tracker.telegram.config import TelegramSettings
 from money_tracker.telegram.gateway import TelegramGateway
 from money_tracker.telegram.ingestion import TelegramUpdateIngestor
 from money_tracker.telegram.transport import BotApiClient
+
+_LOGGER = get_logger("money_tracker.telegram.cli")
 
 
 class _SystemClock:
@@ -328,11 +334,13 @@ def main(argv: Sequence[str] | None = None) -> None:
     """
 
     args = _parser().parse_args(argv)
-    configure_safe_logging()
+    configure_logging()
     try:
         settings = TelegramSettings.from_env()
         database_url = database_url_from_env()
         repository = PostgresMessagingRepository(database_url)
+        with log_context(command=args.command, environment=settings.environment.value):
+            _LOGGER.info("telegram.command.started")
         if args.command == "pair":
             print(json.dumps(_pair(settings, repository, database_url), indent=2))
             return
@@ -403,5 +411,10 @@ def main(argv: Sequence[str] | None = None) -> None:
         RuntimeError,
         ValueError,
     ) as error:
+        _LOGGER.exception(
+            "telegram.command.failed",
+            command=args.command,
+            reason=failure_reason(error),
+        )
         print(f"Telegram gateway failed: {failure_reason(error)}", file=sys.stderr)
         raise SystemExit(int(exit_code_for(error))) from None

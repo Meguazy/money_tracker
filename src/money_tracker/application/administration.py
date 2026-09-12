@@ -20,6 +20,9 @@ from money_tracker.domain import (
     WalletEntry,
     YearMonth,
 )
+from money_tracker.structured_logging import get_logger
+
+_LOGGER = get_logger("money_tracker.application.administration")
 
 CREATE_BUDGET_COMMAND = "create_budget"
 REPLACE_BUDGET_COMMAND = "replace_budget"
@@ -123,6 +126,15 @@ class FinanceAdministrationService:
             current_version=1,
         )
         self._repository.append_wallet_entry(entry, audit_event=audit)
+        # Wallet rows are immutable and change a tracked balance, so each one
+        # is recorded by identity and kind. The amount stays in the ledger.
+        _LOGGER.info(
+            "wallet_entry.appended",
+            profile_id=entry.profile_id,
+            wallet_entry_id=entry.id,
+            funding_source_id=entry.funding_source_id,
+            entry_type=entry.entry_type.value,
+        )
         return entry
 
     def create_budget(
@@ -150,6 +162,12 @@ class FinanceAdministrationService:
         """
 
         if budget.version != 1:
+            _LOGGER.error(
+                "budget.initial_version_invalid",
+                profile_id=budget.profile_id,
+                category_id=budget.category_id,
+                version=budget.version,
+            )
             raise ValueError("new budget must start at version 1")
         request_hash = budget_request_hash(
             profile_id=budget.profile_id,
@@ -227,6 +245,9 @@ class FinanceAdministrationService:
             return replayed
         current = self._repository.get_budget(profile_id, category_id)
         if current is None:
+            _LOGGER.warning(
+                "budget.not_found", profile_id=profile_id, category_id=category_id
+            )
             raise AggregateNotFoundError("budget does not exist in profile")
         updated = replace(
             current,
@@ -248,6 +269,14 @@ class FinanceAdministrationService:
             command_type=REPLACE_BUDGET_COMMAND,
             request_hash=request_hash,
             audit_event=audit,
+        )
+        _LOGGER.info(
+            "budget.replaced",
+            profile_id=profile_id,
+            category_id=category_id,
+            prior_version=current.version,
+            version=updated.version,
+            overrides=len(updated.overrides),
         )
         return updated
 

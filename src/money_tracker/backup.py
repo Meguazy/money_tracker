@@ -10,7 +10,7 @@ import shutil
 import stat
 import subprocess
 import tempfile
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
@@ -22,6 +22,7 @@ from urllib.parse import unquote, urlparse
 from psycopg import connect
 
 from money_tracker.domain.receipts import SHA256_PATTERN
+from money_tracker.structured_logging import get_logger
 
 AUTHORITATIVE_TAG = "money-tracker-authoritative"
 FINANCE_SCHEMAS = ("finance", "messaging", "workflow")
@@ -39,6 +40,9 @@ RETENTION_ARGUMENTS = (
     "--keep-monthly",
     "12",
 )
+
+
+_LOGGER = get_logger("money_tracker.backup")
 
 
 class BackupError(RuntimeError):
@@ -297,15 +301,24 @@ class AuthoritativeBackupService:
         self._validate_common(require_repository=False)
         self._settings.restic_repository.mkdir(mode=0o700, parents=True, exist_ok=True)
         if any(self._settings.restic_repository.iterdir()):
+            _LOGGER.error("backup.repository.not_empty")
             raise BackupError("Restic repository initialization requires an empty path")
         self._run_restic("init")
+        _LOGGER.info("backup.repository.created")
 
     def create_backup(self) -> BackupResult:
         """Create, verify, then apply retention to one authoritative snapshot."""
 
+        # A backup that silently stops running is the failure mode that only
+        # shows up when a restore is needed, so each stage is recorded as it
+        # completes. Repository paths and the database URL stay out: the URL
+        # carries a password and the paths are the owner's private layout.
         self._validate_common(require_repository=True)
-        with self._operation_lock():
+        with self._operation_lock(), _LOGGER.timed("backup.create") as timing:
             database_name, revision, receipt_hashes = self._preflight_source()
+            timing["database_name"] = database_name
+            timing["alembic_revision"] = revision
+            timing["receipt_count"] = len(receipt_hashes)
             _prepare_private_directory(self._settings.staging_parent, "staging parent")
             with tempfile.TemporaryDirectory(
                 prefix="money-tracker-backup-",
@@ -332,8 +345,11 @@ class AuthoritativeBackupService:
                 )
                 os.chmod(manifest_path, 0o600)
                 snapshot_id = self._backup_sources(staging)
+                timing["snapshot_id"] = snapshot_id
+                _LOGGER.debug("backup.snapshot.verifying", snapshot_id=snapshot_id)
                 self._run_restic("check")
                 self._verify_snapshot(snapshot_id)
+                _LOGGER.debug("backup.retention.applying", snapshot_id=snapshot_id)
                 self._run_restic(
                     "forget",
                     "--tag",
@@ -402,6 +418,11 @@ class AuthoritativeBackupService:
         self._validate_common(require_repository=True)
         _require_empty_restore_target(target_receipt_root)
         _prepare_private_directory(self._settings.staging_parent, "staging parent")
+        _LOGGER.info(
+            "backup.restore.started",
+            snapshot_id=snapshot_id,
+            target_database_name=target_database_name,
+        )
         with self._operation_lock():
             self._require_empty_database(target_database_url, target_database_name)
             with tempfile.TemporaryDirectory(
@@ -412,16 +433,31 @@ class AuthoritativeBackupService:
                 self._run_restic("restore", snapshot_id, "--target", str(restored))
                 manifests = tuple(restored.rglob("manifest.json"))
                 if len(manifests) != 1:
+                    _LOGGER.error(
+                        "backup.restore.manifest_ambiguous",
+                        snapshot_id=snapshot_id,
+                        manifests=len(manifests),
+                    )
                     raise BackupError("snapshot must contain exactly one manifest")
                 manifest_path = manifests[0]
                 manifest = self._load_manifest(manifest_path)
                 dump_path = manifest_path.parent / "database.dump"
                 if _sha256_file(dump_path) != manifest.database_dump_sha256:
+                    # A checksum mismatch means the snapshot cannot be trusted
+                    # to restore the ledger, which is as serious as it gets.
+                    _LOGGER.critical(
+                        "backup.restore.dump_checksum_mismatch",
+                        snapshot_id=snapshot_id,
+                    )
                     raise BackupError("database dump checksum mismatch")
                 restored_config = _restored_absolute(
                     restored, Path(manifest.config_file)
                 )
                 if _sha256_file(restored_config) != manifest.config_sha256:
+                    _LOGGER.critical(
+                        "backup.restore.config_checksum_mismatch",
+                        snapshot_id=snapshot_id,
+                    )
                     raise BackupError("configuration checksum mismatch")
                 restored_receipts = _restored_absolute(
                     restored, Path(manifest.receipt_archive_root)
@@ -436,6 +472,12 @@ class AuthoritativeBackupService:
                 )
                 self._copy_receipts(restored_receipts, target_receipt_root)
                 self._verify_receipt_tree(target_receipt_root, manifest.receipt_hashes)
+        _LOGGER.info(
+            "backup.restore.verified",
+            snapshot_id=snapshot_id,
+            target_database_name=target_database_name,
+            receipt_count=len(manifest.receipt_hashes),
+        )
         return RestoreResult(
             snapshot_id, len(manifest.receipt_hashes), target_database_name
         )
@@ -457,10 +499,11 @@ class AuthoritativeBackupService:
         if not self._settings.receipt_archive_root.is_absolute():
             raise BackupError("receipt archive root must be absolute")
         if require_repository and not self._settings.restic_repository.is_dir():
+            _LOGGER.error("backup.repository.uninitialized")
             raise BackupError("Restic repository is not initialized")
 
     @contextmanager
-    def _operation_lock(self) -> Iterator[None]:
+    def _operation_lock(self) -> Generator[None]:
         """Acquire the exact host lock without waiting behind another operation."""
 
         self._settings.lock_file.parent.mkdir(mode=0o700, parents=True, exist_ok=True)

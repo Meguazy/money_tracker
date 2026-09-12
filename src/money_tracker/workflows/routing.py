@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from uuid import UUID
 
+from money_tracker.structured_logging import get_logger
 from money_tracker.workflows.contracts import RouteClassification
 from money_tracker.workflows.intents import (
     DETERMINISTIC_ONLY_INTENTS,
@@ -32,6 +33,8 @@ from money_tracker.workflows.messages import (
     ChannelMessage,
     SupportedCommand,
 )
+
+_LOGGER = get_logger("money_tracker.workflows.routing")
 
 _COMMAND_PREFIX = "/"
 
@@ -223,8 +226,15 @@ def accept_classification(
     """
 
     if not 0.0 <= minimum_confidence <= 1.0:
+        _LOGGER.error(
+            "routing.confidence_bar_invalid", minimum_confidence=minimum_confidence
+        )
         raise ValueError("minimum confidence must lie in the unit interval")
     if classification.intent in DETERMINISTIC_ONLY_INTENTS:
+        _LOGGER.error(
+            "routing.deterministic_intent_from_model",
+            intent=classification.intent.value,
+        )
         raise ValueError(
             f"intent {classification.intent.value} is assigned deterministically"
         )
@@ -238,6 +248,12 @@ def accept_classification(
         return _route_category_follow_up(classification, message, context)
     if classification.intent in {WorkflowIntent.CORRECTION, WorkflowIntent.UNDO}:
         return _route_movement_change(classification, context)
+    _LOGGER.debug(
+        "routing.accepted",
+        intent=classification.intent.value,
+        confidence=classification.confidence,
+        minimum_confidence=minimum_confidence,
+    )
     return RoutingDecision(
         intent=classification.intent,
         source=RoutingSource.MODEL,
@@ -360,6 +376,16 @@ def clarify(
         A clarification decision that mutates nothing.
     """
 
+    # Every veto in the router funnels through here, so this one record
+    # answers the question an owner actually asks: why was I asked to rephrase
+    # instead of being understood. The reason is a stable code chosen so that
+    # routing telemetry cannot leak message content.
+    _LOGGER.info(
+        "routing.clarification",
+        reason_code=reason.value,
+        source=source.value,
+        confidence=confidence,
+    )
     return RoutingDecision(
         intent=WorkflowIntent.CLARIFICATION,
         source=source,

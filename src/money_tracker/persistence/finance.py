@@ -41,6 +41,9 @@ from money_tracker.domain import (
     normalize_category_name,
     require_available_balance,
 )
+from money_tracker.structured_logging import get_logger
+
+_LOGGER = get_logger("money_tracker.persistence.finance")
 
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
@@ -688,6 +691,12 @@ class PostgresFinanceRepository:
                 ),
             )
             if cursor.rowcount != 1:
+                _LOGGER.warning(
+                    "receipt.version_conflict",
+                    profile_id=metadata.profile_id,
+                    receipt_id=metadata.id,
+                    expected_version=expected_version,
+                )
                 raise OptimisticConcurrencyError(
                     "receipt changed since the requested version"
                 )
@@ -810,6 +819,15 @@ class PostgresFinanceRepository:
                     (expense.profile_id, expense.idempotency_key),
                 ).fetchone()
                 if prior is None or prior[0] != request_hash:
+                    # The same command key arriving with different content
+                    # means a caller is reusing a key, which would otherwise
+                    # silently return someone else's result.
+                    _LOGGER.error(
+                        "expense.idempotency_conflict",
+                        profile_id=expense.profile_id,
+                        expense_id=expense.id,
+                        stage="create",
+                    )
                     raise IdempotencyConflictError(
                         "idempotency key was used for different request content"
                     )
@@ -984,6 +1002,12 @@ class PostgresFinanceRepository:
         """Refuse reuse of a command key for another mutation or target."""
 
         if prior != (command_type, request_hash, expense_id):
+            _LOGGER.error(
+                "expense.idempotency_conflict",
+                expense_id=expense_id,
+                command_type=command_type,
+                stage="replace",
+            )
             raise IdempotencyConflictError(
                 "idempotency key was used for different request content"
             )
@@ -1001,6 +1025,11 @@ class PostgresFinanceRepository:
         if prior[:2] != (command_type, request_hash) or (
             result_id is not None and prior[2] != result_id
         ):
+            _LOGGER.error(
+                "category_review.idempotency_conflict",
+                command_type=command_type,
+                result_id=result_id,
+            )
             raise IdempotencyConflictError(
                 "idempotency key was used for different review content"
             )
@@ -1051,6 +1080,15 @@ class PostgresFinanceRepository:
             ),
         )
         if cursor.rowcount != 1:
+            # Two writers raced for one movement. The loser retries, so this
+            # is contention rather than a defect, but a run of these means
+            # something is dispatching the same movement twice.
+            _LOGGER.warning(
+                "expense.version_conflict",
+                profile_id=expense.profile_id,
+                expense_id=expense.id,
+                expected_version=expected_version,
+            )
             raise OptimisticConcurrencyError(
                 "expense changed since the requested version"
             )

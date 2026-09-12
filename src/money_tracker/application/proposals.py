@@ -8,6 +8,9 @@ from money_tracker.application.ports import (
     IdGenerator,
 )
 from money_tracker.domain import AuditEvent, CategoryProposal, CategoryProposalStatus
+from money_tracker.structured_logging import get_logger
+
+_LOGGER = get_logger("money_tracker.application.proposals")
 
 
 class CategoryProposalService:
@@ -54,6 +57,12 @@ class CategoryProposalService:
         """
 
         if proposal.status is not CategoryProposalStatus.PENDING:
+            _LOGGER.error(
+                "category_proposal.not_pending",
+                profile_id=proposal.profile_id,
+                proposal_id=proposal.id,
+                status=proposal.status.value,
+            )
             raise ValueError("new category proposal must be pending")
         audit = AuditEvent(
             id=self._ids.new(),
@@ -69,4 +78,12 @@ class CategoryProposalService:
             reason=reason,
         )
         self._repository.create_category_proposal(proposal, audit_event=audit)
+        # The candidate name is model output about owner spending and stays out
+        # of the record; the review is identified by its own id.
+        _LOGGER.info(
+            "category_proposal.submitted",
+            profile_id=proposal.profile_id,
+            proposal_id=proposal.id,
+            alternatives=len(proposal.alternative_category_ids),
+        )
         return proposal

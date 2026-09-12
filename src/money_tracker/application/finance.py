@@ -14,6 +14,9 @@ from money_tracker.domain import (
     Money,
     PaymentAllocation,
 )
+from money_tracker.structured_logging import get_logger
+
+_LOGGER = get_logger("money_tracker.application.finance")
 
 
 class FinanceService:
@@ -65,11 +68,25 @@ class FinanceService:
             reason=reason,
             prior_version=None,
         )
-        return self._repository.create_expense(
+        stored = self._repository.create_expense(
             expense,
             request_hash=request_hash,
             audit_event=audit,
         )
+        # Amounts, categories, and merchant text are the owner's finance data
+        # and stay in PostgreSQL. A record carries the identifiers and the
+        # state transition, which is what makes a movement traceable without
+        # turning the journal into a second copy of the ledger.
+        _LOGGER.info(
+            "expense.created",
+            profile_id=stored.profile_id,
+            expense_id=stored.id,
+            status=stored.status.value,
+            version=stored.version,
+            category_allocations=len(stored.category_allocations),
+            payment_allocations=len(stored.payment_allocations),
+        )
+        return stored
 
     def post_expense(
         self,
@@ -112,6 +129,12 @@ class FinanceService:
             expense_id=expense_id,
         )
         if replayed is not None:
+            _LOGGER.info(
+                "expense.command.replayed",
+                profile_id=profile_id,
+                expense_id=expense_id,
+                command_type="post_expense",
+            )
             return replayed
         current = self._repository.get_expense(profile_id, expense_id)
         posted = current.post(
@@ -255,6 +278,12 @@ class FinanceService:
             expense_id=expense_id,
         )
         if replayed is not None:
+            _LOGGER.info(
+                "expense.command.replayed",
+                profile_id=profile_id,
+                expense_id=expense_id,
+                command_type="cancel_expense",
+            )
             return replayed
         current = self._repository.get_expense(profile_id, expense_id)
         unposted = current.status in {
@@ -296,7 +325,14 @@ class FinanceService:
             reason=reason,
             prior_version=prior_version,
         )
-        return self._repository.replace_expense_idempotently(
+        _LOGGER.debug(
+            "expense.replacing",
+            profile_id=expense.profile_id,
+            expense_id=expense.id,
+            action=action,
+            expected_version=expected_version,
+        )
+        replaced = self._repository.replace_expense_idempotently(
             expense,
             expected_version=expected_version,
             idempotency_key=idempotency_key,
@@ -304,6 +340,17 @@ class FinanceService:
             request_hash=request_hash,
             audit_event=audit,
         )
+        _LOGGER.info(
+            "expense.replaced",
+            profile_id=replaced.profile_id,
+            expense_id=replaced.id,
+            action=action,
+            command_type=command_type,
+            status=replaced.status.value,
+            prior_version=prior_version,
+            version=replaced.version,
+        )
+        return replaced
 
     def _replace(
         self,
@@ -328,6 +375,15 @@ class FinanceService:
             expense,
             expected_version=expected_version,
             audit_event=audit,
+        )
+        _LOGGER.info(
+            "expense.replaced",
+            profile_id=expense.profile_id,
+            expense_id=expense.id,
+            action=action,
+            status=expense.status.value,
+            prior_version=prior_version,
+            version=expense.version,
         )
 
     def _audit_event(

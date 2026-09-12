@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import logging
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -26,7 +25,6 @@ from money_tracker.application import (
 )
 from money_tracker.application.runtime import SystemClock, UUID4Generator
 from money_tracker.domain import CategoryStatus
-from money_tracker.logging_safety import configure_safe_logging
 from money_tracker.persistence.database import (
     database_url_from_env,
     open_postgres_checkpointer,
@@ -40,6 +38,7 @@ from money_tracker.runtime import (
     build_workflow_dispatcher,
 )
 from money_tracker.runtime.read_graph import DEFAULT_SELECTION
+from money_tracker.structured_logging import configure_logging, get_logger
 from money_tracker.telegram.config import TelegramSettings
 from money_tracker.worker.sequential import SequentialWorker
 from money_tracker.workflows import (
@@ -58,7 +57,7 @@ from money_tracker.workflows.candidates import (
     DEFAULT_EXTRACTION_CANDIDATE,
 )
 
-_LOGGER = logging.getLogger("money_tracker.worker.cli")
+_LOGGER = get_logger("money_tracker.worker.cli")
 _IDLE_SECONDS = 1.0
 _MINIMUM_CONFIDENCE = 0.5
 
@@ -159,13 +158,14 @@ def main(argv: Sequence[str] | None = None) -> None:
     """
 
     args = _parser().parse_args(argv)
-    configure_safe_logging()
+    configure_logging()
     try:
         settings = TelegramSettings.from_env()
         database_url = database_url_from_env()
         finance = PostgresFinanceRepository(database_url)
         messaging = PostgresMessagingRepository(database_url)
         if messaging.owner_binding(settings.bot_key) is None:
+            _LOGGER.error("worker.owner_binding.missing", bot_key=settings.bot_key)
             raise SystemExit(
                 "this bot has no owner binding; pair the owner before processing"
             )
@@ -206,6 +206,11 @@ def main(argv: Sequence[str] | None = None) -> None:
         RuntimeError,
         ValueError,
     ) as error:
+        _LOGGER.exception(
+            "worker.command.failed",
+            command=args.command,
+            reason=failure_reason(error),
+        )
         print(f"Workflow worker failed: {failure_reason(error)}", file=sys.stderr)
         raise SystemExit(int(exit_code_for(error))) from None
 
@@ -223,9 +228,9 @@ def _run_forever(worker: SequentialWorker) -> None:
     being replayed after its lease expires.
     """
 
-    _LOGGER.info("Sequential workflow worker started")
+    _LOGGER.info("worker.loop.started", idle_seconds=_IDLE_SECONDS)
     stop = shutdown_event()
     while not stop.is_set():
         if not worker.process_once():
             stop.wait(_IDLE_SECONDS)
-    _LOGGER.info("Sequential workflow worker stopped")
+    _LOGGER.info("worker.loop.stopped")

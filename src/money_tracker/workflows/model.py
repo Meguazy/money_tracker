@@ -22,6 +22,10 @@ from typing import Protocol
 
 from pydantic import BaseModel, ValidationError
 
+from money_tracker.structured_logging import get_logger
+
+_LOGGER = get_logger("money_tracker.workflows.model")
+
 MODEL_BOUNDARY_ATTEMPTS = 2
 """One initial attempt plus the single corrective retry AD-006 permits."""
 
@@ -137,15 +141,27 @@ def parse_with_one_repair[ContractT: BaseModel](
             The caller answers this with clarification, never a further retry.
     """
 
+    # The same rule the module docstring states for exception messages holds
+    # for records: the completion and the owner message stay out, and only the
+    # contract name, the attempt, and the field paths that failed go in. The
+    # validation summary is already value-free by construction.
+    _LOGGER.debug("model_boundary.attempted", schema=schema.__name__, attempt=1)
     first = model.complete_json(
         instructions=instructions, message=message, schema=schema
     )
     try:
         return schema.model_validate_json(first)
     except ValidationError as first_error:
+        summary = summarize_validation_error(first_error)
+        _LOGGER.warning(
+            "model_boundary.repair_requested",
+            schema=schema.__name__,
+            attempt=1,
+            rejected_fields=summary,
+        )
         repair = RepairRequest(
             invalid_output=first[:MAX_REPAIRED_OUTPUT_CHARACTERS],
-            validation_error=summarize_validation_error(first_error),
+            validation_error=summary,
         )
     repaired = model.complete_json(
         instructions=instructions,
@@ -154,6 +170,14 @@ def parse_with_one_repair[ContractT: BaseModel](
         repair=repair,
     )
     try:
-        return schema.model_validate_json(repaired)
+        parsed = schema.model_validate_json(repaired)
     except ValidationError as second_error:
+        _LOGGER.error(
+            "model_boundary.exhausted",
+            schema=schema.__name__,
+            attempts=MODEL_BOUNDARY_ATTEMPTS,
+            rejected_fields=summarize_validation_error(second_error),
+        )
         raise StructuredOutputError(MODEL_BOUNDARY_ATTEMPTS) from second_error
+    _LOGGER.info("model_boundary.repaired", schema=schema.__name__, attempts=2)
+    return parsed

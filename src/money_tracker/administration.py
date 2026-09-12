@@ -53,6 +53,7 @@ from money_tracker.runtime import (
     build_workflow_dispatcher,
 )
 from money_tracker.runtime.read_graph import DEFAULT_SELECTION
+from money_tracker.structured_logging import configure_logging, get_logger
 from money_tracker.workflows import (
     CATEGORY_FIT,
     DEFAULT_READ_SELECTION_POLICY,
@@ -74,6 +75,8 @@ from money_tracker.workflows.candidates import (
     DEFAULT_CATEGORY_FIT_CANDIDATE,
     DEFAULT_EXTRACTION_CANDIDATE,
 )
+
+_LOGGER = get_logger("money_tracker.administration")
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -511,7 +514,9 @@ def main(argv: Sequence[str] | None = None) -> None:
         argv: Optional arguments used instead of process arguments.
     """
 
+    configure_logging()
     args = _parser().parse_args(argv)
+    _LOGGER.info("administration.command.started", command=args.command)
     if args.command == "receipt-store":
         print(json.dumps(_receipt_store(args), sort_keys=True))
         return
@@ -527,6 +532,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     if args.command == "funding-source-add":
         print(json.dumps(_funding_source_add(args), sort_keys=True))
         return
+    _LOGGER.error("administration.command.unsupported", command=args.command)
     raise SystemExit(f"unsupported command: {args.command}")
 
 

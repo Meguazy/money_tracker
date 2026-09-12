@@ -34,6 +34,9 @@ from money_tracker.messaging.contracts import (
     require_aware,
     validate_bot_key,
 )
+from money_tracker.structured_logging import get_logger
+
+_LOGGER = get_logger("money_tracker.persistence.messaging")
 
 MAX_AUTOMATIC_ATTEMPTS = 5
 OUTBOX_SEND_MESSAGE = "send_message"
@@ -157,6 +160,14 @@ class PostgresMessagingRepository:
             if current != expected_offset:
                 if current >= next_offset:
                     return current
+                # Another gateway advanced the offset underneath this batch,
+                # which means two gateways are polling the same bot.
+                _LOGGER.error(
+                    "messaging.offset_conflict",
+                    bot_key=bot_key,
+                    expected_offset=expected_offset,
+                    stored_offset=current,
+                )
                 raise MessagingConflictError("persisted Telegram offset changed")
             for update in accepted_updates:
                 self._insert_or_verify_inbox(connection, update)
@@ -280,6 +291,12 @@ class PostgresMessagingRepository:
                 ),
             )
             if result.rowcount != 1:
+                _LOGGER.warning(
+                    "messaging.lease_expired",
+                    bot_key=claim.update.bot_key,
+                    inbox_id=claim.update.id,
+                    operation="fail_inbox",
+                )
                 raise MessagingLeaseError("inbox lease is no longer current")
 
     def complete_inbox(
@@ -357,6 +374,12 @@ class PostgresMessagingRepository:
                 ),
             )
             if result.rowcount != 1:
+                _LOGGER.warning(
+                    "messaging.lease_expired",
+                    bot_key=claim.update.bot_key,
+                    inbox_id=claim.update.id,
+                    operation="complete_inbox",
+                )
                 raise MessagingLeaseError("inbox lease is no longer current")
         return outbox_id
 
@@ -373,6 +396,11 @@ class PostgresMessagingRepository:
                 (now, inbox_id, bot_key),
             )
             if result.rowcount != 1:
+                _LOGGER.warning(
+                    "messaging.replay_refused",
+                    bot_key=bot_key,
+                    inbox_id=inbox_id,
+                )
                 raise MessagingConflictError(
                     "only an inbox dead letter can be replayed"
                 )
@@ -495,6 +523,11 @@ class PostgresMessagingRepository:
             update.file_size,
         )
         if row is None or tuple(row.values()) != expected:
+            _LOGGER.error(
+                "messaging.update_identity_conflict",
+                bot_key=update.bot_key,
+                update_id=update.update_id,
+            )
             raise MessagingConflictError(
                 "Telegram update identity has different normalized content"
             )

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from concurrent.futures import FIRST_EXCEPTION, ThreadPoolExecutor, wait
 from datetime import datetime, timedelta
 from threading import Event
@@ -18,6 +17,7 @@ from money_tracker.messaging import (
     downtime_gap,
 )
 from money_tracker.presentation import downtime_notice
+from money_tracker.structured_logging import get_logger, log_context
 from money_tracker.telegram.config import TelegramSettings
 from money_tracker.telegram.contracts import IngestReport
 from money_tracker.telegram.ingestion import TelegramUpdateIngestor
@@ -26,7 +26,7 @@ from money_tracker.telegram.transport import (
     TelegramTransportError,
 )
 
-_LOGGER = logging.getLogger("money_tracker.telegram.gateway")
+_LOGGER = get_logger("money_tracker.telegram.gateway")
 _OUTBOX_IDLE_SECONDS = 0.5
 
 
@@ -67,6 +67,10 @@ class TelegramGateway:
         """
 
         self._settings = settings
+        self._logger = _LOGGER.bind(
+            bot_key=settings.bot_key,
+            environment=settings.environment.value,
+        )
         self._transport = transport
         self._repository = repository
         self._ingestor = ingestor
@@ -77,6 +81,7 @@ class TelegramGateway:
         """Validate the bot, preserve backlog, and initialize offset ownership."""
 
         now = self._clock.now()
+        self._logger.debug("gateway.prepare.started")
         self._repository.ensure_bot(
             self._settings.bot_key,
             environment=self._settings.environment,
@@ -85,10 +90,7 @@ class TelegramGateway:
         self._transport.validate_bot()
         self._transport.disable_webhook()
         self._announce_downtime(now=now)
-        _LOGGER.info(
-            "Telegram gateway ready environment=%s",
-            self._settings.environment.value,
-        )
+        self._logger.info("gateway.ready")
 
     def _announce_downtime(self, *, now: datetime) -> None:
         """Warn the owner when Telegram may have expired updates while off.
@@ -103,10 +105,15 @@ class TelegramGateway:
         bot_key = self._settings.bot_key
         binding = self._repository.owner_binding(bot_key)
         if binding is None:
+            self._logger.debug("gateway.downtime.unpaired")
             return
         health = self._repository.health(bot_key)
         gap = downtime_gap(health, now=now)
         if gap is None or gap <= TELEGRAM_UPDATE_RETENTION:
+            self._logger.debug(
+                "gateway.downtime.within_retention",
+                gap_seconds=None if gap is None else int(gap.total_seconds()),
+            )
             return
         last_poll_at = health.last_poll_at
         assert last_poll_at is not None
@@ -123,9 +130,9 @@ class TelegramGateway:
             ),
             now=now,
         )
-        _LOGGER.warning(
-            "Telegram downtime exceeded update retention hours=%d",
-            int(gap.total_seconds() // 3600),
+        self._logger.warning(
+            "gateway.downtime.exceeded_retention",
+            gap_hours=int(gap.total_seconds() // 3600),
         )
 
     def run_once(self) -> IngestReport:
@@ -136,6 +143,7 @@ class TelegramGateway:
         """
 
         offset = self._repository.polling_offset(self._settings.bot_key)
+        self._logger.debug("gateway.poll.started", offset=offset)
         updates = self._transport.get_updates(offset=offset)
         report = self._ingestor.ingest(
             bot_key=self._settings.bot_key,
@@ -145,12 +153,24 @@ class TelegramGateway:
         )
         for callback_query_id in report.callback_query_ids:
             self._acknowledge_callback(callback_query_id)
-        _LOGGER.info(
-            "Telegram ingest committed accepted=%d rejected=%d unsupported=%d",
-            len(report.accepted),
-            report.rejected_count,
-            report.unsupported_count,
-        )
+        # An entirely empty long poll is the normal steady state, so it stays
+        # at DEBUG; anything the batch actually committed is worth keeping.
+        accepted = len(report.accepted)
+        observed = accepted + report.rejected_count + report.unsupported_count
+        if observed:
+            self._logger.info(
+                "gateway.ingest.committed",
+                offset=offset,
+                accepted=accepted,
+                rejected=report.rejected_count,
+                unsupported=report.unsupported_count,
+            )
+        else:
+            self._logger.debug("gateway.ingest.empty", offset=offset)
+        if report.rejected_count:
+            self._logger.warning(
+                "gateway.ingest.rejected", rejected=report.rejected_count
+            )
         return report
 
     def deliver_outbox_once(self) -> bool:
@@ -206,18 +226,33 @@ class TelegramGateway:
                 retry_at=retry_at,
                 now=now,
             )
-            _LOGGER.warning(
-                "Telegram outbox delivery failed reason=%s transient=%s",
-                error.code,
-                error.transient,
-            )
+            # A transient failure that still has attempts left is expected
+            # operational noise; a permanent one, or an exhausted schedule, is
+            # a dead letter that needs an owner, so it is reported as an error.
+            fields: dict[str, object] = {
+                "outbox_id": work.id,
+                "reason_code": error.code,
+                "transient": error.transient,
+                "attempt_count": claim.attempt_count,
+                "retry_at": retry_at,
+            }
+            if retry_at is None:
+                self._logger.error("gateway.outbox.dead_lettered", **fields)
+            else:
+                self._logger.warning("gateway.outbox.retry_scheduled", **fields)
             return False
         self._repository.complete_outbox(
             claim,
             telegram_message_id=delivered,
             now=self._clock.now(),
         )
-        _LOGGER.info("Telegram outbox delivery committed")
+        self._logger.info(
+            "gateway.outbox.delivered",
+            outbox_id=work.id,
+            telegram_message_id=delivered,
+            attempt_count=claim.attempt_count,
+            revocation=isinstance(work, ControlRevocationDraft),
+        )
         return True
 
     def run_forever(self, stop: Event | None = None) -> None:
@@ -233,6 +268,7 @@ class TelegramGateway:
 
         self.prepare()
         stop = Event() if stop is None else stop
+        self._logger.info("gateway.loops.starting")
         with ThreadPoolExecutor(
             max_workers=2,
             thread_name_prefix="money-tracker-telegram",
@@ -247,43 +283,53 @@ class TelegramGateway:
                     future.result()
             finally:
                 stop.set()
+                self._logger.info("gateway.loops.stopped")
 
     def close(self) -> None:
         """Release gateway transport resources."""
 
+        self._logger.debug("gateway.transport.closing")
         self._transport.close()
 
     def _run_ingress(self, stop: Event) -> None:
         """Long poll with bounded exponential transport backoff."""
 
-        failures = 0
-        while not stop.is_set():
-            try:
-                self.run_once()
-                failures = 0
-            except TelegramTransportError as error:
-                if not error.transient:
-                    _LOGGER.error("Telegram gateway stopped reason=%s", error.code)
-                    raise
-                failures += 1
-                delay = self._retry_delay(
-                    failures,
-                    retry_after_seconds=error.retry_after_seconds,
-                )
-                _LOGGER.warning(
-                    "Telegram transport retry reason=%s delay_seconds=%.1f",
-                    error.code,
-                    delay,
-                )
-                stop.wait(delay)
+        # Each loop runs in its own thread and therefore starts from an empty
+        # log context, so the binding that names the loop belongs here rather
+        # than around the executor that submitted it.
+        with log_context(loop="ingress"):
+            failures = 0
+            while not stop.is_set():
+                try:
+                    self.run_once()
+                    failures = 0
+                except TelegramTransportError as error:
+                    if not error.transient:
+                        self._logger.error(
+                            "gateway.ingress.stopped", reason_code=error.code
+                        )
+                        raise
+                    failures += 1
+                    delay = self._retry_delay(
+                        failures,
+                        retry_after_seconds=error.retry_after_seconds,
+                    )
+                    self._logger.warning(
+                        "gateway.ingress.retry_scheduled",
+                        reason_code=error.code,
+                        consecutive_failures=failures,
+                        delay_seconds=round(delay, 1),
+                    )
+                    stop.wait(delay)
 
     def _run_outbox(self, stop: Event) -> None:
         """Continuously deliver independently of the long-poll wait."""
 
-        while not stop.is_set():
-            delivered = self.deliver_outbox_once()
-            if not delivered:
-                stop.wait(_OUTBOX_IDLE_SECONDS)
+        with log_context(loop="outbox"):
+            while not stop.is_set():
+                delivered = self.deliver_outbox_once()
+                if not delivered:
+                    stop.wait(_OUTBOX_IDLE_SECONDS)
 
     def _acknowledge_callback(self, callback_query_id: str) -> None:
         """Best-effort callback acknowledgement after durable local commit."""
@@ -291,9 +337,11 @@ class TelegramGateway:
         try:
             self._transport.answer_callback_query(callback_query_id)
         except TelegramTransportError as error:
-            _LOGGER.warning(
-                "Telegram callback acknowledgement failed reason=%s",
-                error.code,
+            # The update is already durably committed, so a failed
+            # acknowledgement costs the owner a spinner, not a message.
+            self._logger.warning(
+                "gateway.callback.acknowledgement_failed",
+                reason_code=error.code,
             )
 
     def _retry_delay(

@@ -28,7 +28,7 @@ environment non-destructively after reviewing its permissions:
     ./scripts/upgrade_local_env.sh
 
 The upgrade script appends only missing database, llama.cpp, Telegram, receipt,
-web, and backup settings, and never changes existing values. It never creates
+web, logging, and backup settings, and never changes existing values. It never creates
 or copies a bot token.
 
 ## Application PostgreSQL and migrations
@@ -376,6 +376,26 @@ With a real inference server running:
 
 The generated environment points the SDK at local Langfuse. Removing either
 project key disables tracing without disabling inference or database operation.
+
+## Application logging
+
+Every entry point emits one JSON object per line on standard error. `LOG_LEVEL`
+and `LOG_FORMAT` are in the generated `.env`; override either for one command
+without editing the file:
+
+    LOG_FORMAT=text uv run --env-file .env money-tracker-worker process-once
+    LOG_LEVEL=DEBUG uv run --env-file .env money-tracker-telegram poll-once
+
+`text` renders the same fields as `key=value` pairs for a terminal, and `DEBUG`
+adds the per-step records the default level omits. Machine-readable command
+results stay on standard out, so a command can still be piped into `jq` while
+its journal goes to standard error:
+
+    uv run --env-file .env money-tracker-backup status 2>/dev/null | jq .
+
+The event vocabulary, the meaning of each level, and the triage queries are in
+[Security and Troubleshooting](operations/security-and-troubleshooting.md#reading-the-journal).
+When adding code, follow the logging rules in `AGENTS.md`.
 
 ## Repeatable checks
 

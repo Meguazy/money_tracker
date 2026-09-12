@@ -25,6 +25,7 @@ implementation state is still `planned`.
 | [AD-016](AD-016-explicit-workflow-dispatcher.md) | Explicit workflow dispatcher | Accepted | Implemented for all Step 3 text specialists and Step 4 channel presentation |
 | [AD-017](AD-017-versioned-read-selection-policy.md) | Versioned deterministic read-selection policy | Accepted | V1 promoted by EVD-004; V0 retained as direct rollback |
 | [AD-018](AD-018-telegram-processing-transactions.md) | Telegram processing transactions and ordering | Accepted | Implemented and owner-accepted through production entry points |
+| [AD-019](AD-019-structured-application-logging.md) | Structured application logging | Accepted | Implemented across every entry point, adapter, application service, and persistence boundary |
 
 ## Maintenance rules
 

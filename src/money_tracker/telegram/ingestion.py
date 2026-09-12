@@ -21,6 +21,7 @@ from money_tracker.messaging import (
     OwnerBinding,
 )
 from money_tracker.presentation import pairing_confirmation
+from money_tracker.structured_logging import get_logger
 from money_tracker.telegram.contracts import IngestReport, TelegramInboundUpdate
 from money_tracker.workflows import SupportedCommand, parse_command
 
@@ -29,6 +30,7 @@ _CALLBACK = re.compile(
     r"[0-9a-f]{4}-[0-9a-f]{12}):([a-z][a-z0-9_]{0,15})$"
 )
 _MAX_TEXT_CHARACTERS = 4096
+_LOGGER = get_logger("money_tracker.telegram.ingestion")
 
 
 class TelegramUpdateIngestor:
@@ -80,6 +82,7 @@ class TelegramUpdateIngestor:
         """
 
         if not updates:
+            _LOGGER.debug("ingest.batch.empty", offset=expected_offset)
             self._repository.record_empty_poll(bot_key, now=now)
             return IngestReport(
                 next_offset=expected_offset,
@@ -90,6 +93,7 @@ class TelegramUpdateIngestor:
             )
         identifiers = tuple(update.update_id for update in updates)
         if identifiers != tuple(sorted(set(identifiers))):
+            _LOGGER.error("ingest.batch.unordered", batch=len(identifiers))
             raise ValueError("Telegram update identifiers must be unique and ordered")
         binding = self._repository.owner_binding(bot_key)
         accepted: list[NormalizedTelegramUpdate] = []
@@ -101,8 +105,12 @@ class TelegramUpdateIngestor:
             if code is not None:
                 paired = self._pair(bot_key, update, code, now=now)
                 if paired is None:
+                    # The code itself never reaches a record: a failed attempt
+                    # is worth knowing about, what was typed is not.
+                    _LOGGER.warning("ingest.pairing.rejected")
                     rejected += 1
                 else:
+                    _LOGGER.info("ingest.pairing.accepted")
                     binding = paired
                     unsupported += 1
                 continue
@@ -112,15 +120,34 @@ class TelegramUpdateIngestor:
                 or update.telegram_user_id != binding.telegram_user_id
                 or update.telegram_chat_id != binding.telegram_chat_id
             ):
+                # An unauthorized update contributes a counter and nothing
+                # else, so the record names the disposition, not the sender.
+                _LOGGER.warning(
+                    "ingest.update.unauthorized",
+                    update_id=update.update_id,
+                    unpaired=binding is None,
+                )
                 rejected += 1
                 continue
             normalized = _normalize(bot_key, update, now=now)
             if normalized is None:
+                _LOGGER.debug(
+                    "ingest.update.unsupported",
+                    update_id=update.update_id,
+                    kind=update.kind,
+                )
                 unsupported += 1
                 continue
             accepted.append(normalized)
             if normalized.callback_query_id is not None:
                 callbacks.append(normalized.callback_query_id)
+        _LOGGER.debug(
+            "ingest.batch.committing",
+            offset=expected_offset,
+            accepted=len(accepted),
+            rejected=rejected,
+            unsupported=unsupported,
+        )
         next_offset = self._repository.commit_ingest_batch(
             bot_key=bot_key,
             expected_offset=expected_offset,
@@ -130,6 +157,7 @@ class TelegramUpdateIngestor:
             unsupported_count=unsupported,
             now=now,
         )
+        _LOGGER.debug("ingest.batch.committed", next_offset=next_offset)
         return IngestReport(
             next_offset=next_offset,
             accepted=tuple(accepted),

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import Protocol, cast
@@ -10,6 +9,7 @@ from typing import Protocol, cast
 import httpx
 
 from money_tracker.messaging import ControlRevocationDraft, OutboxMessageDraft
+from money_tracker.structured_logging import get_logger
 from money_tracker.telegram.config import TelegramSettings
 from money_tracker.telegram.contracts import (
     BotIdentity,
@@ -18,7 +18,7 @@ from money_tracker.telegram.contracts import (
     TelegramSentMessage,
 )
 
-_LOGGER = logging.getLogger(__name__)
+_LOGGER = get_logger(__name__)
 _ALLOWED_UPDATES = ("message", "callback_query")
 _IMAGE_MEDIA_TYPES = {"image/jpeg", "image/png", "image/webp"}
 
@@ -128,7 +128,12 @@ class BotApiClient:
 
         result = _mapping(self._request("getMe", {}), code="invalid_get_me")
         if result.get("is_bot") is not True:
+            _LOGGER.error("transport.credential.not_a_bot")
             raise TelegramTransportError("credential_not_bot", transient=False)
+        # The record says only that the credential validated. `BotIdentity`
+        # documents its bot id as never emitted by diagnostics, and a log line
+        # is a diagnostic.
+        _LOGGER.info("transport.credential.validated")
         return BotIdentity(_integer(result.get("id"), code="invalid_get_me"))
 
     def disable_webhook(self) -> None:
@@ -158,11 +163,18 @@ class BotApiClient:
             },
         )
         if not isinstance(result, list):
+            _LOGGER.warning("transport.updates.invalid_envelope", offset=offset)
             raise TelegramTransportError("invalid_updates", transient=True)
         parsed = tuple(_parse_update(item) for item in result)
         identifiers = tuple(update.update_id for update in parsed)
         if identifiers != tuple(sorted(set(identifiers))):
+            # Out-of-order identifiers would corrupt the offset the next poll
+            # persists, so the batch is discarded rather than partly trusted.
+            _LOGGER.warning(
+                "transport.updates.unordered", offset=offset, batch=len(parsed)
+            )
             raise TelegramTransportError("unordered_updates", transient=True)
+        _LOGGER.debug("transport.updates.received", offset=offset, batch=len(parsed))
         return parsed
 
     def get_file(
@@ -194,7 +206,11 @@ class BotApiClient:
             or _string(result.get("file_unique_id"), code="invalid_file")
             != file_unique_id
         ):
+            _LOGGER.error(
+                "transport.file.identity_changed", file_unique_id=file_unique_id
+            )
             raise TelegramTransportError("file_identity_changed", transient=False)
+        _LOGGER.debug("transport.file.resolved", file_unique_id=file_unique_id)
         return TelegramFile(
             file_id=file_id,
             file_unique_id=file_unique_id,
@@ -233,9 +249,18 @@ class BotApiClient:
             self._request("sendMessage", parameters),
             code="invalid_send",
         )
-        return TelegramSentMessage(
+        # The text is owner-facing content and stays out of the record; the
+        # button count is what distinguishes a plain reply from a control
+        # summary when a delivery is being traced.
+        sent = TelegramSentMessage(
             _integer(result.get("message_id"), code="invalid_send")
         )
+        _LOGGER.debug(
+            "transport.message.sent",
+            telegram_message_id=sent.telegram_message_id,
+            buttons=len(message.buttons),
+        )
+        return sent
 
     def revoke_controls(self, revocation: ControlRevocationDraft) -> None:
         """Remove the inline controls from one already delivered summary.
@@ -268,8 +293,9 @@ class BotApiClient:
             if error.transient:
                 raise
             _LOGGER.info(
-                "Telegram control revocation had no effect code=%s",
-                error.code,
+                "transport.controls.already_gone",
+                target_message_id=revocation.target_message_id,
+                reason_code=error.code,
             )
 
     def answer_callback_query(self, callback_query_id: str) -> None:
@@ -287,6 +313,7 @@ class BotApiClient:
         """Close an internally created client."""
 
         if self._owns_client:
+            _LOGGER.debug("transport.client.closing")
             self._client.close()
 
     def __enter__(self) -> BotApiClient:
@@ -320,36 +347,93 @@ class BotApiClient:
                 timeout=timeout,
             )
         except (httpx.TimeoutException, httpx.NetworkError):
-            raise TelegramTransportError(
-                "network_unavailable", transient=True
+            raise _failure(
+                "network_unavailable", method=method, transient=True
             ) from None
         except httpx.HTTPError:
-            raise TelegramTransportError("http_failure", transient=True) from None
+            raise _failure("http_failure", method=method, transient=True) from None
         try:
             payload = response.json()
         except ValueError:
-            raise TelegramTransportError("invalid_json", transient=True) from None
+            raise _failure("invalid_json", method=method, transient=True) from None
         if not isinstance(payload, dict):
-            raise TelegramTransportError("invalid_envelope", transient=True)
+            raise _failure("invalid_envelope", method=method, transient=True)
         if response.status_code == 200 and payload.get("ok") is True:
             if "result" not in payload:
-                raise TelegramTransportError("missing_result", transient=True)
+                raise _failure("missing_result", method=method, transient=True)
             return payload["result"]
         api_code = payload.get("error_code")
         retry_after = _retry_after(payload)
-        if response.status_code == 429 or api_code == 429:
-            raise TelegramTransportError(
+        status = response.status_code
+        if status == 429 or api_code == 429:
+            raise _failure(
                 "rate_limited",
+                method=method,
                 transient=True,
+                status_code=status,
                 retry_after_seconds=retry_after,
             )
-        if response.status_code >= 500:
-            raise TelegramTransportError("server_failure", transient=True)
-        if response.status_code in {401, 403}:
-            raise TelegramTransportError("authentication_failed", transient=False)
-        if response.status_code == 409:
-            raise TelegramTransportError("webhook_conflict", transient=False)
-        raise TelegramTransportError("request_rejected", transient=False)
+        if status >= 500:
+            raise _failure(
+                "server_failure", method=method, transient=True, status_code=status
+            )
+        if status in {401, 403}:
+            raise _failure(
+                "authentication_failed",
+                method=method,
+                transient=False,
+                status_code=status,
+            )
+        if status == 409:
+            raise _failure(
+                "webhook_conflict", method=method, transient=False, status_code=status
+            )
+        raise _failure(
+            "request_rejected", method=method, transient=False, status_code=status
+        )
+
+
+def _failure(
+    code: str,
+    *,
+    method: str,
+    transient: bool,
+    status_code: int | None = None,
+    retry_after_seconds: int | None = None,
+) -> TelegramTransportError:
+    """Record one Bot API failure and return the error to raise.
+
+    Every rejection this adapter produces passes through here, so the level is
+    decided in one place: a transient failure is expected operational weather
+    and warns, while a permanent one needs an owner and is an error. The Bot
+    API method is named but never the URL, because the URL carries the token
+    and a record that must never contain a credential is better off not being
+    handed one.
+
+    Args:
+        code: Stable machine-readable failure code.
+        method: Bot API method name that failed.
+        transient: Whether retrying could succeed.
+        status_code: HTTP status, when the failure reached a response.
+        retry_after_seconds: Server-requested delay, when one was supplied.
+
+    Returns:
+        The error the caller raises.
+    """
+
+    fields: dict[str, object] = {
+        "method": method,
+        "reason_code": code,
+        "status_code": status_code,
+        "retry_after_seconds": retry_after_seconds,
+    }
+    if transient:
+        _LOGGER.warning("transport.request.transient_failure", **fields)
+    else:
+        _LOGGER.error("transport.request.rejected", **fields)
+    return TelegramTransportError(
+        code, transient=transient, retry_after_seconds=retry_after_seconds
+    )
 
 
 def _parse_update(value: object) -> TelegramInboundUpdate:

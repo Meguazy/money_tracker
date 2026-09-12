@@ -84,6 +84,9 @@ MONEY_TRACKER_PG_RESTORE_BINARY=/usr/lib/postgresql/17/bin/pg_restore
 
 LANGGRAPH_STRICT_MSGPACK=true
 
+LOG_LEVEL=INFO
+LOG_FORMAT=json
+
 MODEL_PATH=${model_root}/text/<profile>/<weights>.gguf
 MMPROJ_PATH=
 LLAMA_SERVER_BIN=llama-server

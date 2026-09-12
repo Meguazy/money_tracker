@@ -32,7 +32,60 @@ These instructions apply to the entire repository.
 - Docstrings must explain behavior, contracts, and important constraints rather
   than restating names or type annotations.
 
-## 3. Architecture and Documentation
+## 3. Logging
+
+- Log through `money_tracker.structured_logging`. Get a module logger with
+  `get_logger(__name__)`. Do not call `logging.getLogger`, `logging.info`, or
+  `print` for diagnostics in library or adapter code; `print` remains correct
+  only where a CLI's machine-readable result is its output contract.
+- A record is a stable event name plus named fields, never an interpolated
+  sentence. Name events `noun.verb_in_past_tense` in a dotted namespace that
+  matches the component, such as `work_unit.committed` or
+  `transport.request.rejected`. The name must not vary with a value.
+- Pass every value as a keyword field: `_LOGGER.info("expense.replaced",
+  expense_id=expense.id, version=expense.version)`. Fields are what make the
+  journal queryable, and a field is added deliberately while a formatted
+  message tends to absorb whatever the author had in scope.
+- Use the levels as follows, and do not promote a record to get attention:
+  - `DEBUG` for an internal step that matters only while diagnosing: a query
+    about to run, a graph node entered, an empty poll.
+  - `INFO` for a state change or a completed unit of work worth keeping: a
+    movement replaced, a work unit committed, a delivery sent, a service
+    started.
+  - `WARNING` for a degraded or rejected outcome the system handled itself: a
+    scheduled retry, an expired lease, a rejected request, a routing veto.
+  - `ERROR` for a failure that needs the owner to act: a dead letter, a
+    permanent transport rejection, an idempotency conflict, an unreachable
+    dependency.
+  - `CRITICAL` only for a condition that ends the process or puts authoritative
+    data in doubt, such as a restore checksum mismatch.
+- Use `_LOGGER.exception(...)` inside an `except` block whenever the cause of
+  a failure is not fully described by its fields. A swallowed exception with no
+  traceback anywhere is a defect.
+- Never log owner content or a credential. Message text, receipt bytes, model
+  completions, category and merchant names, monetary amounts, tokens, database
+  URLs, and file paths under the receipt archive stay out of every field.
+  Record identifiers, stable machine-readable codes, enum values, counts,
+  versions, and durations instead. When a size or a shape is the diagnostic
+  fact, log the count or the length rather than the value.
+- Redaction in `money_tracker.logging_safety` is the last line of defence, not
+  a licence: it removes token-shaped runs from messages, fields, and
+  tracebacks, and it cannot recognize owner text.
+- Correlate an operation with `log_context(...)` rather than threading
+  identifiers through call signatures. Bind the work unit at the boundary that
+  owns it, and remember that a `contextvars` binding does not cross into a
+  thread the operation did not start, so each long-running loop binds its own.
+- Use `_LOGGER.timed("operation")` for a bounded operation whose duration or
+  outcome matters; it emits the start at `DEBUG`, the completion at `INFO` with
+  `duration_ms`, and an escaping failure at `ERROR` with its traceback.
+- Every entry point calls `configure_logging()` once, before any work that can
+  fail. Library code never configures logging.
+- When a component introduces a failure path, add the record in the same
+  change. A failure the journal cannot explain is an incomplete implementation,
+  and funnels such as a shared error constructor or a single problem-response
+  builder are the right place to log, rather than each of their callers.
+
+## 4. Architecture and Documentation
 
 - Design the architecture for long-term maintainability and extensibility.
 - Separate the system into cohesive components when responsibilities, lifecycle,
@@ -66,7 +119,7 @@ These instructions apply to the entire repository.
 - Update existing diagrams and runtime or deployment views whenever a component
   changes their behavior or relationships.
 
-## 4. Using the Project Documentation
+## 5. Using the Project Documentation
 
 - Treat the documentation as an implementation input, not as optional
   background reading. Before planning or changing a feature, read the following
@@ -110,7 +163,7 @@ These instructions apply to the entire repository.
   direction take precedence; record the resulting decision in the canonical
   documentation.
 
-## 5. Git Commits
+## 6. Git Commits
 
 - Use the Conventional Commits format:
   `<type>(<optional-scope>): <imperative summary>`.

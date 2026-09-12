@@ -45,6 +45,7 @@ from money_tracker.evaluations.suites import (
 from money_tracker.evaluations.tool_use import run_tool_use_suite
 from money_tracker.persistence.database import database_url_from_env
 from money_tracker.runtime.read_graph import SELECTION_BOUNDARIES
+from money_tracker.structured_logging import configure_logging, get_logger
 from money_tracker.workflows import (
     DEFAULT_READ_SELECTION_POLICY,
     ReadSelectionPolicyVersion,
@@ -61,6 +62,8 @@ from money_tracker.workflows.prompts import (
     prompt_versions,
 )
 from money_tracker.workflows.two_stage import TwoStageCategoryFit
+
+_LOGGER = get_logger("money_tracker.evaluations.cli")
 
 
 def _version_choices(boundary: str) -> list[str]:
@@ -559,8 +562,10 @@ def main(argv: Sequence[str] | None = None) -> None:
         SystemExit: With status one when a blocking gate or metadata gate fails.
     """
 
+    configure_logging()
     parser = _parser()
     args = parser.parse_args(argv)
+    _LOGGER.info("evaluation.command.started", suite=args.suite)
     if getattr(args, "reuse_human_usefulness_review", None) is not None and not getattr(
         args, "review_human_usefulness", False
     ):

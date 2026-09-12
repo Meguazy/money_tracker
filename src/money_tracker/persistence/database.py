@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -14,6 +14,10 @@ from langgraph.checkpoint.postgres import PostgresSaver
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from psycopg import Connection, connect, sql
 from psycopg.rows import DictRow, dict_row
+
+from money_tracker.structured_logging import get_logger
+
+_LOGGER = get_logger("money_tracker.persistence.database")
 
 DATABASE_URL_ENV = "MONEY_TRACKER_DATABASE_URL"
 TEST_DATABASE_URL_ENV = "MONEY_TRACKER_TEST_DATABASE_URL"
@@ -58,6 +62,11 @@ def _checkpoint_serializer_from_env() -> JsonPlusSerializer:
 
     enabled = os.getenv(STRICT_MSGPACK_ENV, "true").strip().lower()
     if enabled not in {"1", "true", "yes", "on"}:
+        # Relaxing this would let a checkpoint reconstruct arbitrary pickled
+        # objects, so the attempt is recorded at the level it deserves.
+        _LOGGER.critical(
+            "checkpointer.strict_serialization.refused", setting=STRICT_MSGPACK_ENV
+        )
         raise RuntimeError(
             f"{STRICT_MSGPACK_ENV} must remain true; pickle fallback is prohibited"
         )
@@ -96,8 +105,12 @@ class DatabaseSettings:
         variable = TEST_DATABASE_URL_ENV if test_database else DATABASE_URL_ENV
         value = os.getenv(variable, "").strip()
         if not value:
+            # The URL carries a password and never reaches a record; naming
+            # the variable is what an operator actually needs to fix it.
+            _LOGGER.error("database.url.missing", setting=variable)
             raise RuntimeError(f"{variable} is required")
         if not value.startswith(("postgresql://", "postgresql+psycopg://")):
+            _LOGGER.error("database.url.unsupported_scheme", setting=variable)
             raise RuntimeError(f"{variable} must use PostgreSQL")
         return cls(database_url=value)
 
@@ -145,7 +158,8 @@ def upgrade_database(database_url: str, revision: str = "head") -> None:
         revision: Alembic revision target.
     """
 
-    command.upgrade(_alembic_config(database_url), revision)
+    with _LOGGER.timed("database.upgrade", revision=revision):
+        command.upgrade(_alembic_config(database_url), revision)
 
 
 def downgrade_database(database_url: str, revision: str) -> None:
@@ -156,7 +170,11 @@ def downgrade_database(database_url: str, revision: str) -> None:
         revision: Alembic revision target, such as ``base``.
     """
 
-    command.downgrade(_alembic_config(database_url), revision)
+    # A downgrade removes schema objects, so it is worth a record even when
+    # it succeeds and even though the CLI already refuses an unconfirmed one.
+    _LOGGER.warning("database.downgrade.started", revision=revision)
+    with _LOGGER.timed("database.downgrade", revision=revision):
+        command.downgrade(_alembic_config(database_url), revision)
 
 
 @contextmanager
@@ -164,7 +182,7 @@ def open_postgres_checkpointer(
     database_url: str,
     *,
     setup: bool = False,
-) -> Iterator[PostgresSaver]:
+) -> Generator[PostgresSaver]:
     """Open a LangGraph saver scoped to the workflow schema.
 
     Args:
@@ -186,7 +204,9 @@ def open_postgres_checkpointer(
             serde=_checkpoint_serializer_from_env(),
         )
         if setup:
+            _LOGGER.info("checkpointer.setup.started", schema=WORKFLOW_SCHEMA)
             saver.setup()
+        _LOGGER.debug("checkpointer.opened", schema=WORKFLOW_SCHEMA)
         yield saver
 
 
@@ -200,3 +220,4 @@ def bootstrap_checkpointer(database_url: str) -> None:
 
     with open_postgres_checkpointer(database_url, setup=True):
         pass
+    _LOGGER.info("checkpointer.bootstrapped", schema=WORKFLOW_SCHEMA)

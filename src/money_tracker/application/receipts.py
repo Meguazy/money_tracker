@@ -10,6 +10,9 @@ from money_tracker.application.ports import (
     ReceiptMetadataRepository,
 )
 from money_tracker.domain import AuditEvent, ReceiptMetadata, ReceiptStatus
+from money_tracker.structured_logging import get_logger
+
+_LOGGER = get_logger("money_tracker.application.receipts")
 
 
 class ReceiptMetadataService:
@@ -60,6 +63,13 @@ class ReceiptMetadataService:
         """
 
         if metadata.status is not ReceiptStatus.STORED or metadata.version != 1:
+            _LOGGER.error(
+                "receipt.registration_invalid",
+                profile_id=metadata.profile_id,
+                receipt_id=metadata.id,
+                status=metadata.status.value,
+                version=metadata.version,
+            )
             raise ValueError("new receipt metadata must be stored at version one")
         audit = AuditEvent(
             id=self._ids.new(),
@@ -176,4 +186,13 @@ class ReceiptMetadataService:
             metadata,
             expected_version=expected_version,
             audit_event=audit,
+        )
+        _LOGGER.info(
+            "receipt.transitioned",
+            profile_id=metadata.profile_id,
+            receipt_id=metadata.id,
+            action=action,
+            status=metadata.status.value,
+            prior_version=prior_version,
+            version=metadata.version,
         )

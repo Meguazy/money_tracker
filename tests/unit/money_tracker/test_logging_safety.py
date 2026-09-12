@@ -6,12 +6,32 @@ import logging
 
 import pytest
 
-from money_tracker.logging_safety import configure_safe_logging, redact_credentials
+from money_tracker.logging_safety import (
+    STRUCTURED_FIELDS_ATTRIBUTE,
+    CredentialFilter,
+    quiet_http_loggers,
+    redact_credentials,
+    redact_value,
+)
 
 TOKEN = "8435117429:AAF_-SEBbKbyAdP3FRUYCbJpk36Ypt5qXQo"
 REQUEST_LINE = (
     f'HTTP Request: POST https://api.telegram.org/bot{TOKEN}/getMe "HTTP/1.1 200 OK"'
 )
+
+
+def _record(message: str, args: object = ()) -> logging.LogRecord:
+    """Build one record the way a library adapter would."""
+
+    return logging.LogRecord(
+        name="money_tracker.some.future.adapter",
+        level=logging.ERROR,
+        pathname=__file__,
+        lineno=1,
+        msg=message,
+        args=args,
+        exc_info=None,
+    )
 
 
 def test_a_logged_request_url_loses_its_credential() -> None:
@@ -41,23 +61,15 @@ def test_ordinary_text_survives_redaction() -> None:
     )
 
 
-def test_the_chatty_http_loggers_never_reach_a_handler(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """Silence the request line at its source, not only in the formatter."""
+def test_a_non_string_field_keeps_its_type() -> None:
+    """Leave a count or an identifier alone so a field still means what it says."""
 
-    configure_safe_logging()
-
-    with caplog.at_level(logging.DEBUG):
-        logging.getLogger("httpx").info(REQUEST_LINE)
-        logging.getLogger("httpcore").info(REQUEST_LINE)
-
-    assert caplog.records == []
+    assert redact_value(42) == 42
+    assert redact_value(None) is None
+    assert redact_value(f"bot{TOKEN}/getMe") == "bot<redacted>/getMe"
 
 
-def test_a_credential_in_any_logger_is_redacted_before_emission(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
+def test_the_filter_cleans_a_message_and_its_arguments() -> None:
     """Defend against the next library that logs a URL we did not expect.
 
     The credential arrives as a `%s` argument rather than inside the template,
@@ -65,13 +77,35 @@ def test_a_credential_in_any_logger_is_redacted_before_emission(
     inspected the message would miss.
     """
 
-    configure_safe_logging()
+    record = _record("call failed for %s", (f"https://api.telegram.org/bot{TOKEN}",))
 
-    with caplog.at_level(logging.ERROR):
-        logging.getLogger("money_tracker.some.future.adapter").error(
-            "call failed for %s", f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-        )
+    assert CredentialFilter().filter(record) is True
+    assert TOKEN not in record.getMessage()
+    assert "bot<redacted>" in record.getMessage()
 
-    emitted = caplog.records[0].getMessage()
-    assert TOKEN not in emitted
-    assert "bot<redacted>/sendMessage" in emitted
+
+def test_the_filter_cleans_structured_fields() -> None:
+    """Apply the same defence to a field, which a formatter renders later."""
+
+    record = _record("transport.request.rejected")
+    setattr(record, STRUCTURED_FIELDS_ATTRIBUTE, {"url": f"bot{TOKEN}/getMe"})
+
+    CredentialFilter().filter(record)
+
+    assert getattr(record, STRUCTURED_FIELDS_ATTRIBUTE) == {
+        "url": "bot<redacted>/getMe"
+    }
+
+
+def test_the_chatty_http_loggers_never_reach_a_handler(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Silence the request line at its source, not only in the formatter."""
+
+    quiet_http_loggers()
+
+    with caplog.at_level(logging.DEBUG):
+        logging.getLogger("httpx").info(REQUEST_LINE)
+        logging.getLogger("httpcore").info(REQUEST_LINE)
+
+    assert caplog.records == []

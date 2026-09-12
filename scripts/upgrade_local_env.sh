@@ -61,6 +61,16 @@ if ! has_setting LANGGRAPH_STRICT_MSGPACK; then
   updated=true
 fi
 
+if ! has_setting LOG_LEVEL; then
+  printf 'LOG_LEVEL=INFO\n' >>"${env_file}"
+  updated=true
+fi
+
+if ! has_setting LOG_FORMAT; then
+  printf 'LOG_FORMAT=json\n' >>"${env_file}"
+  updated=true
+fi
+
 if ! has_setting MONEY_TRACKER_RECEIPT_ARCHIVE_ROOT; then
   receipt_archive_root="${XDG_DATA_HOME:-${HOME}/.local/share}/money-tracker/receipts"
   printf 'MONEY_TRACKER_RECEIPT_ARCHIVE_ROOT=%s\n' "${receipt_archive_root}" >>"${env_file}"

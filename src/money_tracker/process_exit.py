@@ -23,7 +23,10 @@ from langchain_core.exceptions import ModelConnectionError
 from psycopg import Error as PsycopgError
 from psycopg import OperationalError, ProgrammingError
 
+from money_tracker.structured_logging import get_logger
 from money_tracker.telegram.transport import TelegramTransportError
+
+_LOGGER = get_logger("money_tracker.process_exit")
 
 
 class ExitCode(IntEnum):
@@ -115,6 +118,11 @@ def shutdown_event() -> Event:
 
     for received in (signal.SIGINT, signal.SIGTERM):
         signal.signal(received, _request_stop)
+    # Nothing is logged from inside the handler itself: a signal can arrive
+    # while logging holds its own lock, and re-entering it there can deadlock
+    # the process this handler exists to stop cleanly. The loop reports the
+    # stop once it observes the event.
+    _LOGGER.debug("process.shutdown_handlers_installed")
     return stop
 
 

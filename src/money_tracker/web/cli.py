@@ -15,16 +15,18 @@ from money_tracker.application import (
     ReportingService,
 )
 from money_tracker.application.runtime import SystemClock, UUID4Generator
-from money_tracker.logging_safety import configure_safe_logging
 from money_tracker.persistence.database import database_url_from_env
 from money_tracker.persistence.finance import PostgresFinanceRepository
 from money_tracker.process_exit import exit_code_for, failure_reason
+from money_tracker.structured_logging import configure_logging, get_logger
 from money_tracker.web.app import create_app
 from money_tracker.web.config import WebSettings
 from money_tracker.web.mutations import (
     BudgetMutationAdapter,
     ExpenseMutationAdapter,
 )
+
+_LOGGER = get_logger("money_tracker.web.cli")
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -49,13 +51,14 @@ def main(argv: Sequence[str] | None = None) -> None:
     """
 
     _parser().parse_args(argv)
-    configure_safe_logging()
+    configure_logging()
     try:
         settings = WebSettings.from_env()
         database_url = database_url_from_env()
         repository = PostgresFinanceRepository(database_url)
         profiles = repository.list_profiles()
         if len(profiles) != 1:
+            _LOGGER.error("web.composition.rejected", profiles=len(profiles))
             raise RuntimeError(
                 "the web service requires exactly one active owner profile"
             )
@@ -83,6 +86,12 @@ def main(argv: Sequence[str] | None = None) -> None:
             ),
             readiness_check=lambda: repository.profile_exists(profile_id),
         )
+        _LOGGER.info(
+            "web.service.starting",
+            host=settings.host,
+            port=settings.port,
+            profile_id=profile_id,
+        )
         uvicorn.run(
             app,
             host=settings.host,
@@ -91,6 +100,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             proxy_headers=False,
         )
     except (PsycopgError, RuntimeError, ValueError) as error:
+        _LOGGER.exception("web.service.failed", reason=failure_reason(error))
         print(f"Web service failed: {failure_reason(error)}", file=sys.stderr)
         raise SystemExit(int(exit_code_for(error))) from None
 

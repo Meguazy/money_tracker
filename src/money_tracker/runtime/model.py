@@ -23,7 +23,10 @@ from openai import APIStatusError
 from pydantic import BaseModel
 
 from money_tracker.llm import create_chat_model
+from money_tracker.structured_logging import get_logger
 from money_tracker.workflows import RepairRequest
+
+_LOGGER = get_logger("money_tracker.runtime.model")
 
 
 def strict_json_schema(schema: type[BaseModel]) -> dict[str, Any]:
@@ -137,6 +140,11 @@ class LocalStructuredOutputModel:
                 },
             }
         )
+        _LOGGER.debug(
+            "inference.request.started",
+            schema=schema.__name__,
+            repair=repair is not None,
+        )
         try:
             content = constrained.invoke(turns).content
         except APIStatusError as error:
@@ -153,12 +161,34 @@ class LocalStructuredOutputModel:
             # reasons the caller cannot correct. A 4xx is the caller's own
             # request and must keep propagating.
             if error.status_code < 500:
+                _LOGGER.error(
+                    "inference.request.rejected",
+                    schema=schema.__name__,
+                    status_code=error.status_code,
+                )
                 raise
+            _LOGGER.warning(
+                "inference.endpoint.unavailable",
+                schema=schema.__name__,
+                status_code=error.status_code,
+            )
             raise ModelConnectionError(
                 f"local inference endpoint returned {error.status_code}"
             ) from error
         if not isinstance(content, str):
+            _LOGGER.error(
+                "inference.response.not_text",
+                schema=schema.__name__,
+                content_type=type(content).__name__,
+            )
             raise RuntimeError(
                 "structured boundary requires text content from the endpoint"
             )
+        # The completion is model output derived from owner text, so its length
+        # is recorded and its content is not.
+        _LOGGER.debug(
+            "inference.request.completed",
+            schema=schema.__name__,
+            completion_characters=len(content),
+        )
         return content

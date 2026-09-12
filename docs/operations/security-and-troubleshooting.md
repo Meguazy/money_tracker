@@ -126,6 +126,61 @@ Langfuse is local and opt-in, but local does not mean unrestricted. Trace only
 the content necessary for the selected development/evaluation purpose and apply
 the private dataset policy.
 
+### Reading the journal
+
+AD-019 gives every process one JSON object per line on standard error. Two
+settings control it, and both are written by the environment generator:
+
+    LOG_LEVEL=INFO        # DEBUG adds per-step records
+    LOG_FORMAT=json       # text renders the same fields for a terminal
+
+Standard out is not part of this: several commands print machine-readable JSON
+there as their result, so a pipeline keeps working while the journal goes to
+standard error.
+
+Every record carries `timestamp`, `level`, `logger`, and `event`. The event is
+a stable dotted name that never contains a value, so it can be counted:
+
+    journalctl --user -u money-tracker-worker -o cat \
+      | jq -r 'select(.level=="ERROR") | .event' | sort | uniq -c
+
+Correlation identifiers ride along with the operation. To follow one Telegram
+update through ingestion, dispatch, persistence, and delivery:
+
+    journalctl --user -u money-tracker-worker -o cat \
+      | jq 'select(.inbox_id=="<uuid>")'
+
+Levels are not decoration. `WARNING` is something the system already handled,
+such as `work_unit.retry_scheduled` or `gateway.outbox.retry_scheduled`.
+`ERROR` needs an owner: `work_unit.dead_lettered`, `transport.request.rejected`,
+`expense.idempotency_conflict`. `CRITICAL` means the process is ending or
+authoritative data is in doubt, such as `process.unhandled_exception` or
+`backup.restore.dump_checksum_mismatch`. Start a triage at `CRITICAL` and
+`ERROR`; a burst of `WARNING` with no `ERROR` usually means a dependency is
+flapping rather than broken.
+
+Useful starting queries:
+
+| Question | Event to look for |
+| --- | --- |
+| Did anything crash? | `process.unhandled_exception`, `thread.unhandled_exception` |
+| Why was a message not understood? | `routing.clarification`, with its `reason_code` |
+| Why did a work unit fail? | `work_unit.dead_lettered`, `work_unit.retry_scheduled` |
+| Is Telegram refusing us? | `transport.request.rejected`, `transport.request.transient_failure` |
+| Is the model endpoint up? | `inference.endpoint.unavailable`, `model_boundary.exhausted` |
+| Did a browser request get blocked? | `web.request.blocked`, with its `reason_code` |
+| Is backup still running? | `backup.create.completed`, `backup.snapshot.absent` |
+
+Raise detail only while diagnosing, then put it back:
+
+    LOG_LEVEL=DEBUG uv run --env-file .env money-tracker-worker process-once
+
+The journal is diagnostic, not authoritative. It is not backed up, and it is
+not the audit trail: PostgreSQL owns both. Credential redaction covers
+messages, fields, and rendered tracebacks, but it recognizes token shapes only,
+so keeping owner content out of records remains a code-review rule rather than
+something the filter can enforce.
+
 ## Troubleshooting order
 
 Before changing state:

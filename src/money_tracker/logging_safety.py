@@ -1,4 +1,4 @@
-"""Logging configuration that cannot print a Bot API credential.
+"""Redaction primitives that keep a credential out of every log record.
 
 The Telegram Bot API puts the token in the request path, so any library that
 logs a URL logs the credential. `httpx` does exactly that at INFO level, which
@@ -10,14 +10,21 @@ Two defences, because either alone is one mistake away from failing again.
 Chatty HTTP loggers are raised to WARNING so the request line is never emitted,
 and a filter on the root handler redacts anything shaped like a bot token from
 every record regardless of which library produced it.
+
+This module owns only the redaction contract. Process-wide configuration lives
+in `money_tracker.structured_logging`, which composes these defences with the
+structured formatter; the dependency runs in that direction so redaction stays
+usable by anything that logs, including code that never builds a record itself.
 """
 
 from __future__ import annotations
 
 import logging
 import re
+from typing import Final
 
-_HTTP_LOGGERS = ("httpx", "httpcore", "urllib3")
+HTTP_LOGGERS: Final = ("httpx", "httpcore", "urllib3")
+STRUCTURED_FIELDS_ATTRIBUTE: Final = "money_tracker_fields"
 _REDACTED = "bot<redacted>"
 # A Bot API token is a numeric bot id, a colon, and a long opaque secret. The
 # `bot` prefix is how it appears in a URL path; the bare form catches a token
@@ -39,48 +46,65 @@ def redact_credentials(text: str) -> str:
     return _BARE_TOKEN.sub("<redacted>", _URL_TOKEN.sub(_REDACTED, text))
 
 
-class _CredentialFilter(logging.Filter):
+def redact_value(value: object) -> object:
+    """Redact one structured field value without changing its type otherwise.
+
+    Args:
+        value: Field value supplied by a caller or bound into log context.
+
+    Returns:
+        The redacted string when the value is text, the value unchanged
+        otherwise. Non-string values are returned as they are because a token
+        is a string everywhere it appears, and rewriting other types would make
+        structured fields lie about what the code observed.
+    """
+
+    return redact_credentials(value) if isinstance(value, str) else value
+
+
+class CredentialFilter(logging.Filter):
     """Redact token-shaped runs from a record before any handler formats it."""
 
     def filter(self, record: logging.LogRecord) -> bool:
-        """Rewrite the message and arguments in place, and keep the record.
+        """Rewrite the message, arguments, and fields in place, and keep it.
 
         Formatting happens in the handler, so both the template and its
         arguments have to be cleaned: a token arriving as `%s` would otherwise
-        survive a filter that only looked at `record.msg`.
+        survive a filter that only looked at `record.msg`. Structured fields
+        are cleaned for the same reason, since a formatter serializes them
+        after every filter has run.
         """
 
         if isinstance(record.msg, str):
             record.msg = redact_credentials(record.msg)
         if isinstance(record.args, tuple):
-            record.args = tuple(
-                redact_credentials(argument) if isinstance(argument, str) else argument
-                for argument in record.args
-            )
+            record.args = tuple(redact_value(argument) for argument in record.args)
         elif isinstance(record.args, dict):
             record.args = {
-                key: redact_credentials(value) if isinstance(value, str) else value
-                for key, value in record.args.items()
+                key: redact_value(value) for key, value in record.args.items()
             }
+        fields = getattr(record, STRUCTURED_FIELDS_ATTRIBUTE, None)
+        if isinstance(fields, dict):
+            setattr(
+                record,
+                STRUCTURED_FIELDS_ATTRIBUTE,
+                {key: redact_value(value) for key, value in fields.items()},
+            )
         return True
 
 
-def configure_safe_logging(level: int = logging.INFO) -> None:
-    """Configure process logging so no handler can emit a credential.
+def quiet_http_loggers() -> None:
+    """Raise chatty HTTP client loggers above the level that logs a URL."""
 
-    Args:
-        level: Level for the application's own loggers.
-    """
-
-    logging.basicConfig(
-        level=level,
-        format="%(asctime)s %(levelname)s %(name)s %(message)s",
-    )
-    credential_filter = _CredentialFilter()
-    for handler in logging.getLogger().handlers:
-        handler.addFilter(credential_filter)
-    for name in _HTTP_LOGGERS:
+    for name in HTTP_LOGGERS:
         logging.getLogger(name).setLevel(logging.WARNING)
 
 
-__all__ = ["configure_safe_logging", "redact_credentials"]
+__all__ = [
+    "HTTP_LOGGERS",
+    "STRUCTURED_FIELDS_ATTRIBUTE",
+    "CredentialFilter",
+    "quiet_http_loggers",
+    "redact_credentials",
+    "redact_value",
+]

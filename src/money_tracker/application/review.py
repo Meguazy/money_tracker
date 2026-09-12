@@ -42,6 +42,7 @@ from money_tracker.domain import (
     TaxonomyError,
     normalize_category_name,
 )
+from money_tracker.structured_logging import get_logger
 
 OWNER_REVIEW_PROVENANCE = "owner-category-review"
 """Provenance recorded when the owner, not a model, settled the purpose.
@@ -49,6 +50,9 @@ OWNER_REVIEW_PROVENANCE = "owner-category-review"
 Distinct from the category-fit boundary's versioned provenance, because a
 stored allocation must say whether a human or a prompt chose it.
 """
+
+
+_LOGGER = get_logger("money_tracker.application.review")
 
 
 class CategoryReviewService:
@@ -125,6 +129,17 @@ class CategoryReviewService:
         )
         extended = taxonomy.with_category(category)
         approved = proposal.approve()
+        # The proposed name is model output about the owner's spending, so the
+        # record names the new node by identifier and leaves the text in the
+        # taxonomy where the owner can read it.
+        _LOGGER.info(
+            "category_review.approved",
+            profile_id=profile_id,
+            proposal_id=proposal_id,
+            expense_id=expense_id,
+            category_id=category.id,
+            rooted=proposal.parent_id is not None,
+        )
         posted = self._with_purpose(
             expense,
             category=category,
@@ -203,6 +218,13 @@ class CategoryReviewService:
             owner_override=True,
         )
         rejected = proposal.reject()
+        _LOGGER.info(
+            "category_review.reused_existing",
+            profile_id=profile_id,
+            proposal_id=proposal_id,
+            expense_id=expense_id,
+            category_id=category.id,
+        )
         return self._repository.settle_category_review(
             rejected,
             expense=posted,
@@ -256,6 +278,12 @@ class CategoryReviewService:
         expense = self._finance.get_expense(profile_id, expense_id)
         discarded = expense.discard()
         cancelled = proposal.cancel()
+        _LOGGER.info(
+            "category_review.cancelled",
+            profile_id=profile_id,
+            proposal_id=proposal_id,
+            expense_id=expense_id,
+        )
         return self._repository.settle_category_review(
             cancelled,
             expense=discarded,
@@ -322,10 +350,24 @@ class CategoryReviewService:
             request_hash=identity[2],
         )
         if replayed_id is not None:
+            _LOGGER.info(
+                "category_review.command.replayed",
+                profile_id=profile_id,
+                proposal_id=proposal_id,
+                command_type=identity[1],
+            )
             return self._repository.get_category_proposal(profile_id, replayed_id)
         proposal = self._pending(profile_id, proposal_id)
         exclusions = proposal.exclusions_for_next()
         if len(exclusions) >= MAX_REVIEW_PROPOSALS:
+            # AD-008 caps the loop, so this is the designed end of the branch
+            # rather than a defect: the owner is offered reuse or manual entry.
+            _LOGGER.warning(
+                "category_review.proposals_exhausted",
+                profile_id=profile_id,
+                proposal_id=proposal_id,
+                proposals=len(exclusions),
+            )
             raise TaxonomyError("category review has exhausted its proposals")
         taxonomy = self._finance.get_taxonomy(profile_id)
         successor = CategoryProposal(
@@ -341,6 +383,13 @@ class CategoryReviewService:
         )
         self._reject_duplicate(taxonomy, proposed_name)
         rejected = proposal.reject()
+        _LOGGER.info(
+            "category_review.reproposed",
+            profile_id=profile_id,
+            proposal_id=proposal_id,
+            successor_id=successor.id,
+            excluded_names=len(exclusions),
+        )
         return self._repository.repropose_category(
             rejected,
             successor,
@@ -377,6 +426,12 @@ class CategoryReviewService:
 
         proposal = self._repository.get_category_proposal(profile_id, proposal_id)
         if proposal.status is not CategoryProposalStatus.PENDING:
+            _LOGGER.warning(
+                "category_review.not_pending",
+                profile_id=profile_id,
+                proposal_id=proposal_id,
+                status=proposal.status.value,
+            )
             raise ValueError("category review is no longer pending")
         return proposal
 
@@ -397,7 +452,23 @@ class CategoryReviewService:
         if result_id is None:
             return None
         if result_id != expense_id:
+            # A replay that resolves to a different movement means the command
+            # key is being reused across targets, which would silently apply a
+            # decision to the wrong movement if it were allowed through.
+            _LOGGER.error(
+                "category_review.replay_target_changed",
+                profile_id=profile_id,
+                expense_id=expense_id,
+                stored_expense_id=result_id,
+                command_type=identity[1],
+            )
             raise ValueError("category review replay result target changed")
+        _LOGGER.info(
+            "category_review.command.replayed",
+            profile_id=profile_id,
+            expense_id=expense_id,
+            command_type=identity[1],
+        )
         return self._finance.get_expense(profile_id, result_id)
 
     @staticmethod

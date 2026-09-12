@@ -191,6 +191,8 @@ Money Tracker workstation
 | `graph` | Define the initial one-node assistant | LangGraph and `BaseChatModel` | In-memory messages for one invocation | Stateless host process |
 | `llm` | Construct an OpenAI-compatible chat adapter | LangChain `ChatOpenAI` | No persistent data | Loopback endpoint by default |
 | `observability` | Enable and flush optional Langfuse callbacks | Langfuse SDK and environment keys | Buffered telemetry until flush | Local Langfuse only |
+| `structured_logging` | Configure process logging once, render each record as one JSON object of event name plus named fields, bind per-operation correlation identifiers, and route uncaught exceptions on any thread through logging | Standard library `logging` and `contextvars`; the redaction primitives in `logging_safety`; no domain, repository, or transport import | No persistent data; the journal is diagnostic and is neither authoritative nor backed up | Every host process and CLI; writes to standard error so machine-readable command output on standard out stays usable; credentials are filtered from messages, fields, and tracebacks, and owner content never enters a field |
+| `logging_safety` | Own the credential redaction contract and mute the HTTP loggers that would print a token-bearing URL | Standard library `logging` and `re` only | No state | Imported by `structured_logging` and usable by anything that logs |
 | `persistence` | Apply versioned migrations, bootstrap persistent LangGraph checkpoints, and implement finance/messaging repositories | Alembic, psycopg, PostgreSQL checkpointer | Foundation schemas, workflow checkpoints, finance aggregates, and durable messaging state | Host administration CLI and shared host library; least-privilege loopback database role |
 | `domain` | Enforce exact money, expense/refund, dual-allocation, taxonomy, wallet, budget, receipt-metadata, and audit contracts | Pure Python value objects and policies; no framework or infrastructure import | No infrastructure state | Shared host-process library; deterministic validation of untrusted inputs |
 | `application` | Coordinate idempotent expense lifecycle and receipt registration/review, audited wallet entries, replay-safe budget planning, pending proposal submission, owner category decisions, and read-only reporting through narrow ports | Finance, administration, proposal, review, reporting, and receipt-metadata repository ports plus clock and ID contracts | Command, concurrency, review-boundary, and audit semantics, not stored state | Shared by CLI, API, and worker; profile scope comes from trusted caller context; node creation is reachable only through an owner decision, and receipt deletion is not exposed |
@@ -1181,6 +1183,36 @@ preflight without coupling Telegram recovery to dashboard availability.
   and idempotency behavior. Human or model review supplements subjective quality.
 - Private receipt and finance datasets never enter Git.
 
+### Structured logging
+
+AD-019 makes the operational journal a first-class surface, separate from
+tracing and from the exit-code contract AD-018 defines for supervisors.
+
+- Every process writes one JSON object per line to standard error through
+  `money_tracker.structured_logging`. Standard out stays reserved for the
+  machine-readable results several commands print as their output contract.
+- A record is a stable event name plus named fields. The name never carries a
+  value, so events stay countable and the fields stay deliberate.
+- Levels have fixed meanings: `WARNING` is a degraded or rejected outcome the
+  system handled itself, `ERROR` is a failure that needs the owner, and
+  `CRITICAL` is reserved for a condition that ends the process or puts
+  authoritative data in doubt.
+- `log_context` binds correlation identifiers to an operation through
+  `contextvars`, so a record emitted deep in dispatch or persistence carries
+  the work unit that caused it. A binding does not cross into a thread the
+  operation did not start, which is why each long-running loop binds its own.
+- Uncaught exceptions on any thread are routed through logging rather than the
+  interpreter's printer, so a crash is formatted and redacted like every other
+  record instead of reaching the journal unfiltered.
+- Owner message text, receipt bytes, model completions, category and merchant
+  names, monetary amounts, credentials, and database URLs never enter a field.
+  Records carry identifiers, stable codes, enum values, counts, versions, and
+  durations. Credential redaction applies to messages, fields, and rendered
+  tracebacks, and is a defence against tokens only: it cannot recognize owner
+  text.
+- The journal explains behavior. PostgreSQL owns state and the audit trail, and
+  backup does not cover logs.
+
 ### Error handling
 
 - Expected domain failures return typed, user-actionable outcomes.
@@ -1330,6 +1362,14 @@ environment file.
 
 AD-004, AD-010, and AD-018 have persistence, gateway, pairing, worker,
 presentation, operator-command, real-bot, fault, latency, and reboot evidence.
+
+### Implemented cross-cutting decisions
+
+AD-019 is implemented across every entry point, adapter, application service,
+and persistence boundary. It supplements rather than replaces the AD-018 exit
+codes: a supervisor still distinguishes a configuration failure from a
+dependency failure without reading logs, while the journal explains what a
+still-running process did and why.
 
 ## 10. Quality Requirements
 

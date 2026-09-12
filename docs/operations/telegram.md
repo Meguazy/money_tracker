@@ -424,15 +424,22 @@ logical outbox row or financial mutation is never acceptable.
 ## Credentials in logs
 
 The Bot API puts the token in the request path, so any library that logs a URL
-logs the credential. Both entry points therefore configure logging through
-`configure_safe_logging`, which raises `httpx`, `httpcore`, and `urllib3` to
-WARNING so the request line is never emitted, and installs a filter that
-redacts token-shaped runs from every record whatever produced it.
+logs the credential. Every entry point therefore configures logging through
+`configure_logging`, which raises `httpx`, `httpcore`, and `urllib3` to WARNING
+so the request line is never emitted, and installs a filter that redacts
+token-shaped runs from every record whatever produced it. The filter reaches
+messages, structured fields, and rendered tracebacks, and uncaught exceptions
+are routed through logging rather than the interpreter's own printer so that a
+crash cannot bypass it.
 
 This was found the hard way: a plain `basicConfig(level=INFO)` enabled INFO for
 every logger in the process, and the first real run printed the full Bot API
 URL to the terminal. If you see a token in a scrollback buffer, a journal, or a
 pasted log from before that fix, treat it as compromised and rotate it.
+
+The transport names the Bot API method it called and a stable reason code, and
+never the URL. See
+[Reading the journal](security-and-troubleshooting.md#reading-the-journal).
 
 ## Token compromise or rotation
 

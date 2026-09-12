@@ -13,6 +13,9 @@ from pathlib import Path
 from PIL import Image, UnidentifiedImageError
 
 from money_tracker.application import ReceiptMediaError, StoredReceiptMedia
+from money_tracker.structured_logging import get_logger
+
+_LOGGER = get_logger("money_tracker.media.local")
 
 MAX_RECEIPT_BYTES = 20 * 1024 * 1024
 MAX_RECEIPT_PIXELS = 40_000_000
@@ -75,6 +78,34 @@ class LocalReceiptMediaStore:
                 decoding, archive paths, or existing content are unsafe.
         """
 
+        # Every rejection this method can produce is a refusal to archive
+        # untrusted bytes, so they are recorded together here rather than at
+        # each of the twenty checks. The reason text is a fixed message from
+        # this module; the image bytes and the archive path never appear.
+        try:
+            return self._store(content)
+        except ReceiptMediaError as error:
+            _LOGGER.warning(
+                "receipt_media.rejected",
+                reason=str(error),
+                content_bytes=len(content),
+            )
+            raise
+
+    def _store(self, content: bytes) -> StoredReceiptMedia:
+        """Perform the validated atomic store this class exposes.
+
+        Args:
+            content: Complete untrusted image payload.
+
+        Returns:
+            Safe decoded facts and the content digest.
+
+        Raises:
+            ReceiptMediaError: If bytes, format, dimensions, frame count,
+                decoding, archive paths, or existing content are unsafe.
+        """
+
         media_type, width, height = self._validate_image(content)
         digest = hashlib.sha256(content).hexdigest()
         target = self._target(digest, create_shard=True)
@@ -82,6 +113,8 @@ class LocalReceiptMediaStore:
             existing = self._read_target(target, digest)
             if existing != content:
                 raise ReceiptMediaError("receipt digest path contains other content")
+            # Re-storing identical content is the ordinary result of a retry.
+            _LOGGER.debug("receipt_media.already_archived", content_sha256=digest)
             return StoredReceiptMedia(digest, media_type, len(content), width, height)
 
         file_descriptor: int | None = None
@@ -119,6 +152,14 @@ class LocalReceiptMediaStore:
                 os.close(file_descriptor)
             if temporary is not None:
                 temporary.unlink(missing_ok=True)
+        _LOGGER.info(
+            "receipt_media.archived",
+            content_sha256=digest,
+            media_type=media_type,
+            content_bytes=len(content),
+            width=width,
+            height=height,
+        )
         return StoredReceiptMedia(digest, media_type, len(content), width, height)
 
     def read(self, content_sha256: str) -> bytes:
@@ -136,7 +177,17 @@ class LocalReceiptMediaStore:
         """
 
         target = self._target(content_sha256, create_shard=False)
-        return self._read_target(target, content_sha256)
+        try:
+            return self._read_target(target, content_sha256)
+        except ReceiptMediaError as error:
+            # A digest mismatch here means the archive was altered underneath
+            # the application, which is worth an error rather than a warning.
+            _LOGGER.error(
+                "receipt_media.unreadable",
+                reason=str(error),
+                content_sha256=content_sha256,
+            )
+            raise
 
     @staticmethod
     def _validate_image(content: bytes) -> tuple[str, int, int]:

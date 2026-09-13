@@ -10,12 +10,14 @@ from money_tracker.api.contracts import ExpenseCreateRequest
 from money_tracker.application import (
     APPROVE_ACTION,
     MARK_NEEDS_REVIEW_ACTION,
+    CategoryManagement,
     CategoryReviewQueue,
     IdempotencyConflictError,
     IdGenerator,
     receipt_review_identity,
 )
 from money_tracker.domain import (
+    Category,
     CategoryAllocation,
     Expense,
     ExpenseStatus,
@@ -38,6 +40,8 @@ from money_tracker.web.contracts import (
     BudgetCreateRequest,
     BudgetReplaceRequest,
     BudgetWriteRequest,
+    CategoryArchiveRequest,
+    CategoryRenameRequest,
     CategoryReviewReuseRequest,
     ExpenseCancelRequest,
     ExpensePostRequest,
@@ -336,6 +340,95 @@ class BudgetMutationAdapter:
             idempotency_key=command_key,
             actor=WEB_ACTOR,
             reason="manual browser budget correction",
+        )
+
+
+class CategoryManager(Protocol):
+    """Expose only stable category administration required by the browser."""
+
+    def management(self, *, profile_id: UUID) -> CategoryManagement:
+        """Return all nodes and their current complexity warnings."""
+
+    def rename(
+        self,
+        *,
+        profile_id: UUID,
+        category_id: UUID,
+        expected_version: int,
+        name: str,
+        idempotency_key: str,
+        actor: str,
+        reason: str,
+    ) -> Category:
+        """Rename or replay one stable category node."""
+
+    def archive(
+        self,
+        *,
+        profile_id: UUID,
+        category_id: UUID,
+        expected_version: int,
+        idempotency_key: str,
+        actor: str,
+        reason: str,
+    ) -> Category:
+        """Archive or replay one stable category node."""
+
+
+class CategoryManagementMutationAdapter:
+    """Bind strict browser commands to audited taxonomy administration."""
+
+    def __init__(self, manager: CategoryManager) -> None:
+        """Bind the browser boundary to category use cases.
+
+        Args:
+            manager: Category read and mutation application boundary.
+        """
+
+        self._manager = manager
+
+    def management(self, *, profile_id: UUID) -> CategoryManagement:
+        """Return the complete owner-management view."""
+
+        return self._manager.management(profile_id=profile_id)
+
+    def rename(
+        self,
+        *,
+        profile_id: UUID,
+        category_id: UUID,
+        command_key: str,
+        request: CategoryRenameRequest,
+    ) -> Category:
+        """Rename one node under its displayed optimistic version."""
+
+        return self._manager.rename(
+            profile_id=profile_id,
+            category_id=category_id,
+            expected_version=request.expected_version,
+            name=request.name,
+            idempotency_key=command_key,
+            actor=WEB_ACTOR,
+            reason="owner renamed category in browser",
+        )
+
+    def archive(
+        self,
+        *,
+        profile_id: UUID,
+        category_id: UUID,
+        command_key: str,
+        request: CategoryArchiveRequest,
+    ) -> Category:
+        """Archive one node under its displayed optimistic version."""
+
+        return self._manager.archive(
+            profile_id=profile_id,
+            category_id=category_id,
+            expected_version=request.expected_version,
+            idempotency_key=command_key,
+            actor=WEB_ACTOR,
+            reason="owner archived category in browser",
         )
 
 
@@ -800,6 +893,8 @@ __all__ = [
     "WEB_ACTOR",
     "BudgetMutationAdapter",
     "BudgetWriter",
+    "CategoryManagementMutationAdapter",
+    "CategoryManager",
     "CategoryReviewMutationAdapter",
     "CategoryReviewWriter",
     "ExpenseMutationAdapter",

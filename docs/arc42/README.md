@@ -928,6 +928,28 @@ The application service and PostgreSQL own decision and audit semantics. The
 FastAPI adapter owns strict JSON, CSRF, bounded problems, and trusted profile
 injection; React owns ephemeral selection state only.
 
+### Current browser category administration
+
+1. The browser reads all active and archived nodes through a dedicated
+   category-management adapter. The response includes stable identity,
+   hierarchy, guidance, aliases, seed provenance, optimistic version, and soft
+   complexity warnings, but no profile or command data.
+2. Rename and archive call a separate `CategoryAdministrationService`; they do
+   not share proposal-creation authority. The domain rebuilds the whole
+   taxonomy and refuses ambiguity, archived-node transitions, or an archived
+   parent with an active child. IDs, parents, guidance, aliases, and history do
+   not change.
+3. PostgreSQL locks all profile nodes in stable order, checks the displayed
+   version, and commits replacement, idempotency claim, and audit in one
+   transaction. Bootstrap validates immutable seed semantics without reverting
+   an owner-managed display name or archive state.
+4. FastAPI injects profile and actor, accepts no delete/reparent/create field,
+   and applies the same CSRF, idempotency, bounded-problem, and `no-store`
+   policy as other mutations.
+5. React asks for archive confirmation, prevents archiving a root with active
+   children, and invalidates every category-dependent read after success. It
+   owns only edit and confirmation state.
+
 ### Current authoritative backup and restore drill
 
 1. `money-tracker-backup create` validates executables and owner-only
@@ -1218,8 +1240,9 @@ preflight without coupling Telegram recovery to dashboard availability.
 - Unsafe methods require an allowed Origin plus equal random values in an
   HttpOnly, same-site cookie and the `X-CSRF-Token` header. Every mutation
   additionally requires `Idempotency-Key`; movements and budgets use
-  their command keys and optimistic versions, category decisions require the
-  proposal-wide key already claimed by the review transaction, receipt
+  their command keys and optimistic versions, category management quotes the
+  displayed node version, category decisions require the proposal-wide key
+  already claimed by the review transaction, receipt
   review decisions require the transition-wide key that names the receipt and
   the version the page displayed, and messaging requeues require the
   transition-wide key that names the queue, the item, and the requeue count the
@@ -1469,8 +1492,8 @@ environment file.
 - [AD-009: Local FastAPI and React web application](decisions/AD-009-local-web-application.md):
   strict version-one finance wire contracts, monthly overview, calendar
   analytics, manual lifecycle, multi-allocation editing, budget planning,
-  category review, receipt metadata review, HTTP security, and host deployment
-  implemented; remaining Step 5 resources and acceptance planned.
+  category management/review, receipt metadata review, HTTP security, and host
+  deployment implemented; remaining Step 5 resources and acceptance planned.
 - [AD-014: Private content-addressed receipt archive](decisions/AD-014-private-receipt-archive.md):
   safe local adapter, replay-safe versioned review state, and real
   filesystem/PostgreSQL integration implemented; administration CLI wiring,

@@ -36,6 +36,7 @@ from money_tracker.domain import (
     ReceiptMetadata,
     ReceiptStatus,
     Taxonomy,
+    TaxonomyError,
     WalletEntry,
     WalletEntryType,
     YearMonth,
@@ -199,33 +200,180 @@ class PostgresFinanceRepository:
         """
 
         with connect(self._database_url) as connection:
-            rows = connection.execute(
-                "SELECT category.id, category.name, category.description, "
-                "category.parent_id, category.status, category.seeded, "
-                "COALESCE(array_agg(alias.alias ORDER BY alias.alias) "
-                "FILTER (WHERE alias.alias IS NOT NULL), '{}') "
-                "FROM finance.categories category "
-                "LEFT JOIN finance.category_aliases alias "
-                "ON alias.category_id = category.id "
-                "WHERE category.profile_id = %s "
-                "GROUP BY category.id "
-                "ORDER BY category.created_at, category.id",
+            return self._load_taxonomy(connection, profile_id)
+
+    def get_idempotent_category_command(
+        self,
+        *,
+        profile_id: UUID,
+        idempotency_key: str,
+        command_type: str,
+        request_hash: str,
+    ) -> Category | None:
+        """Return the category named by an identical replayed command.
+
+        Args:
+            profile_id: Trusted owner scope.
+            idempotency_key: Stable external command key.
+            command_type: Rename or archive command discriminator.
+            request_hash: Canonical target and replacement digest.
+
+        Returns:
+            Current category state, or None when the key is unclaimed.
+
+        Raises:
+            IdempotencyConflictError: If the key names different semantics.
+            AggregateNotFoundError: If the claimed category no longer exists.
+        """
+
+        self._validate_command_identity(idempotency_key, command_type, request_hash)
+        with connect(self._database_url) as connection:
+            prior = connection.execute(
+                "SELECT command_type, request_hash, aggregate_id "
+                "FROM finance.idempotency_records "
+                "WHERE profile_id = %s AND idempotency_key = %s",
+                (profile_id, idempotency_key),
+            ).fetchone()
+            if prior is None:
+                return None
+            self._require_identical_category_command(
+                prior,
+                command_type=command_type,
+                request_hash=request_hash,
+            )
+            return self._load_category(connection, profile_id, prior[2])
+
+    def save_category(
+        self,
+        profile_id: UUID,
+        category: Category,
+        *,
+        expected_version: int,
+        idempotency_key: str,
+        command_type: str,
+        request_hash: str,
+        audit_event: AuditEvent,
+    ) -> None:
+        """Claim and replace one category with its audit atomically.
+
+        All nodes in the profile are locked before rebuilding the taxonomy.
+        That makes name/alias and parent/child validation one serial decision
+        even when two browser tabs target different nodes.
+
+        Args:
+            profile_id: Trusted owner scope.
+            category: Complete replacement node.
+            expected_version: Version observed by the owner.
+            idempotency_key: Stable external command key.
+            command_type: Rename or archive command discriminator.
+            request_hash: Canonical command semantics.
+            audit_event: Matching immutable version transition.
+
+        Raises:
+            AggregateNotFoundError: If the category is outside the profile.
+            IdempotencyConflictError: If the key names different semantics.
+            OptimisticConcurrencyError: If the version is stale.
+            ValueError: If immutable state or the version transition changed.
+            TaxonomyError: If the replacement violates taxonomy governance.
+        """
+
+        self._validate_command_identity(idempotency_key, command_type, request_hash)
+        with connect(self._database_url) as connection:
+            claimed = connection.execute(
+                "INSERT INTO finance.idempotency_records "
+                "(profile_id, idempotency_key, command_type, request_hash, "
+                "aggregate_id, created_at) VALUES (%s, %s, %s, %s, %s, %s) "
+                "ON CONFLICT DO NOTHING RETURNING aggregate_id",
+                (
+                    profile_id,
+                    idempotency_key,
+                    command_type,
+                    request_hash,
+                    category.id,
+                    audit_event.occurred_at,
+                ),
+            ).fetchone()
+            if claimed is None:
+                prior = connection.execute(
+                    "SELECT command_type, request_hash, aggregate_id "
+                    "FROM finance.idempotency_records "
+                    "WHERE profile_id = %s AND idempotency_key = %s",
+                    (profile_id, idempotency_key),
+                ).fetchone()
+                if prior is None:
+                    raise IdempotencyConflictError("idempotency claim disappeared")
+                self._require_identical_category_command(
+                    prior,
+                    command_type=command_type,
+                    request_hash=request_hash,
+                )
+                return
+            connection.execute(
+                "SELECT id FROM finance.categories WHERE profile_id = %s "
+                "ORDER BY id FOR UPDATE",
                 (profile_id,),
             ).fetchall()
-        return Taxonomy(
-            tuple(
-                Category(
-                    id=row[0],
-                    name=row[1],
-                    description=row[2],
-                    parent_id=row[3],
-                    status=CategoryStatus(row[4]),
-                    seeded=row[5],
-                    aliases=tuple(row[6]),
+            taxonomy = self._load_taxonomy(connection, profile_id)
+            try:
+                current = taxonomy.category(category.id)
+            except TaxonomyError as error:
+                raise AggregateNotFoundError(
+                    "category does not exist in profile"
+                ) from error
+            if current.version != expected_version:
+                raise OptimisticConcurrencyError(
+                    "category changed since the requested version"
                 )
-                for row in rows
+            if category.version != current.version + 1:
+                raise ValueError("category replacement must advance one version")
+            if (
+                category.id != current.id
+                or category.description != current.description
+                or category.parent_id != current.parent_id
+                or category.aliases != current.aliases
+                or category.seeded != current.seeded
+            ):
+                raise ValueError("category replacement changed immutable state")
+            Taxonomy(
+                tuple(
+                    category if item.id == category.id else item
+                    for item in taxonomy.categories
+                )
             )
-        )
+            cursor = connection.execute(
+                "UPDATE finance.categories SET name = %s, normalized_name = %s, "
+                "status = %s, version = %s, updated_at = %s "
+                "WHERE id = %s AND profile_id = %s AND version = %s",
+                (
+                    category.name,
+                    category.normalized_name,
+                    category.status.value,
+                    category.version,
+                    audit_event.occurred_at,
+                    category.id,
+                    profile_id,
+                    expected_version,
+                ),
+            )
+            if cursor.rowcount != 1:
+                raise OptimisticConcurrencyError(
+                    "category changed since the requested version"
+                )
+            self._insert_audit(connection, audit_event)
+
+    @staticmethod
+    def _require_identical_category_command(
+        prior: tuple[object, ...],
+        *,
+        command_type: str,
+        request_hash: str,
+    ) -> None:
+        """Refuse reuse of a command key for another category mutation."""
+
+        if prior[:2] != (command_type, request_hash):
+            raise IdempotencyConflictError(
+                "idempotency key was used for different request content"
+            )
 
     def get_category_proposal(
         self,
@@ -1784,6 +1932,79 @@ class PostgresFinanceRepository:
             self._insert_audit(connection, audit_event)
 
     @staticmethod
+    def _load_taxonomy(
+        connection: Connection[Any],
+        profile_id: UUID,
+    ) -> Taxonomy:
+        """Load the complete versioned taxonomy in an existing transaction.
+
+        Args:
+            connection: Active PostgreSQL transaction.
+            profile_id: Trusted owner scope.
+
+        Returns:
+            Validated immutable taxonomy.
+        """
+
+        rows = connection.execute(
+            "SELECT category.id, category.name, category.description, "
+            "category.parent_id, category.status, category.seeded, "
+            "category.version, "
+            "COALESCE(array_agg(alias.alias ORDER BY alias.alias) "
+            "FILTER (WHERE alias.alias IS NOT NULL), '{}') "
+            "FROM finance.categories category "
+            "LEFT JOIN finance.category_aliases alias "
+            "ON alias.category_id = category.id "
+            "WHERE category.profile_id = %s "
+            "GROUP BY category.id "
+            "ORDER BY category.created_at, category.id",
+            (profile_id,),
+        ).fetchall()
+        return Taxonomy(
+            tuple(
+                Category(
+                    id=row[0],
+                    name=row[1],
+                    description=row[2],
+                    parent_id=row[3],
+                    status=CategoryStatus(row[4]),
+                    seeded=row[5],
+                    version=row[6],
+                    aliases=tuple(row[7]),
+                )
+                for row in rows
+            )
+        )
+
+    @classmethod
+    def _load_category(
+        cls,
+        connection: Connection[Any],
+        profile_id: UUID,
+        category_id: UUID,
+    ) -> Category:
+        """Load one category by stable identifier inside a transaction.
+
+        Args:
+            connection: Active PostgreSQL transaction.
+            profile_id: Trusted owner scope.
+            category_id: Stable node identifier.
+
+        Returns:
+            Matching category.
+
+        Raises:
+            AggregateNotFoundError: If the node is outside the profile.
+        """
+
+        try:
+            return cls._load_taxonomy(connection, profile_id).category(category_id)
+        except TaxonomyError as error:
+            raise AggregateNotFoundError(
+                "category does not exist in profile"
+            ) from error
+
+    @staticmethod
     def _load_category_proposal(
         connection: Connection[Any],
         profile_id: UUID,
@@ -1932,7 +2153,11 @@ class PostgresFinanceRepository:
         category: Category,
         occurred_at: datetime,
     ) -> None:
-        """Insert or verify one immutable code-owned seed node."""
+        """Insert or verify one code-owned seed identity and structure.
+
+        Name and status are deliberately absent from the replay check: AD-008
+        permits the owner to rename or archive a referenced seed node.
+        """
 
         inserted = connection.execute(
             "INSERT INTO finance.categories "
@@ -1955,18 +2180,15 @@ class PostgresFinanceRepository:
         ).fetchone()
         if inserted is None:
             existing = connection.execute(
-                "SELECT profile_id, name, normalized_name, description, parent_id, "
-                "status, seeded, taxonomy_version FROM finance.categories "
+                "SELECT profile_id, description, parent_id, seeded, "
+                "taxonomy_version FROM finance.categories "
                 "WHERE id = %s",
                 (category.id,),
             ).fetchone()
             expected = (
                 profile_id,
-                category.name,
-                category.normalized_name,
                 category.description,
                 category.parent_id,
-                category.status.value,
                 True,
                 TAXONOMY_VERSION,
             )

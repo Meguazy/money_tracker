@@ -12,6 +12,7 @@ from money_tracker.api.contracts import ExpenseCreateRequest, MoneyContract
 from money_tracker.application import (
     BudgetPlan,
     BudgetPlanEntry,
+    CategoryManagement,
     CategoryReviewQueue,
     MonthlyBudgetPositions,
     MonthlyOverview,
@@ -22,6 +23,7 @@ from money_tracker.domain import (
     MAX_REVIEW_PROPOSALS,
     BalanceMode,
     BudgetStatus,
+    Category,
     CategoryStatus,
     Expense,
     ExpenseStatus,
@@ -281,6 +283,97 @@ class CategoryReferenceContract(_WebContract):
     name: str
     parent_id: UUID | None
     status: CategoryStatus
+
+
+class ManagedCategoryContract(_WebContract):
+    """Render owner-managed state while preserving stable taxonomy identity."""
+
+    id: UUID
+    name: str
+    description: str
+    parent_id: UUID | None
+    parent_name: str | None
+    aliases: tuple[str, ...]
+    status: CategoryStatus
+    seeded: bool
+    version: int = Field(ge=1)
+
+
+class TaxonomyWarningContract(_WebContract):
+    """Expose one non-blocking, owner-safe taxonomy complexity warning."""
+
+    code: str
+    message: str
+
+
+class CategoryManagementResponse(_WebContract):
+    """Complete category administration state for the trusted owner."""
+
+    categories: tuple[ManagedCategoryContract, ...]
+    warnings: tuple[TaxonomyWarningContract, ...]
+
+    @classmethod
+    def from_application(cls, management: CategoryManagement) -> Self:
+        """Map stable category nodes and warnings without profile identity."""
+
+        names = {category.id: category.name for category in management.categories}
+        return cls(
+            categories=tuple(
+                ManagedCategoryContract(
+                    id=category.id,
+                    name=category.name,
+                    description=category.description,
+                    parent_id=category.parent_id,
+                    parent_name=(
+                        None
+                        if category.parent_id is None
+                        else names.get(category.parent_id)
+                    ),
+                    aliases=category.aliases,
+                    status=category.status,
+                    seeded=category.seeded,
+                    version=category.version,
+                )
+                for category in management.categories
+            ),
+            warnings=tuple(
+                TaxonomyWarningContract(code=warning.code, message=warning.message)
+                for warning in management.warnings
+            ),
+        )
+
+
+class CategoryRenameRequest(_WebContract):
+    """Rename one category from the exact version displayed to the owner."""
+
+    name: str = Field(min_length=1, max_length=200)
+    expected_version: int = Field(ge=1)
+
+
+class CategoryArchiveRequest(_WebContract):
+    """Archive one category from the exact version displayed to the owner."""
+
+    expected_version: int = Field(ge=1)
+
+
+class CategoryMutationResponse(_WebContract):
+    """Return the category identity, state, and version after a mutation."""
+
+    id: UUID
+    name: str
+    status: CategoryStatus
+    version: int = Field(ge=1)
+
+    @classmethod
+    def from_domain(cls, category: Category) -> Self:
+        """Map the updated node without exposing profile-owned content beyond name."""
+
+        return cls(
+            id=category.id,
+            name=category.name,
+            status=category.status,
+            version=category.version,
+        )
 
 
 class FundingSourceReferenceContract(_WebContract):
@@ -956,6 +1049,10 @@ class CsrfTokenResponse(_WebContract):
 __all__ = [
     "BudgetPositionContract",
     "CategoryProposalContract",
+    "CategoryArchiveRequest",
+    "CategoryManagementResponse",
+    "CategoryMutationResponse",
+    "CategoryRenameRequest",
     "CategoryReferenceContract",
     "CategoryReviewDecisionRequest",
     "CategoryReviewQueueResponse",
@@ -966,6 +1063,7 @@ __all__ = [
     "ExpenseMutationResponse",
     "ExpensePostRequest",
     "ExpenseReplaceRequest",
+    "ManagedCategoryContract",
     "FundingClassSplitContract",
     "FundingSourceReferenceContract",
     "FundingSourceSpendContract",
@@ -976,6 +1074,7 @@ __all__ = [
     "RangeOverviewResponse",
     "ReceiptContract",
     "ReceiptMutationResponse",
+    "TaxonomyWarningContract",
     "ReceiptRegisterResponse",
     "ReceiptReviewRequest",
     "ResolvedPeriodContract",

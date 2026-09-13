@@ -12,6 +12,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from money_tracker.application import (
+    CategoryAdministrationService,
     CategoryProposalService,
     CategoryReviewService,
     FinanceAdministrationService,
@@ -50,6 +51,7 @@ from money_tracker.persistence.messaging import PostgresMessagingRepository
 from money_tracker.web import WebSettings, create_app
 from money_tracker.web.mutations import (
     BudgetMutationAdapter,
+    CategoryManagementMutationAdapter,
     CategoryReviewMutationAdapter,
     ExpenseMutationAdapter,
     MessagingOperationsAdapter,
@@ -78,6 +80,21 @@ def _messaging(
             environment=BotEnvironment.TEST,
             bot_key=f"test-{uuid4().hex}",
         ),
+    )
+
+
+def _categories(
+    repository: PostgresFinanceRepository,
+    ids: UUID4Generator,
+) -> CategoryManagementMutationAdapter:
+    """Bind category administration to the real finance repository."""
+
+    return CategoryManagementMutationAdapter(
+        CategoryAdministrationService(
+            repository,
+            clock=SystemClock(),
+            ids=ids,
+        )
     )
 
 
@@ -234,6 +251,7 @@ def test_monthly_endpoint_reads_real_postgresql_state(postgres_url: str) -> None
             FinanceAdministrationService(repository, clock=SystemClock(), ids=ids),
             ids=ids,
         ),
+        categories=_categories(repository, ids),
         category_reviews=CategoryReviewMutationAdapter(
             CategoryReviewService(repository, repository, clock=SystemClock(), ids=ids)
         ),
@@ -339,6 +357,7 @@ def test_range_analytics_resolve_calendar_and_both_dimensions_in_postgresql(
             FinanceAdministrationService(repository, clock=SystemClock(), ids=ids),
             ids=ids,
         ),
+        categories=_categories(repository, ids),
         category_reviews=CategoryReviewMutationAdapter(
             CategoryReviewService(repository, repository, clock=SystemClock(), ids=ids)
         ),
@@ -427,6 +446,7 @@ def test_manual_expense_workflow_is_replay_safe_and_visible(
             FinanceAdministrationService(repository, clock=SystemClock(), ids=ids),
             ids=ids,
         ),
+        categories=_categories(repository, ids),
         category_reviews=CategoryReviewMutationAdapter(
             CategoryReviewService(repository, repository, clock=SystemClock(), ids=ids)
         ),
@@ -594,6 +614,7 @@ def test_multi_allocation_movement_survives_correction_in_real_postgresql(
             FinanceAdministrationService(repository, clock=SystemClock(), ids=ids),
             ids=ids,
         ),
+        categories=_categories(repository, ids),
         category_reviews=CategoryReviewMutationAdapter(
             CategoryReviewService(repository, repository, clock=SystemClock(), ids=ids)
         ),
@@ -826,6 +847,7 @@ def test_budget_plan_is_configured_and_corrected_in_real_postgresql(
             FinanceAdministrationService(repository, clock=SystemClock(), ids=ids),
             ids=ids,
         ),
+        categories=_categories(repository, ids),
         category_reviews=CategoryReviewMutationAdapter(
             CategoryReviewService(repository, repository, clock=SystemClock(), ids=ids)
         ),
@@ -978,6 +1000,7 @@ def test_budget_routes_refuse_unknown_and_inactive_categories(
             FinanceAdministrationService(repository, clock=SystemClock(), ids=ids),
             ids=ids,
         ),
+        categories=_categories(repository, ids),
         category_reviews=CategoryReviewMutationAdapter(
             CategoryReviewService(repository, repository, clock=SystemClock(), ids=ids)
         ),
@@ -1121,6 +1144,7 @@ def test_category_proposals_are_resolved_through_real_services(
             FinanceAdministrationService(repository, clock=SystemClock(), ids=ids),
             ids=ids,
         ),
+        categories=_categories(repository, ids),
         category_reviews=CategoryReviewMutationAdapter(review),
         receipts=ReceiptReviewMutationAdapter(
             ReceiptMetadataService(repository, clock=SystemClock(), ids=ids)
@@ -1261,6 +1285,7 @@ def test_receipt_review_is_operated_through_http_and_real_postgresql(
             FinanceAdministrationService(repository, clock=SystemClock(), ids=ids),
             ids=ids,
         ),
+        categories=_categories(repository, ids),
         category_reviews=CategoryReviewMutationAdapter(
             CategoryReviewService(repository, repository, clock=SystemClock(), ids=ids)
         ),
@@ -1463,6 +1488,7 @@ def test_messaging_operations_are_inspected_and_requeued_over_http(
             FinanceAdministrationService(repository, clock=clock, ids=ids),
             ids=ids,
         ),
+        categories=_categories(repository, ids),
         category_reviews=CategoryReviewMutationAdapter(
             CategoryReviewService(repository, repository, clock=clock, ids=ids)
         ),

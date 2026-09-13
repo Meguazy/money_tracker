@@ -1,10 +1,9 @@
 # Local Web Operations
 
 - Status: Step 5 overview, manual-movement, multi-allocation editing,
-  budget-planning, calendar-analytics, category-proposal review, receipt
-  metadata review, and messaging-operations slices implemented; complete
-  control plane and release
-  acceptance still in progress
+  budget-planning, calendar-analytics, category management/proposal review,
+  receipt metadata review, and messaging-operations slices implemented;
+  complete control plane and release acceptance still in progress
 - Binding decision: [AD-009](../arc42/decisions/AD-009-local-web-application.md)
 - Delivery evidence: [Step 5](../roadmap/step-5-dashboard-and-advice.md)
 
@@ -16,10 +15,10 @@ lifecycle with
 multi-allocation editing, monthly budget planning, liveness, readiness, and CSRF
 bootstrap endpoints. It also exposes the pending category-proposal queue and
 the deterministic approve, reuse-active-category, and cancel decisions, the
+versioned category rename/archive surface and taxonomy complexity warnings, the
 retained receipt metadata and its mandatory review, and the durable messaging
-queues with the two requeue commands. Category
-rename/archive, wallet administration, settings, merchant analytics, explicit
-period comparisons, advice, and every receipt-extraction capability remain
+queues with the two requeue commands. Wallet administration, settings, merchant
+analytics, explicit period comparisons, advice, and receipt extraction remain
 Step 5 or Step 6 work and must not be described as available.
 
 ## Ownership and boundaries
@@ -28,7 +27,9 @@ Step 5 or Step 6 work and must not be described as available.
 policy, but no finance data. `ReportingService` computes exact reads;
 `ExpenseMutationAdapter` translates strict browser commands into the existing
 `FinanceService`; `BudgetMutationAdapter` translates budget commands into the
-existing `FinanceAdministrationService`; `CategoryReviewMutationAdapter`
+existing `FinanceAdministrationService`; `CategoryManagementMutationAdapter`
+exposes versioned rename/archive through `CategoryAdministrationService`
+without delete, reparent, or create methods; `CategoryReviewMutationAdapter`
 exposes the existing `CategoryReviewService` without accepting a movement
 identifier from the browser; `ReceiptReviewMutationAdapter` exposes the
 existing `ReceiptMetadataService` and reaches no media store;
@@ -74,6 +75,14 @@ archived category or funding source can never be selected: it appears as a
 disabled option only in the historical row that already uses it. Do not publish
 or forward this port. V1 has no login, TLS, LAN listener, or remote-access
 threat model.
+
+Use `/categorie` to rename an active category or archive a leaf. Renaming keeps
+the stable identifier used by movements and budgets. Archiving removes the node
+from new allocations but keeps historical reports readable. The page asks for
+confirmation before archive and disables a root while any active child depends
+on it; archive the children first. A 409 means another tab changed the displayed
+version: reload before deciding again. Complexity warnings are advisory and do
+not weaken the two-level hierarchy or owner-approval rules.
 
 A movement that reaches the editor without a resolved category, such as a draft
 left for review, opens with no category row. Add one before saving: the form

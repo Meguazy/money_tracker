@@ -21,6 +21,10 @@ import {
   loadCategoryProposals,
   reuseCategoryProposal,
 } from "./api";
+import {
+  CategoryManagementPanel,
+  type CategoryManagementApis,
+} from "./CategoryManagementPanel";
 import { formatMoney } from "./format";
 
 type CategoryReviewApis = {
@@ -52,8 +56,10 @@ function occurredAt(value: string): string {
 
 export function CategoriesPage({
   apis = defaultApis,
+  managementApis,
 }: {
   apis?: CategoryReviewApis;
+  managementApis?: CategoryManagementApis;
 }) {
   const queryClient = useQueryClient();
   const [selectedCategories, setSelectedCategories] = useState<
@@ -92,14 +98,19 @@ export function CategoriesPage({
       <Group align="end" className="page-heading" justify="space-between">
         <div>
           <Text className="eyebrow">Tassonomia controllata</Text>
-          <Title order={1}>Proposte di categoria</Title>
+          <Title order={1}>Categorie</Title>
           <Text c="dimmed" maw={650} mt="xs">
-            Decidi le categorie che tengono un movimento in attesa. Nessuna
-            proposta crea una categoria senza la tua approvazione.
+            Mantieni ordinata la tassonomia e decidi le proposte che tengono un
+            movimento in attesa.
           </Text>
         </div>
       </Group>
 
+      <CategoryManagementPanel apis={managementApis} />
+
+      <Title id="category-proposals-title" mb="lg" mt="xl" order={2}>
+        Proposte in attesa
+      </Title>
       {queue.isLoading ? (
         <Text role="status">Caricamento delle proposte…</Text>
       ) : null}

@@ -15,6 +15,7 @@ from fastapi.testclient import TestClient
 from money_tracker.application import (
     BudgetPlan,
     BudgetPlanEntry,
+    CategoryManagement,
     CategoryReviewQueue,
     CategorySpendEntry,
     MonthlyBudgetPositions,
@@ -28,8 +29,10 @@ from money_tracker.application.ports import IdGenerator
 from money_tracker.domain import (
     BalanceMode,
     BudgetStatus,
+    Category,
     CategoryAllocation,
     CategoryProposal,
+    CategoryStatus,
     Expense,
     ExpenseStatus,
     FundingClass,
@@ -60,6 +63,8 @@ from money_tracker.web import WebSettings, create_app
 from money_tracker.web.mutations import (
     BudgetMutationAdapter,
     BudgetWriter,
+    CategoryManagementMutationAdapter,
+    CategoryManager,
     CategoryReviewMutationAdapter,
     CategoryReviewWriter,
     ExpenseMutationAdapter,
@@ -325,6 +330,68 @@ class RecordingBudgetWriter:
             overrides=overrides,
             version=expected_version + 1,
         )
+
+
+@dataclass
+class RecordingCategoryManager:
+    """In-memory category manager exposing browser-selected command facts."""
+
+    category: Category = field(default_factory=lambda: initial_taxonomy().categories[1])
+    renames: list[tuple[UUID, int, str, str]] = field(default_factory=list)
+    archives: list[tuple[UUID, int, str]] = field(default_factory=list)
+
+    def management(self, *, profile_id: UUID) -> CategoryManagement:
+        """Return one stable category for the trusted owner."""
+
+        assert profile_id == PROFILE_ID
+        return CategoryManagement(categories=(self.category,), warnings=())
+
+    def rename(
+        self,
+        *,
+        profile_id: UUID,
+        category_id: UUID,
+        expected_version: int,
+        name: str,
+        idempotency_key: str,
+        actor: str,
+        reason: str,
+    ) -> Category:
+        """Record trusted scope and return an advanced display version."""
+
+        assert profile_id == PROFILE_ID
+        assert actor == "owner:web"
+        assert reason == "owner renamed category in browser"
+        self.renames.append((category_id, expected_version, name, idempotency_key))
+        self.category = replace(
+            self.category,
+            name=name,
+            version=expected_version + 1,
+        )
+        return self.category
+
+    def archive(
+        self,
+        *,
+        profile_id: UUID,
+        category_id: UUID,
+        expected_version: int,
+        idempotency_key: str,
+        actor: str,
+        reason: str,
+    ) -> Category:
+        """Record trusted scope and return an archived stable node."""
+
+        assert profile_id == PROFILE_ID
+        assert actor == "owner:web"
+        assert reason == "owner archived category in browser"
+        self.archives.append((category_id, expected_version, idempotency_key))
+        self.category = replace(
+            self.category,
+            status=CategoryStatus.ARCHIVED,
+            version=expected_version + 1,
+        )
+        return self.category
 
 
 @dataclass
@@ -635,6 +702,7 @@ def _app(
     static_dir: Path | None = None,
     ready: bool = True,
     budget_writer: BudgetWriter | None = None,
+    category_manager: CategoryManager | None = None,
     category_review_writer: CategoryReviewWriter | None = None,
     receipt_writer: ReceiptReviewWriter | None = None,
     messaging_operations: MessagingOperationsWriter | None = None,
@@ -652,6 +720,9 @@ def _app(
         budgets=BudgetMutationAdapter(
             budget_writer or cast(BudgetWriter, object()),
             ids=cast(IdGenerator, FixedIds()),
+        ),
+        categories=CategoryManagementMutationAdapter(
+            category_manager or cast(CategoryManager, object())
         ),
         category_reviews=CategoryReviewMutationAdapter(
             category_review_writer or cast(CategoryReviewWriter, object())
@@ -771,6 +842,69 @@ def test_split_allocations_keep_exact_cents_and_their_receipt_line() -> None:
             "amount": {"minor_units": 5000, "currency": "EUR"},
         }
     ]
+
+
+def test_category_management_reads_renames_and_archives_trusted_scope() -> None:
+    """Expose versioned nodes and forward only strict owner commands."""
+
+    manager = RecordingCategoryManager()
+    client = _client(_app(category_manager=manager))
+    listed = client.get("/api/v1/categories")
+
+    assert listed.status_code == 200
+    assert listed.json()["categories"][0]["id"] == str(manager.category.id)
+    assert listed.json()["categories"][0]["version"] == 1
+
+    issued = client.get("/api/v1/csrf", headers={"origin": ORIGIN})
+    headers = {
+        "origin": ORIGIN,
+        "x-csrf-token": issued.json()["token"],
+        "Idempotency-Key": "category-unit-rename",
+    }
+    category_id = manager.category.id
+    renamed = client.put(
+        f"/api/v1/categories/{category_id}",
+        json={"name": "Nome aggiornato", "expected_version": 1},
+        headers=headers,
+    )
+
+    assert renamed.status_code == 200
+    assert renamed.json()["version"] == 2
+    assert manager.renames == [
+        (category_id, 1, "Nome aggiornato", "category-unit-rename")
+    ]
+
+    headers["Idempotency-Key"] = "category-unit-archive"
+    archived = client.post(
+        f"/api/v1/categories/{category_id}/archive",
+        json={"expected_version": 2},
+        headers=headers,
+    )
+
+    assert archived.status_code == 200
+    assert archived.json()["status"] == "archived"
+    assert manager.archives == [(category_id, 2, "category-unit-archive")]
+
+
+def test_category_rename_rejects_unknown_json_fields() -> None:
+    """Keep profile and unsupported taxonomy changes outside the body."""
+
+    manager = RecordingCategoryManager()
+    client = _client(_app(category_manager=manager))
+    issued = client.get("/api/v1/csrf", headers={"origin": ORIGIN})
+    response = client.put(
+        f"/api/v1/categories/{manager.category.id}",
+        json={"name": "Altro", "expected_version": 1, "parent_id": str(uuid4())},
+        headers={
+            "origin": ORIGIN,
+            "x-csrf-token": issued.json()["token"],
+            "Idempotency-Key": "category-unit-invalid",
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["code"] == "request_invalid"
+    assert manager.renames == []
 
 
 def test_category_proposals_expose_review_facts_without_workflow_identity() -> None:

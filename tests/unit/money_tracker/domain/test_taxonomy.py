@@ -130,6 +130,76 @@ def test_unknown_or_archived_name_does_not_resolve_as_active() -> None:
         taxonomy.category(uuid4())
 
 
+def test_rename_preserves_category_identity_and_revalidates_active_keys() -> None:
+    """Rename display state without moving history or allowing ambiguity."""
+
+    root = Category(
+        uuid4(),
+        "Mobilità",
+        "Trasporti.",
+        aliases=("Trasporti",),
+        seeded=True,
+        version=4,
+    )
+    other = Category(uuid4(), "Casa", "Casa.", aliases=("Abitazione",))
+    renamed = Taxonomy((root, other)).rename_category(
+        root.id,
+        "  Spostamenti   e mobilità ",
+    )
+    result = renamed.category(root.id)
+
+    assert result.name == "Spostamenti e mobilità"
+    assert result.version == 5
+    assert result.description == root.description
+    assert result.aliases == root.aliases
+    assert result.parent_id is None
+    assert result.seeded
+    assert renamed.resolve_active("Spostamenti e mobilità").id == root.id
+
+    with pytest.raises(TaxonomyError, match="unique"):
+        Taxonomy((root, other)).rename_category(root.id, "Abitazione")
+
+
+def test_archiving_preserves_history_and_refuses_an_active_child_or_repeat() -> None:
+    """Archive a leaf but keep an active root required by active children."""
+
+    root = Category(uuid4(), "Casa", "Casa.", version=2)
+    child = Category(uuid4(), "Arredo", "Arredo.", parent_id=root.id, version=7)
+    taxonomy = Taxonomy((root, child))
+
+    archived = taxonomy.archive_category(child.id)
+    result = archived.category(child.id)
+    assert result.status is CategoryStatus.ARCHIVED
+    assert result.version == 8
+    assert result.parent_id == root.id
+    with pytest.raises(TaxonomyError, match="active parent"):
+        taxonomy.archive_category(root.id)
+    with pytest.raises(InvalidTransitionError, match="active"):
+        archived.archive_category(child.id)
+
+
+def test_rename_refuses_archived_unchanged_and_invalid_version() -> None:
+    """Reject transitions that cannot represent a new managed state."""
+
+    active = Category(uuid4(), "Casa", "Casa.")
+    archived = Category(
+        uuid4(),
+        "Storica",
+        "Storica.",
+        status=CategoryStatus.ARCHIVED,
+    )
+    taxonomy = Taxonomy((active, archived))
+
+    with pytest.raises(InvalidTransitionError, match="change"):
+        taxonomy.rename_category(active.id, "Casa")
+    with pytest.raises(InvalidTransitionError, match="active"):
+        taxonomy.rename_category(archived.id, "Nuova")
+    with pytest.raises(ValueError, match="empty"):
+        taxonomy.rename_category(active.id, "   ")
+    with pytest.raises(ValueError, match="positive"):
+        Category(uuid4(), "Errata", "Errata.", version=0)
+
+
 def _proposal(**overrides: object) -> CategoryProposal:
     """Build one pending proposal with explicit overrides."""
 

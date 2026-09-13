@@ -51,6 +51,10 @@ from money_tracker.web.contracts import (
     BudgetMutationResponse,
     BudgetPlanResponse,
     BudgetReplaceRequest,
+    CategoryArchiveRequest,
+    CategoryManagementResponse,
+    CategoryMutationResponse,
+    CategoryRenameRequest,
     CategoryReviewDecisionRequest,
     CategoryReviewQueueResponse,
     CategoryReviewReuseRequest,
@@ -72,6 +76,7 @@ from money_tracker.web.contracts import (
 )
 from money_tracker.web.mutations import (
     BudgetMutationAdapter,
+    CategoryManagementMutationAdapter,
     CategoryReviewMutationAdapter,
     ExpenseMutationAdapter,
     MessagingOperationsAdapter,
@@ -144,6 +149,7 @@ def create_app(
     reporting: DashboardReader,
     mutations: ExpenseMutationAdapter,
     budgets: BudgetMutationAdapter,
+    categories: CategoryManagementMutationAdapter,
     category_reviews: CategoryReviewMutationAdapter,
     receipts: ReceiptReviewMutationAdapter,
     messaging: MessagingOperationsAdapter,
@@ -157,6 +163,7 @@ def create_app(
         reporting: Read-only application service for dashboard facts.
         mutations: Browser adapter over audited, replay-safe finance use cases.
         budgets: Browser adapter over audited, replay-safe budget use cases.
+        categories: Browser adapter over audited stable taxonomy management.
         category_reviews: Browser adapter over owner category decisions.
         receipts: Browser adapter over retained receipt metadata and its
             audited review transitions. It reaches no media store.
@@ -326,6 +333,84 @@ def create_app(
         except PsycopgError:
             return _database_problem(f"{API_V1_PREFIX}/transactions")
         return TransactionRegisterResponse.from_application(result)
+
+    @router.get("/categories", response_model=CategoryManagementResponse)
+    def category_management() -> CategoryManagementResponse | JSONResponse:
+        """Return stable category nodes, versions, and complexity warnings."""
+
+        try:
+            result = categories.management(profile_id=profile_id)
+        except PsycopgError:
+            return _database_problem(f"{API_V1_PREFIX}/categories")
+        return CategoryManagementResponse.from_application(result)
+
+    @router.put(
+        "/categories/{category_id}",
+        response_model=CategoryMutationResponse,
+    )
+    async def rename_category(
+        category_id: UUID,
+        http_request: Request,
+        idempotency_key: Annotated[
+            str,
+            Header(alias="Idempotency-Key", min_length=1, max_length=200),
+        ],
+    ) -> CategoryMutationResponse | JSONResponse:
+        """Rename one stable category without moving historical allocations."""
+
+        instance = f"{API_V1_PREFIX}/categories/{category_id}"
+        try:
+            payload = CategoryRenameRequest.model_validate_json(
+                await http_request.body()
+            )
+        except ValidationError:
+            return _invalid_body(instance)
+        return _execute_mutation(
+            lambda: categories.rename(
+                profile_id=profile_id,
+                category_id=category_id,
+                command_key=idempotency_key.strip(),
+                request=payload,
+            ),
+            render=CategoryMutationResponse.from_domain,
+            problems=_CATEGORY_MANAGEMENT_PROBLEMS,
+            command_key=idempotency_key,
+            instance=instance,
+        )
+
+    @router.post(
+        "/categories/{category_id}/archive",
+        response_model=CategoryMutationResponse,
+    )
+    async def archive_category(
+        category_id: UUID,
+        http_request: Request,
+        idempotency_key: Annotated[
+            str,
+            Header(alias="Idempotency-Key", min_length=1, max_length=200),
+        ],
+    ) -> CategoryMutationResponse | JSONResponse:
+        """Archive one node while preserving every historical reference."""
+
+        instance = f"{API_V1_PREFIX}/categories/{category_id}/archive"
+        try:
+            payload = CategoryArchiveRequest.model_validate_json(
+                await http_request.body()
+            )
+        except ValidationError:
+            return _invalid_body(instance)
+        return _execute_mutation(
+            lambda: categories.archive(
+                profile_id=profile_id,
+                category_id=category_id,
+                command_key=idempotency_key.strip(),
+                request=payload,
+            ),
+            render=CategoryMutationResponse.from_domain,
+            problems=_CATEGORY_MANAGEMENT_PROBLEMS,
+            command_key=idempotency_key,
+            instance=instance,
+        )
 
     @router.get(
         "/category-proposals",
@@ -1007,6 +1092,23 @@ _MESSAGING_PROBLEMS = _MutationProblems(
     ),
     code_prefix="messaging",
 )
+
+_CATEGORY_MANAGEMENT_PROBLEMS = _MutationProblems(
+    not_found=(
+        "Categoria non trovata",
+        "La categoria richiesta non esiste o non appartiene a questo profilo.",
+    ),
+    conflict=(
+        "Categoria già aggiornata",
+        "Ricarica le categorie prima di riprovare.",
+    ),
+    invalid=(
+        "Modifica non valida",
+        "La categoria non può essere modificata o archiviata in questo stato.",
+    ),
+    code_prefix="category",
+)
+
 
 _CATEGORY_REVIEW_PROBLEMS = _MutationProblems(
     not_found=(

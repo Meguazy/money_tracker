@@ -76,6 +76,7 @@ class Category:
         aliases: Alternative owner-facing names.
         status: Whether the node accepts new allocations.
         seeded: Whether the node belongs to the accepted initial taxonomy.
+        version: Optimistic version of owner-managed display and lifecycle state.
     """
 
     id: UUID
@@ -85,6 +86,7 @@ class Category:
     aliases: tuple[str, ...] = ()
     status: CategoryStatus = CategoryStatus.ACTIVE
     seeded: bool = False
+    version: int = 1
 
     def __post_init__(self) -> None:
         """Validate local category fields independent of repository state."""
@@ -92,6 +94,8 @@ class Category:
         normalize_category_name(self.name)
         if not self.description.strip():
             raise DomainError("category description cannot be empty")
+        if self.version < 1:
+            raise DomainError("category version must be positive")
         normalized_aliases = tuple(
             normalize_category_name(alias) for alias in self.aliases
         )
@@ -105,6 +109,56 @@ class Category:
         """Return the canonical comparison form of the display name."""
 
         return normalize_category_name(self.name)
+
+    def renamed(self, name: str) -> Category:
+        """Return this active node with a new normalized display name.
+
+        Renaming preserves the stable identifier, hierarchy, semantics, aliases,
+        seed provenance, and history. The enclosing `Taxonomy` must validate
+        the result so the new name cannot collide with another active name or
+        alias.
+
+        Args:
+            name: New owner-facing name.
+
+        Returns:
+            A replacement node at the next optimistic version.
+
+        Raises:
+            InvalidTransitionError: If this node is archived or the display name
+                is unchanged.
+            DomainError: If the new name is empty.
+        """
+
+        if self.status is not CategoryStatus.ACTIVE:
+            raise InvalidTransitionError("only an active category can be renamed")
+        display_name = " ".join(name.strip().split())
+        normalize_category_name(display_name)
+        if display_name == self.name:
+            raise InvalidTransitionError("category rename must change its name")
+        return replace(self, name=display_name, version=self.version + 1)
+
+    def archived(self) -> Category:
+        """Return this node unavailable for new allocations.
+
+        Archiving preserves every historical reference and never reparents or
+        deletes the node. The enclosing `Taxonomy` validates that an active
+        child is not left below an archived root.
+
+        Returns:
+            An archived replacement at the next optimistic version.
+
+        Raises:
+            InvalidTransitionError: If this node is already archived.
+        """
+
+        if self.status is not CategoryStatus.ACTIVE:
+            raise InvalidTransitionError("only an active category can be archived")
+        return replace(
+            self,
+            status=CategoryStatus.ARCHIVED,
+            version=self.version + 1,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -331,6 +385,55 @@ class Taxonomy:
         """
 
         return Taxonomy((*self._categories, category))
+
+    def rename_category(self, category_id: UUID, name: str) -> Taxonomy:
+        """Rename one active node while revalidating the complete taxonomy.
+
+        Args:
+            category_id: Stable node to rename.
+            name: New owner-facing display name.
+
+        Returns:
+            A taxonomy containing the renamed node.
+
+        Raises:
+            TaxonomyError: If the identifier is unknown or the new name makes
+                active names and aliases ambiguous.
+            InvalidTransitionError: If the node is archived or unchanged.
+        """
+
+        current = self.category(category_id)
+        return self._replace_category(current.renamed(name))
+
+    def archive_category(self, category_id: UUID) -> Taxonomy:
+        """Archive one active node without deleting or reparenting history.
+
+        Args:
+            category_id: Stable node to archive.
+
+        Returns:
+            A taxonomy containing the archived node.
+
+        Raises:
+            TaxonomyError: If the identifier is unknown or a root still has an
+                active child.
+            InvalidTransitionError: If the node is already archived.
+        """
+
+        current = self.category(category_id)
+        return self._replace_category(current.archived())
+
+    def _replace_category(self, replacement: Category) -> Taxonomy:
+        """Replace one known node and re-run every taxonomy invariant."""
+
+        if replacement.id not in self._by_id:
+            raise TaxonomyError("replacement category does not exist")
+        return Taxonomy(
+            tuple(
+                replacement if category.id == replacement.id else category
+                for category in self._categories
+            )
+        )
 
     def ancestor_ids(self, category_id: UUID) -> tuple[UUID, ...]:
         """Return the assigned category and its optional root for roll-ups.

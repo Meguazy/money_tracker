@@ -3,9 +3,9 @@
 - Status: accepted
 - Implementation: monthly overview, calendar analytics,
   transaction/manual-lifecycle, multi-allocation editing, budget-planning,
-  category-review,
-  receipt-metadata-review, and messaging-operations slices, HTTP security, and
-  host deployment implemented; remaining Step 5 surface in progress
+  category management/review, receipt-metadata-review, messaging-operations,
+  HTTP security, and host deployment implemented; remaining Step 5 surface in
+  progress
 - Date: 2026-09-01
 
 ## Context
@@ -172,6 +172,24 @@ manual active-category reuse, cancellation, and accessible empty/error states.
 Model-backed re-proposal remains in the conversational workflow and no
 model-visible contract changes.
 
+
+The category-management slice adds a separate
+`CategoryManagementMutationAdapter` over `CategoryAdministrationService`.
+`GET /api/v1/categories` returns active and archived stable nodes, hierarchy,
+guidance, aliases, seed provenance, optimistic version, and soft warnings.
+Rename accepts only a display name and observed version; archive accepts only
+the version. Profile and actor are injected, and neither operation can delete,
+reparent, create, or change inclusion semantics.
+
+Both mutations use the common CSRF and idempotency-header boundary. The
+repository locks the complete profile taxonomy before revalidating names,
+aliases, hierarchy, and active-parent rules, then commits the one-version
+replacement, command claim, and audit atomically. The React panel confirms
+archive explicitly and disables it for a root with active children. Successful
+work invalidates category, proposal, movement, overview, analytics, and budget
+reads because each can display a name or active choice. The web component has
+no proposal-creation or model dependency, so this surface implements AD-008's
+existing policy without changing the evaluated category-fit boundary.
 The receipt slice adds a `ReceiptReviewMutationAdapter` over the existing
 `ReceiptMetadataService`. `GET /api/v1/receipts` returns each retained
 original's display filename, decoded media type, exact byte size, storage

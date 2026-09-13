@@ -204,6 +204,30 @@ export type CategoryReviewQueue = {
   active_categories: CategoryReference[];
 };
 
+export type ManagedCategory = {
+  id: string;
+  name: string;
+  description: string;
+  parent_id: string | null;
+  parent_name: string | null;
+  aliases: string[];
+  status: "active" | "archived";
+  seeded: boolean;
+  version: number;
+};
+
+export type CategoryManagement = {
+  categories: ManagedCategory[];
+  warnings: Array<{ code: string; message: string }>;
+};
+
+export type CategoryMutation = {
+  id: string;
+  name: string;
+  status: "active" | "archived";
+  version: number;
+};
+
 export type ReceiptStatus = "stored" | "needs_review" | "approved" | "deleted";
 
 export type Receipt = {
@@ -383,6 +407,36 @@ export function cancelExpense(
 ): Promise<ExpenseMutation> {
   return mutateExpense(
     `/api/v1/expenses/${encodeURIComponent(expenseId)}/cancel`,
+    "POST",
+    { expected_version: expectedVersion },
+  );
+}
+
+export async function loadCategoryManagement(
+  signal?: AbortSignal,
+): Promise<CategoryManagement> {
+  const response = await fetch("/api/v1/categories", { signal });
+  return responseJson<CategoryManagement>(response);
+}
+
+export function renameCategory(
+  categoryId: string,
+  name: string,
+  expectedVersion: number,
+): Promise<CategoryMutation> {
+  return mutate<CategoryMutation>(
+    `/api/v1/categories/${encodeURIComponent(categoryId)}`,
+    "PUT",
+    { name, expected_version: expectedVersion },
+  );
+}
+
+export function archiveCategory(
+  categoryId: string,
+  expectedVersion: number,
+): Promise<CategoryMutation> {
+  return mutate<CategoryMutation>(
+    `/api/v1/categories/${encodeURIComponent(categoryId)}/archive`,
     "POST",
     { expected_version: expectedVersion },
   );

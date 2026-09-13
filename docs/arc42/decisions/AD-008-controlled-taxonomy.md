@@ -4,7 +4,8 @@
 - Implementation: domain policy, stable 10-root/14-child seed, schema,
   PostgreSQL bootstrap, pending-proposal submission, the deterministic
   category-fit boundary, the replay-safe owner decision service that creates a
-  node, and the persistent review that pauses for the owner implemented
+  node, the persistent review that pauses for the owner, and audited versioned
+  rename/archive management implemented
 - Date: 2026-09-01
 
 ## Context
@@ -98,3 +99,14 @@ and its evaluated category-fit boundary. The web process contains no model or
 candidate generator; its complete manual fallback is reuse of any active
 category by name, preserving this decision's owner-only creation authority and
 bounded proposal loop.
+
+Step 5 also implements the already accepted rename/archive policy through a
+separate `CategoryAdministrationService`; it does not grant creation or
+reparenting authority. Both transitions rebuild the complete taxonomy, retain
+stable IDs and immutable semantics, and increment an optimistic version. An
+active parent cannot be archived while an active child depends on it.
+PostgreSQL serializes the profile taxonomy and commits the replacement,
+idempotency claim, and audit atomically. Bootstrap preserves owner-managed seed
+names and archive state rather than treating the original display fields as
+immutable configuration. The local web adapter injects profile and actor,
+accepts only name plus version or version alone, and never exposes deletion.

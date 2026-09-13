@@ -17,6 +17,7 @@ from psycopg import Connection, connect, errors
 from money_tracker.application import (
     MARK_NEEDS_REVIEW_ACTION,
     AggregateNotFoundError,
+    CategoryAdministrationService,
     IdempotencyConflictError,
     OptimisticConcurrencyError,
     ReceiptMetadataService,
@@ -29,6 +30,7 @@ from money_tracker.domain import (
     BalanceMode,
     CategoryAllocation,
     CategoryProposal,
+    CategoryStatus,
     Expense,
     ExpenseStatus,
     FundingClass,
@@ -1172,6 +1174,79 @@ def test_latest_correctable_movement_follows_recording_order(
         )
 
     assert repository.get_latest_correctable_movement(profile.id) == older.id
+
+
+def test_category_management_is_versioned_audited_and_survives_bootstrap(
+    postgres_url: str,
+) -> None:
+    """Persist owner-managed seed state without bootstrap reverting it."""
+
+    upgrade_database(postgres_url)
+    repository = PostgresFinanceRepository(postgres_url)
+    profile = Profile(uuid4())
+    taxonomy = initial_taxonomy()
+    now = datetime(2026, 9, 13, 20, tzinfo=UTC)
+    repository.bootstrap_profile(profile, taxonomy=taxonomy, occurred_at=now)
+    leaf = next(
+        category for category in taxonomy.categories if category.parent_id is not None
+    )
+    service = CategoryAdministrationService(
+        repository,
+        clock=SystemClock(),
+        ids=UUID4Generator(),
+    )
+
+    renamed = service.rename(
+        profile_id=profile.id,
+        category_id=leaf.id,
+        expected_version=1,
+        name="Categoria rinominata test",
+        idempotency_key="category-integration-rename",
+        actor="owner:test",
+        reason="integration rename",
+    )
+    replayed = service.rename(
+        profile_id=profile.id,
+        category_id=leaf.id,
+        expected_version=1,
+        name="Categoria rinominata test",
+        idempotency_key="category-integration-rename",
+        actor="owner:test",
+        reason="integration rename",
+    )
+    archived = service.archive(
+        profile_id=profile.id,
+        category_id=leaf.id,
+        expected_version=2,
+        idempotency_key="category-integration-archive",
+        actor="owner:test",
+        reason="integration archive",
+    )
+
+    assert replayed == renamed
+    assert renamed.name == "Categoria rinominata test"
+    assert renamed.version == 2
+    assert archived.status is CategoryStatus.ARCHIVED
+    assert archived.version == 3
+
+    repository.bootstrap_profile(profile, taxonomy=taxonomy, occurred_at=now)
+    persisted = repository.get_taxonomy(profile.id).category(leaf.id)
+    assert persisted == archived
+
+    with connect(postgres_url) as connection:
+        audits = connection.execute(
+            "SELECT action, prior_version, current_version "
+            "FROM finance.audit_events WHERE aggregate_id = %s",
+            (leaf.id,),
+        ).fetchall()
+        claims = connection.execute(
+            "SELECT count(*) FROM finance.idempotency_records "
+            "WHERE profile_id = %s AND command_type IN "
+            "('rename_category', 'archive_category')",
+            (profile.id,),
+        ).fetchone()
+    assert sorted(audits) == [("archive", 2, 3), ("rename", 1, 2)]
+    assert claims == (2,)
 
 
 def _category_proposal(

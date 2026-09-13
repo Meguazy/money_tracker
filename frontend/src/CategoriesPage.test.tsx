@@ -8,6 +8,7 @@ import type {
   CategoryReviewQueue,
   ExpenseMutation,
 } from "./api";
+import type { CategoryManagement } from "./api";
 import { CategoriesPage } from "./CategoriesPage";
 
 const queue: CategoryReviewQueue = {
@@ -61,6 +62,11 @@ const mutation: ExpenseMutation = {
   version: 3,
 };
 
+const management: CategoryManagement = {
+  categories: [],
+  warnings: [],
+};
+
 function renderPage(loadResult: Promise<CategoryReviewQueue>) {
   const apis = {
     load: vi.fn((_signal?: AbortSignal) => loadResult),
@@ -71,13 +77,18 @@ function renderPage(loadResult: Promise<CategoryReviewQueue>) {
       status: "discarded" as const,
     })),
   };
+  const managementApis = {
+    load: vi.fn(async (_signal?: AbortSignal) => management),
+    rename: vi.fn(),
+    archive: vi.fn(),
+  };
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   render(
     <MantineProvider>
       <QueryClientProvider client={client}>
-        <CategoriesPage apis={apis} />
+        <CategoriesPage apis={apis} managementApis={managementApis} />
       </QueryClientProvider>
     </MantineProvider>,
   );

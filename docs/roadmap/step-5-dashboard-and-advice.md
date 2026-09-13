@@ -6,7 +6,8 @@ Status: **In progress (2026-09-12).** The implemented vertical slices provide
 the loopback same-origin host, deterministic monthly overview and transaction
 register, accessible React shell, audited manual create, correct, post, and
 cancel workflows, the multi-allocation editor for both reconciling dimensions,
-the monthly budget planner, owner review of pending category proposals,
+the monthly budget planner, versioned category rename/archive management, owner
+review of pending category proposals,
 consultation and mandatory review of retained receipt metadata, and browser
 inspection and requeue of the durable messaging queues. Daily, ISO-week,
 monthly, annual, and bounded custom-range analytics now expose separate purpose
@@ -224,6 +225,35 @@ so EVD-004 remains the promoted text baseline.
   verifies terminal proposal and movement state through the production
   repository. No migration, model-visible contract, prompt, threshold, tool,
   or taxonomy policy changed; EVD-004 remains the promoted baseline.
+
+### Category management slice (2026-09-13)
+
+- `/categorie` lists active and archived nodes with hierarchy, guidance,
+  aliases, seed provenance, and optimistic version, alongside proposal review.
+- `CategoryAdministrationService` separates display/lifecycle management from
+  category creation. Rename and archive rebuild the complete `Taxonomy`, keep
+  the stable ID and immutable semantics, and advance one version. A root with
+  an active child is refused; deletion and reparenting are absent by interface.
+- `GET /api/v1/categories`, `PUT /api/v1/categories/{category_id}`, and
+  `POST /api/v1/categories/{category_id}/archive` expose strict, profile-bound
+  contracts. Mutations require CSRF and `Idempotency-Key`, quote the displayed
+  version, and return bounded missing, conflict, and invalid problems.
+- `PostgresFinanceRepository` locks the profile taxonomy before validation and
+  commits replacement, command claim, and audit in one transaction. Reads now
+  retain the stored category version. Re-running bootstrap verifies immutable
+  seed semantics without reverting an owner-managed name or archive state.
+- The React panel asks for explicit archive confirmation, disables a root while
+  it has active children, exposes soft-complexity warnings, and provides
+  labelled rename controls plus loading, error, retry, active, and archived
+  states. Success invalidates every view that uses category names or choices.
+- Domain, application, HTTP, and component tests cover identity preservation,
+  hierarchy refusal, versions, audit, replay, strict JSON, trusted scope,
+  keyboard-accessible actions, and retry behavior. A real PostgreSQL test
+  covers persistence, audit, claims, and bootstrap preservation when the
+  integration database is available.
+- This implements the existing AD-008 policy; it changes no model-visible
+  contract, prompt, routing threshold, category-fit policy, or taxonomy limit.
+  EVD-004 remains promoted and no experiment decision-log entry is required.
 
 ### Receipt metadata and review slice (2026-09-12)
 

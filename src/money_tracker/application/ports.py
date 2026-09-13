@@ -146,6 +146,52 @@ class FinanceAdministrationRepository(Protocol):
         """Claim one command key and create or replace a budget atomically."""
 
 
+class CategoryAdministrationRepository(Protocol):
+    """Persist owner-managed category state behind one audit boundary."""
+
+    def get_taxonomy(self, profile_id: UUID) -> Taxonomy:
+        """Load the complete versioned taxonomy in one owner scope."""
+
+    def get_idempotent_category_command(
+        self,
+        *,
+        profile_id: UUID,
+        idempotency_key: str,
+        command_type: str,
+        request_hash: str,
+    ) -> Category | None:
+        """Return the category named by an identical prior command."""
+
+    def save_category(
+        self,
+        profile_id: UUID,
+        category: Category,
+        *,
+        expected_version: int,
+        idempotency_key: str,
+        command_type: str,
+        request_hash: str,
+        audit_event: AuditEvent,
+    ) -> None:
+        """Claim and replace one category with its audit atomically.
+
+        Args:
+            profile_id: Trusted owner scope.
+            category: Complete replacement display and lifecycle state.
+            expected_version: Version the caller observed.
+            idempotency_key: Stable external command key.
+            command_type: Rename or archive command discriminator.
+            request_hash: Canonical command semantics.
+            audit_event: Immutable event matching the version transition.
+
+        Raises:
+            AggregateNotFoundError: If the category is outside the profile.
+            IdempotencyConflictError: If the key names different semantics.
+            OptimisticConcurrencyError: If the version is stale.
+            DomainError: If current taxonomy state refuses the replacement.
+        """
+
+
 class CategoryProposalRepository(Protocol):
     """Persist category candidates without granting taxonomy mutation authority."""
 

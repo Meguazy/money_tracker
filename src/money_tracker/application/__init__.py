@@ -6,6 +6,13 @@ from money_tracker.application.administration import (
     FinanceAdministrationService,
     budget_request_hash,
 )
+from money_tracker.application.category_administration import (
+    ARCHIVE_CATEGORY_COMMAND,
+    RENAME_CATEGORY_COMMAND,
+    CategoryAdministrationService,
+    CategoryManagement,
+    category_request_hash,
+)
 from money_tracker.application.errors import (
     AggregateNotFoundError,
     IdempotencyConflictError,
@@ -14,6 +21,7 @@ from money_tracker.application.errors import (
 )
 from money_tracker.application.finance import FinanceService
 from money_tracker.application.ports import (
+    CategoryAdministrationRepository,
     CategoryProposalRepository,
     CategoryReviewRepository,
     Clock,
@@ -56,11 +64,16 @@ from money_tracker.application.review import (
 )
 
 __all__ = [
+    "ARCHIVE_CATEGORY_COMMAND",
     "APPROVE_ACTION",
     "CREATE_BUDGET_COMMAND",
     "MARK_NEEDS_REVIEW_ACTION",
     "OWNER_REVIEW_PROVENANCE",
+    "RENAME_CATEGORY_COMMAND",
     "REPLACE_BUDGET_COMMAND",
+    "CategoryAdministrationRepository",
+    "CategoryAdministrationService",
+    "CategoryManagement",
     "AggregateNotFoundError",
     "Clock",
     "CategoryProposalRepository",
@@ -80,6 +93,7 @@ __all__ = [
     "ReportingRepository",
     "ReportingService",
     "TransactionRegister",
+    "category_request_hash",
     "BudgetPlan",
     "BudgetPlanEntry",
     "BudgetsAtRisk",

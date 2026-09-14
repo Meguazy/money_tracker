@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 from fastapi.testclient import TestClient
+from psycopg import connect
 
 from money_tracker.application import (
     CategoryAdministrationService,
@@ -17,6 +18,7 @@ from money_tracker.application import (
     CategoryReviewService,
     FinanceAdministrationService,
     FinanceService,
+    FundingSourceAdministrationService,
     ReceiptMetadataService,
     ReportingService,
 )
@@ -54,6 +56,7 @@ from money_tracker.web.mutations import (
     CategoryManagementMutationAdapter,
     CategoryReviewMutationAdapter,
     ExpenseMutationAdapter,
+    FundingSourceMutationAdapter,
     MessagingOperationsAdapter,
     ReceiptReviewMutationAdapter,
 )
@@ -95,6 +98,22 @@ def _categories(
             clock=SystemClock(),
             ids=ids,
         )
+    )
+
+
+def _funding_sources(
+    repository: PostgresFinanceRepository,
+    ids: UUID4Generator,
+) -> FundingSourceMutationAdapter:
+    """Bind source administration to the real finance repository."""
+
+    return FundingSourceMutationAdapter(
+        FundingSourceAdministrationService(
+            repository,
+            clock=SystemClock(),
+            ids=ids,
+        ),
+        ids=ids,
     )
 
 
@@ -252,6 +271,7 @@ def test_monthly_endpoint_reads_real_postgresql_state(postgres_url: str) -> None
             ids=ids,
         ),
         categories=_categories(repository, ids),
+        funding_sources=_funding_sources(repository, ids),
         category_reviews=CategoryReviewMutationAdapter(
             CategoryReviewService(repository, repository, clock=SystemClock(), ids=ids)
         ),
@@ -358,6 +378,7 @@ def test_range_analytics_resolve_calendar_and_both_dimensions_in_postgresql(
             ids=ids,
         ),
         categories=_categories(repository, ids),
+        funding_sources=_funding_sources(repository, ids),
         category_reviews=CategoryReviewMutationAdapter(
             CategoryReviewService(repository, repository, clock=SystemClock(), ids=ids)
         ),
@@ -412,6 +433,173 @@ def test_range_analytics_resolve_calendar_and_both_dimensions_in_postgresql(
 
 
 @pytest.mark.postgres
+def test_funding_source_and_wallet_control_plane_is_atomic_and_replay_safe(
+    postgres_url: str,
+) -> None:
+    """Manage source lifecycle and expiry-aware wallet state through real PostgreSQL."""
+
+    upgrade_database(postgres_url)
+    repository = PostgresFinanceRepository(postgres_url)
+    profile = Profile(uuid4())
+    now = SystemClock().now()
+    repository.bootstrap_profile(profile, taxonomy=initial_taxonomy(), occurred_at=now)
+    card = FundingSource(
+        id=uuid4(),
+        profile_id=profile.id,
+        name="Carta integrazione fonti",
+        funding_class=FundingClass.PERSONAL_FUNDS,
+        balance_mode=BalanceMode.UNTRACKED,
+        is_default=True,
+    )
+    repository.create_funding_source(card, occurred_at=now)
+    ids = UUID4Generator()
+    app = create_app(
+        settings=WebSettings(static_dir=None),
+        profile_id=profile.id,
+        reporting=ReportingService(repository),
+        mutations=ExpenseMutationAdapter(
+            FinanceService(repository, clock=SystemClock(), ids=ids),
+            ids=ids,
+        ),
+        budgets=BudgetMutationAdapter(
+            FinanceAdministrationService(repository, clock=SystemClock(), ids=ids),
+            ids=ids,
+        ),
+        categories=_categories(repository, ids),
+        funding_sources=_funding_sources(repository, ids),
+        category_reviews=CategoryReviewMutationAdapter(
+            CategoryReviewService(repository, repository, clock=SystemClock(), ids=ids)
+        ),
+        receipts=ReceiptReviewMutationAdapter(
+            ReceiptMetadataService(repository, clock=SystemClock(), ids=ids)
+        ),
+        messaging=_messaging(postgres_url),
+        readiness_check=lambda: repository.profile_exists(profile.id),
+    )
+    client = TestClient(app, base_url="http://localhost:8000")
+    origin = {"origin": "http://localhost:8000"}
+    csrf = client.get("/api/v1/csrf", headers=origin).json()["token"]
+
+    def headers(command_key: str) -> dict[str, str]:
+        """Build same-origin CSRF and idempotency headers."""
+
+        return {
+            **origin,
+            "x-csrf-token": csrf,
+            "Idempotency-Key": command_key,
+            "content-type": "application/json",
+        }
+
+    create_body = {
+        "name": "Benefit integrazione fonti",
+        "funding_class": "benefit",
+        "balance_mode": "ledger",
+        "is_default": False,
+    }
+    created = client.post(
+        "/api/v1/funding-sources",
+        headers=headers("integration-source-create"),
+        json=create_body,
+    )
+    replayed = client.post(
+        "/api/v1/funding-sources",
+        headers=headers("integration-source-create"),
+        json=create_body,
+    )
+    assert created.status_code == replayed.status_code == 201
+    assert replayed.json() == created.json()
+    wallet_id = created.json()["id"]
+
+    expires_on = (now.astimezone(ROME).date() + timedelta(days=30)).isoformat()
+    opening = client.post(
+        f"/api/v1/funding-sources/{wallet_id}/wallet-entries",
+        headers=headers("integration-wallet-opening"),
+        json={
+            "entry_type": "opening",
+            "amount": {"minor_units": 10000, "currency": "EUR"},
+            "occurred_at": (now - timedelta(minutes=5)).isoformat(),
+            "expires_on": expires_on,
+        },
+    )
+    rejected = client.post(
+        f"/api/v1/funding-sources/{wallet_id}/wallet-entries",
+        headers=headers("integration-wallet-invalid"),
+        json={
+            "entry_type": "adjustment",
+            "amount": {"minor_units": -10001, "currency": "EUR"},
+            "occurred_at": (now - timedelta(minutes=1)).isoformat(),
+            "expires_on": None,
+        },
+    )
+    assert opening.status_code == 201
+    assert rejected.status_code == 422
+    assert rejected.json()["code"] == "wallet_invalid"
+
+    snapshot = client.get("/api/v1/funding-sources", headers=origin)
+    assert snapshot.status_code == 200
+    wallet = next(
+        item for item in snapshot.json()["sources"] if item["id"] == wallet_id
+    )
+    assert wallet["availability"] == {
+        "booked_balance": {"minor_units": 10000, "currency": "EUR"},
+        "available_balance": {"minor_units": 10000, "currency": "EUR"},
+        "expiring": [
+            {
+                "expires_on": expires_on,
+                "amount": {"minor_units": 10000, "currency": "EUR"},
+            }
+        ],
+    }
+    assert len(wallet["entries"]) == 1
+    assert "note" not in wallet["entries"][0]
+    assert "profile_id" not in snapshot.text
+
+    renamed = client.put(
+        f"/api/v1/funding-sources/{wallet_id}",
+        headers=headers("integration-source-rename"),
+        json={"name": "Benefit rinominato", "expected_version": 1},
+    )
+    changed_default = client.post(
+        f"/api/v1/funding-sources/{wallet_id}/default",
+        headers=headers("integration-source-default"),
+        json={
+            "expected_version": 2,
+            "expected_previous_default_id": str(card.id),
+            "expected_previous_default_version": 1,
+        },
+    )
+    archived_old = client.post(
+        f"/api/v1/funding-sources/{card.id}/archive",
+        headers=headers("integration-source-archive"),
+        json={"expected_version": 2},
+    )
+    refused_default_archive = client.post(
+        f"/api/v1/funding-sources/{wallet_id}/archive",
+        headers=headers("integration-source-archive-default"),
+        json={"expected_version": 3},
+    )
+    assert renamed.json()["version"] == 2
+    assert changed_default.json()["version"] == 3
+    assert archived_old.json()["status"] == "archived"
+    assert refused_default_archive.status_code == 422
+
+    with connect(postgres_url) as connection:
+        counts = connection.execute(
+            "SELECT "
+            "(SELECT count(*) FROM finance.wallet_entries WHERE profile_id = %s), "
+            "(SELECT count(*) FROM finance.audit_events WHERE profile_id = %s), "
+            "(SELECT count(*) FROM finance.idempotency_records WHERE profile_id = %s)",
+            (profile.id, profile.id, profile.id),
+        ).fetchone()
+        default_pointer = connection.execute(
+            "SELECT default_funding_source_id FROM finance.profiles WHERE id = %s",
+            (profile.id,),
+        ).fetchone()
+    assert counts == (1, 6, 5)
+    assert default_pointer == (UUID(wallet_id),)
+
+
+@pytest.mark.postgres
 def test_manual_expense_workflow_is_replay_safe_and_visible(
     postgres_url: str,
 ) -> None:
@@ -447,6 +635,7 @@ def test_manual_expense_workflow_is_replay_safe_and_visible(
             ids=ids,
         ),
         categories=_categories(repository, ids),
+        funding_sources=_funding_sources(repository, ids),
         category_reviews=CategoryReviewMutationAdapter(
             CategoryReviewService(repository, repository, clock=SystemClock(), ids=ids)
         ),
@@ -615,6 +804,7 @@ def test_multi_allocation_movement_survives_correction_in_real_postgresql(
             ids=ids,
         ),
         categories=_categories(repository, ids),
+        funding_sources=_funding_sources(repository, ids),
         category_reviews=CategoryReviewMutationAdapter(
             CategoryReviewService(repository, repository, clock=SystemClock(), ids=ids)
         ),
@@ -848,6 +1038,7 @@ def test_budget_plan_is_configured_and_corrected_in_real_postgresql(
             ids=ids,
         ),
         categories=_categories(repository, ids),
+        funding_sources=_funding_sources(repository, ids),
         category_reviews=CategoryReviewMutationAdapter(
             CategoryReviewService(repository, repository, clock=SystemClock(), ids=ids)
         ),
@@ -1001,6 +1192,7 @@ def test_budget_routes_refuse_unknown_and_inactive_categories(
             ids=ids,
         ),
         categories=_categories(repository, ids),
+        funding_sources=_funding_sources(repository, ids),
         category_reviews=CategoryReviewMutationAdapter(
             CategoryReviewService(repository, repository, clock=SystemClock(), ids=ids)
         ),
@@ -1145,6 +1337,7 @@ def test_category_proposals_are_resolved_through_real_services(
             ids=ids,
         ),
         categories=_categories(repository, ids),
+        funding_sources=_funding_sources(repository, ids),
         category_reviews=CategoryReviewMutationAdapter(review),
         receipts=ReceiptReviewMutationAdapter(
             ReceiptMetadataService(repository, clock=SystemClock(), ids=ids)
@@ -1286,6 +1479,7 @@ def test_receipt_review_is_operated_through_http_and_real_postgresql(
             ids=ids,
         ),
         categories=_categories(repository, ids),
+        funding_sources=_funding_sources(repository, ids),
         category_reviews=CategoryReviewMutationAdapter(
             CategoryReviewService(repository, repository, clock=SystemClock(), ids=ids)
         ),
@@ -1489,6 +1683,7 @@ def test_messaging_operations_are_inspected_and_requeued_over_http(
             ids=ids,
         ),
         categories=_categories(repository, ids),
+        funding_sources=_funding_sources(repository, ids),
         category_reviews=CategoryReviewMutationAdapter(
             CategoryReviewService(repository, repository, clock=clock, ids=ids)
         ),

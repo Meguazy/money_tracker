@@ -7,7 +7,7 @@
   dispatch, durable Telegram gateway/worker, pairing,
   health/replay/resend/latency, the local monthly dashboard/API, calendar
   analytics, manual movement lifecycle with multi-allocation editing, monthly
-  budget planning,
+  budget planning, funding-source lifecycle and expiry-aware wallet administration,
   category-proposal review, receipt metadata consultation and its mandatory
   review, browser inspection and requeue of the durable messaging queues, and
   checked-in host service units
@@ -15,7 +15,7 @@
   expense, wallet, budget, pending category-proposal, and versioned receipt-review
   repository operations, a safe local receipt-media adapter, and verified
   encrypted backup with an isolated restore drill
-- Planned operations: remaining dashboard workflows, merchant analytics,
+- Planned operations: settings and remaining dashboard workflows, merchant analytics,
   explicit period comparisons, web advice, browser E2E acceptance, backup
   scheduling and clean-machine restore,
   workflow-worker receipt wiring, receipt extraction, and media deletion
@@ -29,8 +29,8 @@ the referenced file or entry point exists in the repository.
 
 - [Local Web](web.md): build, loopback API/dashboard, browser controls, health,
   systemd, verification, and rollback for the implemented Step 5 slices,
-  including the metadata-only receipt review surface and the content-free
-  messaging operations surface.
+  including funding-source/wallet administration, the metadata-only receipt
+  review surface, and the content-free messaging operations surface.
 - [Telegram](telegram.md): BotFather preparation, private-owner pairing target,
   long polling, the 24-hour limitation, testing, and token response.
 - [Local Runtime](local-runtime.md): current foundation, target process
@@ -73,7 +73,8 @@ the referenced file or entry point exists in the repository.
   workflows, restart/reboot, latency, and fault acceptance on 2026-09-11.
 - The FastAPI process, monthly overview and transaction endpoints, compiled
   React overview/register, audited manual lifecycle, multi-allocation editing
-  of both reconciling dimensions, replay-safe monthly budget planning,
+  of both reconciling dimensions, replay-safe monthly budget planning, versioned funding-source lifecycle and
+  expiry-aware wallet administration,
   deterministic category-proposal review, replay-safe receipt metadata review,
   messaging queue consultation with pinned inbox replay and outbox resend,
   local browser controls, and API
@@ -82,7 +83,7 @@ the referenced file or entry point exists in the repository.
   messaging surface carries counts, ages, identifiers and reason codes only: it
   never returns a message, a bot key, or a Bot API credential, and it cannot
   send, pair, move the offset, or delete. The
-  other Step 5 views and full
+  settings and remaining analytical Step 5 views and full
   browser acceptance remain open.
 - Langfuse 4.26.0 and every dependency are pinned by digest. The non-cluster
   repair and health checks pass with the pre-existing volumes preserved.
@@ -91,7 +92,7 @@ the referenced file or entry point exists in the repository.
   extraction v6, category-fit v6, tool-selection v5, routing confidence 0.5,
   and `explicit-finance-scope-v1`. `model-only-v0` remains the direct
   read-selection rollback; no receipt model is promoted.
-- Expense, wallet, budget, pending-proposal, and content-idempotent receipt
+- Expense, versioned funding-source, expiry-aware wallet, budget, pending-proposal, and content-idempotent receipt
   metadata operations exist. Receipt review/approval transitions are versioned,
   audited, replay-safe, concurrency-safe, and reachable from `/scontrini`;
   receipt extraction and deletion remain open. The private content-addressed

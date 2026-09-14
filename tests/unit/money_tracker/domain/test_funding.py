@@ -15,6 +15,7 @@ from money_tracker.domain import (
     WalletEntryType,
     WalletError,
     require_available_balance,
+    wallet_availability,
     wallet_balance,
 )
 
@@ -121,3 +122,155 @@ def test_wallet_consumption_must_be_positive() -> None:
     entries = (_entry(source, WalletEntryType.CREDIT, 100),)
     with pytest.raises(WalletError, match="must be positive"):
         require_available_balance(source, entries, Money(-1))
+
+
+def test_wallet_availability_consumes_earliest_expiry_first() -> None:
+    """Keep later-expiring credit available when an earlier lot can cover use."""
+
+    source = _source()
+    entries = (
+        WalletEntry(
+            id=uuid4(),
+            profile_id=source.profile_id,
+            funding_source_id=source.id,
+            entry_type=WalletEntryType.CREDIT,
+            amount=Money(1000),
+            occurred_at=datetime(2026, 9, 1, 12, tzinfo=ROME),
+            expires_on=date(2026, 9, 30),
+        ),
+        WalletEntry(
+            id=uuid4(),
+            profile_id=source.profile_id,
+            funding_source_id=source.id,
+            entry_type=WalletEntryType.CREDIT,
+            amount=Money(2000),
+            occurred_at=datetime(2026, 9, 2, 12, tzinfo=ROME),
+            expires_on=date(2026, 10, 31),
+        ),
+        WalletEntry(
+            id=uuid4(),
+            profile_id=source.profile_id,
+            funding_source_id=source.id,
+            entry_type=WalletEntryType.DEBIT,
+            amount=Money(-1200),
+            occurred_at=datetime(2026, 9, 3, 12, tzinfo=ROME),
+        ),
+    )
+
+    state = wallet_availability(
+        source,
+        entries,
+        as_of=datetime(2026, 9, 4, 12, tzinfo=ROME),
+    )
+
+    assert state.booked_balance == Money(1800)
+    assert state.available_balance == Money(1800)
+    assert [(lot.expires_on, lot.amount) for lot in state.expiring] == [
+        (date(2026, 10, 31), Money(1800))
+    ]
+
+
+def test_wallet_availability_excludes_expired_credit_without_rewriting_ledger() -> None:
+    """Separate immutable booked value from spendable value after expiry."""
+
+    source = _source()
+    credit = WalletEntry(
+        id=uuid4(),
+        profile_id=source.profile_id,
+        funding_source_id=source.id,
+        entry_type=WalletEntryType.CREDIT,
+        amount=Money(2500),
+        occurred_at=datetime(2026, 9, 1, 12, tzinfo=ROME),
+        expires_on=date(2026, 9, 30),
+    )
+
+    state = wallet_availability(
+        source,
+        (credit,),
+        as_of=datetime(2026, 10, 1, 0, 1, tzinfo=ROME),
+    )
+
+    assert state.booked_balance == Money(2500)
+    assert state.available_balance == Money.zero()
+    assert state.expiring == ()
+
+
+def test_wallet_availability_rejects_consumption_after_credit_expired() -> None:
+    """Refuse a debit that booked history could cover only with expired value."""
+
+    source = _source()
+    entries = (
+        WalletEntry(
+            id=uuid4(),
+            profile_id=source.profile_id,
+            funding_source_id=source.id,
+            entry_type=WalletEntryType.CREDIT,
+            amount=Money(1000),
+            occurred_at=datetime(2026, 9, 1, 12, tzinfo=ROME),
+            expires_on=date(2026, 9, 1),
+        ),
+        WalletEntry(
+            id=uuid4(),
+            profile_id=source.profile_id,
+            funding_source_id=source.id,
+            entry_type=WalletEntryType.DEBIT,
+            amount=Money(-100),
+            occurred_at=datetime(2026, 9, 2, 12, tzinfo=ROME),
+        ),
+    )
+
+    with pytest.raises(WalletError, match="insufficient available"):
+        wallet_availability(
+            source,
+            entries,
+            as_of=datetime(2026, 9, 2, 12, tzinfo=ROME),
+        )
+
+
+def test_negative_adjustment_can_write_down_expired_booked_value() -> None:
+    """Allow an immutable write-down without reviving expired availability."""
+
+    source = _source()
+    entries = (
+        WalletEntry(
+            id=uuid4(),
+            profile_id=source.profile_id,
+            funding_source_id=source.id,
+            entry_type=WalletEntryType.CREDIT,
+            amount=Money(1000),
+            occurred_at=datetime(2026, 9, 1, 12, tzinfo=ROME),
+            expires_on=date(2026, 9, 1),
+        ),
+        WalletEntry(
+            id=uuid4(),
+            profile_id=source.profile_id,
+            funding_source_id=source.id,
+            entry_type=WalletEntryType.ADJUSTMENT,
+            amount=Money(-1000),
+            occurred_at=datetime(2026, 9, 2, 12, tzinfo=ROME),
+        ),
+    )
+
+    state = wallet_availability(
+        source, entries, as_of=datetime(2026, 9, 2, 12, tzinfo=ROME)
+    )
+
+    assert state.booked_balance == Money.zero()
+    assert state.available_balance == Money.zero()
+    assert state.expiring == ()
+
+
+def test_credit_expiry_chronology_uses_rome_calendar() -> None:
+    """Reject an expiry before the Rome day even across a UTC date boundary."""
+
+    source = _source()
+    with pytest.raises(WalletError, match="cannot precede"):
+        WalletEntry(
+            id=uuid4(),
+            profile_id=source.profile_id,
+            funding_source_id=source.id,
+            entry_type=WalletEntryType.CREDIT,
+            amount=Money(100),
+            occurred_at=datetime(2026, 9, 1, 22, 30, tzinfo=ZoneInfo("UTC")),
+            expires_on=date(2026, 9, 1),
+        )

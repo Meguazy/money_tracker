@@ -2,7 +2,7 @@
 
 - Status: accepted
 - Implementation: foundation, finance schema, expense/wallet/budget repository
-  operations, replay-safe correction/undo/category-review/budget/receipt-review
+  operations, replay-safe correction/undo/category-review/budget/receipt-review/funding-source
   command claims, pending-proposal persistence, receipt review, and durable
   messaging persistence implemented; remaining adapters planned
 - Date: 2026-09-01
@@ -61,6 +61,17 @@ successive steps and each step is its own command; the claim, the state change,
 and the audit commit together, so a retry replays and a different decision on
 one observed version conflicts. The table is general rather than
 expense-shaped, which is why none of these families needed a migration.
+Funding-source create, rename, default movement, and archive plus manual wallet
+append form another command family. Source lifecycle changes serialize on the
+profile and affected source rows; moving the default updates both source
+versions and the profile pointer, while archive rechecks zero booked and
+available balance. Each command claim, state change, and audit set commits
+atomically. Wallet append locks the source, applies AD-020 availability, and
+rolls back a rejected overdraft with its claim. A real concurrent repository
+test also proves that identical source-create retries with different generated
+candidates converge on the one stored identity. No migration was needed because
+source versions, wallet history, audit, and the general claim table already
+exist.
 Roadmap Step 4 migration `20260909_0005` adds environment-scoped offsets,
 minimum normalized inbox rows, bounded claim/retry/dead-letter state, unique
 logical outbox messages, hashed one-use pairing, owner bindings, and scoped

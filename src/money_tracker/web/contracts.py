@@ -6,7 +6,7 @@ from datetime import date
 from typing import Literal, Self, cast
 from uuid import UUID
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
 
 from money_tracker.api.contracts import ExpenseCreateRequest, MoneyContract
 from money_tracker.application import (
@@ -14,6 +14,7 @@ from money_tracker.application import (
     BudgetPlanEntry,
     CategoryManagement,
     CategoryReviewQueue,
+    FundingSourceManagement,
     MonthlyBudgetPositions,
     MonthlyOverview,
     RangeOverview,
@@ -28,6 +29,7 @@ from money_tracker.domain import (
     Expense,
     ExpenseStatus,
     FundingClass,
+    FundingSource,
     FundingSourceStatus,
     Money,
     MonthlyBudget,
@@ -35,6 +37,8 @@ from money_tracker.domain import (
     ReceiptMetadata,
     ReceiptStatus,
     ResolvedPeriod,
+    WalletEntry,
+    WalletEntryType,
     YearMonth,
 )
 from money_tracker.messaging import (
@@ -385,6 +389,195 @@ class FundingSourceReferenceContract(_WebContract):
     balance_mode: BalanceMode
     status: FundingSourceStatus
     is_default: bool
+
+
+class ExpiringWalletBalanceContract(_WebContract):
+    """One remaining dated wallet lot after deterministic consumption."""
+
+    expires_on: date
+    amount: MoneyContract
+
+
+class WalletAvailabilityContract(_WebContract):
+    """Authoritative tracked-wallet balances at one observation instant."""
+
+    booked_balance: MoneyContract
+    available_balance: MoneyContract
+    expiring: tuple[ExpiringWalletBalanceContract, ...]
+
+
+class WalletEntryContract(_WebContract):
+    """Immutable wallet movement without operator notes or trusted scope."""
+
+    id: UUID
+    entry_type: WalletEntryType
+    amount: MoneyContract
+    occurred_at: AwareDatetime
+    expires_on: date | None
+    expense_id: UUID | None
+
+    @classmethod
+    def from_domain(cls, entry: WalletEntry) -> Self:
+        """Map one ledger row while deliberately omitting its optional note."""
+
+        return cls(
+            id=entry.id,
+            entry_type=entry.entry_type,
+            amount=MoneyContract(minor_units=entry.amount.minor_units),
+            occurred_at=entry.occurred_at,
+            expires_on=entry.expires_on,
+            expense_id=entry.expense_id,
+        )
+
+
+class ManagedFundingSourceContract(_WebContract):
+    """One source and wallet details safe for the local control plane."""
+
+    id: UUID
+    name: str
+    funding_class: FundingClass
+    balance_mode: BalanceMode
+    status: FundingSourceStatus
+    is_default: bool
+    version: int = Field(ge=1)
+    availability: WalletAvailabilityContract | None
+    entries: tuple[WalletEntryContract, ...]
+
+
+class FundingSourceManagementResponse(_WebContract):
+    """Complete source administration snapshot for the trusted profile."""
+
+    observed_at: AwareDatetime
+    sources: tuple[ManagedFundingSourceContract, ...]
+
+    @classmethod
+    def from_application(cls, management: FundingSourceManagement) -> Self:
+        """Map sources without exposing profile identity, notes, or command data."""
+
+        return cls(
+            observed_at=management.observed_at,
+            sources=tuple(
+                ManagedFundingSourceContract(
+                    id=item.source.id,
+                    name=item.source.name,
+                    funding_class=item.source.funding_class,
+                    balance_mode=item.source.balance_mode,
+                    status=item.source.status,
+                    is_default=item.source.is_default,
+                    version=item.source.version,
+                    availability=(
+                        None
+                        if item.availability is None
+                        else WalletAvailabilityContract(
+                            booked_balance=MoneyContract(
+                                minor_units=item.availability.booked_balance.minor_units
+                            ),
+                            available_balance=MoneyContract(
+                                minor_units=item.availability.available_balance.minor_units
+                            ),
+                            expiring=tuple(
+                                ExpiringWalletBalanceContract(
+                                    expires_on=lot.expires_on,
+                                    amount=MoneyContract(
+                                        minor_units=lot.amount.minor_units
+                                    ),
+                                )
+                                for lot in item.availability.expiring
+                            ),
+                        )
+                    ),
+                    entries=tuple(
+                        WalletEntryContract.from_domain(entry)
+                        for entry in reversed(item.entries)
+                    ),
+                )
+                for item in management.sources
+            ),
+        )
+
+
+class FundingSourceCreateRequest(_WebContract):
+    """Create one active funding label or tracked wallet."""
+
+    name: str = Field(min_length=1, max_length=200)
+    funding_class: FundingClass
+    balance_mode: BalanceMode
+    is_default: bool = False
+
+
+class FundingSourceRenameRequest(_WebContract):
+    """Rename one source from the exact displayed version."""
+
+    name: str = Field(min_length=1, max_length=200)
+    expected_version: int = Field(ge=1)
+
+
+class FundingSourceArchiveRequest(_WebContract):
+    """Archive one non-default zero-balance source without deleting history."""
+
+    expected_version: int = Field(ge=1)
+
+
+class FundingSourceDefaultRequest(_WebContract):
+    """Move the default from the complete state the browser observed."""
+
+    expected_version: int = Field(ge=1)
+    expected_previous_default_id: UUID | None
+    expected_previous_default_version: int | None = Field(default=None, ge=1)
+
+    @model_validator(mode="after")
+    def validate_previous_default_snapshot(self) -> Self:
+        """Require previous default identity and version as one snapshot."""
+
+        if (self.expected_previous_default_id is None) != (
+            self.expected_previous_default_version is None
+        ):
+            raise ValueError("previous default identity and version must be paired")
+        return self
+
+
+class WalletEntryCreateRequest(_WebContract):
+    """Append a manual opening, credit, or adjustment to one tracked wallet."""
+
+    entry_type: Literal["opening", "credit", "adjustment"]
+    amount: MoneyContract
+    occurred_at: AwareDatetime
+    expires_on: date | None = None
+
+
+class FundingSourceMutationResponse(_WebContract):
+    """Return source identity and state needed to refresh after a mutation."""
+
+    id: UUID
+    name: str
+    status: FundingSourceStatus
+    is_default: bool
+    version: int = Field(ge=1)
+
+    @classmethod
+    def from_domain(cls, source: FundingSource) -> Self:
+        """Map one source without trusted profile or financial history."""
+
+        return cls(
+            id=source.id,
+            name=source.name,
+            status=source.status,
+            is_default=source.is_default,
+            version=source.version,
+        )
+
+
+class WalletEntryMutationResponse(_WebContract):
+    """Return immutable entry identity after an append or replay."""
+
+    id: UUID
+    entry_type: WalletEntryType
+
+    @classmethod
+    def from_domain(cls, entry: WalletEntry) -> Self:
+        """Map an entry without returning owner notes, scope, or amount."""
+
+        return cls(id=entry.id, entry_type=entry.entry_type)
 
 
 class TransactionCategoryAllocationContract(_WebContract):

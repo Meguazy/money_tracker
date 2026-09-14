@@ -12,19 +12,26 @@ from money_tracker.application import (
     MARK_NEEDS_REVIEW_ACTION,
     CategoryManagement,
     CategoryReviewQueue,
+    FundingSourceManagement,
     IdempotencyConflictError,
     IdGenerator,
     receipt_review_identity,
 )
 from money_tracker.domain import (
+    BalanceMode,
     Category,
     CategoryAllocation,
     Expense,
     ExpenseStatus,
+    FundingClass,
+    FundingSource,
+    FundingSourceStatus,
     Money,
     MonthlyBudget,
     PaymentAllocation,
     ReceiptMetadata,
+    WalletEntry,
+    WalletEntryType,
     YearMonth,
 )
 from money_tracker.messaging import (
@@ -46,8 +53,13 @@ from money_tracker.web.contracts import (
     ExpenseCancelRequest,
     ExpensePostRequest,
     ExpenseReplaceRequest,
+    FundingSourceArchiveRequest,
+    FundingSourceCreateRequest,
+    FundingSourceDefaultRequest,
+    FundingSourceRenameRequest,
     MessagingRequeueRequest,
     ReceiptReviewRequest,
+    WalletEntryCreateRequest,
 )
 from money_tracker.workflows import (
     canonical_request_hash,
@@ -272,12 +284,7 @@ class BudgetWriter(Protocol):
 
 
 class BudgetMutationAdapter:
-    """Translate strict browser budget commands into existing use cases.
-
-    Wallet entries stay out of this adapter deliberately. They are a separate
-    authority with their own balance consequences, and Step 5 exposes no
-    browser route for them.
-    """
+    """Translate strict browser budget commands into existing use cases."""
 
     def __init__(self, writer: BudgetWriter, *, ids: IdGenerator) -> None:
         """Bind budget translation to replaceable application ports.
@@ -340,6 +347,198 @@ class BudgetMutationAdapter:
             idempotency_key=command_key,
             actor=WEB_ACTOR,
             reason="manual browser budget correction",
+        )
+
+
+class FundingSourceWriter(Protocol):
+    """Expose only source and wallet operations allowed from the browser."""
+
+    def management(self, *, profile_id: UUID) -> FundingSourceManagement:
+        """Return all sources and tracked-wallet history."""
+
+    def create(
+        self,
+        source: FundingSource,
+        *,
+        idempotency_key: str,
+        actor: str,
+        reason: str,
+    ) -> FundingSource:
+        """Create or replay one funding source."""
+
+    def rename(
+        self,
+        *,
+        profile_id: UUID,
+        source_id: UUID,
+        expected_version: int,
+        name: str,
+        idempotency_key: str,
+        actor: str,
+        reason: str,
+    ) -> FundingSource:
+        """Rename or replay one source."""
+
+    def archive(
+        self,
+        *,
+        profile_id: UUID,
+        source_id: UUID,
+        expected_version: int,
+        idempotency_key: str,
+        actor: str,
+        reason: str,
+    ) -> FundingSource:
+        """Archive or replay one source."""
+
+    def set_default(
+        self,
+        *,
+        profile_id: UUID,
+        source_id: UUID,
+        expected_version: int,
+        expected_previous_default_id: UUID | None,
+        expected_previous_default_version: int | None,
+        idempotency_key: str,
+        actor: str,
+        reason: str,
+    ) -> FundingSource:
+        """Move or replay the profile default source."""
+
+    def add_wallet_entry(
+        self,
+        entry: WalletEntry,
+        *,
+        idempotency_key: str,
+        actor: str,
+        reason: str,
+    ) -> WalletEntry:
+        """Append or replay one immutable manual wallet entry."""
+
+
+class FundingSourceMutationAdapter:
+    """Bind strict browser inputs to source and wallet administration use cases."""
+
+    def __init__(self, writer: FundingSourceWriter, *, ids: IdGenerator) -> None:
+        """Bind one trusted writer and identifier source."""
+
+        self._writer = writer
+        self._ids = ids
+
+    def management(self, *, profile_id: UUID) -> FundingSourceManagement:
+        """Return the complete source snapshot for one trusted profile."""
+
+        return self._writer.management(profile_id=profile_id)
+
+    def create(
+        self,
+        *,
+        profile_id: UUID,
+        command_key: str,
+        request: FundingSourceCreateRequest,
+    ) -> FundingSource:
+        """Create one active label or ledger wallet."""
+
+        return self._writer.create(
+            FundingSource(
+                id=self._ids.new(),
+                profile_id=profile_id,
+                name=request.name,
+                funding_class=FundingClass(request.funding_class),
+                balance_mode=BalanceMode(request.balance_mode),
+                status=FundingSourceStatus.ACTIVE,
+                is_default=request.is_default,
+            ),
+            idempotency_key=command_key,
+            actor=WEB_ACTOR,
+            reason="owner created funding source in browser",
+        )
+
+    def rename(
+        self,
+        *,
+        profile_id: UUID,
+        source_id: UUID,
+        command_key: str,
+        request: FundingSourceRenameRequest,
+    ) -> FundingSource:
+        """Rename one source under its displayed version."""
+
+        return self._writer.rename(
+            profile_id=profile_id,
+            source_id=source_id,
+            expected_version=request.expected_version,
+            name=request.name,
+            idempotency_key=command_key,
+            actor=WEB_ACTOR,
+            reason="owner renamed funding source in browser",
+        )
+
+    def archive(
+        self,
+        *,
+        profile_id: UUID,
+        source_id: UUID,
+        command_key: str,
+        request: FundingSourceArchiveRequest,
+    ) -> FundingSource:
+        """Archive one non-default zero-balance source."""
+
+        return self._writer.archive(
+            profile_id=profile_id,
+            source_id=source_id,
+            expected_version=request.expected_version,
+            idempotency_key=command_key,
+            actor=WEB_ACTOR,
+            reason="owner archived funding source in browser",
+        )
+
+    def set_default(
+        self,
+        *,
+        profile_id: UUID,
+        source_id: UUID,
+        command_key: str,
+        request: FundingSourceDefaultRequest,
+    ) -> FundingSource:
+        """Move the default from the source state displayed by the browser."""
+
+        return self._writer.set_default(
+            profile_id=profile_id,
+            source_id=source_id,
+            expected_version=request.expected_version,
+            expected_previous_default_id=request.expected_previous_default_id,
+            expected_previous_default_version=(
+                request.expected_previous_default_version
+            ),
+            idempotency_key=command_key,
+            actor=WEB_ACTOR,
+            reason="owner changed default funding source in browser",
+        )
+
+    def add_wallet_entry(
+        self,
+        *,
+        profile_id: UUID,
+        source_id: UUID,
+        command_key: str,
+        request: WalletEntryCreateRequest,
+    ) -> WalletEntry:
+        """Append one manual opening, credit, or adjustment."""
+
+        return self._writer.add_wallet_entry(
+            WalletEntry(
+                id=self._ids.new(),
+                profile_id=profile_id,
+                funding_source_id=source_id,
+                entry_type=WalletEntryType(request.entry_type),
+                amount=Money(request.amount.minor_units),
+                occurred_at=request.occurred_at,
+                expires_on=request.expires_on,
+            ),
+            idempotency_key=command_key,
+            actor=WEB_ACTOR,
+            reason="owner added wallet entry in browser",
         )
 
 
@@ -899,6 +1098,8 @@ __all__ = [
     "CategoryReviewWriter",
     "ExpenseMutationAdapter",
     "ExpenseWriter",
+    "FundingSourceMutationAdapter",
+    "FundingSourceWriter",
     "MessagingOperationsAdapter",
     "MessagingOperationsWriter",
     "ReceiptReviewMutationAdapter",

@@ -1,7 +1,7 @@
 # Local Web Operations
 
 - Status: Step 5 overview, manual-movement, multi-allocation editing,
-  budget-planning, calendar-analytics, category management/proposal review,
+  budget-planning, calendar-analytics, category management/proposal review, funding-source/wallet administration,
   receipt metadata review, and messaging-operations slices implemented;
   complete control plane and release acceptance still in progress
 - Binding decision: [AD-009](../arc42/decisions/AD-009-local-web-application.md)
@@ -17,7 +17,7 @@ bootstrap endpoints. It also exposes the pending category-proposal queue and
 the deterministic approve, reuse-active-category, and cancel decisions, the
 versioned category rename/archive surface and taxonomy complexity warnings, the
 retained receipt metadata and its mandatory review, and the durable messaging
-queues with the two requeue commands. Wallet administration, settings, merchant
+queues with the two requeue commands. Settings, merchant
 analytics, explicit period comparisons, advice, and receipt extraction remain
 Step 5 or Step 6 work and must not be described as available.
 
@@ -29,14 +29,13 @@ policy, but no finance data. `ReportingService` computes exact reads;
 `FinanceService`; `BudgetMutationAdapter` translates budget commands into the
 existing `FinanceAdministrationService`; `CategoryManagementMutationAdapter`
 exposes versioned rename/archive through `CategoryAdministrationService`
-without delete, reparent, or create methods; `CategoryReviewMutationAdapter`
+without delete, reparent, or create methods; `FundingSourceMutationAdapter` exposes versioned source lifecycle and immutable manual wallet entries through `FundingSourceAdministrationService`; `CategoryReviewMutationAdapter`
 exposes the existing `CategoryReviewService` without accepting a movement
 identifier from the browser; `ReceiptReviewMutationAdapter` exposes the
 existing `ReceiptMetadataService` and reaches no media store;
 `MessagingOperationsAdapter` exposes the existing `MessagingAdministration`
 over `PostgresMessagingRepository` and reaches no Bot API transport; and
-`PostgresFinanceRepository` owns authoritative storage and audit. Wallet
-entries have no browser route. The React application
+`PostgresFinanceRepository` owns authoritative storage and audit. The wallet route accepts only opening, credit, and adjustment; debit, refund, and expiry remain system/domain causes and every stored row remains immutable. The React application
 owns only ephemeral browser state and receives neither a profile identifier nor
 credentials. The production build is read-only input to FastAPI; receipt
 originals are outside the static root, and no route serves their bytes or their
@@ -76,6 +75,24 @@ disabled option only in the historical row that already uses it. Do not publish
 or forward this port. V1 has no login, TLS, LAN listener, or remote-access
 threat model.
 
+
+Use `/fonti` to manage payment resources independently from spending
+categories. Creation fixes the economic class and `BalanceMode`; rename changes
+only the display label. Set one active source as default before archiving the
+old default. The default move quotes both displayed source versions, so a 409
+means the snapshot changed and the page must be reloaded.
+
+An untracked source is a label and intentionally has no balance. A ledger source
+shows booked value, currently available value, dated remaining lots, and
+immutable history. Availability excludes expired credit and consumes the lot
+that expires first; credit is usable through its displayed Rome expiry date.
+The form permits one first opening, later credits, and signed adjustments. A
+negative adjustment asks for confirmation and cannot exceed remaining booked
+value; writing down expired credit never restores its availability.
+Future entries, a second opening, deletion, and archive of a nonzero or default
+wallet are refused. To correct a wallet movement, append an explicit adjustment;
+do not edit PostgreSQL or delete history. This surface does not provide income
+accounts, transfers, bank synchronization, or statement reconciliation.
 Use `/categorie` to rename an active category or archive a leaf. Renaming keeps
 the stable identifier used by movements and budgets. Archiving removes the node
 from new allocations but keeps historical reports readable. The page asks for
@@ -158,7 +175,7 @@ listener and allowed origins.
 
 | Route | Purpose | Content |
 | --- | --- | --- |
-| `GET /`, `GET /analisi`, `GET /movimenti`, `GET /budget`, `GET /categorie`, `GET /scontrini`, `GET /messaggistica` | Compiled React shell | Static application only; every route supports direct browser navigation, reload, and bookmarking. |
+| `GET /`, `GET /analisi`, `GET /movimenti`, `GET /budget`, `GET /categorie`, `GET /fonti`, `GET /scontrini`, `GET /messaggistica` | Compiled React shell | Static application only; every route supports direct browser navigation, reload, and bookmarking. |
 | `GET /api/v1/overview/monthly?period=YYYY-MM` | Deterministic monthly overview | Exact posted total, funding class/source split, budgets, and unbudgeted categories. |
 | `GET /api/v1/overview/range` | Deterministic calendar analytics | One strict day, ISO-week, month, year, or bounded custom selector; exact posted total, purpose and funding breakdowns, and budget positions only for an exact whole month. |
 | `GET /api/v1/transactions?period=YYYY-MM` | Monthly lifecycle register | Every movement state, exact allocations, optimistic versions, and safe category/source references. |
@@ -169,6 +186,12 @@ listener and allowed origins.
 | `GET /api/v1/budgets?period=YYYY-MM` | Monthly budget plan | Configured targets worst position first, their overrides and versions, and the categories still available. |
 | `POST /api/v1/budgets` | Configure a category budget | Strict recurring target plus optional month overrides. |
 | `PUT /api/v1/budgets/{category_id}` | Replace a budget plan | Strict complete replacement plus `expected_version`. |
+| `GET /api/v1/funding-sources` | Source and wallet administration | Active/archived sources, class, immutable balance mode, default flag, version, and for ledgers booked/available balances, expiry lots, and immutable history. No profile or notes. |
+| `POST /api/v1/funding-sources` | Create a source | Strict name, funding class, balance mode, and default intent; class/mode cannot later change. |
+| `PUT /api/v1/funding-sources/{id}` | Rename a source | Display name plus `expected_version`; stable identity and history remain. |
+| `POST /api/v1/funding-sources/{id}/default` | Move profile default | Target version plus previous default ID/version; both rows, profile pointer, claims, and audits commit together. |
+| `POST /api/v1/funding-sources/{id}/archive` | Archive without deletion | Expected version; refuses default sources and nonzero booked/available wallets. |
+| `POST /api/v1/funding-sources/{id}/wallet-entries` | Append a manual wallet movement | Opening, credit, or adjustment with exact cents, aware time, and optional credit expiry; immutable, replay-safe, and expiry-aware. |
 | `GET /api/v1/category-proposals` | Pending category review queue | Safe proposal/movement facts, alternatives, and active categories. |
 | `POST /api/v1/category-proposals/{id}/approve` | Approve a proposal | Applies the proposed category to its server-resolved movement. |
 | `POST /api/v1/category-proposals/{id}/use-existing` | Reuse an active category | Strict category reference; the movement target is never browser input. |
@@ -197,10 +220,10 @@ paths, owner text, or credentials.
   the `money_tracker_csrf` HttpOnly cookie and `X-CSRF-Token` header.
 - Every mutation additionally requires a non-empty `Idempotency-Key`. Reuse the
   same key only to retry the identical command; a changed command conflicts.
-  This holds for budget writes as well as movement writes: both claim the same
-  general command table, so a retried request applies once.
-  Correction, registration, cancellation, and budget replacement also carry the
-  version observed by the browser, so stale tabs receive 409 and must reload
+  This holds for movement, budget, funding-source, and wallet writes: each
+  claims the same general command table in the transaction that applies it, so
+  a retried request applies once.
+  Correction, registration, cancellation, budget replacement, source rename/archive, and default movement also carry the version observed by the browser, so stale tabs receive 409 and must reload
   before retrying.
   Category-review commands use the fixed proposal-wide key
   `category-review:{proposal_id}` already owned by the review service. Retrying
@@ -256,7 +279,11 @@ is read back, whose unreconciled draft stays editable but cannot be registered,
 whose unreconciled correction of a posted movement is refused, and whose
 rewritten split is verified in PostgreSQL, and a budget configured, replayed,
 read for an overridden month, refused under a reused key and a stale version,
-then verified in the database and the overview. It also reads three pending
+then verified in the database and the overview. It creates and replays a
+source, opens an expiring wallet, refuses an overdrawing adjustment with no
+claim or audit, reads booked/available balances, renames, moves the default,
+archives the old source, and verifies source versions, profile pointer, ledger,
+claims, and audits. It also reads three pending
 category proposals, approves one with replay, reuses an active category for
 one, cancels one, and verifies every terminal movement/proposal state in
 PostgreSQL. It registers two receipts, lists them newest first without their
@@ -271,6 +298,12 @@ the response, and verifies through the repository that one requeue happened per
 queue and that the recovered work item kept its source reference. It uses
 isolated identifiers and cleans up its schemas.
 
+The source-create race check exercises two simultaneous generated candidates
+under one idempotency key and verifies that both receive the one stored ID:
+
+    RUN_POSTGRES_INTEGRATION_TESTS=1 uv run --env-file .env pytest -q \
+      tests/integration/money_tracker/persistence/test_postgres.py::test_concurrent_source_create_replay_returns_the_stored_identity
+
 A draft may legitimately be unreconciled, so both allocation dimensions are
 enforced when a movement is registered, not while it is still being edited.
 Registering an unreconciled movement returns a bounded 422 and changes nothing.
@@ -278,11 +311,11 @@ Registering an unreconciled movement returns a bounded 422 and changes nothing.
 To withdraw the web surface, stop and disable only
 `money-tracker-api.service`. No migration rollback is needed. Manual movements
 already committed through the service are authoritative finance history, and so
-are configured budgets, category-review decisions, receipt review states, and
-any requeue already applied:
-keep them and the Telegram services running, and correct or cancel them only
+are configured budgets, funding-source versions, immutable wallet entries,
+category-review decisions, receipt review states, and any requeue already
+applied: keep them and the Telegram services running, and correct or cancel them only
 through normal audited use cases. Withdrawing the web surface leaves every
 retained original untouched, because the service never had access to the
 archive, and leaves the Telegram queues operable from
-`money-tracker-telegram`, which remains the unattended recovery path. Re-enable the last known-good build and unit rather than
-deleting `frontend/dist` while the service is active.
+`money-tracker-telegram`, which remains the unattended recovery path.
+Re-enable the last known-good build and unit rather than deleting `frontend/dist` while the service is active.

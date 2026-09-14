@@ -29,11 +29,10 @@ workflow, authorization, latency, fault, and reboot acceptance on 2026-09-11.
 Step 5 is active. Its implemented slices provide the loopback FastAPI host,
 monthly overview, calendar analytics, and transaction register, audited manual
 create/correct/post/cancel workflows, the multi-allocation editor for both
-reconciling dimensions, the monthly budget planner, owner review of pending
+reconciling dimensions, the monthly budget planner, versioned category and funding-source/wallet administration, owner review of pending
 category proposals, consultation and mandatory review of retained receipt
 metadata, browser inspection and pinned requeue of the durable messaging queues,
-compiled React shell, browser security policy, and host unit. The remaining
-control-plane views, merchant analytics, explicit period comparisons, advice
+compiled React shell, browser security policy, and host unit. The settings view, merchant analytics, explicit period comparisons, advice
 exposure, and browser E2E acceptance are still planned within Step 5.
 Receipt extraction
 remains assigned to Step 6.
@@ -124,7 +123,7 @@ boundary is not end-to-end encrypted and must not be described as local storage.
 | Application to inference | OpenAI-compatible HTTP | Messages, schemas, tool calls, model settings | Implemented basic chat |
 | Application to Langfuse | SDK over local HTTP/OTLP | Redacted graph/model observations and aggregate scores | Implemented, optional and healthy |
 | Telegram gateway to Bot API | HTTPS long polling and send methods | Updates, callback queries, messages, and bounded file metadata; no Step 4 file download | Implemented and owner-accepted against the real private test bot |
-| Browser to application API | Same-origin HTTP JSON | Monthly overview, transaction register, manual lifecycle, budget planning, category-proposal review, receipt metadata and its mandatory review, CSRF, and health implemented; remaining taxonomy-management, wallet, analytics, operations, and receipt-extraction resources planned. No route returns receipt bytes or their archive key | Step 5 slices implemented |
+| Browser to application API | Same-origin HTTP JSON | Monthly overview, calendar analytics, transaction register, manual lifecycle, budget planning, category management/review, funding-source/wallet administration, receipt metadata review, messaging operations, CSRF, and health implemented; settings, remaining analytics, advice, and receipt extraction planned. No route returns receipt bytes or their archive key | Step 5 slices implemented |
 | Application to PostgreSQL | PostgreSQL protocol | Checkpoints, authoritative finance aggregates, normalized messaging offsets/inbox/outbox, pairing, actions, retries, and dead letters | Implemented foundation, finance repositories, and Step 4 messaging persistence |
 | Application to receipt archive | Private host filesystem | Fully decoded original JPEG/PNG/WebP keyed and verified by content hash; no derivatives | Local adapter/admin CLI and encrypted backup/restore implemented; API/worker media wiring and deletion planned. The control plane reads metadata only and never opens this boundary |
 | Backup process to repository | Restic repository protocol | Database dump, receipts and recovery configuration | Implemented and restore-tested; scheduling planned |
@@ -171,7 +170,7 @@ boundary is not end-to-end encrypted and must not be described as local storage.
 ```text
 Money Tracker workstation
 ├── Host processes
-│   ├── FastAPI application and compiled React UI        [overview/analytics/movements/budgets/category review/receipts/messaging implemented]
+│   ├── FastAPI application and compiled React UI        [overview/analytics/movements/budgets/categories/funding sources/receipts/messaging implemented]
 │   ├── Telegram gateway                                [implemented; unit template checked in]
 │   ├── Sequential workflow worker                      [implemented; unit template checked in]
 │   │   ├── typed dispatcher, router, and text graphs  [implemented library]
@@ -199,17 +198,17 @@ Money Tracker workstation
 | `logging_safety` | Own the credential redaction contract and mute the HTTP loggers that would print a token-bearing URL | Standard library `logging` and `re` only | No state | Imported by `structured_logging` and usable by anything that logs |
 | `persistence` | Apply versioned migrations, bootstrap persistent LangGraph checkpoints, and implement finance/messaging repositories | Alembic, psycopg, PostgreSQL checkpointer | Foundation schemas, workflow checkpoints, finance aggregates, and durable messaging state | Host administration CLI and shared host library; least-privilege loopback database role |
 | `domain` | Enforce exact money, expense/refund, dual-allocation, taxonomy, wallet, budget, receipt-metadata, and audit contracts | Pure Python value objects and policies; no framework or infrastructure import | No infrastructure state | Shared host-process library; deterministic validation of untrusted inputs |
-| `application` | Coordinate idempotent expense lifecycle and receipt registration/review, audited wallet entries, replay-safe budget planning, pending proposal submission, owner category decisions, and read-only reporting through narrow ports | Finance, administration, proposal, review, reporting, and receipt-metadata repository ports plus clock and ID contracts | Command, concurrency, review-boundary, and audit semantics, not stored state | Shared by CLI, API, and worker; profile scope comes from trusted caller context; node creation is reachable only through an owner decision, and receipt deletion is not exposed |
+| `application` | Coordinate idempotent expense lifecycle and receipt registration/review, audited wallet entries, versioned funding-source lifecycle, replay-safe budget planning, pending proposal submission, owner category decisions, and read-only reporting through narrow ports | Finance, administration, proposal, review, reporting, and receipt-metadata repository ports plus clock and ID contracts | Command, concurrency, review-boundary, and audit semantics, not stored state | Shared by CLI, API, and worker; profile scope comes from trusted caller context; node creation is reachable only through an owner decision, and receipt deletion is not exposed |
 | `workflows` | Own the bounded intent taxonomy, normalized channel work unit, deterministic pre-routing, strict versioned model boundaries, policy vetoes, and post-model read-selection policies, deterministic allocation resolution, draft and correction preparation, stable creation/correction/undo command identities, and the strict-schema retry boundary behind a narrow model port | Pydantic, `zoneinfo`, and pure domain values; no LangGraph, model client, repository, or transport import | Routing destinations, authority classes, stable routing and resolution reason codes, and the product calendar; no persistent state | Shared by the implemented worker; a model can select no deterministic route and supply no profile/timezone/authorization field, no resolved instant, no amount sign, and no funding-source identifier; reason codes carry no owner text |
 | `runtime` | Assemble the compiled root-router, expense/refund, correction/undo, category-review, and read graphs; dispatch one normalized work unit to exactly one specialist; adapt the local endpoint to the structured-output port | LangGraph, LangChain, application services, the persistent checkpointer, and `workflows` contracts | No domain state of its own; checkpoint contents remain owned by each graph state contract | Host administration CLI and worker; dispatcher trusts only injected profile/correlation context and emits no presentation text |
 | `worker` | Claim the oldest eligible durable work unit, translate it into the normalized channel message, dispatch it once, and commit result, response, correlation, and completion together; commit failure notice with retry or dead-letter state | Messaging repository port, finance read ports, a narrow dispatch port, and the response renderer | No authoritative state; every identifier it creates is derived from the inbox row so a recovered attempt reproduces the same logical response | systemd host service, separate failure domain from the gateway; holds no Bot API credential and imports no transport type |
 | `presentation` | Render typed dispatch outcomes, processing failures, committed movement facts, and paused review questions as Italian owner text and bounded controls | Dispatcher outcome contracts, messaging control values, and pure domain values; no model, transport, or repository import | No state; owns the callback code vocabulary and the response-kind names embedded in outbox logical keys | Worker library; content is a function of committed state only, so a replayed render reproduces the same logical response |
 | `api.contracts` | Define strict, versioned finance request/response, mutation-header, and problem wire shapes | Pydantic and domain response values; no web framework | No state; stable JSON field semantics only | Shared by the FastAPI adapter; no credentials or private media fields |
 | `web` | Compose versioned HTTP reads and writes, static UI serving, health, and browser policy | FastAPI, narrow application ports, typed settings, strict wire contracts, and `web.mutations` | No authoritative data; injects the sole trusted profile and bot scope and owns only HTTP semantics | Host user service on IPv4 loopback; exact Host/Origin, closed CORS, CSRF, CSP, bounded problems, no Bot API credential, and no secret endpoint |
-| `web.mutations` | Translate strict browser movement, budget, category-review, receipt-review, and messaging-requeue commands into existing audited use cases | Narrow writer protocols, request contracts, ID port, canonical command hashes, and the trusted messaging scope | No state; owns trusted web actor/source construction, not persistence or lifecycle policy | In-process API adapter; profile, bot scope, and command key are injected, and responses omit all three |
+| `web.mutations` | Translate strict browser movement, budget, funding-source/wallet, category-review, receipt-review, and messaging-requeue commands into existing audited use cases | Narrow writer protocols, request contracts, ID port, canonical command hashes, and the trusted messaging scope | No state; owns trusted web actor/source construction, not persistence or lifecycle policy | In-process API adapter; profile, bot scope, and command key are injected, and responses omit all three |
 | `backup` | Create verified encrypted authoritative snapshots, report their freshness, and restore only into explicitly empty isolated targets | Restic and PostgreSQL client executables, psycopg identity/receipt queries, private archive and configuration paths | Snapshot contents and the versioned integrity manifest in the owner repository; no finance state of its own | Host CLI under an exclusive lock; absolute-path and owner-only input checks, recovery secret passed only by file path, failures name no argument or environment |
 | `administration` | Expose bounded local profile bootstrap, funding-source configuration, receipt storage/registration, and one-shot dispatch of every Step 3 text route | Database URL, absolute archive setting, application services, the workflow dispatcher, and local model adapter | No independent state; emits safe identifiers, grounded facts, and reason codes only | Host CLI; active-profile preflight for specialists, explicit trusted correlations, no private paths or message content in JSON |
-| `persistence.finance` | Bootstrap profile/taxonomy, persist complete expense and budget aggregates, append balance-safe wallet movements, validate/store pending proposals, and register/transition receipt metadata transactionally | psycopg and narrow application repository contracts | Finance tables, allocations, budgets/overrides, wallet ledger, proposals, versioned receipt metadata, audit, and idempotency records | Dedicated application PostgreSQL; no receipt bytes or paths; optimistic versions protect mutable aggregates |
+| `persistence.finance` | Bootstrap profile/taxonomy, persist versioned funding-source lifecycle plus complete expense and budget aggregates, append expiry-aware balance-safe wallet movements, validate/store pending proposals, and register/transition receipt metadata transactionally | psycopg and narrow application repository contracts | Finance tables, allocations, budgets/overrides, wallet ledger, proposals, versioned receipt metadata, audit, and idempotency records | Dedicated application PostgreSQL; no receipt bytes or paths; optimistic versions protect mutable aggregates |
 | `media.local` | Decode, validate, atomically retain, and integrity-check private receipt originals | Receipt-media port, Pillow, private filesystem | Original bytes under sharded SHA-256 keys; no database state | Host library outside web roots; `0700` directories, `0600` files, no-follow verified reads; root wired explicitly by admin CLI, API/worker planned |
 | `evaluations` | Probe real model protocols, capture exact runtime metadata, score deterministically, collect owner usefulness labels, optionally publish aggregates | OpenAI-compatible HTTP, local files, optional Langfuse SDK, and a temporary standard-library loopback HTTP interface | Ignored local run artifacts and browser-local draft scores, plus published aggregate scores keyed by suite and by the model that produced them; no domain authority | Host CLI; the review page binds only to `127.0.0.1`, uses a per-run submission token and no external assets, and excludes secrets, image bytes and paths |
 | `evaluations.catalog` | Read the declared local model candidates, name the model behind a score, and refuse a run that is not measuring the candidate it declared | Committed candidate YAML, local weights paths, and the inference server's own report of what it loaded | No state; the committed catalog is the source of truth for what a candidate is | Host CLI; never downloads, installs, or selects weights, and a candidate it cannot pin by hash is refused at load time |
@@ -272,8 +271,8 @@ catalog is promoted; every identifier carries a `candidate-` prefix.
 | Component | Responsibility | Narrow interfaces/dependencies | Data ownership | Deployment/security |
 | --- | --- | --- | --- | --- |
 | Finance domain (core implemented) | Enforce money, expense/refund, allocation, budget, category and wallet invariants | Pure value objects and domain policies | No infrastructure state | Python application; no framework imports |
-| Application services (expense/wallet/budget, proposal submission and settlement, and replay-safe receipt registration/review implemented) | Execute validated commands and queries transactionally | Narrow repository ports, clock, ID and future media ports | Command/content idempotency, versioning, review boundary, and audit semantics | Implemented FastAPI and worker host processes; profile scope injected; the receipt metadata lifecycle is control-plane reachable while the extracted-draft preview remains workflow-owned |
-| Finance repositories (expense/wallet/budget/proposal/versioned receipt metadata implemented) | Persist authoritative domain records and analytics projections | PostgreSQL protocol through explicit repository contracts | Finance schema implemented; receipt deletion open | Dedicated application database; least-privilege credentials; optimistic versions and source locks protect concurrent mutations; no media payloads |
+| Application services (expense/wallet/budget/funding-source, proposal submission and settlement, and replay-safe receipt registration/review implemented) | Execute validated commands and queries transactionally | Narrow repository ports, clock, ID and future media ports | Command/content idempotency, versioning, review boundary, and audit semantics | Implemented FastAPI and worker host processes; profile scope injected; the receipt metadata lifecycle is control-plane reachable while the extracted-draft preview remains workflow-owned |
+| Finance repositories (expense/wallet/budget/funding-source/proposal/versioned receipt metadata implemented) | Persist authoritative domain records and analytics projections | PostgreSQL protocol through explicit repository contracts | Finance schema implemented; receipt deletion open | Dedicated application database; least-privilege credentials; optimistic versions and source locks protect concurrent mutations; no media payloads |
 | Messaging persistence (implemented) | Receive, order, lease, retry, dead-letter, replay, correlate, and complete transport work | `MessagingRepository` port, psycopg, and PostgreSQL | Minimum normalized inbox data, offsets, typed results, logical outbox, pairing, pending actions, and attempt metadata | Shared gateway/worker/admin adapter; no raw update payload, token, or token-bearing URL in rows |
 | Workflow runtime (dispatcher, router, and Step 3 text specialists implemented) | Route one normalized work unit and execute exactly one bounded specialist | Typed dispatcher outcome, LangGraph, model gateway, application services, checkpointer | Small per-graph versioned workflow state only; authoritative domain data stays in repositories | Administration CLI and sequential worker; no media, credentials, or service objects in checkpoints |
 | Receipt service | Validate media, invoke extractor, reconcile lines, prepare review | Implemented media-store port, planned extractor, finance service | Receipt metadata, extraction versions, review state | Private filesystem; untrusted image boundary; orchestration planned |
@@ -286,8 +285,8 @@ catalog is promoted; every identifier carries a `candidate-` prefix.
 | --- | --- | --- | --- | --- |
 | Workflow dispatcher, root router, and text specialists (implemented) | Route one intent and coordinate expense/refund, correction/undo, category review, query, or advice | Typed normalized work unit/outcome, versioned schemas, scoped tool registries, trusted correlations | Namespaced checkpoint references and workflow IDs; no domain ownership | Administration CLI and worker; mutation paths call replay-safe application services |
 | Telegram Bot API transport (implemented) | Validate the bot, long poll, obtain file metadata, acknowledge callbacks, and deliver outbox messages | Bounded HTTPS client and messaging services | No authoritative finance data or correctness state | Gateway host service; separate production/test token selected from a private environment file |
-| FastAPI adapter (partial) | Expose monthly and calendar-range overviews, transaction register, manual lifecycle, budget planning, pending category review, receipt metadata review, messaging operations, health, CSRF bootstrap, compiled UI, and later REST resources | Narrow reporting, finance, budget, category-review, receipt-review, and messaging-operations adapters | No independent data | Implemented on loopback with Host/Origin, CSRF, idempotency, optimistic concurrency, proposal-wide and transition-wide command identity, and bounded errors |
-| React dashboard (partial) | Display the monthly overview, calendar analytics, transaction register, budget planner, pending category proposals, retained receipt metadata, and durable messaging state; edit the multi-allocation manual lifecycle, monthly budgets, deterministic category decisions, the mandatory receipt review, and both queue requeues; later edit wallet and settings state | Same-origin REST API | Browser session/UI state only | Route-split compiled static assets with the chart engine isolated from its renderer; no secrets, receipt images, or message content; accessible loading fallbacks, labelled controls, lifecycle history, responsive wrapping navigation, and chart/table alternatives |
+| FastAPI adapter (partial) | Expose monthly and calendar-range overviews, transaction register, manual lifecycle, budget planning, category and funding-source/wallet administration, pending category review, receipt metadata review, messaging operations, health, CSRF bootstrap, compiled UI, and later REST resources | Narrow reporting, finance, budget, category, funding-source, receipt-review, and messaging-operations adapters | No independent data | Implemented on loopback with Host/Origin, CSRF, idempotency, optimistic concurrency, proposal-wide and transition-wide command identity, and bounded errors |
+| React dashboard (partial) | Display the monthly overview, calendar analytics, transaction register, budget planner, categories, funding sources with tracked-wallet balances/history, retained receipt metadata, and durable messaging state; edit the multi-allocation manual lifecycle, monthly budgets, deterministic category and source lifecycle, manual wallet entries, the mandatory receipt review, and both queue requeues; later edit settings state | Same-origin REST API | Browser session/UI state only | Route-split compiled static assets with the chart engine isolated from its renderer; no secrets, receipt images, or message content; accessible loading fallbacks, labelled controls, lifecycle history, responsive wrapping navigation, and chart/table alternatives |
 | Local model gateway | Provide typed chat, schema and tool capabilities | OpenAI-compatible local endpoint | No persistent domain data | Replaceable host inference process |
 | Calendar period resolver (implemented) | Resolve strict day, ISO-week, month, year, and bounded inclusive custom selections into half-open query intervals | Pure domain date values used by reporting and the web adapter; no framework or repository dependency | No persistent data | In-process domain component; Europe/Rome calendar semantics, DST-safe boundaries, and a 366-day custom-range ceiling |
 | Receipt extractor adapter | Produce a versioned structured receipt draft | Selected local OCR/VLM pipeline | No authoritative data until validated | Local-only; selection remains evaluation-gated |
@@ -360,16 +359,19 @@ No state survives the process and no financial write occurs.
    actor/reason audit metadata to an application service.
 2. Expense commands validate the complete aggregate, then create idempotently
    or replace only the caller-observed version.
-3. A wallet command locks its ledger funding source, reconstructs the booked
-   balance, and rejects a debit that would overdraw before appending anything.
+3. A wallet command locks its ledger funding source, reconstructs booked and
+   AD-020 available balance, and rejects an expiry-aware overdraft before
+   appending anything.
 4. A budget command creates version one or replaces the complete recurring
    target and override set only at the expected version.
 5. The repository commits the domain mutation and immutable audit event in one
    PostgreSQL transaction; any validation or concurrency failure rolls both
    back.
 
-These services currently have no public API or CLI entry point. Integration
-tests exercise them directly through the real PostgreSQL protocol.
+Expense, budget, and funding-source/wallet operations are reachable through
+the profile-bound local API; administration CLI paths retain their narrower
+operator scope. Integration tests exercise the production services through both
+HTTP and the real PostgreSQL protocol.
 
 ### Current pending category proposal submission
 
@@ -950,6 +952,36 @@ injection; React owns ephemeral selection state only.
    children, and invalidates every category-dependent read after success. It
    owns only edit and confirmation state.
 
+
+### Current browser funding-source and wallet administration
+
+1. The browser loads all active and archived payment resources for the trusted
+   profile. The response exposes stable source identity, economic class,
+   immutable `BalanceMode`, default state, and optimistic version. It returns no
+   profile, command identity, or wallet note.
+2. An untracked source has no balance projection. For a ledger source the
+   application reads immutable entries once and computes booked, available,
+   and remaining dated lots at one shared observation instant using AD-020's
+   Europe/Rome first-expiry-first policy.
+3. Create, rename, default, archive, and manual opening/credit/adjustment use a
+   dedicated application service. FastAPI injects profile and actor, validates
+   strict JSON, CSRF, and `Idempotency-Key`, and maps stale source/default
+   snapshots to bounded conflicts. No route deletes a source or entry, changes
+   class/mode, transfers funds, or reaches banking.
+4. PostgreSQL serializes source lifecycle on the profile and affected source
+   rows. Moving the default advances old and new sources plus the profile
+   pointer with both audits; archive rechecks zero booked and available balance
+   under the same source lock used by append. A wallet append validates the
+   complete effective history and commits its claim, immutable row, and audit
+   atomically.
+5. React labels booked and spendable values separately, shows dated lots and
+   history, confirms default/archive/negative-adjustment actions, and disables
+   archive for the default or a nonzero wallet. Success invalidates source,
+   movement, overview, and analytics queries.
+
+The source service owns lifecycle and wallet policy; the web adapter owns only
+trusted translation and HTTP semantics; the browser owns ephemeral editor and
+confirmation state. Spending categories remain a separate purpose dimension.
 ### Current authoritative backup and restore drill
 
 1. `money-tracker-backup create` validates executables and owner-only
@@ -1316,8 +1348,11 @@ preflight without coupling Telegram recovery to dashboard availability.
   are supporting records, not finance ledgers.
 - Implemented expense, wallet, and budget mutations share a transaction with
   their audit event. Future channel mutations also include their outbox record.
-- Ledger wallet debits lock the funding source and validate the committed
-  balance before append; budget and expense replacements compare versions.
+- Ledger wallet appends lock the funding source and validate AD-020 available
+  balance before append. Funding-source lifecycle changes lock the profile and
+  affected sources; archive rechecks zero booked and available balance, while
+  default movement updates both source versions and the profile pointer. Budget
+  and expense replacements compare versions.
 - Categories and financial history use stable IDs. Archive and void replace
   destructive deletion for referenced records.
 
@@ -1492,8 +1527,12 @@ environment file.
 - [AD-009: Local FastAPI and React web application](decisions/AD-009-local-web-application.md):
   strict version-one finance wire contracts, monthly overview, calendar
   analytics, manual lifecycle, multi-allocation editing, budget planning,
-  category management/review, receipt metadata review, HTTP security, and host
+  category management/review, funding-source/wallet administration, receipt metadata review, HTTP security, and host
   deployment implemented; remaining Step 5 resources and acceptance planned.
+- [AD-020: Wallet availability and expiry projection](decisions/AD-020-wallet-availability-and-expiry.md):
+  deterministic Europe/Rome first-expiry-first availability, immutable booked
+  history, source lifecycle service, transactional locks, and local control-plane
+  administration implemented.
 - [AD-014: Private content-addressed receipt archive](decisions/AD-014-private-receipt-archive.md):
   safe local adapter, replay-safe versioned review state, and real
   filesystem/PostgreSQL integration implemented; administration CLI wiring,
@@ -1561,8 +1600,9 @@ Quantitative evaluation gates are maintained in
   but automatic scheduling, off-device secret verification, and a clean-machine
   restore remain later release work.
 - The real Telegram evidence uses a private test bot, not a production bot. The
-  implemented Step 5 web workflows have component and real PostgreSQL HTTP
-  coverage but still lack complete browser E2E and installed-service
+  implemented Step 5 web workflows, including funding-source and wallet
+  administration, have component, concurrent repository, and real PostgreSQL
+  HTTP coverage but still lack complete browser E2E and installed-service
   acceptance.
 
 ### Target architecture risks

@@ -6,12 +6,12 @@ Status: **In progress (2026-09-12).** The implemented vertical slices provide
 the loopback same-origin host, deterministic monthly overview and transaction
 register, accessible React shell, audited manual create, correct, post, and
 cancel workflows, the multi-allocation editor for both reconciling dimensions,
-the monthly budget planner, versioned category rename/archive management, owner
+the monthly budget planner, versioned category rename/archive management, funding-source lifecycle and expiry-aware wallet administration, owner
 review of pending category proposals,
 consultation and mandatory review of retained receipt metadata, and browser
 inspection and requeue of the durable messaging queues. Daily, ISO-week,
 monthly, annual, and bounded custom-range analytics now expose separate purpose
-and funding views. The remaining control-plane views, merchant/comparison
+and funding views. The settings view, merchant/comparison
 analytics, advice surface, and complete browser E2E acceptance are still open.
 No model, prompt, routing threshold, tool contract, or taxonomy policy changed,
 so EVD-004 remains the promoted text baseline.
@@ -255,6 +255,60 @@ so EVD-004 remains the promoted text baseline.
   contract, prompt, routing threshold, category-fit policy, or taxonomy limit.
   EVD-004 remains promoted and no experiment decision-log entry is required.
 
+### Funding-source and wallet administration slice (2026-09-14)
+
+- `/fonti` keeps the payment-resource dimension separate from spending-purpose
+  categories. It lists active and archived sources with stable identity,
+  economic class, immutable `BalanceMode`, default state, and optimistic
+  version. Untracked sources never display an invented balance; ledger sources
+  display immutable movements, booked balance, spendable balance, and remaining
+  dated credit lots.
+- `FundingSourceAdministrationService` is a distinct application boundary for
+  source create/rename/default/archive and manual wallet opening, credit, and
+  adjustment. Source class and balance mode cannot be rewritten. Archive is
+  non-destructive, refuses the current default, and requires both booked and
+  available ledger balances to be zero. The browser exposes no delete,
+  transfer, bank-sync, income, or general-accounting operation.
+- Wallet availability follows AD-020: credits are usable through their Rome
+  `expires_on` date, expired lots are excluded from spendable value without
+  rewriting booked history, and debit entries consume non-expired lots in
+  earliest-expiry-first order. Expiry and negative-adjustment entries may write
+  down expired booked value in that order but cannot make booked balance
+  negative; a debit backed only by expired or absent value is refused.
+  Opening is permitted only as the first immutable entry, and future-dated manual entries are refused.
+- `GET /api/v1/funding-sources` and strict create, rename, set-default, archive,
+  and wallet-entry resources bind the sole profile at composition time. Every
+  write requires CSRF and `Idempotency-Key`; source replacements quote the
+  displayed version, and changing the default also quotes the previous
+  default's ID and version. The target, previous default, profile pointer,
+  command claim, and two audits commit in one PostgreSQL transaction.
+- PostgreSQL serializes source lifecycle changes on the profile and locks the
+  ledger source for wallet appends. Archive rechecks zero balance under that
+  same lock, closing the race between the page snapshot and a concurrent
+  append. A failed invariant rolls back the mutation, audit, and idempotency
+  claim together. Names, amounts, notes, and other owner content are absent
+  from structured log fields; the response omits profile, notes, and command
+  identity.
+- React provides labelled creation, rename, default, archive, and wallet-entry
+  controls, explicit confirmation for default/archive and negative adjustment,
+  responsive balance/history views, and loading, empty, bounded-error, and
+  retry states. Successful work invalidates the source snapshot plus movement,
+  overview, and analytics queries that display source names or allocations.
+- Domain and application unit tests cover Rome dates, expiry, earliest-expiry
+  consumption, source versions, replay, audit, default movement, archive
+  guards, and future-entry refusal. HTTP tests cover strict JSON, trusted
+  scope, safe response shape, and complete default snapshots; component tests
+  cover projections, confirmations, unsafe archive prevention, exact cents,
+  retry, and empty state. A real PostgreSQL HTTP test covers create/replay,
+  wallet opening, invalid negative adjustment rollback, rename, atomic default
+  change, non-destructive archive, audit/claim counts, and the profile default
+  pointer when the integration database is available. A separate concurrent
+  PostgreSQL test races distinct create candidates under one command key and
+  proves that both callers receive the single stored identity.
+- No model-visible tool, prompt, routing threshold, taxonomy policy, or receipt
+  pipeline changed. EVD-004 remains promoted and no experiment decision-log
+  entry is required.
+
 ### Receipt metadata and review slice (2026-09-12)
 
 - `/scontrini` makes the private receipt archive's metadata reachable from the
@@ -455,8 +509,7 @@ so EVD-004 remains the promoted text baseline.
 
 ### Work still required before completion
 
-- Add category rename/archive management, funding sources/wallets, and settings
-  views.
+- Add the remaining settings view.
 - Add merchant breakdowns and explicit period-over-period comparison without
   changing the promoted model-visible tool contract accidentally.
 - Expose the already promoted read-only advice capabilities without widening

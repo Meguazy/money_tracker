@@ -35,12 +35,15 @@ from money_tracker.domain.finance import (
 )
 from money_tracker.domain.funding import (
     BalanceMode,
+    ExpiringWalletBalance,
     FundingClass,
     FundingSource,
     FundingSourceStatus,
+    WalletAvailability,
     WalletEntry,
     WalletEntryType,
     require_available_balance,
+    wallet_availability,
     wallet_balance,
 )
 from money_tracker.domain.money import Money, sum_money
@@ -63,6 +66,7 @@ from money_tracker.domain.taxonomy_seed import TAXONOMY_VERSION, initial_taxonom
 __all__ = [
     "AuditEvent",
     "BalanceMode",
+    "ExpiringWalletBalance",
     "BudgetStatus",
     "Category",
     "CategoryAllocation",
@@ -95,6 +99,7 @@ __all__ = [
     "TaxonomyWarning",
     "WalletEntry",
     "WalletEntryType",
+    "WalletAvailability",
     "WalletError",
     "YearMonth",
     "budget_status",
@@ -110,5 +115,6 @@ __all__ = [
     "resolve_month",
     "resolve_year",
     "sum_money",
+    "wallet_availability",
     "wallet_balance",
 ]

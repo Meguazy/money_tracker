@@ -146,6 +146,75 @@ class FinanceAdministrationRepository(Protocol):
         """Claim one command key and create or replace a budget atomically."""
 
 
+class FundingSourceAdministrationRepository(Protocol):
+    """Persist owner-managed sources and immutable wallet commands atomically."""
+
+    def get_funding_sources(self, profile_id: UUID) -> tuple[FundingSource, ...]:
+        """Return every source in one trusted owner scope."""
+
+    def get_wallet_entries(
+        self, profile_id: UUID, funding_source_id: UUID
+    ) -> tuple[WalletEntry, ...]:
+        """Return immutable ledger history for one tracked source."""
+
+    def get_idempotent_funding_source_command(
+        self,
+        *,
+        profile_id: UUID,
+        idempotency_key: str,
+        command_type: str,
+        request_hash: str,
+    ) -> FundingSource | None:
+        """Return the source an identical replayed command already stored."""
+
+    def save_funding_source(
+        self,
+        source: FundingSource,
+        *,
+        expected_version: int | None,
+        idempotency_key: str,
+        command_type: str,
+        request_hash: str,
+        audit_event: AuditEvent,
+    ) -> FundingSource:
+        """Create or replace one versioned source and return the stored result."""
+
+    def set_default_funding_source(
+        self,
+        source: FundingSource,
+        *,
+        previous: FundingSource | None,
+        expected_version: int,
+        expected_previous_version: int | None,
+        idempotency_key: str,
+        command_type: str,
+        request_hash: str,
+        audit_events: tuple[AuditEvent, ...],
+    ) -> None:
+        """Move the default flag and profile reference in one transaction."""
+
+    def get_idempotent_wallet_command(
+        self,
+        *,
+        profile_id: UUID,
+        idempotency_key: str,
+        command_type: str,
+        request_hash: str,
+    ) -> WalletEntry | None:
+        """Return the immutable entry an identical replay already appended."""
+
+    def append_wallet_entry_idempotently(
+        self,
+        entry: WalletEntry,
+        *,
+        idempotency_key: str,
+        command_type: str,
+        request_hash: str,
+        audit_event: AuditEvent,
+    ) -> WalletEntry:
+        """Claim, balance-check, append, and audit one entry atomically."""
+
+
 class CategoryAdministrationRepository(Protocol):
     """Persist owner-managed category state behind one audit boundary."""
 

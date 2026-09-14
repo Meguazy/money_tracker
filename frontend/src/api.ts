@@ -88,6 +88,58 @@ export type FundingSourceReference = {
   is_default: boolean;
 };
 
+export type WalletEntryType =
+  | "opening"
+  | "credit"
+  | "debit"
+  | "refund"
+  | "expiry"
+  | "adjustment";
+
+export type ManagedFundingSource = FundingSourceReference & {
+  version: number;
+  availability: {
+    booked_balance: Money;
+    available_balance: Money;
+    expiring: Array<{ expires_on: string; amount: Money }>;
+  } | null;
+  entries: Array<{
+    id: string;
+    entry_type: WalletEntryType;
+    amount: Money;
+    occurred_at: string;
+    expires_on: string | null;
+    expense_id: string | null;
+  }>;
+};
+
+export type FundingSourceManagement = {
+  observed_at: string;
+  sources: ManagedFundingSource[];
+};
+
+export type FundingSourceMutation = {
+  id: string;
+  name: string;
+  status: "active" | "archived";
+  is_default: boolean;
+  version: number;
+};
+
+export type FundingSourceInput = {
+  name: string;
+  funding_class: FundingClass;
+  balance_mode: "untracked" | "ledger";
+  is_default: boolean;
+};
+
+export type WalletEntryInput = {
+  entry_type: "opening" | "credit" | "adjustment";
+  amount: Money;
+  occurred_at: string;
+  expires_on: string | null;
+};
+
 export type Transaction = {
   id: string;
   amount: Money;
@@ -439,6 +491,68 @@ export function archiveCategory(
     `/api/v1/categories/${encodeURIComponent(categoryId)}/archive`,
     "POST",
     { expected_version: expectedVersion },
+  );
+}
+
+export async function loadFundingSources(
+  signal?: AbortSignal,
+): Promise<FundingSourceManagement> {
+  const response = await fetch("/api/v1/funding-sources", { signal });
+  return responseJson<FundingSourceManagement>(response);
+}
+
+export function createFundingSource(
+  input: FundingSourceInput,
+): Promise<FundingSourceMutation> {
+  return mutate<FundingSourceMutation>("/api/v1/funding-sources", "POST", input);
+}
+
+export function renameFundingSource(
+  sourceId: string,
+  name: string,
+  expectedVersion: number,
+): Promise<FundingSourceMutation> {
+  return mutate<FundingSourceMutation>(
+    `/api/v1/funding-sources/${encodeURIComponent(sourceId)}`,
+    "PUT",
+    { name, expected_version: expectedVersion },
+  );
+}
+
+export function archiveFundingSource(
+  sourceId: string,
+  expectedVersion: number,
+): Promise<FundingSourceMutation> {
+  return mutate<FundingSourceMutation>(
+    `/api/v1/funding-sources/${encodeURIComponent(sourceId)}/archive`,
+    "POST",
+    { expected_version: expectedVersion },
+  );
+}
+
+export function setDefaultFundingSource(
+  source: ManagedFundingSource,
+  previousDefault: ManagedFundingSource | null,
+): Promise<FundingSourceMutation> {
+  return mutate<FundingSourceMutation>(
+    `/api/v1/funding-sources/${encodeURIComponent(source.id)}/default`,
+    "POST",
+    {
+      expected_version: source.version,
+      expected_previous_default_id: previousDefault?.id ?? null,
+      expected_previous_default_version: previousDefault?.version ?? null,
+    },
+  );
+}
+
+export function addWalletEntry(
+  sourceId: string,
+  input: WalletEntryInput,
+): Promise<{ id: string; entry_type: WalletEntryType }> {
+  return mutate<{ id: string; entry_type: WalletEntryType }>(
+    `/api/v1/funding-sources/${encodeURIComponent(sourceId)}/wallet-entries`,
+    "POST",
+    input,
   );
 }
 

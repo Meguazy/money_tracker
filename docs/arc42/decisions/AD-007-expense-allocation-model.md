@@ -2,7 +2,7 @@
 
 - Status: accepted
 - Implementation: domain, schema, expense/wallet/budget persistence, and
-  deterministic reports implemented; remaining adapters planned
+  deterministic reports and local source/wallet administration implemented; remaining adapters planned
 - Date: 2026-09-01
 
 ## Context
@@ -53,3 +53,19 @@ individual source totals, computed from posted payment allocations with signed
 refunds. Aggregating meal vouchers and welfare into one benefit total cannot
 answer a question about one of those sources. These totals measure consumption,
 not wallet balance; unsupported balance questions must be clarified.
+
+## Step 5 wallet clarification (2026-09-14)
+
+The local control plane preserves the distinction between a payment allocation
+and a wallet ledger entry. A source names which resource funded an expense; a
+ledger movement changes the tracked resource's balance. Source class and
+`BalanceMode` are immutable after creation, and untracked labels never acquire
+an inferred balance.
+
+AD-020 defines tracked availability independently from booked balance: negative
+entries consume earliest-expiring lots first and expired credit is not
+spendable even while it remains in immutable booked history. The browser may
+create an opening, credit, or explicit adjustment, but exposes no destructive
+entry deletion, transfer, income account, bank synchronization, or general
+accounting surface. Expense consumption totals in analytics remain payment-
+allocation facts and are not presented as wallet balances.

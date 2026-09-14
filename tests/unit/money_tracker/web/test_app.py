@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import cast
 from uuid import UUID, uuid4
@@ -18,6 +18,8 @@ from money_tracker.application import (
     CategoryManagement,
     CategoryReviewQueue,
     CategorySpendEntry,
+    FundingSourceManagement,
+    ManagedFundingSource,
     MonthlyBudgetPositions,
     MonthlyOverview,
     PendingCategoryReview,
@@ -38,12 +40,16 @@ from money_tracker.domain import (
     FundingClass,
     FundingClassSplit,
     FundingSource,
+    FundingSourceStatus,
     Money,
     MonthlyBudget,
     PaymentAllocation,
     ReceiptMetadata,
     ReceiptStatus,
     ResolvedPeriod,
+    WalletAvailability,
+    WalletEntry,
+    WalletEntryType,
     YearMonth,
     initial_taxonomy,
 )
@@ -69,6 +75,8 @@ from money_tracker.web.mutations import (
     CategoryReviewWriter,
     ExpenseMutationAdapter,
     ExpenseWriter,
+    FundingSourceMutationAdapter,
+    FundingSourceWriter,
     MessagingOperationsAdapter,
     MessagingOperationsWriter,
     ReceiptReviewMutationAdapter,
@@ -330,6 +338,150 @@ class RecordingBudgetWriter:
             overrides=overrides,
             version=expected_version + 1,
         )
+
+
+@dataclass
+class RecordingFundingSourceWriter:
+    """In-memory writer recording browser-translated source commands."""
+
+    source: FundingSource = field(
+        default_factory=lambda: FundingSource(
+            id=SOURCE_ID,
+            profile_id=PROFILE_ID,
+            name="Buoni pasto",
+            funding_class=FundingClass.BENEFIT,
+            balance_mode=BalanceMode.LEDGER,
+            version=2,
+        )
+    )
+    entries: list[WalletEntry] = field(default_factory=list)
+    actions: list[tuple[object, ...]] = field(default_factory=list)
+
+    def management(self, *, profile_id: UUID) -> FundingSourceManagement:
+        """Return one tracked wallet for the trusted owner."""
+
+        assert profile_id == PROFILE_ID
+        availability = WalletAvailability(
+            booked_balance=Money(3000),
+            available_balance=Money(1800),
+            expiring=(),
+        )
+        return FundingSourceManagement(
+            sources=(
+                ManagedFundingSource(
+                    source=self.source,
+                    entries=tuple(self.entries),
+                    availability=availability,
+                ),
+            ),
+            observed_at=datetime(2026, 9, 14, 10, tzinfo=UTC),
+        )
+
+    def create(
+        self,
+        source: FundingSource,
+        *,
+        idempotency_key: str,
+        actor: str,
+        reason: str,
+    ) -> FundingSource:
+        """Record a source creation translated by the browser adapter."""
+
+        assert actor == "owner:web"
+        self.actions.append(("create", source, idempotency_key, reason))
+        self.source = source
+        return source
+
+    def rename(
+        self,
+        *,
+        profile_id: UUID,
+        source_id: UUID,
+        expected_version: int,
+        name: str,
+        idempotency_key: str,
+        actor: str,
+        reason: str,
+    ) -> FundingSource:
+        """Record a versioned rename."""
+
+        assert profile_id == PROFILE_ID and actor == "owner:web"
+        self.actions.append(
+            ("rename", source_id, expected_version, name, idempotency_key, reason)
+        )
+        self.source = replace(self.source, name=name, version=expected_version + 1)
+        return self.source
+
+    def archive(
+        self,
+        *,
+        profile_id: UUID,
+        source_id: UUID,
+        expected_version: int,
+        idempotency_key: str,
+        actor: str,
+        reason: str,
+    ) -> FundingSource:
+        """Record a versioned non-destructive archive."""
+
+        assert profile_id == PROFILE_ID and actor == "owner:web"
+        self.actions.append(
+            ("archive", source_id, expected_version, idempotency_key, reason)
+        )
+        self.source = replace(
+            self.source,
+            status=FundingSourceStatus.ARCHIVED,
+            version=expected_version + 1,
+        )
+        return self.source
+
+    def set_default(
+        self,
+        *,
+        profile_id: UUID,
+        source_id: UUID,
+        expected_version: int,
+        expected_previous_default_id: UUID | None,
+        expected_previous_default_version: int | None,
+        idempotency_key: str,
+        actor: str,
+        reason: str,
+    ) -> FundingSource:
+        """Record the complete optimistic default snapshot."""
+
+        assert profile_id == PROFILE_ID and actor == "owner:web"
+        self.actions.append(
+            (
+                "default",
+                source_id,
+                expected_version,
+                expected_previous_default_id,
+                expected_previous_default_version,
+                idempotency_key,
+                reason,
+            )
+        )
+        self.source = replace(
+            self.source,
+            is_default=True,
+            version=expected_version + 1,
+        )
+        return self.source
+
+    def add_wallet_entry(
+        self,
+        entry: WalletEntry,
+        *,
+        idempotency_key: str,
+        actor: str,
+        reason: str,
+    ) -> WalletEntry:
+        """Record one immutable entry built by the browser adapter."""
+
+        assert actor == "owner:web"
+        self.actions.append(("wallet", entry, idempotency_key, reason))
+        self.entries.append(entry)
+        return entry
 
 
 @dataclass
@@ -703,6 +855,7 @@ def _app(
     ready: bool = True,
     budget_writer: BudgetWriter | None = None,
     category_manager: CategoryManager | None = None,
+    funding_source_writer: FundingSourceWriter | None = None,
     category_review_writer: CategoryReviewWriter | None = None,
     receipt_writer: ReceiptReviewWriter | None = None,
     messaging_operations: MessagingOperationsWriter | None = None,
@@ -723,6 +876,10 @@ def _app(
         ),
         categories=CategoryManagementMutationAdapter(
             category_manager or cast(CategoryManager, object())
+        ),
+        funding_sources=FundingSourceMutationAdapter(
+            funding_source_writer or cast(FundingSourceWriter, object()),
+            ids=cast(IdGenerator, FixedIds()),
         ),
         category_reviews=CategoryReviewMutationAdapter(
             category_review_writer or cast(CategoryReviewWriter, object())
@@ -1722,3 +1879,132 @@ def test_the_range_read_never_accepts_a_profile_from_the_browser() -> None:
 
     assert response.status_code == 200
     assert reader.requested_profile == PROFILE_ID
+
+
+def test_funding_sources_expose_wallet_state_without_scope_or_notes() -> None:
+    """Return versioned source state and immutable movements in trusted scope."""
+
+    writer = RecordingFundingSourceWriter()
+    writer.entries.append(
+        WalletEntry(
+            id=uuid4(),
+            profile_id=PROFILE_ID,
+            funding_source_id=SOURCE_ID,
+            entry_type=WalletEntryType.CREDIT,
+            amount=Money(3000),
+            occurred_at=datetime(2026, 9, 13, 10, tzinfo=UTC),
+            note="owner-only explanation",
+        )
+    )
+
+    response = _client(_app(funding_source_writer=writer)).get(
+        "/api/v1/funding-sources"
+    )
+
+    assert response.status_code == 200
+    source = response.json()["sources"][0]
+    assert source["name"] == "Buoni pasto"
+    assert source["balance_mode"] == "ledger"
+    assert source["version"] == 2
+    assert source["availability"]["booked_balance"]["minor_units"] == 3000
+    assert source["availability"]["available_balance"]["minor_units"] == 1800
+    assert source["entries"][0]["entry_type"] == "credit"
+    assert "note" not in source["entries"][0]
+    assert "profile_id" not in response.text
+
+
+def test_funding_source_routes_forward_versions_and_complete_default_snapshot() -> None:
+    """Translate strict owner commands while preserving optimistic state."""
+
+    writer = RecordingFundingSourceWriter()
+    client = _client(_app(funding_source_writer=writer))
+    token = client.get("/api/v1/csrf", headers={"origin": ORIGIN}).json()["token"]
+
+    def headers(command_key: str) -> dict[str, str]:
+        """Return valid browser mutation headers."""
+
+        return {
+            "origin": ORIGIN,
+            "x-csrf-token": token,
+            "Idempotency-Key": command_key,
+        }
+
+    renamed = client.put(
+        f"/api/v1/funding-sources/{SOURCE_ID}",
+        json={"name": "Benefit lavoro", "expected_version": 2},
+        headers=headers("rename-source"),
+    )
+    previous_id = uuid4()
+    made_default = client.post(
+        f"/api/v1/funding-sources/{SOURCE_ID}/default",
+        json={
+            "expected_version": 3,
+            "expected_previous_default_id": str(previous_id),
+            "expected_previous_default_version": 7,
+        },
+        headers=headers("default-source"),
+    )
+
+    assert renamed.status_code == 200
+    assert renamed.json()["version"] == 3
+    assert made_default.status_code == 200
+    assert writer.actions[0][:5] == (
+        "rename",
+        SOURCE_ID,
+        2,
+        "Benefit lavoro",
+        "rename-source",
+    )
+    assert writer.actions[1][:7] == (
+        "default",
+        SOURCE_ID,
+        3,
+        previous_id,
+        7,
+        "default-source",
+        "owner changed default funding source in browser",
+    )
+
+
+def test_wallet_route_builds_exact_entry_and_rejects_unpaired_default_state() -> None:
+    """Keep wallet money exact and refuse incomplete optimistic snapshots."""
+
+    writer = RecordingFundingSourceWriter()
+    client = _client(_app(funding_source_writer=writer))
+    token = client.get("/api/v1/csrf", headers={"origin": ORIGIN}).json()["token"]
+    headers = {
+        "origin": ORIGIN,
+        "x-csrf-token": token,
+        "Idempotency-Key": "wallet-credit",
+    }
+    occurred_at = "2026-09-13T12:30:00+02:00"
+
+    created = client.post(
+        f"/api/v1/funding-sources/{SOURCE_ID}/wallet-entries",
+        json={
+            "entry_type": "credit",
+            "amount": {"minor_units": 2550, "currency": "EUR"},
+            "occurred_at": occurred_at,
+            "expires_on": "2026-10-31",
+        },
+        headers=headers,
+    )
+    invalid_default = client.post(
+        f"/api/v1/funding-sources/{SOURCE_ID}/default",
+        json={
+            "expected_version": 2,
+            "expected_previous_default_id": str(uuid4()),
+            "expected_previous_default_version": None,
+        },
+        headers={**headers, "Idempotency-Key": "default-incomplete"},
+    )
+
+    assert created.status_code == 201
+    entry = writer.entries[0]
+    assert entry.profile_id == PROFILE_ID
+    assert entry.funding_source_id == SOURCE_ID
+    assert entry.entry_type is WalletEntryType.CREDIT
+    assert entry.amount == Money(2550)
+    assert entry.expires_on == date(2026, 10, 31)
+    assert invalid_default.status_code == 422
+    assert invalid_default.json()["code"] == "request_invalid"

@@ -63,6 +63,12 @@ from money_tracker.web.contracts import (
     ExpenseMutationResponse,
     ExpensePostRequest,
     ExpenseReplaceRequest,
+    FundingSourceArchiveRequest,
+    FundingSourceCreateRequest,
+    FundingSourceDefaultRequest,
+    FundingSourceManagementResponse,
+    FundingSourceMutationResponse,
+    FundingSourceRenameRequest,
     HealthResponse,
     MessagingOperationsResponse,
     MessagingRequeueRequest,
@@ -73,12 +79,15 @@ from money_tracker.web.contracts import (
     ReceiptRegisterResponse,
     ReceiptReviewRequest,
     TransactionRegisterResponse,
+    WalletEntryCreateRequest,
+    WalletEntryMutationResponse,
 )
 from money_tracker.web.mutations import (
     BudgetMutationAdapter,
     CategoryManagementMutationAdapter,
     CategoryReviewMutationAdapter,
     ExpenseMutationAdapter,
+    FundingSourceMutationAdapter,
     MessagingOperationsAdapter,
     ReceiptReviewMutationAdapter,
 )
@@ -150,6 +159,7 @@ def create_app(
     mutations: ExpenseMutationAdapter,
     budgets: BudgetMutationAdapter,
     categories: CategoryManagementMutationAdapter,
+    funding_sources: FundingSourceMutationAdapter,
     category_reviews: CategoryReviewMutationAdapter,
     receipts: ReceiptReviewMutationAdapter,
     messaging: MessagingOperationsAdapter,
@@ -164,6 +174,8 @@ def create_app(
         mutations: Browser adapter over audited, replay-safe finance use cases.
         budgets: Browser adapter over audited, replay-safe budget use cases.
         categories: Browser adapter over audited stable taxonomy management.
+        funding_sources: Browser adapter over versioned source lifecycle and
+            immutable wallet movements.
         category_reviews: Browser adapter over owner category decisions.
         receipts: Browser adapter over retained receipt metadata and its
             audited review transitions. It reaches no media store.
@@ -408,6 +420,197 @@ def create_app(
             ),
             render=CategoryMutationResponse.from_domain,
             problems=_CATEGORY_MANAGEMENT_PROBLEMS,
+            command_key=idempotency_key,
+            instance=instance,
+        )
+
+    @router.get(
+        "/funding-sources",
+        response_model=FundingSourceManagementResponse,
+    )
+    def funding_source_management() -> FundingSourceManagementResponse | JSONResponse:
+        """Return labels, lifecycle state, and tracked-wallet history."""
+
+        try:
+            result = funding_sources.management(profile_id=profile_id)
+        except DomainError:
+            return _problem(
+                status=503,
+                title="Fonti non disponibili",
+                detail="Lo stato di un wallet richiede assistenza.",
+                code="funding_source_state_invalid",
+                instance=f"{API_V1_PREFIX}/funding-sources",
+            )
+        except PsycopgError:
+            return _database_problem(f"{API_V1_PREFIX}/funding-sources")
+        return FundingSourceManagementResponse.from_application(result)
+
+    @router.post(
+        "/funding-sources",
+        response_model=FundingSourceMutationResponse,
+        status_code=201,
+    )
+    async def create_funding_source(
+        http_request: Request,
+        idempotency_key: Annotated[
+            str,
+            Header(alias="Idempotency-Key", min_length=1, max_length=200),
+        ],
+    ) -> FundingSourceMutationResponse | JSONResponse:
+        """Create one active payment label or tracked wallet."""
+
+        instance = f"{API_V1_PREFIX}/funding-sources"
+        try:
+            payload = FundingSourceCreateRequest.model_validate_json(
+                await http_request.body()
+            )
+        except ValidationError:
+            return _invalid_body(instance)
+        return _execute_mutation(
+            lambda: funding_sources.create(
+                profile_id=profile_id,
+                command_key=idempotency_key.strip(),
+                request=payload,
+            ),
+            render=FundingSourceMutationResponse.from_domain,
+            problems=_FUNDING_SOURCE_PROBLEMS,
+            command_key=idempotency_key,
+            instance=instance,
+        )
+
+    @router.put(
+        "/funding-sources/{source_id}",
+        response_model=FundingSourceMutationResponse,
+    )
+    async def rename_funding_source(
+        source_id: UUID,
+        http_request: Request,
+        idempotency_key: Annotated[
+            str,
+            Header(alias="Idempotency-Key", min_length=1, max_length=200),
+        ],
+    ) -> FundingSourceMutationResponse | JSONResponse:
+        """Rename one active source without changing its financial class."""
+
+        instance = f"{API_V1_PREFIX}/funding-sources/{source_id}"
+        try:
+            payload = FundingSourceRenameRequest.model_validate_json(
+                await http_request.body()
+            )
+        except ValidationError:
+            return _invalid_body(instance)
+        return _execute_mutation(
+            lambda: funding_sources.rename(
+                profile_id=profile_id,
+                source_id=source_id,
+                command_key=idempotency_key.strip(),
+                request=payload,
+            ),
+            render=FundingSourceMutationResponse.from_domain,
+            problems=_FUNDING_SOURCE_PROBLEMS,
+            command_key=idempotency_key,
+            instance=instance,
+        )
+
+    @router.post(
+        "/funding-sources/{source_id}/default",
+        response_model=FundingSourceMutationResponse,
+    )
+    async def set_default_funding_source(
+        source_id: UUID,
+        http_request: Request,
+        idempotency_key: Annotated[
+            str,
+            Header(alias="Idempotency-Key", min_length=1, max_length=200),
+        ],
+    ) -> FundingSourceMutationResponse | JSONResponse:
+        """Move the profile default under the complete displayed state."""
+
+        instance = f"{API_V1_PREFIX}/funding-sources/{source_id}/default"
+        try:
+            payload = FundingSourceDefaultRequest.model_validate_json(
+                await http_request.body()
+            )
+        except ValidationError:
+            return _invalid_body(instance)
+        return _execute_mutation(
+            lambda: funding_sources.set_default(
+                profile_id=profile_id,
+                source_id=source_id,
+                command_key=idempotency_key.strip(),
+                request=payload,
+            ),
+            render=FundingSourceMutationResponse.from_domain,
+            problems=_FUNDING_SOURCE_PROBLEMS,
+            command_key=idempotency_key,
+            instance=instance,
+        )
+
+    @router.post(
+        "/funding-sources/{source_id}/archive",
+        response_model=FundingSourceMutationResponse,
+    )
+    async def archive_funding_source(
+        source_id: UUID,
+        http_request: Request,
+        idempotency_key: Annotated[
+            str,
+            Header(alias="Idempotency-Key", min_length=1, max_length=200),
+        ],
+    ) -> FundingSourceMutationResponse | JSONResponse:
+        """Archive one non-default source without deleting history."""
+
+        instance = f"{API_V1_PREFIX}/funding-sources/{source_id}/archive"
+        try:
+            payload = FundingSourceArchiveRequest.model_validate_json(
+                await http_request.body()
+            )
+        except ValidationError:
+            return _invalid_body(instance)
+        return _execute_mutation(
+            lambda: funding_sources.archive(
+                profile_id=profile_id,
+                source_id=source_id,
+                command_key=idempotency_key.strip(),
+                request=payload,
+            ),
+            render=FundingSourceMutationResponse.from_domain,
+            problems=_FUNDING_SOURCE_PROBLEMS,
+            command_key=idempotency_key,
+            instance=instance,
+        )
+
+    @router.post(
+        "/funding-sources/{source_id}/wallet-entries",
+        response_model=WalletEntryMutationResponse,
+        status_code=201,
+    )
+    async def add_wallet_entry(
+        source_id: UUID,
+        http_request: Request,
+        idempotency_key: Annotated[
+            str,
+            Header(alias="Idempotency-Key", min_length=1, max_length=200),
+        ],
+    ) -> WalletEntryMutationResponse | JSONResponse:
+        """Append one immutable manual wallet movement."""
+
+        instance = f"{API_V1_PREFIX}/funding-sources/{source_id}/wallet-entries"
+        try:
+            payload = WalletEntryCreateRequest.model_validate_json(
+                await http_request.body()
+            )
+        except ValidationError:
+            return _invalid_body(instance)
+        return _execute_mutation(
+            lambda: funding_sources.add_wallet_entry(
+                profile_id=profile_id,
+                source_id=source_id,
+                command_key=idempotency_key.strip(),
+                request=payload,
+            ),
+            render=WalletEntryMutationResponse.from_domain,
+            problems=_WALLET_PROBLEMS,
             command_key=idempotency_key,
             instance=instance,
         )
@@ -1110,6 +1313,38 @@ _CATEGORY_MANAGEMENT_PROBLEMS = _MutationProblems(
 )
 
 
+_FUNDING_SOURCE_PROBLEMS = _MutationProblems(
+    not_found=(
+        "Fonte non trovata",
+        "La fonte richiesta non esiste o non appartiene a questo profilo.",
+    ),
+    conflict=(
+        "Fonte già aggiornata",
+        "Ricarica le fonti prima di riprovare.",
+    ),
+    invalid=(
+        "Modifica non valida",
+        "La fonte non può essere modificata in questo stato.",
+    ),
+    code_prefix="funding_source",
+)
+
+_WALLET_PROBLEMS = _MutationProblems(
+    not_found=(
+        "Wallet non trovato",
+        "Il wallet richiesto non esiste o non appartiene a questo profilo.",
+    ),
+    conflict=(
+        "Movimento wallet già registrato",
+        "Ricarica il wallet prima di riprovare.",
+    ),
+    invalid=(
+        "Movimento wallet non valido",
+        "Controlla tipo, importo, data, scadenza e saldi del wallet.",
+    ),
+    code_prefix="wallet",
+)
+
 _CATEGORY_REVIEW_PROBLEMS = _MutationProblems(
     not_found=(
         "Proposta non trovata",
@@ -1279,6 +1514,7 @@ def _mount_dashboard(app: FastAPI, static_dir: Path) -> None:
     @app.get("/analisi", include_in_schema=False)
     @app.get("/movimenti", include_in_schema=False)
     @app.get("/categorie", include_in_schema=False)
+    @app.get("/fonti", include_in_schema=False)
     @app.get("/budget", include_in_schema=False)
     @app.get("/scontrini", include_in_schema=False)
     @app.get("/messaggistica", include_in_schema=False)

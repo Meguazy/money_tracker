@@ -69,8 +69,9 @@ work that must be qualified by starting a unit rather than scoring it.
 
 Step 5 adds the `money-tracker-api.service` template, direct locked-environment
 entry point, loopback settings, and a preflight that requires compiled assets.
-It has unit and HTTP/PostgreSQL integration evidence but has not yet completed
-installed browser acceptance. Daily backup scheduling, off-device
+Its overview, finance, category, funding-source/wallet, receipt, and messaging
+slices have unit and HTTP/PostgreSQL integration evidence, but the service has
+not yet completed installed browser acceptance. Daily backup scheduling, off-device
 recovery-secret verification, and the clean-machine restore drill remain planned
 for Step 7.
 

@@ -14,6 +14,7 @@ from money_tracker.application import (
     CategoryReviewService,
     FinanceAdministrationService,
     FinanceService,
+    FundingSourceAdministrationService,
     ReceiptMetadataService,
     ReportingService,
 )
@@ -31,6 +32,7 @@ from money_tracker.web.mutations import (
     CategoryManagementMutationAdapter,
     CategoryReviewMutationAdapter,
     ExpenseMutationAdapter,
+    FundingSourceMutationAdapter,
     MessagingOperationsAdapter,
     ReceiptReviewMutationAdapter,
 )
@@ -106,6 +108,14 @@ def main(argv: Sequence[str] | None = None) -> None:
                     clock=clock,
                     ids=ids,
                 )
+            ),
+            funding_sources=FundingSourceMutationAdapter(
+                FundingSourceAdministrationService(
+                    repository,
+                    clock=clock,
+                    ids=ids,
+                ),
+                ids=ids,
             ),
             category_reviews=CategoryReviewMutationAdapter(
                 CategoryReviewService(repository, repository, clock=clock, ids=ids)

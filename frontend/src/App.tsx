@@ -15,6 +15,11 @@ const CategoriesPage = lazy(() =>
     default: module.CategoriesPage,
   })),
 );
+const FundingSourcesPage = lazy(() =>
+  import("./FundingSourcesPage").then((module) => ({
+    default: module.FundingSourcesPage,
+  })),
+);
 const MessagingPage = lazy(() =>
   import("./MessagingPage").then((module) => ({
     default: module.MessagingPage,
@@ -79,6 +84,12 @@ export function App() {
             </NavLink>
             <NavLink
               className={({ isActive }) => (isActive ? "active" : "")}
+              to="/fonti"
+            >
+              Fonti
+            </NavLink>
+            <NavLink
+              className={({ isActive }) => (isActive ? "active" : "")}
               to="/budget"
             >
               Budget
@@ -112,6 +123,7 @@ export function App() {
             <Route element={<AnalyticsPage />} path="/analisi" />
             <Route element={<TransactionsPage />} path="/movimenti" />
             <Route element={<CategoriesPage />} path="/categorie" />
+            <Route element={<FundingSourcesPage />} path="/fonti" />
             <Route element={<BudgetsPage />} path="/budget" />
             <Route element={<ReceiptsPage />} path="/scontrini" />
             <Route element={<MessagingPage />} path="/messaggistica" />

@@ -18,6 +18,7 @@ from money_tracker.application import (
     MARK_NEEDS_REVIEW_ACTION,
     AggregateNotFoundError,
     CategoryAdministrationService,
+    FundingSourceAdministrationService,
     IdempotencyConflictError,
     OptimisticConcurrencyError,
     ReceiptMetadataService,
@@ -704,6 +705,67 @@ def test_concurrent_replacements_allow_exactly_one_winner(postgres_url: str) -> 
             "SELECT count(*) FROM finance.audit_events "
             "WHERE aggregate_id = %s AND action = 'correct'",
             (draft.id,),
+        ).fetchone() == (1,)
+
+
+@pytest.mark.postgres
+def test_concurrent_source_create_replay_returns_the_stored_identity(
+    postgres_url: str,
+) -> None:
+    """Converge concurrent create retries on one persisted source identity."""
+
+    upgrade_database(postgres_url)
+    repository, profile, _, _ = _repository_fixture(postgres_url)
+    service = FundingSourceAdministrationService(
+        repository,
+        clock=SystemClock(),
+        ids=UUID4Generator(),
+    )
+    candidates = (
+        FundingSource(
+            id=uuid4(),
+            profile_id=profile.id,
+            name="Benefit concorrente",
+            funding_class=FundingClass.BENEFIT,
+            balance_mode=BalanceMode.LEDGER,
+        ),
+        FundingSource(
+            id=uuid4(),
+            profile_id=profile.id,
+            name="Benefit concorrente",
+            funding_class=FundingClass.BENEFIT,
+            balance_mode=BalanceMode.LEDGER,
+        ),
+    )
+    barrier = Barrier(2)
+
+    def attempt(candidate: FundingSource) -> FundingSource:
+        """Race one semantically identical creation through the application."""
+
+        barrier.wait()
+        return service.create(
+            candidate,
+            idempotency_key="integration-source-concurrent-create",
+            actor="integration-test",
+            reason="verify concurrent source replay",
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = tuple(executor.map(attempt, candidates))
+
+    assert results[0] == results[1]
+    assert results[0] in candidates
+    with connect(postgres_url) as connection:
+        assert connection.execute(
+            "SELECT count(*) FROM finance.funding_sources "
+            "WHERE profile_id = %s AND normalized_name = %s",
+            (profile.id, "benefit concorrente"),
+        ).fetchone() == (1,)
+        assert connection.execute(
+            "SELECT count(*) FROM finance.audit_events "
+            "WHERE profile_id = %s AND action = 'create' "
+            "AND aggregate_type = 'funding_source'",
+            (profile.id,),
         ).fetchone() == (1,)
 
 

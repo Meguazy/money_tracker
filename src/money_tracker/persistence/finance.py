@@ -24,6 +24,7 @@ from money_tracker.domain import (
     CategoryProposalStatus,
     CategoryStatus,
     DateRange,
+    DomainError,
     Expense,
     ExpenseStatus,
     FundingClass,
@@ -39,9 +40,10 @@ from money_tracker.domain import (
     TaxonomyError,
     WalletEntry,
     WalletEntryType,
+    WalletError,
     YearMonth,
     normalize_category_name,
-    require_available_balance,
+    wallet_availability,
 )
 from money_tracker.structured_logging import get_logger
 
@@ -153,11 +155,17 @@ class PostgresFinanceRepository:
         """
 
         with connect(self._database_url) as connection:
+            profile = connection.execute(
+                "SELECT id FROM finance.profiles WHERE id = %s FOR UPDATE",
+                (source.profile_id,),
+            ).fetchone()
+            if profile is None:
+                raise AggregateNotFoundError("profile does not exist")
             connection.execute(
                 "INSERT INTO finance.funding_sources "
                 "(id, profile_id, name, normalized_name, funding_class, "
                 "balance_mode, status, is_default, version, created_at, updated_at) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 1, %s, %s)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     source.id,
                     source.profile_id,
@@ -167,10 +175,348 @@ class PostgresFinanceRepository:
                     source.balance_mode.value,
                     source.status.value,
                     source.is_default,
+                    source.version,
                     occurred_at,
                     occurred_at,
                 ),
             )
+            if source.is_default:
+                connection.execute(
+                    "UPDATE finance.profiles SET default_funding_source_id = %s, "
+                    "updated_at = %s WHERE id = %s",
+                    (source.id, occurred_at, source.profile_id),
+                )
+
+    def get_idempotent_funding_source_command(
+        self,
+        *,
+        profile_id: UUID,
+        idempotency_key: str,
+        command_type: str,
+        request_hash: str,
+    ) -> FundingSource | None:
+        """Return the source stored by an identical owner command."""
+
+        self._validate_command_identity(idempotency_key, command_type, request_hash)
+        with connect(self._database_url) as connection:
+            prior = connection.execute(
+                "SELECT command_type, request_hash, aggregate_id "
+                "FROM finance.idempotency_records "
+                "WHERE profile_id = %s AND idempotency_key = %s",
+                (profile_id, idempotency_key),
+            ).fetchone()
+            if prior is None:
+                return None
+            self._require_identical_category_command(
+                prior, command_type=command_type, request_hash=request_hash
+            )
+            row = connection.execute(
+                "SELECT id, profile_id, name, funding_class, balance_mode, "
+                "status, is_default, version FROM finance.funding_sources "
+                "WHERE profile_id = %s AND id = %s",
+                (profile_id, prior[2]),
+            ).fetchone()
+        if row is None:
+            raise IdempotencyConflictError("funding source command result is missing")
+        return self._funding_source_from_row(row)
+
+    def save_funding_source(
+        self,
+        source: FundingSource,
+        *,
+        expected_version: int | None,
+        idempotency_key: str,
+        command_type: str,
+        request_hash: str,
+        audit_event: AuditEvent,
+    ) -> FundingSource:
+        """Create or replace one source and return the committed aggregate."""
+
+        self._validate_command_identity(idempotency_key, command_type, request_hash)
+        with connect(self._database_url) as connection:
+            claimed = connection.execute(
+                "INSERT INTO finance.idempotency_records "
+                "(profile_id, idempotency_key, command_type, request_hash, "
+                "aggregate_id, created_at) VALUES (%s, %s, %s, %s, %s, %s) "
+                "ON CONFLICT DO NOTHING RETURNING aggregate_id",
+                (
+                    source.profile_id,
+                    idempotency_key,
+                    command_type,
+                    request_hash,
+                    source.id,
+                    audit_event.occurred_at,
+                ),
+            ).fetchone()
+            if claimed is None:
+                prior = connection.execute(
+                    "SELECT command_type, request_hash, aggregate_id "
+                    "FROM finance.idempotency_records "
+                    "WHERE profile_id = %s AND idempotency_key = %s",
+                    (source.profile_id, idempotency_key),
+                ).fetchone()
+                if prior is None:
+                    raise IdempotencyConflictError("idempotency claim disappeared")
+                self._require_identical_category_command(
+                    prior, command_type=command_type, request_hash=request_hash
+                )
+                row = connection.execute(
+                    "SELECT id, profile_id, name, funding_class, balance_mode, "
+                    "status, is_default, version FROM finance.funding_sources "
+                    "WHERE profile_id = %s AND id = %s",
+                    (source.profile_id, prior[2]),
+                ).fetchone()
+                if row is None:
+                    raise IdempotencyConflictError(
+                        "funding source command result is missing"
+                    )
+                return self._funding_source_from_row(row)
+            profile = connection.execute(
+                "SELECT id FROM finance.profiles WHERE id = %s FOR UPDATE",
+                (source.profile_id,),
+            ).fetchone()
+            if profile is None:
+                raise AggregateNotFoundError("profile does not exist")
+            rows = connection.execute(
+                "SELECT id, profile_id, name, funding_class, balance_mode, status, "
+                "is_default, version FROM finance.funding_sources "
+                "WHERE profile_id = %s ORDER BY id FOR UPDATE",
+                (source.profile_id,),
+            ).fetchall()
+            current = next((row for row in rows if row[0] == source.id), None)
+            duplicate = next(
+                (
+                    row
+                    for row in rows
+                    if row[0] != source.id
+                    and normalize_category_name(row[2])
+                    == normalize_category_name(source.name)
+                ),
+                None,
+            )
+            if duplicate is not None:
+                raise DomainError("funding source name already exists")
+            if expected_version is None:
+                if current is not None:
+                    raise OptimisticConcurrencyError("funding source already exists")
+                if (
+                    source.version != 1
+                    or source.status is not FundingSourceStatus.ACTIVE
+                ):
+                    raise ValueError("new funding source must be active at version 1")
+                if source.is_default and any(row[6] for row in rows):
+                    raise DomainError("a default funding source already exists")
+                connection.execute(
+                    "INSERT INTO finance.funding_sources "
+                    "(id, profile_id, name, normalized_name, funding_class, "
+                    "balance_mode, status, is_default, version, created_at, "
+                    "updated_at) "
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                    (
+                        source.id,
+                        source.profile_id,
+                        source.name,
+                        normalize_category_name(source.name),
+                        source.funding_class.value,
+                        source.balance_mode.value,
+                        source.status.value,
+                        source.is_default,
+                        source.version,
+                        audit_event.occurred_at,
+                        audit_event.occurred_at,
+                    ),
+                )
+                if source.is_default:
+                    connection.execute(
+                        "UPDATE finance.profiles SET default_funding_source_id = %s, "
+                        "updated_at = %s WHERE id = %s",
+                        (source.id, audit_event.occurred_at, source.profile_id),
+                    )
+            else:
+                if current is None:
+                    raise AggregateNotFoundError(
+                        "funding source does not exist in profile"
+                    )
+                persisted = self._funding_source_from_row(current)
+                if persisted.version != expected_version:
+                    raise OptimisticConcurrencyError(
+                        "funding source changed since the requested version"
+                    )
+                if source.version != persisted.version + 1:
+                    raise ValueError(
+                        "funding source replacement must advance one version"
+                    )
+                if (
+                    source.id != persisted.id
+                    or source.profile_id != persisted.profile_id
+                    or source.funding_class is not persisted.funding_class
+                    or source.balance_mode is not persisted.balance_mode
+                    or source.is_default != persisted.is_default
+                ):
+                    raise ValueError(
+                        "funding source replacement changed immutable state"
+                    )
+                if persisted.status is not FundingSourceStatus.ACTIVE:
+                    raise DomainError("archived funding source cannot be changed")
+                if source.status is FundingSourceStatus.ARCHIVED and source.is_default:
+                    raise DomainError("default funding source cannot be archived")
+                if (
+                    source.status is FundingSourceStatus.ARCHIVED
+                    and source.balance_mode is BalanceMode.LEDGER
+                ):
+                    entries = self._load_wallet_entries(
+                        connection, source.profile_id, source.id
+                    )
+                    availability = wallet_availability(
+                        persisted, entries, as_of=audit_event.occurred_at
+                    )
+                    if (
+                        availability.booked_balance.minor_units != 0
+                        or availability.available_balance.minor_units != 0
+                    ):
+                        raise WalletError("wallet balance must be zero before archive")
+                cursor = connection.execute(
+                    "UPDATE finance.funding_sources SET name = %s, "
+                    "normalized_name = %s, "
+                    "status = %s, version = %s, updated_at = %s "
+                    "WHERE id = %s AND profile_id = %s AND version = %s",
+                    (
+                        source.name,
+                        normalize_category_name(source.name),
+                        source.status.value,
+                        source.version,
+                        audit_event.occurred_at,
+                        source.id,
+                        source.profile_id,
+                        expected_version,
+                    ),
+                )
+                if cursor.rowcount != 1:
+                    raise OptimisticConcurrencyError(
+                        "funding source changed since the requested version"
+                    )
+            self._insert_audit(connection, audit_event)
+        return source
+
+    def set_default_funding_source(
+        self,
+        source: FundingSource,
+        *,
+        previous: FundingSource | None,
+        expected_version: int,
+        expected_previous_version: int | None,
+        idempotency_key: str,
+        command_type: str,
+        request_hash: str,
+        audit_events: tuple[AuditEvent, ...],
+    ) -> None:
+        """Move both default representations and audits in one transaction."""
+
+        self._validate_command_identity(idempotency_key, command_type, request_hash)
+        with connect(self._database_url) as connection:
+            claimed = connection.execute(
+                "INSERT INTO finance.idempotency_records "
+                "(profile_id, idempotency_key, command_type, request_hash, "
+                "aggregate_id, created_at) VALUES (%s, %s, %s, %s, %s, %s) "
+                "ON CONFLICT DO NOTHING RETURNING aggregate_id",
+                (
+                    source.profile_id,
+                    idempotency_key,
+                    command_type,
+                    request_hash,
+                    source.id,
+                    audit_events[0].occurred_at,
+                ),
+            ).fetchone()
+            if claimed is None:
+                prior = connection.execute(
+                    "SELECT command_type, request_hash "
+                    "FROM finance.idempotency_records "
+                    "WHERE profile_id = %s AND idempotency_key = %s",
+                    (source.profile_id, idempotency_key),
+                ).fetchone()
+                if prior is None:
+                    raise IdempotencyConflictError("idempotency claim disappeared")
+                self._require_identical_category_command(
+                    prior, command_type=command_type, request_hash=request_hash
+                )
+                return
+            profile = connection.execute(
+                "SELECT id FROM finance.profiles WHERE id = %s FOR UPDATE",
+                (source.profile_id,),
+            ).fetchone()
+            if profile is None:
+                raise AggregateNotFoundError("profile does not exist")
+            rows = connection.execute(
+                "SELECT id, profile_id, name, funding_class, balance_mode, status, "
+                "is_default, version FROM finance.funding_sources "
+                "WHERE profile_id = %s ORDER BY id FOR UPDATE",
+                (source.profile_id,),
+            ).fetchall()
+            target_row = next((row for row in rows if row[0] == source.id), None)
+            if target_row is None:
+                raise AggregateNotFoundError("funding source does not exist in profile")
+            target = self._funding_source_from_row(target_row)
+            actual_previous = next(
+                (self._funding_source_from_row(row) for row in rows if row[6]), None
+            )
+            if target.version != expected_version:
+                raise OptimisticConcurrencyError(
+                    "funding source changed since the requested version"
+                )
+            if target.status is not FundingSourceStatus.ACTIVE or target.is_default:
+                raise DomainError("funding source cannot become default")
+            if (None if actual_previous is None else actual_previous.id) != (
+                None if previous is None else previous.id
+            ):
+                raise OptimisticConcurrencyError("default funding source changed")
+            if (None if actual_previous is None else actual_previous.version) != (
+                expected_previous_version
+            ):
+                raise OptimisticConcurrencyError("default funding source changed")
+            if previous is not None:
+                if expected_previous_version is None:
+                    raise ValueError("previous default version is required")
+                if previous.version != expected_previous_version + 1:
+                    raise ValueError("previous default must advance one version")
+                cursor = connection.execute(
+                    "UPDATE finance.funding_sources SET is_default = false, "
+                    "version = %s, updated_at = %s WHERE id = %s "
+                    "AND profile_id = %s AND version = %s",
+                    (
+                        previous.version,
+                        audit_events[0].occurred_at,
+                        previous.id,
+                        previous.profile_id,
+                        expected_previous_version,
+                    ),
+                )
+                if cursor.rowcount != 1:
+                    raise OptimisticConcurrencyError("default funding source changed")
+            if source.version != expected_version + 1:
+                raise ValueError("new default must advance one version")
+            cursor = connection.execute(
+                "UPDATE finance.funding_sources SET is_default = true, version = %s, "
+                "updated_at = %s WHERE id = %s AND profile_id = %s AND version = %s",
+                (
+                    source.version,
+                    audit_events[0].occurred_at,
+                    source.id,
+                    source.profile_id,
+                    expected_version,
+                ),
+            )
+            if cursor.rowcount != 1:
+                raise OptimisticConcurrencyError(
+                    "funding source changed since the requested version"
+                )
+            connection.execute(
+                "UPDATE finance.profiles SET default_funding_source_id = %s, "
+                "updated_at = %s WHERE id = %s",
+                (source.id, audit_events[0].occurred_at, source.profile_id),
+            )
+            for audit_event in audit_events:
+                self._insert_audit(connection, audit_event)
 
     def list_profiles(self) -> tuple[UUID, ...]:
         """List active profile identifiers in creation order.
@@ -1105,7 +1451,7 @@ class PostgresFinanceRepository:
         with connect(self._database_url) as connection:
             rows = connection.execute(
                 "SELECT id, profile_id, name, funding_class, balance_mode, "
-                "status, is_default FROM finance.funding_sources "
+                "status, is_default, version FROM finance.funding_sources "
                 "WHERE profile_id = %s ORDER BY id",
                 (profile_id,),
             ).fetchall()
@@ -1117,6 +1463,7 @@ class PostgresFinanceRepository:
                 funding_class=FundingClass(row[3]),
                 balance_mode=BalanceMode(row[4]),
                 status=FundingSourceStatus(row[5]),
+                version=row[7],
                 is_default=row[6],
             )
             for row in rows
@@ -1511,6 +1858,132 @@ class PostgresFinanceRepository:
         with connect(self._database_url) as connection:
             return self._load_wallet_entries(connection, profile_id, funding_source_id)
 
+    def get_idempotent_wallet_command(
+        self,
+        *,
+        profile_id: UUID,
+        idempotency_key: str,
+        command_type: str,
+        request_hash: str,
+    ) -> WalletEntry | None:
+        """Return the immutable entry stored by an identical command."""
+
+        self._validate_command_identity(idempotency_key, command_type, request_hash)
+        with connect(self._database_url) as connection:
+            prior = connection.execute(
+                "SELECT command_type, request_hash, aggregate_id "
+                "FROM finance.idempotency_records "
+                "WHERE profile_id = %s AND idempotency_key = %s",
+                (profile_id, idempotency_key),
+            ).fetchone()
+            if prior is None:
+                return None
+            self._require_identical_category_command(
+                prior, command_type=command_type, request_hash=request_hash
+            )
+            row = connection.execute(
+                "SELECT id, profile_id, funding_source_id, entry_type, amount_minor, "
+                "currency, occurred_at, expires_on, expense_id, note "
+                "FROM finance.wallet_entries WHERE profile_id = %s AND id = %s",
+                (profile_id, prior[2]),
+            ).fetchone()
+        if row is None:
+            raise IdempotencyConflictError("wallet command result is missing")
+        return self._wallet_entry_from_row(row)
+
+    def append_wallet_entry_idempotently(
+        self,
+        entry: WalletEntry,
+        *,
+        idempotency_key: str,
+        command_type: str,
+        request_hash: str,
+        audit_event: AuditEvent,
+    ) -> WalletEntry:
+        """Claim, expiry-check, append, and audit a wallet entry atomically."""
+
+        self._validate_command_identity(idempotency_key, command_type, request_hash)
+        with connect(self._database_url) as connection:
+            claimed = connection.execute(
+                "INSERT INTO finance.idempotency_records "
+                "(profile_id, idempotency_key, command_type, request_hash, "
+                "aggregate_id, created_at) VALUES (%s, %s, %s, %s, %s, %s) "
+                "ON CONFLICT DO NOTHING RETURNING aggregate_id",
+                (
+                    entry.profile_id,
+                    idempotency_key,
+                    command_type,
+                    request_hash,
+                    entry.id,
+                    audit_event.occurred_at,
+                ),
+            ).fetchone()
+            if claimed is None:
+                prior = connection.execute(
+                    "SELECT command_type, request_hash, aggregate_id "
+                    "FROM finance.idempotency_records "
+                    "WHERE profile_id = %s AND idempotency_key = %s",
+                    (entry.profile_id, idempotency_key),
+                ).fetchone()
+                if prior is None:
+                    raise IdempotencyConflictError("idempotency claim disappeared")
+                self._require_identical_category_command(
+                    prior, command_type=command_type, request_hash=request_hash
+                )
+                row = connection.execute(
+                    "SELECT id, profile_id, funding_source_id, entry_type, "
+                    "amount_minor, currency, occurred_at, expires_on, expense_id, note "
+                    "FROM finance.wallet_entries WHERE profile_id = %s AND id = %s",
+                    (entry.profile_id, prior[2]),
+                ).fetchone()
+                if row is None:
+                    raise IdempotencyConflictError("wallet command result is missing")
+                return self._wallet_entry_from_row(row)
+            row = connection.execute(
+                "SELECT id, profile_id, name, funding_class, balance_mode, status, "
+                "is_default, version FROM finance.funding_sources "
+                "WHERE id = %s AND profile_id = %s FOR UPDATE",
+                (entry.funding_source_id, entry.profile_id),
+            ).fetchone()
+            if row is None:
+                raise AggregateNotFoundError("funding source does not exist in profile")
+            source = self._funding_source_from_row(row)
+            if source.status is not FundingSourceStatus.ACTIVE:
+                raise DomainError("wallet source must be active")
+            if source.balance_mode is not BalanceMode.LEDGER:
+                raise DomainError("wallet entry requires a ledger source")
+            existing = self._load_wallet_entries(
+                connection, entry.profile_id, entry.funding_source_id
+            )
+            if entry.entry_type is WalletEntryType.OPENING and existing:
+                raise DomainError("opening balance is allowed only as the first entry")
+            wallet_availability(
+                source,
+                (*existing, entry),
+                as_of=max(audit_event.occurred_at, entry.occurred_at),
+            )
+            connection.execute(
+                "INSERT INTO finance.wallet_entries "
+                "(id, profile_id, funding_source_id, entry_type, amount_minor, "
+                "currency, occurred_at, expires_on, expense_id, note, created_at) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                (
+                    entry.id,
+                    entry.profile_id,
+                    entry.funding_source_id,
+                    entry.entry_type.value,
+                    entry.amount.minor_units,
+                    entry.amount.currency,
+                    entry.occurred_at,
+                    entry.expires_on,
+                    entry.expense_id,
+                    entry.note,
+                    audit_event.occurred_at,
+                ),
+            )
+            self._insert_audit(connection, audit_event)
+        return entry
+
     def append_wallet_entry(
         self,
         entry: WalletEntry,
@@ -1526,27 +1999,19 @@ class PostgresFinanceRepository:
         Raises:
             AggregateNotFoundError: If the source is outside the profile.
             ValueError: If the source is inactive or untracked.
-            WalletError: If a debit exceeds the booked balance.
+            WalletError: If an entry would exceed expiry-aware availability.
         """
 
         with connect(self._database_url) as connection:
             row = connection.execute(
                 "SELECT id, profile_id, name, funding_class, balance_mode, "
-                "status, is_default FROM finance.funding_sources "
+                "status, is_default, version FROM finance.funding_sources "
                 "WHERE id = %s AND profile_id = %s FOR UPDATE",
                 (entry.funding_source_id, entry.profile_id),
             ).fetchone()
             if row is None:
                 raise AggregateNotFoundError("funding source does not exist in profile")
-            source = FundingSource(
-                id=row[0],
-                profile_id=row[1],
-                name=row[2],
-                funding_class=FundingClass(row[3]),
-                balance_mode=BalanceMode(row[4]),
-                status=FundingSourceStatus(row[5]),
-                is_default=row[6],
-            )
+            source = self._funding_source_from_row(row)
             if source.status is not FundingSourceStatus.ACTIVE:
                 raise ValueError("wallet source must be active")
             if source.balance_mode is not BalanceMode.LEDGER:
@@ -1554,8 +2019,13 @@ class PostgresFinanceRepository:
             existing = self._load_wallet_entries(
                 connection, entry.profile_id, entry.funding_source_id
             )
-            if entry.entry_type is WalletEntryType.DEBIT:
-                require_available_balance(source, existing, -entry.amount)
+            if entry.entry_type is WalletEntryType.OPENING and existing:
+                raise ValueError("opening balance is allowed only as the first entry")
+            wallet_availability(
+                source,
+                (*existing, entry),
+                as_of=max(audit_event.occurred_at, entry.occurred_at),
+            )
             connection.execute(
                 "INSERT INTO finance.wallet_entries "
                 "(id, profile_id, funding_source_id, entry_type, amount_minor, "
@@ -2353,6 +2823,37 @@ class PostgresFinanceRepository:
                 )
                 for item in payment_rows
             ),
+        )
+
+    @staticmethod
+    def _wallet_entry_from_row(row: tuple[Any, ...]) -> WalletEntry:
+        """Reconstruct one immutable wallet entry from its persisted row."""
+
+        return WalletEntry(
+            id=row[0],
+            profile_id=row[1],
+            funding_source_id=row[2],
+            entry_type=WalletEntryType(row[3]),
+            amount=Money(row[4], row[5]),
+            occurred_at=row[6],
+            expires_on=row[7],
+            expense_id=row[8],
+            note=row[9],
+        )
+
+    @staticmethod
+    def _funding_source_from_row(row: tuple[Any, ...]) -> FundingSource:
+        """Reconstruct one versioned funding source from its persisted row."""
+
+        return FundingSource(
+            id=row[0],
+            profile_id=row[1],
+            name=row[2],
+            funding_class=FundingClass(row[3]),
+            balance_mode=BalanceMode(row[4]),
+            status=FundingSourceStatus(row[5]),
+            is_default=row[6],
+            version=row[7],
         )
 
     def _load_wallet_entries(

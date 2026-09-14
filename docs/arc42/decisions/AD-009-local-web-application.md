@@ -3,7 +3,7 @@
 - Status: accepted
 - Implementation: monthly overview, calendar analytics,
   transaction/manual-lifecycle, multi-allocation editing, budget-planning,
-  category management/review, receipt-metadata-review, messaging-operations,
+  category management/review, funding-source/wallet administration, receipt-metadata-review, messaging-operations,
   HTTP security, and host deployment implemented; remaining Step 5 surface in
   progress
 - Date: 2026-09-01
@@ -146,9 +146,10 @@ optimistic version that a correction must quote, which the overview
 deliberately omits because it reports positions rather than offering edits.
 `BudgetMutationAdapter` translates the strict request into
 `FinanceAdministrationService`, injecting the trusted profile, actor, and
-generated aggregate identifier exactly as the movement adapter does; wallet
-entries stay outside it because their balance authority is separate and Step 5
-exposes no browser route for them. Budget creation and replacement became
+generated aggregate identifier exactly as the movement adapter does. Wallet
+entries remain outside the budget adapter because their balance authority is a
+separate application boundary; the dedicated source adapter described below
+reaches them without coupling budgets to balances. Budget creation and replacement became
 replay-safe in the same change, claiming the general command table described in
 AD-005, so this decision's rule that a reused mutation key retries the identical
 command holds for every implemented resource instead of only for movements.
@@ -190,6 +191,39 @@ work invalidates category, proposal, movement, overview, analytics, and budget
 reads because each can display a name or active choice. The web component has
 no proposal-creation or model dependency, so this surface implements AD-008's
 existing policy without changing the evaluated category-fit boundary.
+
+The funding-source slice adds `FundingSourceMutationAdapter` over the dedicated
+`FundingSourceAdministrationService`. `GET /api/v1/funding-sources` returns
+active and archived source identity, class, immutable balance mode, default
+state, and optimistic version. A ledger source additionally returns immutable
+entries, booked balance, AD-020 available balance, and remaining dated lots;
+an untracked source returns no balance. Profile, command identity, and wallet
+notes are omitted.
+
+Strict resources create, rename, make default, archive, and append a manual
+opening, credit, or adjustment. They expose no source deletion, wallet-entry
+deletion, transfer, income, bank-sync, or general-accounting operation. Source
+class and balance mode cannot change after creation. Archive requires an active
+non-default source and, for a ledger, zero booked and available balance. The
+page confirms default movement and archive explicitly and confirms a negative
+adjustment before sending it.
+
+Every command uses the common CSRF and `Idempotency-Key` boundary. Rename and
+archive quote the target version; moving the default also quotes the previous
+default's ID and version. PostgreSQL serializes lifecycle changes on the profile
+and source rows, advances both default flags and the profile pointer together,
+and commits claims and audits in that transaction. Wallet append locks the
+source, rejects a second opening or an expiry-aware overdraft, and commits one
+immutable entry, claim, and audit. Archive rechecks the zero-balance invariant
+under the same lock, rather than trusting the earlier browser projection.
+
+The React `/fonti` route labels payment resources separately from spending
+categories, displays booked and available values without conflating them,
+shows expiry lots and ledger history, and provides loading, empty, retryable
+failure, pending, and responsive states. A successful source change invalidates
+source, transaction, overview, and analytics queries because all can display a
+name or funding allocation. No model-visible contract or receipt boundary is
+part of this component.
 The receipt slice adds a `ReceiptReviewMutationAdapter` over the existing
 `ReceiptMetadataService`. `GET /api/v1/receipts` returns each retained
 original's display filename, decoded media type, exact byte size, storage
@@ -204,7 +238,7 @@ separate decision. Retrying one decision replays it; a different decision taken
 from the same displayed state conflicts. The adapter's port exposes the archive
 listing and the two transitions and nothing else, so this surface cannot reach
 a media store, an extractor, or a deletion path. Every client route is mounted
-for direct navigation, so a reload or bookmark of `/movimenti`, `/categorie`,
+for direct navigation, so a reload or bookmark of `/movimenti`, `/categorie`, `/fonti`,
 `/budget`, `/scontrini`, or `/messaggistica` reaches the same shell.
 
 The messaging slice adds a `MessagingOperationsAdapter` over the existing
@@ -291,8 +325,6 @@ both sides of an ISO-week boundary, and verifies exact whole-month custom-range
 budget aggregation through the production service and repository.
 
 Frontend typecheck, component tests, production build, and a runtime dependency
-audit
-pass. This is partial Step 5 evidence: the remaining control-plane resources,
-merchant analytics, explicit period comparisons, advice surface, and full
-implemented.
-browser E2E acceptance are still required before this decision is fully
+audit pass. This is partial Step 5 evidence: the settings view, merchant
+analytics, explicit period comparisons, advice surface, and full browser E2E
+acceptance are still required before this decision is fully implemented.

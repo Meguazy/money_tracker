@@ -1,7 +1,7 @@
 # Local Web Operations
 
 - Status: Step 5 overview, manual-movement, multi-allocation editing,
-  budget-planning, calendar-analytics, category management/proposal review, funding-source/wallet administration,
+  budget-planning, calendar-analytics, category management/proposal review, funding-source/wallet administration, profile-settings consultation,
   receipt metadata review, and messaging-operations slices implemented;
   complete control plane and release acceptance still in progress
 - Binding decision: [AD-009](../arc42/decisions/AD-009-local-web-application.md)
@@ -17,14 +17,14 @@ bootstrap endpoints. It also exposes the pending category-proposal queue and
 the deterministic approve, reuse-active-category, and cancel decisions, the
 versioned category rename/archive surface and taxonomy complexity warnings, the
 retained receipt metadata and its mandatory review, and the durable messaging
-queues with the two requeue commands. Settings, merchant
+queues with the two requeue commands. The settings surface exposes the fixed V1 locale, currency, and timezone plus the active default-source choice; only that choice is mutable through the existing funding-source command. Merchant
 analytics, explicit period comparisons, advice, and receipt extraction remain
 Step 5 or Step 6 work and must not be described as available.
 
 ## Ownership and boundaries
 
 `money-tracker-api` is a host process. It owns HTTP composition and browser
-policy, but no finance data. `ReportingService` computes exact reads;
+policy, but no finance data. `ReportingService` computes exact finance reads; `ProfileSettingsService` validates and projects the safe owner-facing profile subset;
 `ExpenseMutationAdapter` translates strict browser commands into the existing
 `FinanceService`; `BudgetMutationAdapter` translates budget commands into the
 existing `FinanceAdministrationService`; `CategoryManagementMutationAdapter`
@@ -37,7 +37,7 @@ existing `ReceiptMetadataService` and reaches no media store;
 over `PostgresMessagingRepository` and reaches no Bot API transport; and
 `PostgresFinanceRepository` owns authoritative storage and audit. The wallet route accepts only opening, credit, and adjustment; debit, refund, and expiry remain system/domain causes and every stored row remains immutable. The React application
 owns only ephemeral browser state and receives neither a profile identifier nor
-credentials. The production build is read-only input to FastAPI; receipt
+credentials. The settings response contains no database or service URL, token, private path, receipt key, bot scope, or infrastructure detail. Locale `it-IT`, currency `EUR`, and timezone `Europe/Rome` are persisted read-only V1 invariants; there is no generic settings write route. The production build is read-only input to FastAPI; receipt
 originals are outside the static root, and no route serves their bytes or their
 content digest.
 
@@ -67,7 +67,7 @@ With the application database migrated and exactly one profile present, run:
     uv run --env-file .env money-tracker-api run
 
 Open `http://127.0.0.1:8000/` or `http://localhost:8000/` for the overview;
-use `/movimenti` for the register and manual lifecycle. The editor adds and
+use `/movimenti` for the register and manual lifecycle, and `/impostazioni` to inspect the fixed V1 profile facts and choose an active default funding source. The editor adds and
 removes category and funding-source rows, reconciles each dimension against the
 total separately, and shows each sum and its difference in exact cents. An
 archived category or funding source can never be selected: it appears as a
@@ -175,7 +175,7 @@ listener and allowed origins.
 
 | Route | Purpose | Content |
 | --- | --- | --- |
-| `GET /`, `GET /analisi`, `GET /movimenti`, `GET /budget`, `GET /categorie`, `GET /fonti`, `GET /scontrini`, `GET /messaggistica` | Compiled React shell | Static application only; every route supports direct browser navigation, reload, and bookmarking. |
+| `GET /`, `GET /analisi`, `GET /movimenti`, `GET /budget`, `GET /categorie`, `GET /fonti`, `GET /scontrini`, `GET /messaggistica`, `GET /impostazioni` | Compiled React shell | Static application only; every route supports direct browser navigation, reload, and bookmarking. |
 | `GET /api/v1/overview/monthly?period=YYYY-MM` | Deterministic monthly overview | Exact posted total, funding class/source split, budgets, and unbudgeted categories. |
 | `GET /api/v1/overview/range` | Deterministic calendar analytics | One strict day, ISO-week, month, year, or bounded custom selector; exact posted total, purpose and funding breakdowns, and budget positions only for an exact whole month. |
 | `GET /api/v1/transactions?period=YYYY-MM` | Monthly lifecycle register | Every movement state, exact allocations, optimistic versions, and safe category/source references. |
@@ -186,6 +186,7 @@ listener and allowed origins.
 | `GET /api/v1/budgets?period=YYYY-MM` | Monthly budget plan | Configured targets worst position first, their overrides and versions, and the categories still available. |
 | `POST /api/v1/budgets` | Configure a category budget | Strict recurring target plus optional month overrides. |
 | `PUT /api/v1/budgets/{category_id}` | Replace a budget plan | Strict complete replacement plus `expected_version`. |
+| `GET /api/v1/settings` | Safe profile settings | Fixed locale, currency, and timezone plus minimal active default-source choices; no profile ID, credential, URL, path, bot scope, or infrastructure detail. |
 | `GET /api/v1/funding-sources` | Source and wallet administration | Active/archived sources, class, immutable balance mode, default flag, version, and for ledgers booked/available balances, expiry lots, and immutable history. No profile or notes. |
 | `POST /api/v1/funding-sources` | Create a source | Strict name, funding class, balance mode, and default intent; class/mode cannot later change. |
 | `PUT /api/v1/funding-sources/{id}` | Rename a source | Display name plus `expected_version`; stable identity and history remain. |
@@ -220,7 +221,7 @@ paths, owner text, or credentials.
   the `money_tracker_csrf` HttpOnly cookie and `X-CSRF-Token` header.
 - Every mutation additionally requires a non-empty `Idempotency-Key`. Reuse the
   same key only to retry the identical command; a changed command conflicts.
-  This holds for movement, budget, funding-source, and wallet writes: each
+  This holds for movement, budget, funding-source, and wallet writes; the only settings change reuses the funding-source default command: each
   claims the same general command table in the transaction that applies it, so
   a retried request applies once.
   Correction, registration, cancellation, budget replacement, source rename/archive, and default movement also carry the version observed by the browser, so stale tabs receive 409 and must reload

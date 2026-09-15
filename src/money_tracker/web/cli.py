@@ -15,6 +15,7 @@ from money_tracker.application import (
     FinanceAdministrationService,
     FinanceService,
     FundingSourceAdministrationService,
+    ProfileSettingsService,
     ReceiptMetadataService,
     ReportingService,
 )
@@ -86,6 +87,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             settings=settings,
             profile_id=profile_id,
             reporting=ReportingService(repository),
+            profile_settings=ProfileSettingsService(repository),
             mutations=ExpenseMutationAdapter(
                 FinanceService(
                     repository,

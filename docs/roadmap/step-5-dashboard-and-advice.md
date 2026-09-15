@@ -2,7 +2,7 @@
 
 Part of the [delivery roadmap](../roadmap.md).
 
-Status: **In progress (2026-09-12).** The implemented vertical slices provide
+Status: **In progress (2026-09-15).** The implemented vertical slices provide
 the loopback same-origin host, deterministic monthly overview and transaction
 register, accessible React shell, audited manual create, correct, post, and
 cancel workflows, the multi-allocation editor for both reconciling dimensions,
@@ -11,8 +11,7 @@ review of pending category proposals,
 consultation and mandatory review of retained receipt metadata, and browser
 inspection and requeue of the durable messaging queues. Daily, ISO-week,
 monthly, annual, and bounded custom-range analytics now expose separate purpose
-and funding views. The settings view, merchant/comparison
-analytics, advice surface, and complete browser E2E acceptance are still open.
+and funding views. Merchant/comparison analytics, the advice surface, and complete browser E2E acceptance are still open.
 No model, prompt, routing threshold, tool contract, or taxonomy policy changed,
 so EVD-004 remains the promoted text baseline.
 
@@ -507,9 +506,17 @@ so EVD-004 remains the promoted text baseline.
   taxonomy policy changed. The monthly tool read remains untouched, so no
   evaluation gate is triggered and EVD-004 remains the promoted baseline.
 
+### Profile settings slice (2026-09-15)
+
+- Repository truth and the product baseline agree that the V1 profile has fixed `it-IT` locale, `EUR` currency, and `Europe/Rome` timezone. `/impostazioni` exposes those persisted facts as read-only and offers no request contract that could rewrite them. The only owner-editable V1 preference is the active default funding source.
+- `ProfileSettingsService` is a narrow read-model boundary over the existing finance repository. It validates that the profile pointer and active source flag identify the same single default, permits an actionable empty first-run state, and returns only eligible active sources. It owns no data and introduces no persistence or migration.
+- `GET /api/v1/settings` receives profile scope only from runtime composition and omits the profile identifier. Its response contains locale, currency, timezone, and minimal default-source choices; it contains no credentials, tokens, URLs, private paths, receipt keys, bot scope, or infrastructure detail. Inconsistent persisted state becomes one bounded problem response.
+- Default changes deliberately reuse the existing strict `POST /api/v1/funding-sources/{id}/default` command. CSRF, `Idempotency-Key`, target and previous-default optimistic versions, profile/source locking, atomic profile-pointer and flag updates, dual audit rows, and idempotency claims therefore retain one authoritative implementation. There is no generic settings mutation endpoint and no remote-access, credential, pairing, destructive, locale, currency, or timezone operation.
+- The accessible React route provides loading, retryable error, fixed-field labels, an empty state linked to `/fonti`, a labelled source selector, explicit confirmation, mutation feedback, and invalidation of settings, source, movement, overview, and analytics queries. Component tests cover these states and the complete default-source snapshot.
+- Unit and HTTP tests cover invariant validation, trusted injected scope, safe response shape, refusal of a settings write, and direct navigation. The real PostgreSQL HTTP lifecycle reads settings before and after an atomic default change and proves that fixed fields remain non-mutable. No model-visible contract, prompt, routing threshold, tool, taxonomy policy, advice path, or receipt pipeline changed, so EVD-004 remains promoted and no experiment decision-log entry is required.
+
 ### Work still required before completion
 
-- Add the remaining settings view.
 - Add merchant breakdowns and explicit period-over-period comparison without
   changing the promoted model-visible tool contract accidentally.
 - Expose the already promoted read-only advice capabilities without widening

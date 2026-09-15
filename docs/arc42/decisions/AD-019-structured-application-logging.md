@@ -108,6 +108,8 @@ service logs at the two methods every mutation passes through. Redaction is
 applied to messages, to structured fields, and — because a traceback does not
 exist until a formatter builds one — to the rendered exception text.
 
+The profile-settings slice adds no content-bearing log field: bounded read failures continue through `_problem`, while locale, currency, timezone, source names, URLs, tokens, and private paths are never journal fields.
+
 Documented privacy contracts are honored rather than restated: `BotIdentity`
 declares its bot id as never emitted by diagnostics and the transport therefore
 records only that the credential validated; the model boundary logs the

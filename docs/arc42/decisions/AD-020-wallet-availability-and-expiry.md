@@ -95,6 +95,6 @@ from immutable wallet append commands. `PostgresFinanceRepository` claims
 idempotency keys and commits source changes or wallet entries with audit rows;
 it locks the profile/source rows, validates availability, and rechecks a zero
 balance during archive. Strict FastAPI resources bind the trusted profile and
-the React `/fonti` page exposes labelled state and bounded manual operations.
+the React `/fonti` page exposes labelled state and bounded manual operations. The React `/impostazioni` page reuses the same default-source command and invalidates wallet and reporting projections after success; it exposes no second balance, expiry, or source-lifecycle policy.
 Unit, HTTP, component, and real-PostgreSQL integration tests are recorded in
 [Step 5](../../roadmap/step-5-dashboard-and-advice.md).

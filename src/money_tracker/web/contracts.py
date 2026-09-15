@@ -17,6 +17,7 @@ from money_tracker.application import (
     FundingSourceManagement,
     MonthlyBudgetPositions,
     MonthlyOverview,
+    ProfileSettings,
     RangeOverview,
     TransactionRegister,
 )
@@ -377,6 +378,57 @@ class CategoryMutationResponse(_WebContract):
             name=category.name,
             status=category.status,
             version=category.version,
+        )
+
+
+class DefaultFundingSourceContract(_WebContract):
+    """Active source snapshot used for the default-payment preference."""
+
+    id: UUID
+    name: str
+    funding_class: FundingClass
+    version: int = Field(ge=1)
+
+    @classmethod
+    def from_domain(cls, source: FundingSource) -> Self:
+        """Map one eligible source without profile or wallet details."""
+
+        return cls(
+            id=source.id,
+            name=source.name,
+            funding_class=source.funding_class,
+            version=source.version,
+        )
+
+
+class ProfileSettingsResponse(_WebContract):
+    """Owner-facing V1 preferences without identity or infrastructure data."""
+
+    locale: str
+    timezone: str
+    currency: str
+    default_funding_source: DefaultFundingSourceContract | None
+    available_default_sources: tuple[DefaultFundingSourceContract, ...]
+
+    @classmethod
+    def from_application(cls, settings: ProfileSettings) -> Self:
+        """Map persisted preferences while deliberately omitting profile scope."""
+
+        return cls(
+            locale=settings.profile.locale,
+            timezone=settings.profile.timezone,
+            currency=settings.profile.currency,
+            default_funding_source=(
+                None
+                if settings.default_funding_source is None
+                else DefaultFundingSourceContract.from_domain(
+                    settings.default_funding_source
+                )
+            ),
+            available_default_sources=tuple(
+                DefaultFundingSourceContract.from_domain(source)
+                for source in settings.available_default_sources
+            ),
         )
 
 

@@ -29,6 +29,7 @@ from money_tracker.application import (
     IdempotencyConflictError,
     MonthlyOverview,
     OptimisticConcurrencyError,
+    ProfileSettings,
     RangeOverview,
     TransactionRegister,
 )
@@ -74,6 +75,7 @@ from money_tracker.web.contracts import (
     MessagingRequeueRequest,
     MessagingRequeueResponse,
     MonthlyOverviewResponse,
+    ProfileSettingsResponse,
     RangeOverviewResponse,
     ReceiptMutationResponse,
     ReceiptRegisterResponse,
@@ -148,6 +150,13 @@ class DashboardReader(Protocol):
         """Return exact posted facts for any resolved calendar period."""
 
 
+class SettingsReader(Protocol):
+    """Read only safe owner-facing profile configuration."""
+
+    def settings(self, *, profile_id: UUID) -> ProfileSettings:
+        """Return fixed V1 preferences and eligible default sources."""
+
+
 _LOGGER = get_logger("money_tracker.web.app")
 
 
@@ -156,6 +165,7 @@ def create_app(
     settings: WebSettings,
     profile_id: UUID,
     reporting: DashboardReader,
+    profile_settings: SettingsReader,
     mutations: ExpenseMutationAdapter,
     budgets: BudgetMutationAdapter,
     categories: CategoryManagementMutationAdapter,
@@ -171,6 +181,7 @@ def create_app(
         settings: Validated listener, browser, and static-asset configuration.
         profile_id: Trusted single-owner scope, never accepted from a request.
         reporting: Read-only application service for dashboard facts.
+        profile_settings: Safe profile-preference reader bound to trusted scope.
         mutations: Browser adapter over audited, replay-safe finance use cases.
         budgets: Browser adapter over audited, replay-safe budget use cases.
         categories: Browser adapter over audited stable taxonomy management.
@@ -323,6 +334,24 @@ def create_app(
         except PsycopgError:
             return _database_problem(instance)
         return RangeOverviewResponse.from_application(result)
+
+    @router.get("/settings", response_model=ProfileSettingsResponse)
+    def profile_configuration() -> ProfileSettingsResponse | JSONResponse:
+        """Return only safe owner-facing V1 profile preferences."""
+
+        try:
+            result = profile_settings.settings(profile_id=profile_id)
+        except (AggregateNotFoundError, DomainError):
+            return _problem(
+                status=503,
+                title="Impostazioni non disponibili",
+                detail="La configurazione del profilo richiede assistenza.",
+                code="profile_settings_invalid",
+                instance=f"{API_V1_PREFIX}/settings",
+            )
+        except PsycopgError:
+            return _database_problem(f"{API_V1_PREFIX}/settings")
+        return ProfileSettingsResponse.from_application(result)
 
     @router.get("/transactions", response_model=TransactionRegisterResponse)
     def transactions(period: str) -> TransactionRegisterResponse | JSONResponse:
@@ -1518,6 +1547,7 @@ def _mount_dashboard(app: FastAPI, static_dir: Path) -> None:
     @app.get("/budget", include_in_schema=False)
     @app.get("/scontrini", include_in_schema=False)
     @app.get("/messaggistica", include_in_schema=False)
+    @app.get("/impostazioni", include_in_schema=False)
     def dashboard() -> FileResponse:
         """Return the compiled single-page application shell.
 
@@ -1529,4 +1559,4 @@ def _mount_dashboard(app: FastAPI, static_dir: Path) -> None:
         return FileResponse(index)
 
 
-__all__ = ["DashboardReader", "create_app"]
+__all__ = ["DashboardReader", "SettingsReader", "create_app"]

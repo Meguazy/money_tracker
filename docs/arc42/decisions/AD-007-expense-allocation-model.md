@@ -68,4 +68,4 @@ spendable even while it remains in immutable booked history. The browser may
 create an opening, credit, or explicit adjustment, but exposes no destructive
 entry deletion, transfer, income account, bank synchronization, or general
 accounting surface. Expense consumption totals in analytics remain payment-
-allocation facts and are not presented as wallet balances.
+allocation facts and are not presented as wallet balances. The Step 5 settings page likewise exposes the default as a payment-source preference, never as a spending-purpose category; it cannot rewrite either allocation dimension or convert one into the other.

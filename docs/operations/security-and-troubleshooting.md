@@ -96,6 +96,12 @@ surface enforces these controls:
   referrer, MIME-sniffing, and framing headers;
 - API responses return no environment, profile identity, private path, or secret.
 
+The profile-settings response is an explicit allowlist: fixed `it-IT`, `EUR`,
+and `Europe/Rome` facts plus minimal active source choices. It contains no
+generic configuration map and has no mutation route for those fixed facts. The
+only editable choice uses the existing default-source command with CSRF,
+idempotency, optimistic versions, and atomic audit.
+
 The implemented receipt routes read and transition metadata only. They accept
 a receipt ID, an observed version, and the transition-wide command key, and
 they return no content digest, archive path, or image. Future routes that do

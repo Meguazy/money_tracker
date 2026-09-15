@@ -19,6 +19,7 @@ from money_tracker.application import (
     FinanceAdministrationService,
     FinanceService,
     FundingSourceAdministrationService,
+    ProfileSettingsService,
     ReceiptMetadataService,
     ReportingService,
 )
@@ -258,6 +259,7 @@ def test_monthly_endpoint_reads_real_postgresql_state(postgres_url: str) -> None
         settings=WebSettings(static_dir=None),
         profile_id=profile.id,
         reporting=ReportingService(repository),
+        profile_settings=ProfileSettingsService(repository),
         mutations=ExpenseMutationAdapter(
             FinanceService(
                 repository,
@@ -369,6 +371,7 @@ def test_range_analytics_resolve_calendar_and_both_dimensions_in_postgresql(
         settings=WebSettings(static_dir=None),
         profile_id=profile.id,
         reporting=ReportingService(repository),
+        profile_settings=ProfileSettingsService(repository),
         mutations=ExpenseMutationAdapter(
             FinanceService(repository, clock=SystemClock(), ids=ids),
             ids=ids,
@@ -457,6 +460,7 @@ def test_funding_source_and_wallet_control_plane_is_atomic_and_replay_safe(
         settings=WebSettings(static_dir=None),
         profile_id=profile.id,
         reporting=ReportingService(repository),
+        profile_settings=ProfileSettingsService(repository),
         mutations=ExpenseMutationAdapter(
             FinanceService(repository, clock=SystemClock(), ids=ids),
             ids=ids,
@@ -479,6 +483,13 @@ def test_funding_source_and_wallet_control_plane_is_atomic_and_replay_safe(
     client = TestClient(app, base_url="http://localhost:8000")
     origin = {"origin": "http://localhost:8000"}
     csrf = client.get("/api/v1/csrf", headers=origin).json()["token"]
+    initial_settings = client.get("/api/v1/settings", headers=origin)
+    assert initial_settings.status_code == 200
+    assert initial_settings.json()["locale"] == "it-IT"
+    assert initial_settings.json()["timezone"] == "Europe/Rome"
+    assert initial_settings.json()["currency"] == "EUR"
+    assert initial_settings.json()["default_funding_source"]["id"] == str(card.id)
+    assert "profile_id" not in initial_settings.text
 
     def headers(command_key: str) -> dict[str, str]:
         """Build same-origin CSRF and idempotency headers."""
@@ -580,6 +591,20 @@ def test_funding_source_and_wallet_control_plane_is_atomic_and_replay_safe(
     )
     assert renamed.json()["version"] == 2
     assert changed_default.json()["version"] == 3
+    changed_settings = client.get("/api/v1/settings", headers=origin)
+    assert changed_settings.status_code == 200
+    assert changed_settings.json()["default_funding_source"] == {
+        "id": wallet_id,
+        "name": "Benefit rinominato",
+        "funding_class": "benefit",
+        "version": 3,
+    }
+    fixed_fields = client.put(
+        "/api/v1/settings",
+        headers=headers("integration-settings-fixed"),
+        json={"locale": "en-US", "timezone": "UTC", "currency": "USD"},
+    )
+    assert fixed_fields.status_code == 405
     assert archived_old.json()["status"] == "archived"
     assert refused_default_archive.status_code == 422
 
@@ -626,6 +651,7 @@ def test_manual_expense_workflow_is_replay_safe_and_visible(
         settings=WebSettings(static_dir=None),
         profile_id=profile.id,
         reporting=ReportingService(repository),
+        profile_settings=ProfileSettingsService(repository),
         mutations=ExpenseMutationAdapter(
             FinanceService(repository, clock=SystemClock(), ids=ids),
             ids=ids,
@@ -795,6 +821,7 @@ def test_multi_allocation_movement_survives_correction_in_real_postgresql(
         settings=WebSettings(static_dir=None),
         profile_id=profile.id,
         reporting=ReportingService(repository),
+        profile_settings=ProfileSettingsService(repository),
         mutations=ExpenseMutationAdapter(
             FinanceService(repository, clock=SystemClock(), ids=ids),
             ids=ids,
@@ -1029,6 +1056,7 @@ def test_budget_plan_is_configured_and_corrected_in_real_postgresql(
         settings=WebSettings(static_dir=None),
         profile_id=profile.id,
         reporting=ReportingService(repository),
+        profile_settings=ProfileSettingsService(repository),
         mutations=ExpenseMutationAdapter(
             FinanceService(repository, clock=SystemClock(), ids=ids),
             ids=ids,
@@ -1183,6 +1211,7 @@ def test_budget_routes_refuse_unknown_and_inactive_categories(
         settings=WebSettings(static_dir=None),
         profile_id=profile.id,
         reporting=ReportingService(repository),
+        profile_settings=ProfileSettingsService(repository),
         mutations=ExpenseMutationAdapter(
             FinanceService(repository, clock=SystemClock(), ids=ids),
             ids=ids,
@@ -1331,6 +1360,7 @@ def test_category_proposals_are_resolved_through_real_services(
         settings=WebSettings(static_dir=None),
         profile_id=profile.id,
         reporting=ReportingService(repository),
+        profile_settings=ProfileSettingsService(repository),
         mutations=ExpenseMutationAdapter(finance, ids=ids),
         budgets=BudgetMutationAdapter(
             FinanceAdministrationService(repository, clock=SystemClock(), ids=ids),
@@ -1470,6 +1500,7 @@ def test_receipt_review_is_operated_through_http_and_real_postgresql(
         settings=WebSettings(static_dir=None),
         profile_id=profile.id,
         reporting=ReportingService(repository),
+        profile_settings=ProfileSettingsService(repository),
         mutations=ExpenseMutationAdapter(
             FinanceService(repository, clock=SystemClock(), ids=ids),
             ids=ids,
@@ -1674,6 +1705,7 @@ def test_messaging_operations_are_inspected_and_requeued_over_http(
         settings=WebSettings(static_dir=None),
         profile_id=profile.id,
         reporting=ReportingService(repository),
+        profile_settings=ProfileSettingsService(repository),
         mutations=ExpenseMutationAdapter(
             FinanceService(repository, clock=clock, ids=ids),
             ids=ids,

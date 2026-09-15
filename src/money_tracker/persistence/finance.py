@@ -141,6 +141,37 @@ class PostgresFinanceRepository:
                 is not None
             )
 
+    def get_profile(self, profile_id: UUID) -> Profile:
+        """Load one active V1 profile inside trusted runtime scope.
+
+        Args:
+            profile_id: Trusted stable owner identifier.
+
+        Returns:
+            Persisted profile preferences and default-source pointer.
+
+        Raises:
+            AggregateNotFoundError: If the profile is absent or inactive.
+            DomainError: If persisted fixed V1 preferences are invalid.
+        """
+
+        with connect(self._database_url) as connection:
+            row = connection.execute(
+                "SELECT id, locale, timezone, currency, "
+                "default_funding_source_id FROM finance.profiles "
+                "WHERE id = %s AND active",
+                (profile_id,),
+            ).fetchone()
+        if row is None:
+            raise AggregateNotFoundError("profile does not exist")
+        return Profile(
+            id=row[0],
+            locale=row[1],
+            timezone=row[2],
+            currency=row[3],
+            default_funding_source_id=row[4],
+        )
+
     def create_funding_source(
         self,
         source: FundingSource,

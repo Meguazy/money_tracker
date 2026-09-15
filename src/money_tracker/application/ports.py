@@ -36,6 +36,16 @@ class IdGenerator(Protocol):
         """Return a new stable identifier."""
 
 
+class ProfileSettingsRepository(Protocol):
+    """Read profile preferences and their eligible default-source choices."""
+
+    def get_profile(self, profile_id: UUID) -> Profile:
+        """Load one active profile from trusted runtime scope."""
+
+    def get_funding_sources(self, profile_id: UUID) -> tuple[FundingSource, ...]:
+        """Load every source belonging to the same trusted profile."""
+
+
 class FinanceRepository(Protocol):
     """Persist complete aggregates and audit data in one transaction boundary."""
 

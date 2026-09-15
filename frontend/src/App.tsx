@@ -31,6 +31,11 @@ const OverviewPage = lazy(() =>
 const ReceiptsPage = lazy(() =>
   import("./ReceiptsPage").then((module) => ({ default: module.ReceiptsPage })),
 );
+const SettingsPage = lazy(() =>
+  import("./SettingsPage").then((module) => ({
+    default: module.SettingsPage,
+  })),
+);
 const TransactionsPage = lazy(() =>
   import("./TransactionsPage").then((module) => ({
     default: module.TransactionsPage,
@@ -106,6 +111,12 @@ export function App() {
             >
               Messaggistica
             </NavLink>
+            <NavLink
+              className={({ isActive }) => (isActive ? "active" : "")}
+              to="/impostazioni"
+            >
+              Impostazioni
+            </NavLink>
           </nav>
           <Text className="local-state">127.0.0.1</Text>
         </Group>
@@ -127,6 +138,7 @@ export function App() {
             <Route element={<BudgetsPage />} path="/budget" />
             <Route element={<ReceiptsPage />} path="/scontrini" />
             <Route element={<MessagingPage />} path="/messaggistica" />
+            <Route element={<SettingsPage />} path="/impostazioni" />
             <Route element={<Navigate replace to="/" />} path="*" />
           </Routes>
         </Suspense>

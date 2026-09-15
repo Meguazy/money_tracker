@@ -55,7 +55,7 @@ in this table:
 | Service | Host/container | Responsibility | Core? |
 | --- | --- | --- | --- |
 | Application PostgreSQL | Docker Compose | Implemented finance source of truth, audit, workflow checkpoints, and durable messaging queues | Yes |
-| FastAPI/UI service | Host systemd user service | Implemented same-origin health, monthly overview/register, audited manual lifecycle, and compiled dashboard; remaining views planned | Yes during Step 5 |
+| FastAPI/UI service | Host systemd user service | Implemented same-origin health, overview/analytics/register, audited control-plane slices, safe profile settings, and compiled dashboard; remaining analytics, advice, and acceptance planned | Yes during Step 5 |
 | Telegram gateway | Host systemd user service | Accepted authorized long polling, durable ingest, safe file metadata, callback acknowledgement, outbox dispatch | Yes |
 | Workflow worker | Host systemd user service | Accepted sequential routing/workflow processing | Yes |
 | llama.cpp server | Host systemd user service | Implemented unit for local promoted text inference | Yes for agent work |
@@ -110,7 +110,7 @@ through `money-tracker-telegram validate`; gateway, worker, and model process
 liveness through their systemd user units; and llama.cpp readiness through its
 loopback `/health` endpoint. The exact command matrix and combined
 interpretation are in the [Telegram runbook](telegram.md#inspecting-and-recovering-the-queue).
-The Step 5 API now exposes process and database/profile health separately; it
+The Step 5 API now exposes process and database/profile health separately and an allowlisted owner-facing settings snapshot; it
 does not aggregate Telegram queue, model, backup, or receipt health yet.
 The broader dependency behavior remains:
 
@@ -141,7 +141,7 @@ Current and planned configuration groups:
 - optional Langfuse keys/profile;
 - Restic repository, password source, retention, and staging path.
 
-Secrets remain local, mode-restricted, and excluded from API/UI output. Stable
+Secrets remain local, mode-restricted, and excluded from API/UI output. Locale, currency, and timezone remain fixed V1 profile facts; the UI cannot rewrite runtime configuration or infrastructure. Stable
 non-secret configuration should migrate toward typed settings and a documented
 example without putting user choices into source constants.
 

@@ -113,6 +113,21 @@ export type ManagedFundingSource = FundingSourceReference & {
   }>;
 };
 
+export type DefaultFundingSource = {
+  id: string;
+  name: string;
+  funding_class: FundingClass;
+  version: number;
+};
+
+export type ProfileSettings = {
+  locale: string;
+  timezone: string;
+  currency: "EUR";
+  default_funding_source: DefaultFundingSource | null;
+  available_default_sources: DefaultFundingSource[];
+};
+
 export type FundingSourceManagement = {
   observed_at: string;
   sources: ManagedFundingSource[];
@@ -494,6 +509,13 @@ export function archiveCategory(
   );
 }
 
+export async function loadProfileSettings(
+  signal?: AbortSignal,
+): Promise<ProfileSettings> {
+  const response = await fetch("/api/v1/settings", { signal });
+  return responseJson<ProfileSettings>(response);
+}
+
 export async function loadFundingSources(
   signal?: AbortSignal,
 ): Promise<FundingSourceManagement> {
@@ -531,8 +553,8 @@ export function archiveFundingSource(
 }
 
 export function setDefaultFundingSource(
-  source: ManagedFundingSource,
-  previousDefault: ManagedFundingSource | null,
+  source: DefaultFundingSource,
+  previousDefault: DefaultFundingSource | null,
 ): Promise<FundingSourceMutation> {
   return mutate<FundingSourceMutation>(
     `/api/v1/funding-sources/${encodeURIComponent(source.id)}/default`,

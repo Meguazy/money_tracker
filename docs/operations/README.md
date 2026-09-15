@@ -9,13 +9,13 @@
   analytics, manual movement lifecycle with multi-allocation editing, monthly
   budget planning, funding-source lifecycle and expiry-aware wallet administration,
   category-proposal review, receipt metadata consultation and its mandatory
-  review, browser inspection and requeue of the durable messaging queues, and
+  review, browser inspection and requeue of the durable messaging queues, safe profile-settings consultation and default-source selection, and
   checked-in host service units
 - Implemented Step 2: authoritative finance schema and transactional
   expense, wallet, budget, pending category-proposal, and versioned receipt-review
   repository operations, a safe local receipt-media adapter, and verified
   encrypted backup with an isolated restore drill
-- Planned operations: settings and remaining dashboard workflows, merchant analytics,
+- Planned operations: remaining dashboard workflows, merchant analytics,
   explicit period comparisons, web advice, browser E2E acceptance, backup
   scheduling and clean-machine restore,
   workflow-worker receipt wiring, receipt extraction, and media deletion
@@ -29,7 +29,7 @@ the referenced file or entry point exists in the repository.
 
 - [Local Web](web.md): build, loopback API/dashboard, browser controls, health,
   systemd, verification, and rollback for the implemented Step 5 slices,
-  including funding-source/wallet administration, the metadata-only receipt
+  including profile settings and funding-source/wallet administration, the metadata-only receipt
   review surface, and the content-free messaging operations surface.
 - [Telegram](telegram.md): BotFather preparation, private-owner pairing target,
   long polling, the 24-hour limitation, testing, and token response.
@@ -73,8 +73,7 @@ the referenced file or entry point exists in the repository.
   workflows, restart/reboot, latency, and fault acceptance on 2026-09-11.
 - The FastAPI process, monthly overview and transaction endpoints, compiled
   React overview/register, audited manual lifecycle, multi-allocation editing
-  of both reconciling dimensions, replay-safe monthly budget planning, versioned funding-source lifecycle and
-  expiry-aware wallet administration,
+  of both reconciling dimensions, replay-safe monthly budget planning, versioned funding-source lifecycle, expiry-aware wallet administration, safe profile-settings consultation and default-source selection,
   deterministic category-proposal review, replay-safe receipt metadata review,
   messaging queue consultation with pinned inbox replay and outbox resend,
   local browser controls, and API
@@ -82,9 +81,7 @@ the referenced file or entry point exists in the repository.
   only: it never returns an original, its archive key, or a deletion path. The
   messaging surface carries counts, ages, identifiers and reason codes only: it
   never returns a message, a bot key, or a Bot API credential, and it cannot
-  send, pair, move the offset, or delete. The
-  settings and remaining analytical Step 5 views and full
-  browser acceptance remain open.
+  send, pair, move the offset, or delete. The remaining analytical Step 5 views, advice exposure, and full browser acceptance remain open.
 - Langfuse 4.26.0 and every dependency are pinned by digest. The non-cluster
   repair and health checks pass with the pre-existing volumes preserved.
 - Installed model paths remain workstation-owned and outside the repository.

@@ -41,8 +41,13 @@ from money_tracker.application.ports import (
     FinanceRepository,
     FundingSourceAdministrationRepository,
     IdGenerator,
+    ProfileSettingsRepository,
     ReceiptMetadataRepository,
     ReportingRepository,
+)
+from money_tracker.application.profile_settings import (
+    ProfileSettings,
+    ProfileSettingsService,
 )
 from money_tracker.application.proposals import CategoryProposalService
 from money_tracker.application.receipt_media import (
@@ -111,6 +116,9 @@ __all__ = [
     "FinanceService",
     "IdGenerator",
     "IdempotencyConflictError",
+    "ProfileSettings",
+    "ProfileSettingsRepository",
+    "ProfileSettingsService",
     "OptimisticConcurrencyError",
     "ReceiptMetadataRepository",
     "ReceiptMetadataService",

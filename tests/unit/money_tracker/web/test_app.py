@@ -24,6 +24,7 @@ from money_tracker.application import (
     MonthlyOverview,
     PendingCategoryReview,
     PeriodSplit,
+    ProfileSettings,
     RangeOverview,
     TransactionRegister,
 )
@@ -44,6 +45,7 @@ from money_tracker.domain import (
     Money,
     MonthlyBudget,
     PaymentAllocation,
+    Profile,
     ReceiptMetadata,
     ReceiptStatus,
     ResolvedPeriod,
@@ -93,6 +95,35 @@ RECEIPT_LINE_ID = UUID("00000000-0000-0000-0000-000000000401")
 BUDGET_ID = UUID("00000000-0000-0000-0000-000000000501")
 RECEIPT_ID = UUID("00000000-0000-0000-0000-000000000601")
 RECEIPT_DIGEST = "9f" * 32
+
+
+@dataclass
+class RecordingProfileSettingsReader:
+    """In-memory safe settings reader recording the trusted profile scope."""
+
+    requested_profile: UUID | None = None
+
+    def settings(self, *, profile_id: UUID) -> ProfileSettings:
+        """Return fixed V1 preferences and one mutable default-source choice."""
+
+        self.requested_profile = profile_id
+        source = FundingSource(
+            id=SOURCE_ID,
+            profile_id=profile_id,
+            name="Carta",
+            funding_class=FundingClass.PERSONAL_FUNDS,
+            balance_mode=BalanceMode.UNTRACKED,
+            is_default=True,
+            version=3,
+        )
+        return ProfileSettings(
+            profile=Profile(
+                profile_id,
+                default_funding_source_id=source.id,
+            ),
+            default_funding_source=source,
+            available_default_sources=(source,),
+        )
 
 
 @dataclass
@@ -859,6 +890,7 @@ def _app(
     category_review_writer: CategoryReviewWriter | None = None,
     receipt_writer: ReceiptReviewWriter | None = None,
     messaging_operations: MessagingOperationsWriter | None = None,
+    settings_reader: RecordingProfileSettingsReader | None = None,
 ) -> FastAPI:
     """Compose an application with real middleware and an in-memory read port."""
 
@@ -866,6 +898,7 @@ def _app(
         settings=WebSettings(static_dir=static_dir),
         profile_id=PROFILE_ID,
         reporting=reader or OverviewReader(),
+        profile_settings=settings_reader or RecordingProfileSettingsReader(),
         mutations=ExpenseMutationAdapter(
             cast(ExpenseWriter, object()),
             ids=cast(IdGenerator, FixedIds()),
@@ -899,6 +932,59 @@ def _client(app: FastAPI) -> TestClient:
     """Use an allowed authority so only intentional policy failures vary."""
 
     return TestClient(app, base_url=ORIGIN)
+
+
+def test_profile_settings_expose_only_safe_v1_preferences_in_trusted_scope() -> None:
+    """Keep fixed preferences read-only and omit browser-controlled identity."""
+
+    reader = RecordingProfileSettingsReader()
+    client = _client(_app(settings_reader=reader))
+
+    response = client.get(f"/api/v1/settings?profile_id={uuid4()}")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "locale": "it-IT",
+        "timezone": "Europe/Rome",
+        "currency": "EUR",
+        "default_funding_source": {
+            "id": str(SOURCE_ID),
+            "name": "Carta",
+            "funding_class": "personal_funds",
+            "version": 3,
+        },
+        "available_default_sources": [
+            {
+                "id": str(SOURCE_ID),
+                "name": "Carta",
+                "funding_class": "personal_funds",
+                "version": 3,
+            }
+        ],
+    }
+    assert reader.requested_profile == PROFILE_ID
+    assert "profile_id" not in response.text
+    assert "token" not in response.text
+    assert "database" not in response.text
+
+
+def test_profile_settings_have_no_direct_mutation_route() -> None:
+    """Prevent browser writes to fixed locale, timezone, or currency fields."""
+
+    client = _client(_app())
+    issued = client.get("/api/v1/csrf", headers={"origin": ORIGIN})
+
+    response = client.put(
+        "/api/v1/settings",
+        json={"locale": "en-US", "timezone": "UTC", "currency": "USD"},
+        headers={
+            "origin": ORIGIN,
+            "x-csrf-token": issued.json()["token"],
+            "Idempotency-Key": "settings-fixed-fields",
+        },
+    )
+
+    assert response.status_code == 405
 
 
 def test_monthly_overview_returns_exact_minor_units_in_the_trusted_profile() -> None:
@@ -1269,6 +1355,7 @@ def test_compiled_dashboard_is_served_from_the_api_origin(tmp_path: Path) -> Non
             "/budget",
             "/scontrini",
             "/messaggistica",
+            "/impostazioni",
         )
     }
 

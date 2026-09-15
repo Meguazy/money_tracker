@@ -39,15 +39,17 @@ export type RangeSelection =
   | { granularity: "year"; year: string }
   | { granularity: "custom"; start: string; end: string };
 
+export type ResolvedPeriod = {
+  granularity: PeriodGranularity;
+  start: string;
+  end: string;
+  day_count: number;
+  iso_year: number | null;
+  iso_week: number | null;
+};
+
 export type RangeOverview = {
-  period: {
-    granularity: PeriodGranularity;
-    start: string;
-    end: string;
-    day_count: number;
-    iso_year: number | null;
-    iso_week: number | null;
-  };
+  period: ResolvedPeriod;
   posted_total: Money;
   funding_split: {
     personal_funds: Money;
@@ -61,7 +63,21 @@ export type RangeOverview = {
     parent_name: string | null;
     amount: Money;
   }>;
+  merchants: Array<{
+    merchant: string | null;
+    amount: Money;
+    movement_count: number;
+  }>;
   movement_count: number;
+  comparison: {
+    current_period: ResolvedPeriod;
+    previous_period: ResolvedPeriod;
+    current_total: Money;
+    previous_total: Money;
+    delta: Money;
+    percentage_change_basis_points: number | null;
+    percentage_change_status: "defined" | "previous_zero";
+  };
   budgets: {
     period: { year: number; month: number };
     positions: BudgetPosition[];

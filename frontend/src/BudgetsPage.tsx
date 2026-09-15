@@ -101,6 +101,7 @@ export function BudgetsPage({ apis = defaultApis }: { apis?: BudgetApis }) {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["budget-plan"] }),
         queryClient.invalidateQueries({ queryKey: ["monthly-overview"] }),
+        queryClient.invalidateQueries({ queryKey: ["range-overview"] }),
       ]);
     },
   });

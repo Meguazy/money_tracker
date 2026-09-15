@@ -202,6 +202,7 @@ body {
 }
 
 .month-field input:focus-visible,
+.analytics-chart:focus-visible,
 .budget-chart:focus-visible {
   outline: 3px solid #efb34c;
   outline-offset: 3px;
@@ -317,6 +318,11 @@ body {
 
 .transaction-table td {
   vertical-align: top;
+}
+
+.analytics-chart {
+  width: 100%;
+  min-height: 320px;
 }
 
 .budget-chart {

@@ -11,7 +11,9 @@ review of pending category proposals,
 consultation and mandatory review of retained receipt metadata, and browser
 inspection and requeue of the durable messaging queues. Daily, ISO-week,
 monthly, annual, and bounded custom-range analytics now expose separate purpose
-and funding views. Merchant/comparison analytics, the advice surface, and complete browser E2E acceptance are still open.
+and funding views, deterministic merchant breakdowns, and explicit
+period-over-period comparison. The advice surface and complete browser E2E
+acceptance are still open.
 No model, prompt, routing threshold, tool contract, or taxonomy policy changed,
 so EVD-004 remains the promoted text baseline.
 
@@ -506,6 +508,53 @@ so EVD-004 remains the promoted text baseline.
   taxonomy policy changed. The monthly tool read remains untouched, so no
   evaluation gate is triggered and EVD-004 remains the promoted baseline.
 
+### Merchant and period-comparison analytics slice (2026-09-15)
+
+- `money_tracker.domain.previous_period` defines the sole V1 predecessor for
+  every existing selector: prior Rome day, prior Monday-to-Sunday ISO week,
+  prior calendar month, prior calendar year, or the adjacent earlier custom
+  block with the same inclusive day count. DST and ISO-year boundaries remain
+  calendar facts. A valid selection with no representable predecessor is a
+  bounded `period_comparison_unavailable` refusal rather than an invented
+  comparison.
+- `ReportingService.range_overview` reuses the bounded posted-range repository
+  read for the selected and previous intervals. It retains exact signed EUR
+  minor units and returns current total, previous total, monetary delta, and
+  integer basis-point variation. A zero previous total produces an explicit
+  `previous_zero` status and no percentage; otherwise the denominator is the
+  absolute signed previous total and half basis points round away from zero.
+- Merchant analytics group optional parent-movement metadata after Unicode NFKC,
+  whitespace collapse, and case folding without accent removal. Null and blank
+  values share an explicit missing bucket. Each posted parent contributes its
+  signed total once, so category allocations, payment allocations, receipt
+  lines, and merchant buckets are parallel views rather than sums. Buckets are
+  ordered by descending absolute net amount with deterministic label
+  tie-breakers and include their movement count.
+- Budgets remain a separate exact-month projection. Period comparison neither
+  prorates a target nor compares one, and the browser explicitly says the
+  dimensions must not be added.
+- `GET /api/v1/overview/range` remains read-only and profile-scoped solely by
+  composition. It returns no profile identifier, credentials, token, URL,
+  private path, receipt content, or infrastructure detail. No new repository,
+  table, migration, application component, or analytics write was introduced.
+- The accessible `/analisi` page renders focusable merchant and comparison
+  charts plus equivalent tables, including the missing-merchant label, signed
+  refunds, absolute values, delta, percentage, and the zero-baseline reason.
+  Existing loading, empty, error/retry, reload, bookmark, and monthly-budget
+  behavior remains. Movement, budget, and category mutations now invalidate the
+  range query they can affect.
+- Unit tests cover predecessor semantics, DST, ISO-year crossings, malformed and
+  unrepresentable periods, normalization, ordering, zero-net buckets, split
+  movements, signed refunds, deterministic rounding, and zero baselines.
+  HTTP/component tests pin the strict safe contract and accessible alternatives.
+  The real PostgreSQL HTTP test exercises a split parent, missing merchant,
+  refund, ISO-week predecessor, and exact whole-month budget behavior through
+  production services and protocols.
+- No monthly model-visible method, query/advice tool, prompt, routing threshold,
+  taxonomy policy, advice path, or receipt pipeline changed. AD-012/AD-017
+  evaluation gates are therefore not triggered and EVD-004 remains the
+  promoted baseline.
+
 ### Profile settings slice (2026-09-15)
 
 - Repository truth and the product baseline agree that the V1 profile has fixed `it-IT` locale, `EUR` currency, and `Europe/Rome` timezone. `/impostazioni` exposes those persisted facts as read-only and offers no request contract that could rewrite them. The only owner-editable V1 preference is the active default funding source.
@@ -517,8 +566,6 @@ so EVD-004 remains the promoted text baseline.
 
 ### Work still required before completion
 
-- Add merchant breakdowns and explicit period-over-period comparison without
-  changing the promoted model-visible tool contract accidentally.
 - Expose the already promoted read-only advice capabilities without widening
   their mutation authority; rerun and record any evaluation required by a
   changed model-visible contract.

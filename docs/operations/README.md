@@ -6,7 +6,7 @@
   capability evaluation, profile-scoped receipt storage, one-shot Step 3
   dispatch, durable Telegram gateway/worker, pairing,
   health/replay/resend/latency, the local monthly dashboard/API, calendar
-  analytics, manual movement lifecycle with multi-allocation editing, monthly
+  analytics with merchant and prior-period comparison, manual movement lifecycle with multi-allocation editing, monthly
   budget planning, funding-source lifecycle and expiry-aware wallet administration,
   category-proposal review, receipt metadata consultation and its mandatory
   review, browser inspection and requeue of the durable messaging queues, safe profile-settings consultation and default-source selection, and
@@ -15,8 +15,7 @@
   expense, wallet, budget, pending category-proposal, and versioned receipt-review
   repository operations, a safe local receipt-media adapter, and verified
   encrypted backup with an isolated restore drill
-- Planned operations: remaining dashboard workflows, merchant analytics,
-  explicit period comparisons, web advice, browser E2E acceptance, backup
+- Planned operations: remaining dashboard advice, browser E2E acceptance, backup
   scheduling and clean-machine restore,
   workflow-worker receipt wiring, receipt extraction, and media deletion
 
@@ -29,7 +28,8 @@ the referenced file or entry point exists in the repository.
 
 - [Local Web](web.md): build, loopback API/dashboard, browser controls, health,
   systemd, verification, and rollback for the implemented Step 5 slices,
-  including profile settings and funding-source/wallet administration, the metadata-only receipt
+  including merchant and period-comparison analytics, profile settings, and
+  funding-source/wallet administration, the metadata-only receipt
   review surface, and the content-free messaging operations surface.
 - [Telegram](telegram.md): BotFather preparation, private-owner pairing target,
   long polling, the 24-hour limitation, testing, and token response.
@@ -81,7 +81,7 @@ the referenced file or entry point exists in the repository.
   only: it never returns an original, its archive key, or a deletion path. The
   messaging surface carries counts, ages, identifiers and reason codes only: it
   never returns a message, a bot key, or a Bot API credential, and it cannot
-  send, pair, move the offset, or delete. The remaining analytical Step 5 views, advice exposure, and full browser acceptance remain open.
+  send, pair, move the offset, or delete. Advice exposure and full browser acceptance remain open.
 - Langfuse 4.26.0 and every dependency are pinned by digest. The non-cluster
   repair and health checks pass with the pre-existing volumes preserved.
 - Installed model paths remain workstation-owned and outside the repository.
@@ -104,9 +104,8 @@ the referenced file or entry point exists in the repository.
   clean-machine drill exists yet.
 - The private test bot passed real owner workflows, unauthorized-user checks,
   five fault injections, p95 latency, and an unattended reboot with all Step 4
-  host services. No production bot exists. The remaining dashboard
-  control-plane and analytical views, media deletion, and receipt extraction do
-  not exist yet.
+  host services. No production bot exists. Advice exposure, full browser acceptance, media deletion, and receipt
+  extraction do not exist yet.
 
 ## When to update these guides
 

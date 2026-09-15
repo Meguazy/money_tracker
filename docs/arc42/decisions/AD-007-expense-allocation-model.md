@@ -32,6 +32,18 @@ Funding sources may be untracked labels or lightweight balance-tracked wallets.
 Benefit credits may carry an expiry. Budgets include all sources but reports
 separate personal funds from benefits.
 
+## Step 5 merchant and comparison clarification (2026-09-15)
+
+Merchant is metadata of the expense parent, not a third allocation dimension.
+The merchant projection therefore sums each posted parent amount once, with
+signed refunds, and never adds category allocations, payment allocations, or
+receipt lines. Purpose, funding, and merchant projections describe the same
+movements independently and must not be summed together.
+
+Period-over-period comparison uses only the posted payment-derived net total for
+each bounded interval. It does not compare or prorate monthly budgets. The
+existing model-visible monthly reports and advice tools are unchanged.
+
 ## Alternatives considered
 
 - Independent transactions per receipt line make correction and receipt-level

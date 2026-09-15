@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from money_tracker.application import ReportingService
+from money_tracker.application import PercentageChangeStatus, ReportingService
 from money_tracker.application.ports import ReportingRepository
 from money_tracker.domain import (
     BalanceMode,
@@ -145,6 +145,8 @@ def _posted(
     source: FundingSource = CARD,
     day: int = 10,
     month: int = 9,
+    year: int = 2026,
+    merchant: str | None = None,
 ) -> Expense:
     """Build one posted movement allocated to a named category."""
 
@@ -154,9 +156,9 @@ def _posted(
         id=uuid4(),
         profile_id=PROFILE,
         amount=amount,
-        occurred_at=datetime(2026, month, day, 12, tzinfo=ROME),
+        occurred_at=datetime(year, month, day, 12, tzinfo=ROME),
         description=f"spesa {category_name}",
-        merchant=None,
+        merchant=merchant,
         status=ExpenseStatus.POSTED,
         category_allocations=(
             CategoryAllocation(
@@ -591,6 +593,7 @@ def _split_posted(
     day: int = 10,
     month: int = 9,
     year: int = 2026,
+    merchant: str | None = None,
 ) -> Expense:
     """Build one posted movement whose two dimensions each reconcile alone."""
 
@@ -601,7 +604,7 @@ def _split_posted(
         amount=total,
         occurred_at=datetime(year, month, day, 12, tzinfo=ROME),
         description="spesa mista",
-        merchant=None,
+        merchant=merchant,
         status=ExpenseStatus.POSTED,
         category_allocations=tuple(
             CategoryAllocation(
@@ -833,3 +836,158 @@ def test_range_overview_reads_the_interval_rather_than_a_month() -> None:
 
     assert "posted_expenses_in_range" in repository.reads
     assert "posted_expenses" not in repository.reads
+
+
+def test_range_overview_groups_merchants_from_parent_movements_once() -> None:
+    """Normalize merchant metadata without adding allocation dimensions."""
+
+    repository = InMemoryReporting(
+        expenses=(
+            _split_posted(
+                (("Spesa alimentare", 3000), ("Cura personale", 2000)),
+                ((CARD, 3500), (VOUCHERS, 1500)),
+                day=14,
+                merchant="  Mercato   Centrale ",
+            ),
+            _posted(
+                "Spesa alimentare",
+                -500,
+                day=14,
+                merchant="mercato centrale",
+            ),
+            _posted("Abbonamenti", 1000, day=14),
+            _posted("Abbonamenti", -1000, day=14, merchant=" \t "),
+        )
+    )
+
+    overview = _service(repository).range_overview(
+        profile_id=PROFILE,
+        period=resolve_day(date(2026, 9, 14)),
+    )
+
+    assert [
+        (entry.merchant, entry.amount.minor_units, entry.movement_count)
+        for entry in overview.merchants
+    ] == [
+        ("Mercato Centrale", 4500, 2),
+        (None, 0, 2),
+    ]
+    assert sum(entry.amount.minor_units for entry in overview.merchants) == 4500
+    assert sum(entry.amount.minor_units for entry in overview.categories) == 4500
+    assert overview.posted_total == Money(4500)
+    assert overview.movement_count == 4
+
+
+def test_range_overview_orders_merchant_buckets_by_absolute_net_amount() -> None:
+    """Lead with the largest net magnitude and break ties deterministically."""
+
+    repository = InMemoryReporting(
+        expenses=(
+            _posted("Abbonamenti", -3000, day=14, merchant="Rimborso"),
+            _posted("Abbonamenti", 2000, day=14, merchant="beta"),
+            _posted("Abbonamenti", 2000, day=14, merchant="Alfa"),
+            _posted("Abbonamenti", 2000, day=14),
+        )
+    )
+
+    overview = _service(repository).range_overview(
+        profile_id=PROFILE,
+        period=resolve_day(date(2026, 9, 14)),
+    )
+
+    assert [entry.merchant for entry in overview.merchants] == [
+        "Rimborso",
+        "Alfa",
+        "beta",
+        None,
+    ]
+
+
+def test_range_overview_compares_with_the_adjacent_period_exactly() -> None:
+    """Expose absolute totals, monetary delta, and integer basis points."""
+
+    repository = InMemoryReporting(
+        expenses=(
+            _posted("Abbonamenti", 2000, day=13),
+            _posted("Abbonamenti", 5000, day=14),
+        )
+    )
+
+    overview = _service(repository).range_overview(
+        profile_id=PROFILE,
+        period=resolve_day(date(2026, 9, 14)),
+    )
+
+    comparison = overview.comparison
+    assert comparison.previous_period == resolve_day(date(2026, 9, 13))
+    assert comparison.current_total == Money(5000)
+    assert comparison.previous_total == Money(2000)
+    assert comparison.delta == Money(3000)
+    assert comparison.percentage_change_basis_points == 15_000
+    assert comparison.percentage_change_status is PercentageChangeStatus.DEFINED
+    assert repository.reads.count("posted_expenses_in_range") == 2
+    assert "posted_expenses" not in repository.reads
+
+
+def test_range_overview_preserves_refund_signs_in_the_comparison() -> None:
+    """Use the absolute prior denominator while retaining signed net totals."""
+
+    repository = InMemoryReporting(
+        expenses=(
+            _posted("Abbonamenti", -1000, day=13),
+            _posted("Abbonamenti", -500, day=14),
+        )
+    )
+
+    comparison = (
+        _service(repository)
+        .range_overview(
+            profile_id=PROFILE,
+            period=resolve_day(date(2026, 9, 14)),
+        )
+        .comparison
+    )
+
+    assert comparison.current_total == Money(-500)
+    assert comparison.previous_total == Money(-1000)
+    assert comparison.delta == Money(500)
+    assert comparison.percentage_change_basis_points == 5000
+
+
+def test_range_overview_marks_percentage_undefined_when_previous_is_zero() -> None:
+    """Never divide by zero or turn an absent baseline into a percentage."""
+
+    comparison = (
+        _service(InMemoryReporting(expenses=(_posted("Abbonamenti", 500, day=14),)))
+        .range_overview(
+            profile_id=PROFILE,
+            period=resolve_day(date(2026, 9, 14)),
+        )
+        .comparison
+    )
+
+    assert comparison.current_total == Money(500)
+    assert comparison.previous_total == Money(0)
+    assert comparison.delta == Money(500)
+    assert comparison.percentage_change_basis_points is None
+    assert comparison.percentage_change_status is PercentageChangeStatus.PREVIOUS_ZERO
+
+
+def test_period_comparison_rounds_half_a_basis_point_away_from_zero() -> None:
+    """Keep relative changes deterministic for positive and negative deltas."""
+
+    positive = ReportingService._period_comparison(
+        current_period=resolve_day(date(2026, 9, 14)),
+        previous_period=resolve_day(date(2026, 9, 13)),
+        current_total=Money(20_001),
+        previous_total=Money(20_000),
+    )
+    negative = ReportingService._period_comparison(
+        current_period=resolve_day(date(2026, 9, 14)),
+        previous_period=resolve_day(date(2026, 9, 13)),
+        current_total=Money(19_999),
+        previous_total=Money(20_000),
+    )
+
+    assert positive.percentage_change_basis_points == 1
+    assert negative.percentage_change_basis_points == -1

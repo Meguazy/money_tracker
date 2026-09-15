@@ -18,7 +18,9 @@ insufficient data to be named rather than papered over with confidence.
 
 from __future__ import annotations
 
+import unicodedata
 from dataclasses import dataclass
+from enum import StrEnum
 from uuid import UUID
 
 from money_tracker.application.ports import ReportingRepository
@@ -38,6 +40,7 @@ from money_tracker.domain import (
     budget_status,
     posted_category_spend,
     posted_funding_class_split,
+    previous_period,
     sum_money,
 )
 from money_tracker.domain.finance import ExpenseStatus, posted_funding_source_spend
@@ -195,6 +198,64 @@ class CategorySpendEntry:
 
 
 @dataclass(frozen=True, slots=True)
+class MerchantSpendEntry:
+    """Net posted movement totals grouped by merchant metadata.
+
+    A merchant belongs to the parent movement rather than to either allocation
+    dimension. Each movement therefore contributes its signed total exactly
+    once, including refunds. Case and whitespace variants share one bucket;
+    absent or blank metadata share the explicit None bucket.
+
+    Attributes:
+        merchant: Deterministic display spelling, or None when no usable
+            merchant metadata was stored.
+        amount: Exact signed sum of parent movement totals.
+        movement_count: Number of posted movements in the bucket.
+    """
+
+    merchant: str | None
+    amount: Money
+    movement_count: int
+
+
+class PercentageChangeStatus(StrEnum):
+    """Whether a period comparison has a defined relative variation."""
+
+    DEFINED = "defined"
+    PREVIOUS_ZERO = "previous_zero"
+
+
+@dataclass(frozen=True, slots=True)
+class PeriodComparison:
+    """Exact current-versus-previous posted consumption.
+
+    Percentage change is represented in integer basis points so the response
+    never introduces binary floating-point arithmetic. The denominator is the
+    absolute previous total, which keeps the delta direction intelligible when
+    refunds make that total negative. Half basis points round away from zero.
+
+    Attributes:
+        current_period: Owner-selected Rome calendar period.
+        previous_period: Immediately preceding comparable calendar period.
+        current_total: Net posted consumption in the current period.
+        previous_total: Net posted consumption in the previous period.
+        delta: Current total minus previous total.
+        percentage_change_basis_points: Signed change in hundredths of one
+            percent, or None when the previous total is zero.
+        percentage_change_status: Explicit reason the percentage is present or
+            absent.
+    """
+
+    current_period: ResolvedPeriod
+    previous_period: ResolvedPeriod
+    current_total: Money
+    previous_total: Money
+    delta: Money
+    percentage_change_basis_points: int | None
+    percentage_change_status: PercentageChangeStatus
+
+
+@dataclass(frozen=True, slots=True)
 class MonthlyBudgetPositions:
     """Budget positions for a period that is exactly one calendar month.
 
@@ -239,7 +300,11 @@ class RangeOverview:
         sources: Configured sources and their net posted payment totals,
             including zero consumption. These are not wallet balances.
         categories: Purpose dimension, largest absolute spend first.
+        merchants: Parent movements grouped once by normalized merchant
+            metadata, including the explicit absent bucket.
         movement_count: How many posted movements the figures come from.
+        comparison: Exact current and immediately preceding period totals,
+            monetary delta, and optional basis-point variation.
         budgets: Monthly budget positions when the interval is exactly one
             calendar month, otherwise None.
     """
@@ -249,7 +314,9 @@ class RangeOverview:
     split: FundingClassSplit
     sources: tuple[tuple[FundingSource, Money], ...]
     categories: tuple[CategorySpendEntry, ...]
+    merchants: tuple[MerchantSpendEntry, ...]
     movement_count: int
+    comparison: PeriodComparison
     budgets: MonthlyBudgetPositions | None
 
 
@@ -482,13 +549,28 @@ class ReportingService:
             calendar month.
         """
 
+        prior_period = previous_period(period)
         expenses = self._repository.get_posted_expenses_in_range(
             profile_id,
             interval=period.interval,
         )
+        previous_expenses = self._repository.get_posted_expenses_in_range(
+            profile_id,
+            interval=prior_period.interval,
+        )
         taxonomy = self._repository.get_taxonomy(profile_id)
         sources = self._repository.get_funding_sources(profile_id)
         split = posted_funding_class_split(expenses, funding_sources=sources)
+        posted_total = split.personal_funds + split.benefit + split.other
+        previous_split = posted_funding_class_split(
+            previous_expenses,
+            funding_sources=sources,
+        )
+        previous_total = (
+            previous_split.personal_funds
+            + previous_split.benefit
+            + previous_split.other
+        )
         month = period.calendar_month
         budgets = None
         if month is not None:
@@ -505,7 +587,7 @@ class ReportingService:
             )
         return RangeOverview(
             period=period,
-            posted_total=split.personal_funds + split.benefit + split.other,
+            posted_total=posted_total,
             split=split,
             sources=tuple(
                 (
@@ -521,8 +603,15 @@ class ReportingService:
                 )
             ),
             categories=self._category_entries(expenses, taxonomy=taxonomy),
+            merchants=self._merchant_entries(expenses),
             movement_count=sum(
                 1 for expense in expenses if expense.status is ExpenseStatus.POSTED
+            ),
+            comparison=self._period_comparison(
+                current_period=period,
+                previous_period=prior_period,
+                current_total=posted_total,
+                previous_total=previous_total,
             ),
             budgets=budgets,
         )
@@ -655,6 +744,101 @@ class ReportingService:
         )
 
     @staticmethod
+    def _merchant_entries(
+        expenses: tuple[Expense, ...],
+    ) -> tuple[MerchantSpendEntry, ...]:
+        """Group each posted parent movement once by merchant metadata.
+
+        The grouping key applies Unicode compatibility normalization, collapses
+        whitespace, and case-folds without removing accents. The display value
+        is the deterministic code-point-smallest normalized spelling observed
+        in the bucket; a blank value is treated exactly like absent metadata.
+        """
+
+        amounts: dict[str | None, list[Money]] = {}
+        counts: dict[str | None, int] = {}
+        labels: dict[str, set[str]] = {}
+        for expense in expenses:
+            if expense.status is not ExpenseStatus.POSTED:
+                continue
+            key, display = ReportingService._merchant_identity(expense.merchant)
+            amounts.setdefault(key, []).append(expense.amount)
+            counts[key] = counts.get(key, 0) + 1
+            if key is not None and display is not None:
+                labels.setdefault(key, set()).add(display)
+        entries = tuple(
+            MerchantSpendEntry(
+                merchant=(
+                    None
+                    if key is None
+                    else min(labels[key], key=lambda value: (value.casefold(), value))
+                ),
+                amount=sum_money(tuple(values)),
+                movement_count=counts[key],
+            )
+            for key, values in amounts.items()
+        )
+        return tuple(
+            sorted(
+                entries,
+                key=lambda item: (
+                    -abs(item.amount.minor_units),
+                    item.merchant is None,
+                    "" if item.merchant is None else item.merchant.casefold(),
+                    "" if item.merchant is None else item.merchant,
+                ),
+            )
+        )
+
+    @staticmethod
+    def _merchant_identity(value: str | None) -> tuple[str | None, str | None]:
+        """Return a stable grouping key and owner-facing merchant spelling."""
+
+        if value is None:
+            return None, None
+        display = " ".join(unicodedata.normalize("NFKC", value).split())
+        if not display:
+            return None, None
+        return display.casefold(), display
+
+    @staticmethod
+    def _period_comparison(
+        *,
+        current_period: ResolvedPeriod,
+        previous_period: ResolvedPeriod,
+        current_total: Money,
+        previous_total: Money,
+    ) -> PeriodComparison:
+        """Compute exact absolute values, delta, and relative variation."""
+
+        delta = current_total - previous_total
+        if previous_total.minor_units == 0:
+            return PeriodComparison(
+                current_period=current_period,
+                previous_period=previous_period,
+                current_total=current_total,
+                previous_total=previous_total,
+                delta=delta,
+                percentage_change_basis_points=None,
+                percentage_change_status=PercentageChangeStatus.PREVIOUS_ZERO,
+            )
+        numerator = delta.minor_units * 10_000
+        denominator = abs(previous_total.minor_units)
+        quotient, remainder = divmod(abs(numerator), denominator)
+        if remainder * 2 >= denominator:
+            quotient += 1
+        basis_points = -quotient if numerator < 0 else quotient
+        return PeriodComparison(
+            current_period=current_period,
+            previous_period=previous_period,
+            current_total=current_total,
+            previous_total=previous_total,
+            delta=delta,
+            percentage_change_basis_points=basis_points,
+            percentage_change_status=PercentageChangeStatus.DEFINED,
+        )
+
+    @staticmethod
     def _period_split_from(
         period: YearMonth,
         *,
@@ -757,8 +941,11 @@ __all__ = [
     "CategoryBudget",
     "CategorySpendEntry",
     "CategorySpending",
+    "MerchantSpendEntry",
     "MonthlyBudgetPositions",
     "MonthlyOverview",
+    "PercentageChangeStatus",
+    "PeriodComparison",
     "PeriodSplit",
     "RangeOverview",
     "ReportingService",

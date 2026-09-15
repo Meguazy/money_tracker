@@ -42,7 +42,42 @@ const month: RangeOverview = {
       amount: { minor_units: 5000, currency: "EUR" },
     },
   ],
+  merchants: [
+    {
+      merchant: "Mercato Centrale",
+      amount: { minor_units: 5000, currency: "EUR" },
+      movement_count: 1,
+    },
+    {
+      merchant: null,
+      amount: { minor_units: 0, currency: "EUR" },
+      movement_count: 1,
+    },
+  ],
   movement_count: 2,
+  comparison: {
+    current_period: {
+      granularity: "month",
+      start: "2026-09-01",
+      end: "2026-09-30",
+      day_count: 30,
+      iso_year: null,
+      iso_week: null,
+    },
+    previous_period: {
+      granularity: "month",
+      start: "2026-08-01",
+      end: "2026-08-31",
+      day_count: 31,
+      iso_year: null,
+      iso_week: null,
+    },
+    current_total: { minor_units: 5000, currency: "EUR" },
+    previous_total: { minor_units: 4000, currency: "EUR" },
+    delta: { minor_units: 1000, currency: "EUR" },
+    percentage_change_basis_points: 2500,
+    percentage_change_status: "defined",
+  },
   budgets: {
     period: { year: 2026, month: 9 },
     positions: [
@@ -108,7 +143,7 @@ describe("AnalyticsPage", () => {
       screen.getByText("Alimentazione / Spesa alimentare"),
     ).toBeInTheDocument();
     expect(screen.getByRole("rowheader", { name: "Carta" })).toBeInTheDocument();
-    expect(screen.getAllByText(/50,00\s€/)).toHaveLength(3);
+    expect(screen.getAllByText(/50,00\s€/).length).toBeGreaterThanOrEqual(3);
     expect(screen.getAllByText(/30,00\s€/).length).toBeGreaterThan(0);
     expect(screen.getByText("Abbonamenti")).toBeInTheDocument();
     expect(
@@ -117,6 +152,29 @@ describe("AnalyticsPage", () => {
     expect(
       screen.getByRole("table", { name: /non sono saldi/i }),
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole("rowheader", { name: "Mercato Centrale" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("rowheader", { name: "Esercente non indicato" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("table", { name: /alternativa tabellare esatta al grafico/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("table", {
+        name: /valori assoluti, delta monetario e variazione percentuale/i,
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("+25,00%")).toBeInTheDocument();
+    const merchantChart = await screen.findByRole("img", {
+      name: "Grafico della spesa netta per esercente",
+    });
+    const comparisonChart = await screen.findByRole("img", {
+      name: "Grafico del confronto tra periodo corrente e precedente",
+    });
+    expect(merchantChart).toHaveAttribute("tabindex", "0");
+    expect(comparisonChart).toHaveAttribute("tabindex", "0");
   });
 
   it("submits an ISO week selected by one of its days", async () => {
@@ -205,6 +263,25 @@ describe("AnalyticsPage", () => {
     expect(
       screen.queryByRole("heading", { name: "Spesa per finalità" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("states why percentage change is undefined with a zero baseline", async () => {
+    renderPage(async () => ({
+      ...month,
+      comparison: {
+        ...month.comparison,
+        previous_total: { minor_units: 0, currency: "EUR" },
+        delta: { minor_units: 5000, currency: "EUR" },
+        percentage_change_basis_points: null,
+        percentage_change_status: "previous_zero",
+      },
+    }));
+
+    expect(
+      await screen.findByText(
+        "Non definita: il periodo precedente è pari a zero.",
+      ),
+    ).toBeInTheDocument();
   });
 
   it("exposes an actionable error state to keyboard users", async () => {

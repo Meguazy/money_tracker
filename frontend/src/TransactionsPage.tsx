@@ -205,6 +205,7 @@ export function TransactionsPage({
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["transactions"] }),
       queryClient.invalidateQueries({ queryKey: ["monthly-overview"] }),
+      queryClient.invalidateQueries({ queryKey: ["range-overview"] }),
     ]);
   };
   const save = useMutation({

@@ -32,8 +32,8 @@ create/correct/post/cancel workflows, the multi-allocation editor for both
 reconciling dimensions, the monthly budget planner, versioned category and funding-source/wallet administration, owner review of pending
 category proposals, consultation and mandatory review of retained receipt
 metadata, browser inspection and pinned requeue of the durable messaging queues, safe profile-settings consultation and default-source selection,
-compiled React shell, browser security policy, and host unit. Merchant analytics, explicit period comparisons, advice
-exposure, and browser E2E acceptance are still planned within Step 5.
+compiled React shell, browser security policy, and host unit. Advice exposure and
+browser E2E acceptance are still planned within Step 5.
 Receipt extraction
 remains assigned to Step 6.
 
@@ -286,10 +286,10 @@ catalog is promoted; every identifier carries a `candidate-` prefix.
 | --- | --- | --- | --- | --- |
 | Workflow dispatcher, root router, and text specialists (implemented) | Route one intent and coordinate expense/refund, correction/undo, category review, query, or advice | Typed normalized work unit/outcome, versioned schemas, scoped tool registries, trusted correlations | Namespaced checkpoint references and workflow IDs; no domain ownership | Administration CLI and worker; mutation paths call replay-safe application services |
 | Telegram Bot API transport (implemented) | Validate the bot, long poll, obtain file metadata, acknowledge callbacks, and deliver outbox messages | Bounded HTTPS client and messaging services | No authoritative finance data or correctness state | Gateway host service; separate production/test token selected from a private environment file |
-| FastAPI adapter (partial) | Expose monthly and calendar-range overviews, transaction register, manual lifecycle, budget planning, category and funding-source/wallet administration, pending category review, receipt metadata review, messaging operations, safe profile settings, health, CSRF bootstrap, compiled UI, and later REST resources | Narrow reporting, finance, budget, category, funding-source, receipt-review, messaging-operations, and profile-settings reader ports | No independent data | Implemented on loopback with Host/Origin, CSRF, idempotency, optimistic concurrency, proposal-wide and transition-wide command identity, and bounded errors |
-| React dashboard (partial) | Display the monthly overview, calendar analytics, transaction register, budget planner, categories, funding sources with tracked-wallet balances/history, retained receipt metadata, durable messaging state, and fixed profile facts; edit the multi-allocation manual lifecycle, monthly budgets, deterministic category and source lifecycle, manual wallet entries, the mandatory receipt review, and both queue requeues; choose the active default funding source while locale, currency, and timezone remain read-only | Same-origin REST API | Browser session/UI state only | Route-split compiled static assets with the chart engine isolated from its renderer; no secrets, infrastructure configuration, receipt images, or message content; accessible loading fallbacks, labelled controls, lifecycle history, responsive wrapping navigation, and chart/table alternatives |
+| FastAPI adapter (partial) | Expose monthly and calendar-range overviews with merchant and prior-period comparison, transaction register, manual lifecycle, budget planning, category and funding-source/wallet administration, pending category review, receipt metadata review, messaging operations, safe profile settings, health, CSRF bootstrap, compiled UI, and later REST resources | Narrow reporting, finance, budget, category, funding-source, receipt-review, messaging-operations, and profile-settings reader ports | No independent data | Implemented on loopback with Host/Origin, CSRF, idempotency, optimistic concurrency, proposal-wide and transition-wide command identity, and bounded errors |
+| React dashboard (partial) | Display the monthly overview, calendar analytics with merchant and period comparison, transaction register, budget planner, categories, funding sources with tracked-wallet balances/history, retained receipt metadata, durable messaging state, and fixed profile facts; edit the multi-allocation manual lifecycle, monthly budgets, deterministic category and source lifecycle, manual wallet entries, the mandatory receipt review, and both queue requeues; choose the active default funding source while locale, currency, and timezone remain read-only | Same-origin REST API | Browser session/UI state only | Route-split compiled static assets with the chart engine isolated from its renderer; no secrets, infrastructure configuration, receipt images, or message content; accessible loading fallbacks, labelled controls, lifecycle history, responsive wrapping navigation, and chart/table alternatives |
 | Local model gateway | Provide typed chat, schema and tool capabilities | OpenAI-compatible local endpoint | No persistent domain data | Replaceable host inference process |
-| Calendar period resolver (implemented) | Resolve strict day, ISO-week, month, year, and bounded inclusive custom selections into half-open query intervals | Pure domain date values used by reporting and the web adapter; no framework or repository dependency | No persistent data | In-process domain component; Europe/Rome calendar semantics, DST-safe boundaries, and a 366-day custom-range ceiling |
+| Calendar period resolver (implemented) | Resolve strict day, ISO-week, month, year, and bounded inclusive custom selections plus their deterministic predecessors into half-open query intervals | Pure domain date values used by reporting and the web adapter; no framework or repository dependency | No persistent data | In-process domain component; Europe/Rome calendar semantics, DST-safe boundaries, and a 366-day custom-range ceiling |
 | Receipt extractor adapter | Produce a versioned structured receipt draft | Selected local OCR/VLM pipeline | No authoritative data until validated | Local-only; selection remains evaluation-gated |
 | Langfuse adapter | Record redacted traces and experiment scores | Local Langfuse SDK | Observability copies, not source of truth | Optional development/evaluation profile |
 
@@ -896,7 +896,41 @@ migration local to each bounded workflow.
    complete lifecycle and allocation facts.
 
 The adapters own no authoritative state, model call, or receipt media access.
-Other Step 5 resources remain planned rather than implicit in these slices.
+Advice exposure and complete browser acceptance remain planned rather than
+implicit in these slices.
+
+### Current merchant and period comparison analytics
+
+1. The web adapter resolves one current day, ISO week, month, year, or bounded
+   custom interval and asks the domain for its only V1 predecessor. Named
+   selectors keep their calendar unit; a custom selector uses the immediately
+   adjacent earlier block with the same inclusive Rome-day count. An
+   unrepresentable predecessor is refused before any repository read.
+2. `ReportingService.range_overview` performs two bounded posted-only reads
+   through the existing repository port. Current and previous payment
+   allocations produce exact signed net totals; their difference is the
+   monetary delta. Relative variation is integer basis points over the absolute
+   previous total, rounded half away from zero, or explicitly undefined when
+   the previous total is zero.
+3. The current movement set is also grouped by optional parent merchant
+   metadata after Unicode NFKC, whitespace collapse, and case folding. Null and
+   blank values share one missing bucket. Every posted parent contributes its
+   signed total once; allocations and receipt lines never enter this grouping,
+   so merchant, purpose, and funding views reconcile independently and are
+   never summed together.
+4. Budget positions keep the existing exact-whole-month rule and are neither
+   prorated nor part of the prior-period comparison. No analytics write,
+   migration, or new data-owning component exists.
+5. React renders both projections with keyboard-focusable lazy ECharts views
+   and equivalent exact tables. The missing merchant and zero-baseline reason
+   are explicit; loading, empty, dependency failure, retry, direct navigation,
+   and bookmark behavior remain available. Mutations that can change the facts
+   invalidate the range query.
+6. Profile scope remains injected by composition. Responses and logs exclude
+   profile scope, merchant and description content from logs, monetary amounts
+   from logs, credentials, URLs, tokens, private paths, receipt content, and
+   infrastructure detail. The model-visible monthly read and advice tools are
+   unchanged, so AD-012 and AD-017 evaluation gates are not triggered.
 
 ### Current browser category-proposal review
 
@@ -1537,9 +1571,11 @@ environment file.
   planned.
 - [AD-009: Local FastAPI and React web application](decisions/AD-009-local-web-application.md):
   strict version-one finance wire contracts, monthly overview, calendar
-  analytics, manual lifecycle, multi-allocation editing, budget planning,
-  category management/review, funding-source/wallet administration, receipt metadata review, HTTP security, and host
-  deployment implemented; remaining Step 5 resources and acceptance planned.
+  analytics including merchant and prior-period comparison, manual lifecycle,
+  multi-allocation editing, budget planning, category management/review,
+  funding-source/wallet administration, profile settings, receipt metadata
+  review, HTTP security, and host deployment implemented; advice exposure and
+  complete browser acceptance planned.
 - [AD-020: Wallet availability and expiry projection](decisions/AD-020-wallet-availability-and-expiry.md):
   deterministic Europe/Rome first-expiry-first availability, immutable booked
   history, source lifecycle service, transactional locks, and local control-plane

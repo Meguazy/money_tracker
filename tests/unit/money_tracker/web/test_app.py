@@ -20,9 +20,12 @@ from money_tracker.application import (
     CategorySpendEntry,
     FundingSourceManagement,
     ManagedFundingSource,
+    MerchantSpendEntry,
     MonthlyBudgetPositions,
     MonthlyOverview,
     PendingCategoryReview,
+    PercentageChangeStatus,
+    PeriodComparison,
     PeriodSplit,
     ProfileSettings,
     RangeOverview,
@@ -54,6 +57,7 @@ from money_tracker.domain import (
     WalletEntryType,
     YearMonth,
     initial_taxonomy,
+    previous_period,
 )
 from money_tracker.messaging import (
     BotEnvironment,
@@ -171,7 +175,23 @@ class OverviewReader:
                     amount=Money(5000),
                 ),
             ),
+            merchants=(
+                MerchantSpendEntry(
+                    merchant="Mercato Centrale",
+                    amount=Money(5000),
+                    movement_count=2,
+                ),
+            ),
             movement_count=2,
+            comparison=PeriodComparison(
+                current_period=period,
+                previous_period=previous_period(period),
+                current_total=Money(5000),
+                previous_total=Money(4000),
+                delta=Money(1000),
+                percentage_change_basis_points=2500,
+                percentage_change_status=PercentageChangeStatus.DEFINED,
+            ),
             budgets=(
                 None
                 if month is None
@@ -1818,7 +1838,37 @@ def test_range_overview_returns_both_dimensions_over_a_resolved_week() -> None:
                 "amount": {"minor_units": 5000, "currency": "EUR"},
             }
         ],
+        "merchants": [
+            {
+                "merchant": "Mercato Centrale",
+                "amount": {"minor_units": 5000, "currency": "EUR"},
+                "movement_count": 2,
+            }
+        ],
         "movement_count": 2,
+        "comparison": {
+            "current_period": {
+                "granularity": "week",
+                "start": "2025-12-29",
+                "end": "2026-01-04",
+                "day_count": 7,
+                "iso_year": 2026,
+                "iso_week": 1,
+            },
+            "previous_period": {
+                "granularity": "week",
+                "start": "2025-12-22",
+                "end": "2025-12-28",
+                "day_count": 7,
+                "iso_year": 2025,
+                "iso_week": 52,
+            },
+            "current_total": {"minor_units": 5000, "currency": "EUR"},
+            "previous_total": {"minor_units": 4000, "currency": "EUR"},
+            "delta": {"minor_units": 1000, "currency": "EUR"},
+            "percentage_change_basis_points": 2500,
+            "percentage_change_status": "defined",
+        },
         "budgets": None,
     }
     assert reader.requested_profile == PROFILE_ID
@@ -1878,6 +1928,18 @@ def test_range_overview_reports_budgets_only_for_a_whole_calendar_month() -> Non
     }
     assert spanning.json()["budgets"] == month.json()["budgets"]
     assert year.json()["budgets"] is None
+
+
+def test_a_period_without_a_representable_comparison_is_refused() -> None:
+    """Refuse a valid selection when its predecessor cannot be represented."""
+
+    response = _client(_app()).get(
+        "/api/v1/overview/range?granularity=day&day=0001-01-01",
+    )
+
+    assert response.status_code == 422
+    assert response.json()["code"] == "period_comparison_unavailable"
+    assert response.json()["instance"] == "/api/v1/overview/range"
 
 
 def test_an_unsupported_granularity_is_one_bounded_problem() -> None:

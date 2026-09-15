@@ -85,10 +85,12 @@ Build the locked frontend, then run the same-origin production service:
     uv run --env-file .env money-tracker-api run
 
 The current Step 5 slices serve `http://127.0.0.1:8000/`, the monthly overview,
-`/movimenti`, the monthly transaction register, audited manual lifecycle
+`/analisi` with day, ISO-week, month, year, custom-range, merchant, and
+prior-period analytics, `/movimenti` with the monthly transaction register, audited manual lifecycle
 mutations with multi-allocation editing, `/budget` with the monthly budget
 planner, `/categorie` with pending proposal approval, active-category reuse,
-and cancellation, `/scontrini` with retained receipt metadata and its mandatory
+and cancellation, `/fonti` with source and wallet administration, `/impostazioni`
+with fixed profile facts and default-source selection, `/scontrini` with retained receipt metadata and its mandatory
 review, `/messaggistica` with the durable Telegram queues and their two requeue
 commands, and content-free health endpoints. They require exactly one
 profile. `/scontrini` shows metadata only; importing an original is still
@@ -97,8 +99,9 @@ profile. `/scontrini` shows metadata only; importing an original is still
 `MONEY_TRACKER_TELEGRAM_ENVIRONMENT` to know which bot's rows are its own; the
 API reads no Bot API token. The complete configuration, browser protections, systemd procedure,
 and real PostgreSQL workflow test are in
-[Local Web Operations](operations/web.md). The remaining control-plane views
-are still unimplemented.
+[Local Web Operations](operations/web.md). Advice exposure and complete browser
+E2E, accessibility/contrast automation, and installed-service acceptance remain
+open.
 
 ## Bootstrapping the owner profile
 

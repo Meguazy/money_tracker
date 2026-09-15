@@ -325,12 +325,74 @@ def resolve_custom(*, start: date, end: date) -> ResolvedPeriod:
     )
 
 
+def previous_period(period: ResolvedPeriod) -> ResolvedPeriod:
+    """Resolve the immediately preceding comparable calendar period.
+
+    Named calendar selectors retain their meaning: a day compares with the
+    prior Rome day, an ISO week with the prior Monday-to-Sunday week, a month
+    with the prior calendar month, and a year with the prior calendar year. A
+    custom interval has no named calendar unit, so it compares with the
+    adjacent interval containing the same number of calendar days.
+
+    Args:
+        period: Current resolved period whose predecessor is required.
+
+    Returns:
+        A resolved predecessor with the same granularity and no overlapping
+        dates.
+
+    Raises:
+        DomainError: If the current period does not have the shape promised by
+            its granularity or its predecessor is outside the representable
+            calendar.
+    """
+
+    try:
+        if period.granularity is PeriodGranularity.DAY:
+            if period.interval.day_count != 1:
+                raise DomainError("day period must contain one calendar day")
+            return resolve_day(period.interval.start - timedelta(days=1))
+        if period.granularity is PeriodGranularity.WEEK:
+            start = period.interval.start
+            iso = start.isocalendar()
+            if (
+                period.interval.day_count != 7
+                or period.iso_year != iso.year
+                or period.iso_week != iso.week
+                or start.weekday() != 0
+                or period.interval.end.weekday() != 6
+            ):
+                raise DomainError("ISO week period must run Monday through Sunday")
+            return resolve_iso_week(start - timedelta(days=1))
+        if period.granularity is PeriodGranularity.MONTH:
+            month = period.calendar_month
+            if month is None:
+                raise DomainError("month period must cover one calendar month")
+            if month.year == 1 and month.month == 1:
+                raise DomainError("previous calendar month is not representable")
+            previous_month = 12 if month.month == 1 else month.month - 1
+            previous_year = month.year - 1 if month.month == 1 else month.year
+            return resolve_month(YearMonth(previous_year, previous_month))
+        if period.granularity is PeriodGranularity.YEAR:
+            start = period.interval.start
+            end = period.interval.end
+            if start != date(start.year, 1, 1) or end != date(start.year, 12, 31):
+                raise DomainError("year period must cover one calendar year")
+            return resolve_year(start.year - 1)
+        width = timedelta(days=period.interval.day_count)
+        previous_end = period.interval.start - timedelta(days=1)
+        return resolve_custom(start=period.interval.start - width, end=previous_end)
+    except (OverflowError, ValueError) as error:
+        raise DomainError("previous calendar period is not representable") from error
+
+
 __all__ = [
     "MAX_RANGE_DAYS",
     "DateRange",
     "PeriodGranularity",
     "ResolvedPeriod",
     "month_range",
+    "previous_period",
     "resolve_custom",
     "resolve_day",
     "resolve_iso_week",

@@ -14,12 +14,13 @@ import {
   Title,
 } from "@mantine/core";
 import { useQuery } from "@tanstack/react-query";
-import { useState, type FormEvent } from "react";
+import { lazy, Suspense, useState, type FormEvent } from "react";
 
 import type {
   FundingClass,
   PeriodGranularity,
   RangeOverview,
+  ResolvedPeriod,
   RangeSelection,
 } from "./api";
 import { loadRangeOverview } from "./api";
@@ -38,6 +39,13 @@ type RangeLoader = (
 type AnalyticsPageProps = {
   loader?: RangeLoader;
 };
+
+const MerchantChart = lazy(async () => ({
+  default: (await import("./AnalyticsCharts")).MerchantChart,
+}));
+const PeriodComparisonChart = lazy(async () => ({
+  default: (await import("./AnalyticsCharts")).PeriodComparisonChart,
+}));
 
 const GRANULARITIES = [
   { value: "day", label: "Giorno" },
@@ -299,12 +307,16 @@ function AnalyticsContent({ overview }: { overview: RangeOverview }) {
           </Text>
         </Paper>
       ) : (
-        <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="xl">
-          <PurposeTable overview={overview} />
-          <FundingTable overview={overview} />
-        </SimpleGrid>
+        <Stack gap="xl">
+          <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="xl">
+            <PurposeTable overview={overview} />
+            <FundingTable overview={overview} />
+          </SimpleGrid>
+          <MerchantSection overview={overview} />
+        </Stack>
       )}
 
+      <ComparisonSection overview={overview} />
       <BudgetSection overview={overview} />
     </Stack>
   );
@@ -382,6 +394,109 @@ function FundingTable({ overview }: { overview: RangeOverview }) {
         </Table>
       </Table.ScrollContainer>
     </Card>
+  );
+}
+
+function MerchantSection({ overview }: { overview: RangeOverview }) {
+  return (
+    <section aria-labelledby="merchant-heading">
+      <Title id="merchant-heading" order={2}>
+        Spesa per esercente
+      </Title>
+      <Text c="dimmed" mt="xs">
+        Ogni movimento contribuisce una sola volta con il proprio totale netto;
+        i rimborsi mantengono il segno.
+      </Text>
+      <SimpleGrid cols={{ base: 1, lg: 2 }} mt="md" spacing="xl">
+        <Card className="chart-card" radius="lg">
+          <Suspense fallback={<Text>Caricamento del grafico esercenti…</Text>}>
+            <MerchantChart merchants={overview.merchants} />
+          </Suspense>
+        </Card>
+        <Card className="table-card" radius="lg">
+          <Table.ScrollContainer minWidth={460}>
+            <Table striped highlightOnHover>
+              <Table.Caption>
+                Alternativa tabellare esatta al grafico della spesa netta per
+                esercente.
+              </Table.Caption>
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th scope="col">Esercente</Table.Th>
+                  <Table.Th scope="col">Movimenti</Table.Th>
+                  <Table.Th scope="col">Importo netto</Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {overview.merchants.map((entry) => (
+                  <Table.Tr key={entry.merchant ?? "__missing_merchant__"}>
+                    <Table.Th scope="row">
+                      {entry.merchant ?? "Esercente non indicato"}
+                    </Table.Th>
+                    <Table.Td>{entry.movement_count}</Table.Td>
+                    <Table.Td>{formatMoney(entry.amount)}</Table.Td>
+                  </Table.Tr>
+                ))}
+              </Table.Tbody>
+            </Table>
+          </Table.ScrollContainer>
+        </Card>
+      </SimpleGrid>
+    </section>
+  );
+}
+
+function ComparisonSection({ overview }: { overview: RangeOverview }) {
+  const comparison = overview.comparison;
+  return (
+    <section aria-labelledby="comparison-heading">
+      <Title id="comparison-heading" order={2}>
+        Confronto con il periodo precedente
+      </Title>
+      <Text c="dimmed" mt="xs">
+        Il confronto usa soltanto i totali netti registrati. I budget restano
+        separati e non sono prorazionati.
+      </Text>
+      <SimpleGrid cols={{ base: 1, lg: 2 }} mt="md" spacing="xl">
+        <Card className="chart-card" radius="lg">
+          <Suspense fallback={<Text>Caricamento del grafico confronto…</Text>}>
+            <PeriodComparisonChart comparison={comparison} />
+          </Suspense>
+        </Card>
+        <Card className="table-card" radius="lg">
+          <Table.ScrollContainer minWidth={620}>
+            <Table striped highlightOnHover>
+              <Table.Caption>
+                Alternativa tabellare esatta: valori assoluti, delta monetario
+                e variazione percentuale.
+              </Table.Caption>
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th scope="col">Periodo corrente</Table.Th>
+                  <Table.Th scope="col">Periodo precedente</Table.Th>
+                  <Table.Th scope="col">Delta</Table.Th>
+                  <Table.Th scope="col">Variazione</Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                <Table.Tr>
+                  <Table.Td>
+                    <Text>{periodDatesFor(comparison.current_period)}</Text>
+                    <Text fw={700}>{formatMoney(comparison.current_total)}</Text>
+                  </Table.Td>
+                  <Table.Td>
+                    <Text>{periodDatesFor(comparison.previous_period)}</Text>
+                    <Text fw={700}>{formatMoney(comparison.previous_total)}</Text>
+                  </Table.Td>
+                  <Table.Td>{formatMoney(comparison.delta)}</Table.Td>
+                  <Table.Td>{formatPercentage(comparison)}</Table.Td>
+                </Table.Tr>
+              </Table.Tbody>
+            </Table>
+          </Table.ScrollContainer>
+        </Card>
+      </SimpleGrid>
+    </section>
   );
 }
 
@@ -467,13 +582,34 @@ function periodTitle(overview: RangeOverview): string {
 }
 
 function periodDates(overview: RangeOverview): string {
-  if (overview.period.start === overview.period.end) {
-    return formatDate(overview.period.start);
+  return periodDatesFor(overview.period);
+}
+
+function periodDatesFor(period: ResolvedPeriod): string {
+  if (period.start === period.end) {
+    return formatDate(period.start);
   }
+  return formatDate(period.start) + " – " + formatDate(period.end);
+}
+
+function formatPercentage(
+  comparison: RangeOverview["comparison"],
+): string {
+  if (
+    comparison.percentage_change_status === "previous_zero" ||
+    comparison.percentage_change_basis_points === null
+  ) {
+    return "Non definita: il periodo precedente è pari a zero.";
+  }
+  const basisPoints = comparison.percentage_change_basis_points;
+  const sign = basisPoints > 0 ? "+" : basisPoints < 0 ? "−" : "";
+  const absolute = Math.abs(basisPoints);
   return (
-    formatDate(overview.period.start) +
-    " – " +
-    formatDate(overview.period.end)
+    sign +
+    Math.floor(absolute / 100).toLocaleString("it-IT") +
+    "," +
+    String(absolute % 100).padStart(2, "0") +
+    "%"
   );
 }
 

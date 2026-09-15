@@ -178,6 +178,7 @@ def _store_split_posted_expense(
     occurred_at: datetime,
     category_allocations: tuple[tuple[UUID, int], ...],
     payment_allocations: tuple[tuple[UUID, int], ...],
+    merchant: str | None = None,
 ) -> None:
     """Post one reconciled split movement through the real application service."""
 
@@ -190,7 +191,7 @@ def _store_split_posted_expense(
         amount=Money(total),
         occurred_at=occurred_at,
         description="movimento analitico",
-        merchant=None,
+        merchant=merchant,
         status=ExpenseStatus.DRAFT,
         category_allocations=tuple(
             CategoryAllocation(
@@ -343,6 +344,14 @@ def test_range_analytics_resolve_calendar_and_both_dimensions_in_postgresql(
         occurred_at=datetime(2025, 12, 31, 12, tzinfo=ROME),
         category_allocations=((food.id, 3000), (home.id, 2000)),
         payment_allocations=((card.id, 3500), (vouchers.id, 1500)),
+        merchant="Mercato Centrale",
+    )
+    _store_split_posted_expense(
+        repository,
+        profile=profile,
+        occurred_at=datetime(2026, 1, 1, 12, tzinfo=ROME),
+        category_allocations=((food.id, -500),),
+        payment_allocations=((card.id, -500),),
     )
     _store_split_posted_expense(
         repository,
@@ -409,16 +418,44 @@ def test_range_analytics_resolve_calendar_and_both_dimensions_in_postgresql(
         "iso_year": 2026,
         "iso_week": 1,
     }
-    assert week.json()["posted_total"]["minor_units"] == 5000
-    assert week.json()["movement_count"] == 1
-    assert week.json()["funding_split"]["personal_funds"]["minor_units"] == 3500
+    assert week.json()["posted_total"]["minor_units"] == 4500
+    assert week.json()["movement_count"] == 2
+    assert week.json()["funding_split"]["personal_funds"]["minor_units"] == 3000
     assert week.json()["funding_split"]["benefit"]["minor_units"] == 1500
     assert {
         item["category_name"]: item["amount"]["minor_units"]
         for item in week.json()["categories"]
     } == {
-        "Spesa alimentare": 3000,
+        "Spesa alimentare": 2500,
         "Prodotti casa, arredo e manutenzione": 2000,
+    }
+    assert week.json()["merchants"] == [
+        {
+            "merchant": "Mercato Centrale",
+            "amount": {"minor_units": 5000, "currency": "EUR"},
+            "movement_count": 1,
+        },
+        {
+            "merchant": None,
+            "amount": {"minor_units": -500, "currency": "EUR"},
+            "movement_count": 1,
+        },
+    ]
+    assert week.json()["comparison"] == {
+        "current_period": week.json()["period"],
+        "previous_period": {
+            "granularity": "week",
+            "start": "2025-12-22",
+            "end": "2025-12-28",
+            "day_count": 7,
+            "iso_year": 2025,
+            "iso_week": 52,
+        },
+        "current_total": {"minor_units": 4500, "currency": "EUR"},
+        "previous_total": {"minor_units": 700, "currency": "EUR"},
+        "delta": {"minor_units": 3800, "currency": "EUR"},
+        "percentage_change_basis_points": 54286,
+        "percentage_change_status": "defined",
     }
     assert week.json()["budgets"] is None
     assert "profile_id" not in week.text

@@ -38,6 +38,7 @@ from money_tracker.domain import (
     PeriodGranularity,
     ResolvedPeriod,
     YearMonth,
+    previous_period,
     resolve_custom,
     resolve_day,
     resolve_iso_week,
@@ -1126,6 +1127,10 @@ _UNSUPPORTED_RANGE = _PeriodRejection(
     code="period_range_invalid",
     detail="L'intervallo deve essere ordinato e non può superare un anno.",
 )
+_COMPARISON_UNAVAILABLE = _PeriodRejection(
+    code="period_comparison_unavailable",
+    detail="Il periodo precedente equivalente non è rappresentabile.",
+)
 
 
 def _resolve_selection(
@@ -1175,7 +1180,7 @@ def _resolve_selection(
     if supplied != _PERIOD_PARAMETERS[requested]:
         return _WRONG_PARAMETERS
     try:
-        return _resolve_parsed(
+        resolved = _resolve_parsed(
             requested, day=day, month=month, year=year, start=start, end=end
         )
     except DomainError:
@@ -1185,6 +1190,11 @@ def _resolve_selection(
         return _UNSUPPORTED_RANGE
     except ValueError:
         return _MALFORMED_VALUE
+    try:
+        previous_period(resolved)
+    except DomainError:
+        return _COMPARISON_UNAVAILABLE
+    return resolved
 
 
 def _resolve_parsed(

@@ -72,6 +72,7 @@ test also proves that identical source-create retries with different generated
 candidates converge on the one stored identity. No migration was needed because
 source versions, wallet history, audit, and the general claim table already
 exist. The settings read model adds only `get_profile` to the repository contract, reads the existing fixed profile columns and active source rows, and reuses that same atomic default command for its sole mutable choice; it introduces no schema or second write path.
+The merchant and period-comparison range read reuses the existing profile-scoped posted interval query twice, once per non-overlapping bounded interval. Aggregation remains in the application service, so it adds no table, migration, persistence ownership, or write path.
 Roadmap Step 4 migration `20260909_0005` adds environment-scoped offsets,
 minimum normalized inbox rows, bounded claim/retry/dead-letter state, unique
 logical outbox messages, hashed one-use pairing, owner bindings, and scoped

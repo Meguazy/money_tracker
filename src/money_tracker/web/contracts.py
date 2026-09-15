@@ -17,6 +17,7 @@ from money_tracker.application import (
     FundingSourceManagement,
     MonthlyBudgetPositions,
     MonthlyOverview,
+    PercentageChangeStatus,
     ProfileSettings,
     RangeOverview,
     TransactionRegister,
@@ -203,6 +204,26 @@ class CategorySpendContract(_WebContract):
     amount: MoneyContract
 
 
+class MerchantSpendContract(_WebContract):
+    """One merchant bucket derived from signed parent movement totals."""
+
+    merchant: str | None
+    amount: MoneyContract
+    movement_count: int = Field(ge=1)
+
+
+class PeriodComparisonContract(_WebContract):
+    """Exact current and previous period values plus their relative change."""
+
+    current_period: ResolvedPeriodContract
+    previous_period: ResolvedPeriodContract
+    current_total: MoneyContract
+    previous_total: MoneyContract
+    delta: MoneyContract
+    percentage_change_basis_points: int | None
+    percentage_change_status: PercentageChangeStatus
+
+
 class MonthlyBudgetPositionsContract(_WebContract):
     """Budget positions, present only for a whole calendar month."""
 
@@ -238,7 +259,9 @@ class RangeOverviewResponse(_WebContract):
     funding_split: FundingClassSplitContract
     funding_sources: tuple[FundingSourceSpendContract, ...]
     categories: tuple[CategorySpendContract, ...]
+    merchants: tuple[MerchantSpendContract, ...]
     movement_count: int
+    comparison: PeriodComparisonContract
     budgets: MonthlyBudgetPositionsContract | None
 
     @classmethod
@@ -272,7 +295,34 @@ class RangeOverviewResponse(_WebContract):
                 )
                 for entry in overview.categories
             ),
+            merchants=tuple(
+                MerchantSpendContract(
+                    merchant=entry.merchant,
+                    amount=MoneyContract(minor_units=entry.amount.minor_units),
+                    movement_count=entry.movement_count,
+                )
+                for entry in overview.merchants
+            ),
             movement_count=overview.movement_count,
+            comparison=PeriodComparisonContract(
+                current_period=ResolvedPeriodContract.from_domain(
+                    overview.comparison.current_period
+                ),
+                previous_period=ResolvedPeriodContract.from_domain(
+                    overview.comparison.previous_period
+                ),
+                current_total=MoneyContract(
+                    minor_units=overview.comparison.current_total.minor_units
+                ),
+                previous_total=MoneyContract(
+                    minor_units=overview.comparison.previous_total.minor_units
+                ),
+                delta=MoneyContract(minor_units=overview.comparison.delta.minor_units),
+                percentage_change_basis_points=(
+                    overview.comparison.percentage_change_basis_points
+                ),
+                percentage_change_status=(overview.comparison.percentage_change_status),
+            ),
             budgets=(
                 None
                 if overview.budgets is None

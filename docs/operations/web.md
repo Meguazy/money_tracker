@@ -17,9 +17,10 @@ bootstrap endpoints. It also exposes the pending category-proposal queue and
 the deterministic approve, reuse-active-category, and cancel decisions, the
 versioned category rename/archive surface and taxonomy complexity warnings, the
 retained receipt metadata and its mandatory review, and the durable messaging
-queues with the two requeue commands. The settings surface exposes the fixed V1 locale, currency, and timezone plus the active default-source choice; only that choice is mutable through the existing funding-source command. Merchant
-analytics, explicit period comparisons, advice, and receipt extraction remain
-Step 5 or Step 6 work and must not be described as available.
+queues with the two requeue commands. The settings surface exposes the fixed V1 locale, currency, and timezone plus the active default-source choice; only that choice is mutable through the existing funding-source command. Advice
+and receipt extraction remain Step 5 or Step 6 work and must not be
+described as available. Calendar analytics now include merchant breakdowns and
+explicit comparison with the deterministic previous period.
 
 ## Ownership and boundaries
 
@@ -67,7 +68,7 @@ With the application database migrated and exactly one profile present, run:
     uv run --env-file .env money-tracker-api run
 
 Open `http://127.0.0.1:8000/` or `http://localhost:8000/` for the overview;
-use `/movimenti` for the register and manual lifecycle, and `/impostazioni` to inspect the fixed V1 profile facts and choose an active default funding source. The editor adds and
+use `/analisi` for posted calendar analytics and `/movimenti` for the register and manual lifecycle, and `/impostazioni` to inspect the fixed V1 profile facts and choose an active default funding source. The editor adds and
 removes category and funding-source rows, reconciles each dimension against the
 total separately, and shows each sum and its difference in exact cents. An
 archived category or funding source can never be selected: it appears as a
@@ -177,7 +178,7 @@ listener and allowed origins.
 | --- | --- | --- |
 | `GET /`, `GET /analisi`, `GET /movimenti`, `GET /budget`, `GET /categorie`, `GET /fonti`, `GET /scontrini`, `GET /messaggistica`, `GET /impostazioni` | Compiled React shell | Static application only; every route supports direct browser navigation, reload, and bookmarking. |
 | `GET /api/v1/overview/monthly?period=YYYY-MM` | Deterministic monthly overview | Exact posted total, funding class/source split, budgets, and unbudgeted categories. |
-| `GET /api/v1/overview/range` | Deterministic calendar analytics | One strict day, ISO-week, month, year, or bounded custom selector; exact posted total, purpose and funding breakdowns, and budget positions only for an exact whole month. |
+| `GET /api/v1/overview/range` | Deterministic calendar analytics | One strict day, ISO-week, month, year, or bounded custom selector; exact posted total, purpose, funding and merchant breakdowns, explicit prior-period absolute/delta/basis-point comparison, and budget positions only for an exact whole month. |
 | `GET /api/v1/transactions?period=YYYY-MM` | Monthly lifecycle register | Every movement state, exact allocations, optimistic versions, and safe category/source references. |
 | `POST /api/v1/expenses` | Create a manual draft | Strict complete movement body; returns safe ID, state, and version. |
 | `PUT /api/v1/expenses/{id}` | Correct a movement | Strict complete replacement plus `expected_version`. |
@@ -296,8 +297,11 @@ delivery dead letter, reads both over HTTP without the owner's text or the bot
 key, replays the work item, repeats that request and receives `replayed`,
 refuses a stale count, an unknown item and a crossed key identically, resends
 the response, and verifies through the repository that one requeue happened per
-queue and that the recovered work item kept its source reference. It uses
-isolated identifiers and cleans up its schemas.
+queue and that the recovered work item kept its source reference. It uses isolated identifiers and cleans up its schemas. The calendar case also
+verifies a split parent,
+merchant and missing-merchant buckets, a signed refund, the exact preceding ISO
+week and its zero-safe percentage contract, while keeping whole-month budgets
+separate.
 
 The source-create race check exercises two simultaneous generated candidates
 under one idempotency key and verifies that both receive the one stored ID:

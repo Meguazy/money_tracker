@@ -14,6 +14,7 @@ from money_tracker.domain import (
     ResolvedPeriod,
     YearMonth,
     month_range,
+    previous_period,
     resolve_custom,
     resolve_day,
     resolve_iso_week,
@@ -208,3 +209,90 @@ def test_iso_week_numbering_belongs_only_to_a_week() -> None:
             granularity=PeriodGranularity.WEEK,
             interval=DateRange(start=date(2026, 9, 7), end=date(2026, 9, 13)),
         )
+
+
+def test_previous_named_periods_preserve_calendar_meaning() -> None:
+    """Compare named selectors with the preceding unit of the same kind."""
+
+    day = previous_period(resolve_day(date(2026, 3, 30)))
+    week = previous_period(resolve_iso_week(date(2025, 12, 31)))
+    month = previous_period(resolve_month(YearMonth(2026, 1)))
+    year = previous_period(resolve_year(2024))
+
+    assert day == resolve_day(date(2026, 3, 29))
+    assert _elapsed(day.interval) == timedelta(hours=23)
+    assert week == resolve_iso_week(date(2025, 12, 28))
+    assert (week.iso_year, week.iso_week) == (2025, 52)
+    assert month == resolve_month(YearMonth(2025, 12))
+    assert year == resolve_year(2023)
+
+
+def test_previous_custom_period_is_adjacent_and_has_the_same_calendar_width() -> None:
+    """Compare an arbitrary selection with the adjacent equal-day block."""
+
+    previous = previous_period(
+        resolve_custom(start=date(2026, 9, 10), end=date(2026, 9, 15))
+    )
+
+    assert previous.granularity is PeriodGranularity.CUSTOM
+    assert previous.interval == DateRange(
+        start=date(2026, 9, 4),
+        end=date(2026, 9, 9),
+    )
+    assert previous.interval.day_count == 6
+
+
+@pytest.mark.parametrize(
+    "period",
+    (
+        resolve_day(date.min),
+        resolve_month(YearMonth(1, 1)),
+        resolve_year(1),
+        resolve_custom(start=date.min, end=date.min),
+    ),
+)
+def test_a_period_without_a_representable_predecessor_is_refused(
+    period: ResolvedPeriod,
+) -> None:
+    """Refuse a comparison that would escape the supported calendar."""
+
+    with pytest.raises(DomainError, match="previous"):
+        previous_period(period)
+
+
+@pytest.mark.parametrize(
+    "period",
+    (
+        ResolvedPeriod(
+            granularity=PeriodGranularity.DAY,
+            interval=DateRange(start=date(2026, 9, 1), end=date(2026, 9, 2)),
+        ),
+        ResolvedPeriod(
+            granularity=PeriodGranularity.WEEK,
+            interval=DateRange(start=date(2026, 9, 8), end=date(2026, 9, 14)),
+            iso_year=2026,
+            iso_week=37,
+        ),
+        ResolvedPeriod(
+            granularity=PeriodGranularity.WEEK,
+            interval=DateRange(start=date(2026, 9, 7), end=date(2026, 9, 13)),
+            iso_year=2025,
+            iso_week=37,
+        ),
+        ResolvedPeriod(
+            granularity=PeriodGranularity.MONTH,
+            interval=DateRange(start=date(2026, 9, 2), end=date(2026, 9, 30)),
+        ),
+        ResolvedPeriod(
+            granularity=PeriodGranularity.YEAR,
+            interval=DateRange(start=date(2026, 1, 2), end=date(2026, 12, 31)),
+        ),
+    ),
+)
+def test_a_malformed_named_period_is_not_given_an_invented_comparison(
+    period: ResolvedPeriod,
+) -> None:
+    """Require the interval shape promised by each named granularity."""
+
+    with pytest.raises(DomainError):
+        previous_period(period)

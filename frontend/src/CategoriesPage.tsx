@@ -89,6 +89,7 @@ export function CategoriesPage({
         queryClient.invalidateQueries({ queryKey: ["transactions"] }),
         queryClient.invalidateQueries({ queryKey: ["monthly-overview"] }),
         queryClient.invalidateQueries({ queryKey: ["budget-plan"] }),
+        queryClient.invalidateQueries({ queryKey: ["range-overview"] }),
       ]);
     },
   });

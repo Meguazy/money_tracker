@@ -4,9 +4,9 @@
 - Implementation: core domain, taxonomy, finance persistence, proposal decisions,
   receipt metadata review state, private original-media storage, strict finance
   wire contracts, manual web mutations, monthly budgeting, and deterministic
-  day/week/month/year/custom-range reads are implemented. Receipt
-  extraction/deletion, worker media wiring, and remaining Step 5 views are
-  planned.
+  day/week/month/year/custom-range reads with merchant and period comparison
+  analytics are implemented. Receipt extraction/deletion, worker media wiring,
+  advice exposure, and browser acceptance remain planned.
 
 This document defines business semantics. Database tables, ORM classes, API
 wire shapes, and graph state may differ internally, but they must preserve these
@@ -34,6 +34,53 @@ and EUR 20.00 paid by card.
 - Store instants with timezone. Resolve relative dates from source-message time
   and report in `Europe/Rome`.
 - Weeks start Monday. Monthly budgets follow Rome calendar-month boundaries.
+
+## V1 merchant and period-comparison analytics
+
+Analytics include only `posted` expenses. Purchases retain their positive
+amounts and refunds retain their negative amounts; neither a display layer nor
+an aggregation takes an absolute value of money. All amounts remain exact EUR
+minor units.
+
+Merchant is optional context on the expense parent. The merchant breakdown
+therefore adds each posted parent amount exactly once and never adds category
+allocations, payment allocations, receipt parents, or receipt lines to it.
+Grouping applies Unicode NFKC normalization, collapses whitespace, and
+case-folds while preserving accents. Null, empty, or whitespace-only metadata
+belongs to the explicit `merchant = null` bucket, displayed as
+`Esercente non indicato`. When spellings normalize to the same key, the
+code-point-smallest normalized spelling is the deterministic display label.
+Buckets remain visible when refunds make their net amount zero and include the
+number of contributing movements. They are ordered by descending absolute net
+amount, then named before missing, then by case-folded display label and finally by display label.
+
+Every supported selector has exactly one previous period:
+
+- a day uses the preceding Rome calendar day;
+- an ISO week uses the preceding Monday-to-Sunday ISO week, including ISO-year
+  boundaries;
+- a month uses the preceding calendar month;
+- a year uses the preceding calendar year;
+- a custom interval uses the immediately adjacent earlier interval with the
+  same inclusive number of Rome calendar days.
+
+A selection is refused when that predecessor is not representable or when a
+named period does not have the shape its granularity promises. The application
+does not invent quarter, year-to-date, partial-current-period, rolling, or
+same-weekday comparisons.
+
+The comparison exposes current and previous absolute net totals, the exact
+monetary `delta = current - previous`, and relative change in integer basis
+points. When the previous total is nonzero, relative change is
+`delta / abs(previous) * 100`; half basis points round away from zero. The
+absolute denominator preserves the direction of the signed delta even when a
+refund makes the previous net total negative. When the previous total is zero,
+the percentage is null with the explicit `previous_zero` status.
+
+Merchant, purpose, and funding are separate reconciling views and must never be
+summed together. Period comparison uses only posted net totals. Monthly budgets
+remain a separate whole-month target comparison: they are not period-over-period
+values, are never prorated, and are not added to another dimension.
 
 ## Aggregate concepts
 

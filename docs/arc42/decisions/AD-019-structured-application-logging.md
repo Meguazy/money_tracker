@@ -110,6 +110,8 @@ exist until a formatter builds one — to the rendered exception text.
 
 The profile-settings slice adds no content-bearing log field: bounded read failures continue through `_problem`, while locale, currency, timezone, source names, URLs, tokens, and private paths are never journal fields.
 
+The merchant and period-comparison slice adds no analytics event or content-bearing field. Merchant labels, descriptions, signed amounts, period totals, deltas, and percentages stay out of the journal; bounded HTTP refusals continue through `_problem` with only stable codes and request-safe metadata.
+
 Documented privacy contracts are honored rather than restated: `BotIdentity`
 declares its bot id as never emitted by diagnostics and the transport therefore
 records only that the credential validated; the model boundary logs the

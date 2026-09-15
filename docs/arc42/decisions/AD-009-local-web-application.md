@@ -1,11 +1,12 @@
 # AD-009: Local FastAPI and React Web Application
 
 - Status: accepted
-- Implementation: monthly overview, calendar analytics,
+- Implementation: monthly overview, calendar analytics with merchant and
+  prior-period comparison,
   transaction/manual-lifecycle, multi-allocation editing, budget-planning,
   category management/review, funding-source/wallet administration, profile settings, receipt-metadata-review, messaging-operations,
-  HTTP security, and host deployment implemented; remaining Step 5 surface in
-  progress
+  HTTP security, and host deployment implemented; advice exposure and complete
+  browser acceptance in progress
 - Date: 2026-09-01
 
 ## Context
@@ -85,6 +86,23 @@ partial-month, and multi-month results return no budget positions rather than
 inventing prorated targets. The existing monthly overview and model-visible
 monthly reporting tool remain unchanged.
 
+Merchant aggregation is a parallel projection over the current posted parent
+movements. Unicode NFKC, collapsed whitespace, and case folding define a
+merchant bucket while preserving accents; null and blank metadata share the
+explicit missing bucket. Each parent contributes its signed amount once, never
+its category allocations, payment allocations, or receipt lines. Buckets retain
+zero net results and are ordered by descending absolute net amount with
+deterministic label tie-breakers.
+
+The same range response compares its current posted net total with one
+deterministic predecessor: prior Rome day, ISO week, calendar month, calendar
+year, or an adjacent custom block with the same inclusive day count.
+Unrepresentable predecessors are bounded refusals. Current and previous absolute
+values remain separate from monetary delta. Relative variation is integer basis
+points over the absolute previous total, rounded half away from zero; a zero
+previous total carries an explicit status and no percentage. Budget positions
+remain separate and are neither prorated nor compared.
+
 The FastAPI composition exposes `/api/v1/overview/monthly`,
 `/api/v1/overview/range`, `/api/v1/transactions`, and strict manual expense
 create/replace/post/cancel
@@ -113,8 +131,10 @@ threshold while the equivalent table remains available in the route chunk.
 The Italian overview includes an explicit month label, exact EUR rendering,
 loading, empty, and error states, keyboard focus, a labelled chart, and an
 equivalent table. The `/analisi` view exposes the calendar selectors, resolved
-inclusive dates, exact purpose and funding-source tables, and monthly budget
-positions only where that contract applies. It provides loading, empty, error,
+inclusive dates, exact purpose, funding-source, merchant, and prior-period
+projections, plus monthly budget positions only where that separate contract
+applies. Merchant and comparison charts are keyboard-focusable and have exact
+table alternatives. It provides loading, empty, error,
 retry, keyboard, reload, and bookmark behavior without accepting profile scope.
 The `/movimenti` view renders every monthly lifecycle state
 and its exact allocations, and exposes labelled create, correct, post, and
@@ -324,11 +344,12 @@ receives `replayed`, refuses a stale count, an unknown item, and a crossed key
 with the identical problem, resends the response, and proves through the
 repository that one requeue happened per queue and that the recovered work item
 kept its source reference. A real PostgreSQL calendar-analytics test posts a
-movement split across purpose and funding dimensions, excludes movements on
-both sides of an ISO-week boundary, and verifies exact whole-month custom-range
-budget aggregation through the production service and repository.
+split parent, a signed refund,
+a missing merchant, and ISO-week boundary movements. It verifies the normalized
+merchant projection, exact previous-week comparison, and whole-month budget
+aggregation through the production service and repository.
 
 Frontend typecheck, component tests, production build, and a runtime dependency
-audit pass. This is partial Step 5 evidence: merchant
-analytics, explicit period comparisons, advice surface, and full browser E2E
+audit pass. This is partial Step 5 evidence: the advice surface and full
+browser E2E
 acceptance are still required before this decision is fully implemented.

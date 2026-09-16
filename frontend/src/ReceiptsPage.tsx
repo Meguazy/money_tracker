@@ -18,6 +18,7 @@ import {
   loadReceipts,
   openReceiptReview,
 } from "./api";
+import { AccessibleTableScrollContainer } from "./AccessibleTableScrollContainer";
 import { formatOccurredAt } from "./format";
 
 type ReceiptApis = {
@@ -132,7 +133,10 @@ export function ReceiptsPage({ apis = defaultApis }: { apis?: ReceiptApis }) {
       ) : null}
 
       {receipts.length > 0 ? (
-        <Table.ScrollContainer minWidth={640}>
+        <AccessibleTableScrollContainer
+          ariaLabel="Archivio degli scontrini"
+          minWidth={640}
+        >
           <Table highlightOnHover striped>
             <Table.Caption>
               Originali conservati, dal più recente al più vecchio.
@@ -171,7 +175,7 @@ export function ReceiptsPage({ apis = defaultApis }: { apis?: ReceiptApis }) {
               ))}
             </Table.Tbody>
           </Table>
-        </Table.ScrollContainer>
+        </AccessibleTableScrollContainer>
       ) : null}
     </main>
   );

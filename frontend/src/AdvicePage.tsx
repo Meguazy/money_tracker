@@ -21,6 +21,7 @@ import {
   type Money,
   requestAdvice,
 } from "./api";
+import { AccessibleTableScrollContainer } from "./AccessibleTableScrollContainer";
 import { formatMoney, monthLabel } from "./format";
 
 export type AdviceRequester = (message: string) => Promise<AdviceResponse>;
@@ -181,7 +182,10 @@ function Evidence({ evidence }: { evidence: AdviceEvidence }) {
         <FundingSplitTable split={evidence.funding_split} />
         {evidence.funding_sources.length > 0 ? (
           <Card className="table-card" radius="lg">
-            <Table.ScrollContainer minWidth={480}>
+            <AccessibleTableScrollContainer
+              ariaLabel="Consumo per fonte"
+              minWidth={480}
+            >
               <Table striped>
                 <Table.Caption>Consumo netto registrato per fonte.</Table.Caption>
                 <Table.Thead>
@@ -201,7 +205,7 @@ function Evidence({ evidence }: { evidence: AdviceEvidence }) {
                   ))}
                 </Table.Tbody>
               </Table>
-            </Table.ScrollContainer>
+            </AccessibleTableScrollContainer>
           </Card>
         ) : (
           <Alert color="yellow" title="Nessuna fonte con movimenti registrati">
@@ -235,7 +239,10 @@ function BudgetEvidence({
       ) : null}
       {evidence.positions.length > 0 ? (
         <Card className="table-card" radius="lg">
-          <Table.ScrollContainer minWidth={560}>
+          <AccessibleTableScrollContainer
+            ariaLabel="Evidenze sui budget"
+            minWidth={560}
+          >
             <Table striped>
               <Table.Caption>
                 Obiettivi e posizione calcolati sui soli movimenti registrati.
@@ -259,7 +266,7 @@ function BudgetEvidence({
                 ))}
               </Table.Tbody>
             </Table>
-          </Table.ScrollContainer>
+          </AccessibleTableScrollContainer>
         </Card>
       ) : null}
       {evidence.unbudgeted_categories.length > 0 ? (

@@ -24,6 +24,7 @@ import type {
   RangeSelection,
 } from "./api";
 import { loadRangeOverview } from "./api";
+import { AccessibleTableScrollContainer } from "./AccessibleTableScrollContainer";
 import {
   currentRomeDate,
   currentRomeMonth,
@@ -335,7 +336,10 @@ function PurposeTable({ overview }: { overview: RangeOverview }) {
   return (
     <Card className="table-card" radius="lg">
       <Title order={3}>Spesa per finalità</Title>
-      <Table.ScrollContainer minWidth={460}>
+      <AccessibleTableScrollContainer
+        ariaLabel="Spesa per finalità"
+        minWidth={460}
+      >
         <Table striped highlightOnHover mt="md">
           <Table.Caption>
             Ripartizione esatta delle allocazioni per categoria, senza sommare
@@ -360,7 +364,7 @@ function PurposeTable({ overview }: { overview: RangeOverview }) {
             ))}
           </Table.Tbody>
         </Table>
-      </Table.ScrollContainer>
+      </AccessibleTableScrollContainer>
     </Card>
   );
 }
@@ -369,7 +373,10 @@ function FundingTable({ overview }: { overview: RangeOverview }) {
   return (
     <Card className="table-card" radius="lg">
       <Title order={3}>Come hai pagato</Title>
-      <Table.ScrollContainer minWidth={460}>
+      <AccessibleTableScrollContainer
+        ariaLabel="Spesa per fonte"
+        minWidth={460}
+      >
         <Table striped highlightOnHover mt="md">
           <Table.Caption>
             Consumo per fonte di pagamento; questi importi non sono saldi dei
@@ -392,7 +399,7 @@ function FundingTable({ overview }: { overview: RangeOverview }) {
             ))}
           </Table.Tbody>
         </Table>
-      </Table.ScrollContainer>
+      </AccessibleTableScrollContainer>
     </Card>
   );
 }
@@ -414,7 +421,10 @@ function MerchantSection({ overview }: { overview: RangeOverview }) {
           </Suspense>
         </Card>
         <Card className="table-card" radius="lg">
-          <Table.ScrollContainer minWidth={460}>
+          <AccessibleTableScrollContainer
+            ariaLabel="Spesa per esercente"
+            minWidth={460}
+          >
             <Table striped highlightOnHover>
               <Table.Caption>
                 Alternativa tabellare esatta al grafico della spesa netta per
@@ -439,7 +449,7 @@ function MerchantSection({ overview }: { overview: RangeOverview }) {
                 ))}
               </Table.Tbody>
             </Table>
-          </Table.ScrollContainer>
+          </AccessibleTableScrollContainer>
         </Card>
       </SimpleGrid>
     </section>
@@ -464,7 +474,10 @@ function ComparisonSection({ overview }: { overview: RangeOverview }) {
           </Suspense>
         </Card>
         <Card className="table-card" radius="lg">
-          <Table.ScrollContainer minWidth={620}>
+          <AccessibleTableScrollContainer
+            ariaLabel="Confronto con il periodo precedente"
+            minWidth={620}
+          >
             <Table striped highlightOnHover>
               <Table.Caption>
                 Alternativa tabellare esatta: valori assoluti, delta monetario
@@ -493,7 +506,7 @@ function ComparisonSection({ overview }: { overview: RangeOverview }) {
                 </Table.Tr>
               </Table.Tbody>
             </Table>
-          </Table.ScrollContainer>
+          </AccessibleTableScrollContainer>
         </Card>
       </SimpleGrid>
     </section>
@@ -525,7 +538,10 @@ function BudgetSection({ overview }: { overview: RangeOverview }) {
         Posizione dei budget mensili
       </Title>
       <Card className="table-card" mt="md" radius="lg">
-        <Table.ScrollContainer minWidth={620}>
+        <AccessibleTableScrollContainer
+          ariaLabel="Budget del periodo"
+          minWidth={620}
+        >
           <Table striped highlightOnHover>
             <Table.Caption>
               Obiettivo, spesa registrata e residuo del mese completo.
@@ -549,7 +565,7 @@ function BudgetSection({ overview }: { overview: RangeOverview }) {
               ))}
             </Table.Tbody>
           </Table>
-        </Table.ScrollContainer>
+        </AccessibleTableScrollContainer>
       </Card>
       {overview.budgets.unbudgeted_categories.length > 0 ? (
         <Alert

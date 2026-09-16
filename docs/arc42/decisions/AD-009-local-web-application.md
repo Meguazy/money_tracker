@@ -6,7 +6,8 @@
   editing, budget-planning, category management/review, funding-source/wallet
   administration, profile settings, receipt-metadata-review,
   messaging-operations, read-only advice, HTTP security, and host deployment
-  implemented; complete browser acceptance in progress
+  implemented and accepted through real-browser E2E, automated WCAG A/AA
+  checks, and the installed user service (2026-09-16)
 - Date: 2026-09-01
 
 ## Context
@@ -370,6 +371,31 @@ matrix. An opt-in integration crosses the real local model, HTTP,
 `ReportingService`, and PostgreSQL without substituting those boundaries.
 
 Frontend typecheck, component tests, production build, and a runtime dependency
-audit pass. This is partial Step 5 evidence: complete browser E2E,
-automated accessibility/contrast, and installed-service acceptance are still
-required before this decision is fully implemented.
+audit pass.
+
+Browser acceptance completes the implementation. Playwright drives headless
+Chrome against the production `money-tracker-api run` entry point, the compiled
+build, and an isolated, migrated `money_tracker_test` database whose fixtures
+are created through production services and repositories. Five serial
+workflows cover direct navigation and reload of every route, keyboard entry,
+announced loading and failure recovery, the manual movement, budget, overview,
+analytics, correction, and cancellation path, source/wallet, default-source,
+category, receipt, and messaging controls, and advice through the running
+promoted model. The advice case compares every returned figure with the
+deterministic budget plan in exact minor units and proves that the plan and the
+register are unchanged afterwards. Axe enforces the WCAG 2.0/2.1 A and AA rules
+on every route, on populated and advice states, and on a hovered destructive
+button. The findings led to darker metric, `gray`, and `red` theme colours,
+light source badges, and one named, focusable scroll region for every data
+table. The browser also exposed two defects that jsdom had hidden: budget form
+handlers reading a cleared `currentTarget` in deferred updaters, and a category
+approval that did not refresh the management panel on the same page.
+
+A separate Playwright configuration targets the unit installed by
+`scripts/install_systemd_units.sh`. It verifies the active unit, liveness and
+readiness, direct navigation and reload of every route, compiled assets,
+refusal of a disallowed Host and Origin without CORS permission, CSRF refusal
+before any model call, and readiness after a real `systemctl --user restart`
+that replaces the main process. No model-visible contract changed. Commands,
+results, and the limits of this evidence are recorded in the
+[Step 5 acceptance evidence](../../roadmap/step-5-dashboard-and-advice.md#browser-accessibility-and-installed-service-acceptance-2026-09-16).

@@ -1,6 +1,6 @@
 # Operations Guide
 
-- Status: Steps 1–4 complete; Step 5 local dashboard in progress
+- Status: Steps 1–5 complete; Step 5 local dashboard browser-accepted on 2026-09-16
 - Current executable operations: local inference/CLI, dedicated application
   PostgreSQL, migrations/checkpoint bootstrap, optional healthy Langfuse,
   capability evaluation, profile-scoped receipt storage, one-shot Step 3
@@ -11,13 +11,14 @@
   category-proposal review, receipt metadata consultation and its mandatory
   review, browser inspection and requeue of the durable messaging queues, safe
   profile-settings consultation and default-source selection, read-only browser
-  advice grounded in promoted deterministic tools, and checked-in host service units
+  advice grounded in promoted deterministic tools, real-browser E2E and WCAG
+  A/AA automation against isolated PostgreSQL and the local model, and
+  checked-in host service units including the browser-accepted API unit
 - Implemented Step 2: authoritative finance schema and transactional
   expense, wallet, budget, pending category-proposal, and versioned receipt-review
   repository operations, a safe local receipt-media adapter, and verified
   encrypted backup with an isolated restore drill
-- Planned operations: browser E2E acceptance, automated accessibility/contrast,
-  installed-service acceptance, backup scheduling and clean-machine restore,
+- Planned operations: backup scheduling and clean-machine restore,
   workflow-worker receipt wiring, receipt extraction, and media deletion
 
 These guides describe accepted operational behavior and the controls future
@@ -28,7 +29,8 @@ the referenced file or entry point exists in the repository.
 ## Runbooks
 
 - [Local Web](web.md): build, loopback API/dashboard, browser controls, health,
-  systemd, verification, and rollback for the implemented Step 5 slices,
+  systemd, browser and installed-service acceptance, verification, and
+  rollback for the implemented Step 5 slices,
   including merchant and period-comparison analytics, profile settings, and
   funding-source/wallet administration, the metadata-only receipt
   review surface, and the content-free messaging operations surface.
@@ -84,8 +86,9 @@ the referenced file or entry point exists in the repository.
   never returns a message, a bot key, or a Bot API credential, and it cannot
   send, pair, move the offset, or delete. Read-only browser advice enters the
   promoted advice graph with trusted profile scope and returns only deterministic
-  tool evidence; no mutation service is reachable from that composition. Full
-  browser acceptance remains open.
+  tool evidence; no mutation service is reachable from that composition.
+  Real-browser E2E, WCAG A/AA automation, and acceptance of the installed
+  `money-tracker-api.service`, including a real restart, passed on 2026-09-16.
 - Langfuse 4.26.0 and every dependency are pinned by digest. The non-cluster
   repair and health checks pass with the pre-existing volumes preserved.
 - Installed model paths remain workstation-owned and outside the repository.
@@ -108,8 +111,8 @@ the referenced file or entry point exists in the repository.
   clean-machine drill exists yet.
 - The private test bot passed real owner workflows, unauthorized-user checks,
   five fault injections, p95 latency, and an unattended reboot with all Step 4
-  host services. No production bot exists. Full browser acceptance, media
-  deletion, and receipt extraction do not exist yet.
+  host services. No production bot exists. Media deletion and receipt
+  extraction do not exist yet.
 
 ## When to update these guides
 

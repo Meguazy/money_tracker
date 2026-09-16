@@ -27,6 +27,7 @@ import {
   type Transaction,
   type TransactionRegister,
 } from "./api";
+import { AccessibleTableScrollContainer } from "./AccessibleTableScrollContainer";
 import {
   currentLocalDateTime,
   currentRomeMonth,
@@ -722,7 +723,10 @@ function TransactionTable({
   }
   return (
     <Card className="table-card transaction-table" mt="xl" radius="lg">
-      <Table.ScrollContainer minWidth={840}>
+      <AccessibleTableScrollContainer
+        ariaLabel="Registro mensile dei movimenti"
+        minWidth={840}
+      >
         <Table highlightOnHover>
           <Table.Caption>
             Registro completo del mese, inclusi stati che non entrano nei totali.
@@ -809,7 +813,7 @@ function TransactionTable({
             ))}
           </Table.Tbody>
         </Table>
-      </Table.ScrollContainer>
+      </AccessibleTableScrollContainer>
     </Card>
   );
 }

@@ -100,9 +100,18 @@ profile. `/scontrini` shows metadata only; importing an original is still
 `MONEY_TRACKER_TELEGRAM_ENVIRONMENT` to know which bot's rows are its own; the
 API reads no Bot API token. The complete configuration, browser protections,
 systemd procedure, and real PostgreSQL workflow tests are in
-[Local Web Operations](operations/web.md). Complete browser E2E,
-accessibility/contrast automation, and installed-service acceptance remain
-open.
+[Local Web Operations](operations/web.md).
+
+Browser acceptance uses Playwright with the system Chrome. The first command
+starts its own production API on port 8765 against `money_tracker_test` and the
+local model; the second targets the installed service on port 8000 and restarts
+it. Prerequisites and coverage are in
+[Local Web Operations](operations/web.md#browser-acceptance):
+
+    cd frontend
+    npm run build
+    npm run test:e2e
+    npm run test:e2e:installed
 
 ## Bootstrapping the owner profile
 

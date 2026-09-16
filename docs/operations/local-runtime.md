@@ -1,7 +1,7 @@
 # Local Runtime
 
-- Status: Steps 1–4 runtime accepted; Step 5 API/dashboard slices implemented
-  with complete control-plane acceptance still in progress
+- Status: Steps 1–4 runtime accepted; Step 5 API/dashboard implemented and
+  accepted as an installed user service on 2026-09-16
 - Target platform: Ubuntu workstation, RTX 5070 Ti 16 GB VRAM
 
 ## Current executable foundation
@@ -55,7 +55,7 @@ in this table:
 | Service | Host/container | Responsibility | Core? |
 | --- | --- | --- | --- |
 | Application PostgreSQL | Docker Compose | Implemented finance source of truth, audit, workflow checkpoints, and durable messaging queues | Yes |
-| FastAPI/UI service | Host systemd user service | Implemented same-origin health, overview/analytics/register, audited control-plane slices, safe profile settings, promoted read-only advice, and compiled dashboard; browser and installed-service acceptance remain planned | Yes during Step 5 |
+| FastAPI/UI service | Host systemd user service | Implemented same-origin health, overview/analytics/register, audited control-plane slices, safe profile settings, promoted read-only advice, and compiled dashboard; real-browser and installed-service acceptance passed, including a real restart | Yes |
 | Telegram gateway | Host systemd user service | Accepted authorized long polling, durable ingest, safe file metadata, callback acknowledgement, outbox dispatch | Yes |
 | Workflow worker | Host systemd user service | Accepted sequential routing/workflow processing | Yes |
 | llama.cpp server | Host systemd user service | Implemented unit for local promoted text inference | Yes for agent work |
@@ -78,8 +78,9 @@ steady-state sequence is:
    dropping updates.
 3. llama.cpp loads the pinned model and exposes capability health.
 4. Workflow worker starts/retries and processes durable inbox work one at a time.
-5. FastAPI serves liveness, readiness, monthly overview/register, manual
-   lifecycle mutations, and compiled UI; remaining operations arrive later.
+5. FastAPI serves liveness, readiness, the dashboard API, and compiled UI.
+   Its `Type=simple` unit reports active before uvicorn listens, so dependent
+   checks wait for HTTP readiness rather than the unit state.
 6. Langfuse starts only when the operator selects development/evaluation mode.
 
 The checked-in systemd user units use explicit working directories and
@@ -97,8 +98,9 @@ inbox in a separate process. The real test bot passed complete owner workflows, 
 fault injection, and reboot recovery on 2026-09-11.
 
 Checked-in unit templates live in `deploy/systemd/`, and
-`scripts/install_systemd_units.sh` renders them for the current checkout into
-`~/.config/systemd/user/`. Removal is `systemctl --user disable --now <unit>`
+`scripts/install_systemd_units.sh` renders all of them for the current checkout
+into `~/.config/systemd/user/` and reloads the user manager, so compare rendered
+and installed files before reinstalling while services run. Removal is `systemctl --user disable --now <unit>`
 followed by deleting the rendered file. A real reboot with lingering brought the three Step 4 services up unaided and
 drained queued work in order.
 

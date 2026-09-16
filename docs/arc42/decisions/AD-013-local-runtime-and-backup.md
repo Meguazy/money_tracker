@@ -2,7 +2,7 @@
 
 - Status: accepted
 - Implementation: Compose topology, encrypted Restic backup/restore, accepted
-  Telegram/worker/llama.cpp units, and the initial FastAPI service unit
+  Telegram/worker/llama.cpp units, and the browser-accepted FastAPI service unit
   implemented; the backup timer and its scheduling planned
 - Date: 2026-09-01
 
@@ -70,10 +70,16 @@ work that must be qualified by starting a unit rather than scoring it.
 Step 5 adds the `money-tracker-api.service` template, direct locked-environment
 entry point, loopback settings, and a preflight that requires compiled assets.
 Its overview, finance, category, funding-source/wallet, receipt, and messaging
-slices have unit and HTTP/PostgreSQL integration evidence, but the service has
-not yet completed installed browser acceptance. Daily backup scheduling, off-device
-recovery-secret verification, and the clean-machine restore drill remain planned
-for Step 7.
+slices have unit and HTTP/PostgreSQL integration evidence. On 2026-09-16 the
+unit was installed with the checked-in installer, enabled under the user
+manager, and accepted through a real browser: health and readiness, every
+direct route, compiled assets, Host, Origin, and CSRF refusals, and readiness
+after `systemctl --user restart` replaced the main process. The installer
+re-renders every unit, and the Step 4 units it rewrote were byte-identical to
+the installed ones. `Type=simple` reports the unit active before uvicorn
+listens, so readiness is the HTTP probe rather than the unit state. Daily backup
+scheduling, off-device recovery-secret verification, and the clean-machine
+restore drill remain planned for Step 7.
 
 ## Consequences
 

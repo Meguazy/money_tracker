@@ -1,6 +1,6 @@
 # Security and Troubleshooting
 
-- Status: implemented Steps 1–4 controls plus the current Step 5 web controls
+- Status: implemented Steps 1–4 controls plus the browser-accepted Step 5 web controls
 - Scope: one-owner local workstation, accepted Telegram boundary, and loopback web boundary
 
 ## Trust boundaries
@@ -95,6 +95,13 @@ surface enforces these controls:
   receive restrictive CSP,
   referrer, MIME-sniffing, and framing headers;
 - API responses return no environment, profile identity, private path, or secret.
+
+A real browser verified these controls on 2026-09-16 against the installed
+service: a disallowed `Host` and a disallowed `Origin` each returned 403 with no
+CORS permission, and an allowed-origin advice `POST` without the CSRF pair
+returned 403 before any model call. Each refusal left a
+`web.request.blocked` journal event with `host_not_allowed`,
+`origin_not_allowed`, or `csrf_validation_failed` as its reason code.
 
 The advice route is a read-only `POST`: CSRF protects its content-bearing body,
 but it accepts no idempotency key or profile identity and its composed object
@@ -224,6 +231,9 @@ Before changing state:
 | Same Telegram update appears again | Check inbox unique key and whether offset advanced only after commit. | Delete duplicate rows or re-run mutation without its original idempotency key. |
 | Worker retries indefinitely | Verify five-attempt transition, dependency state, typed error class, and dead-letter record. | Skip the record by mutating offsets or mark it successful manually. |
 | Expense appears twice (critical incident) | Stop the workflow worker, preserve database/log evidence, compare source update/command keys and audit entries. | Delete one row before identifying invariant/idempotency failure. |
+| Browser E2E refuses to start or clean | Confirm `MONEY_TRACKER_TEST_DATABASE_URL` names `money_tracker_test` on loopback port 5433; the runtime refuses every other URL and database by design. Check that port 8765 is free. | Point the suite at `money_tracker` or another database, or drop schemas by hand. |
+| API unit active but connection refused | Wait for `/api/v1/health/ready`: the `Type=simple` unit is active before uvicorn listens. Check `NRestarts` and the journal if readiness never returns. | Restart repeatedly or conclude failure from the first refused connection. |
+| Axe reports a contrast or keyboard violation | Read the rule ID and target in the Playwright output and fix the theme token or component; keep scrollable tables in `AccessibleTableScrollContainer`. | Remove WCAG tags from the audit or exclude the element to pass. |
 | Budget/chart total differs (planned) | Compare posted category allocations, occurrence timezone, refund/void status, and parent roll-up. | Add parent expense totals to receipt-line totals. |
 | Receipt will not reconcile (planned) | Inspect visible line totals, discount/rounding, payment split, and unexplained difference. | Force posted status or invent a balancing line silently. |
 | Unauthorized bot access (critical incident) | Stop gateway, rotate token if exposed, preserve redacted source IDs/audit, verify owner mapping. | Reply with finance data or expose which user is authorized. |

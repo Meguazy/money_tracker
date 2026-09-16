@@ -87,6 +87,7 @@ export function CategoriesPage({
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["category-proposals"] }),
         queryClient.invalidateQueries({ queryKey: ["transactions"] }),
+        queryClient.invalidateQueries({ queryKey: ["category-management"] }),
         queryClient.invalidateQueries({ queryKey: ["monthly-overview"] }),
         queryClient.invalidateQueries({ queryKey: ["budget-plan"] }),
         queryClient.invalidateQueries({ queryKey: ["range-overview"] }),

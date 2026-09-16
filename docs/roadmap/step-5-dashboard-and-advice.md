@@ -2,7 +2,12 @@
 
 Part of the [delivery roadmap](../roadmap.md).
 
-Status: **In progress (2026-09-15).** The implemented vertical slices provide
+Status: **Complete (2026-09-16).** Every exit criterion has evidence below; the
+last three, complete browser E2E against real services, automated
+accessibility/contrast checks, and acceptance of the installed
+`money-tracker-api.service`, are recorded in
+[browser, accessibility, and installed-service acceptance](#browser-accessibility-and-installed-service-acceptance-2026-09-16).
+The implemented vertical slices provide
 the loopback same-origin host, deterministic monthly overview and transaction
 register, accessible React shell, audited manual create, correct, post, and
 cancel workflows, the multi-allocation editor for both reconciling dimensions,
@@ -14,8 +19,6 @@ monthly, annual, and bounded custom-range analytics now expose separate purpose
 and funding views, deterministic merchant breakdowns, and explicit
 period-over-period comparison. The `/consigli` surface now exposes the already
 promoted monthly advice capabilities as read-only, tool-grounded evidence.
-Complete browser E2E, automated accessibility/contrast checks, and installed
-service acceptance are still open.
 No model, prompt, routing threshold, tool contract, or taxonomy policy changed,
 so EVD-004 remains the promoted text baseline.
 
@@ -592,9 +595,200 @@ so EVD-004 remains the promoted text baseline.
   schemas, registries, routing, and thresholds are unchanged. AD-012/AD-017
   trigger no new evaluation; EVD-004 remains the promotion evidence.
 
-### Work still required before completion
+### Browser, accessibility, and installed-service acceptance (2026-09-16)
 
-- Add complete browser E2E coverage against real application services and
-  PostgreSQL, accessibility/contrast automation, and installed-service browser
-  acceptance. Step 5 remains in progress until every exit criterion above has
-  that evidence.
+This closes the three exit criteria that the slices above left open. Every run
+drove a real headless Chrome against the production entry point; nothing in
+the request path was replaced by a mock, a stub server, or a fake model.
+
+| Element | Value |
+| --- | --- |
+| Workstation | Linux 6.11.0-26-generic, NVIDIA RTX 5070 Ti 16 GiB |
+| Code baseline | `48015df` on `main` plus this change |
+| Browser | Google Chrome 153.0.8010.47, headless, `/usr/bin/google-chrome` |
+| Browser tooling | `@playwright/test` 1.63.0, `@axe-core/playwright` 4.13.0 (axe-core 4.13.0), Node 22.21.1, npm 10.9.4 |
+| E2E database | `money_tracker_test` on loopback port 5433, migrated to `20260910_0007` by the real Alembic upgrade |
+| Installed-service database | `money_tracker` with its single bootstrapped owner profile, read only by the acceptance |
+| Text profile | `text-qwen3-14b`: `money-tracker-llama.service` serving `Qwen3-14B-Q5_K_M.gguf`, the file EVD-004 promoted |
+| Model-visible contracts | Unchanged: no file under `src/`, `evals/`, `migrations/`, or `docs/experiments/` differs from `48015df` |
+
+#### Real boundaries crossed
+
+- `npm run test:e2e` starts `tests/e2e/money_tracker/web/runtime.py serve`,
+  which refuses any database URL other than local `money_tracker_test` on port
+  5433 and checks `current_database()` again before cleaning. It drops only the
+  `finance`, `messaging`, and `workflow` schemas plus `public.alembic_version`,
+  applies the real migrations, and creates its fixtures through production
+  code: `PostgresFinanceRepository.bootstrap_profile`, `FinanceService`,
+  `CategoryProposalService`, `ReceiptMetadataService`, and the failure paths of
+  `PostgresMessagingRepository` that produce one inbox and one outbox dead
+  letter. No fixture row is inserted with SQL.
+- It then launches the installed `.venv/bin/money-tracker-api run` entry point
+  on `127.0.0.1:8765` with the compiled `frontend/dist`, so every request passes
+  through the production Host, Origin, CSRF, and idempotency middleware,
+  `ReportingService`, the mutation adapters, and PostgreSQL. The advice case
+  additionally crosses the production `AdviceWorkflow`, the promoted selection
+  prompt and `explicit-finance-scope-v1` policy, and the running local model.
+- Playwright's global teardown runs the same guarded cleanup. After the final
+  run the test database held no application schema and no `alembic_version`.
+- `npm run test:e2e:installed` targets the unit rendered by
+  `scripts/install_systemd_units.sh` and running under the user manager on
+  `127.0.0.1:8000`; it restarts that unit with `systemctl --user restart`.
+
+#### Browser workflows covered
+
+`npm run test:e2e` runs five serial tests:
+
+1. **Navigation and accessibility.** All ten routes load by direct navigation
+   and by reload, and each passes axe with no violation. Keyboard use reaches
+   the skip link first, then the primary navigation, and `Enter` on a focused
+   link changes route.
+2. **Loading and failure states.** The first register request is delayed and
+   aborted at the browser network layer. The page announces loading, shows the
+   bounded `Registro non disponibile` alert, and recovers through `Riprova`.
+3. **Movement, budget, overview, analytics, correction, and cancellation.** A
+   manual draft is created with reconciled category and source allocations,
+   registered, and read back; a 40,00 € budget is configured and shows the
+   exact 42,50 € spend and -2,50 € remaining; the overview shows the same
+   figures, the chart is keyboard-focusable, and its table alternative agrees;
+   `/analisi` shows the merchant bucket; the movement is corrected to 50,00 €
+   and cancelled, and the overview returns to zero. Axe runs on the overview
+   populated with a negative remaining amount.
+4. **Operational controls.** A benefit ledger source is created, receives a
+   30,00 € opening with an expiry date, and becomes the default through
+   `/impostazioni` with explicit confirmation and an announced status. On
+   `/categorie` one proposal is approved and the new category appears as
+   active without a reload, one reuses `Formazione`, and one is cancelled with
+   its draft; a seeded leaf is renamed and archived. The previous default source
+   is renamed and archived. A retained receipt is sent to review and approved.
+   The inbox dead letter is replayed and the outbox dead letter resent, after
+   which both dead-letter tables report empty.
+5. **Advice through the local model.** The test configures its own budget, then
+   asks `Come vanno tutti i miei budget questo mese?`. The HTTP response must be
+   200 `answered` with `budgets_at_risk` evidence for the current Rome month.
+   Every returned position must equal, in exact minor units, the target, posted
+   spend, and remaining amount of the deterministic `GET /api/v1/budgets` plan
+   for the same month, and every rendered table cell must equal those values.
+   The budget plan and the movement register are read before and after and must
+   be identical, which is the browser-level evidence of zero mutation. The page
+   passes axe with the evidence displayed. The test owns its data, so it also
+   passes when selected alone.
+
+#### Accessibility and contrast automation
+
+Axe runs with the `wcag2a`, `wcag2aa`, `wcag21a`, and `wcag21aa` tags on every
+route at rest, on the populated overview, on displayed advice evidence, and on
+the category page while the pointer hovers a filled destructive button. Axe
+evaluates the current computed style, so the hover audit first moves the pointer
+away, waits for the background to change on hover, and then audits that state.
+Removing the corrected hover shade was verified to make that audit fail with
+`color-contrast`, and restoring it made it pass.
+
+The checks found and this change fixed:
+
+| Finding | Correction |
+| --- | --- |
+| 78%-white metric labels at 2.86:1 on coral and 3.56:1 on sage | Darker metric backgrounds: labels 5.14:1 and 5.06:1, values 7.38:1 and 7.06:1 |
+| `dimmed` text at 3.32:1 on white | Mantine `gray[6]` set to `#5f6872`: 5.66:1 |
+| Filled yellow and teal source badges below 4.5:1 | Source badges use the `light` variant |
+| Red negative-remaining badge at 3.28:1 | Mantine `red` scale darkened from shade 6 onward: 6.57:1 at rest and 8.20:1 for the filled hover shade, which previously measured 3.84:1 |
+| Horizontally scrollable tables unreachable by keyboard (`scrollable-region-focusable`) | Shared `AccessibleTableScrollContainer`: a named, focusable region used by every table on the overview, movements, budgets, receipts, sources, messaging, analytics, and advice pages |
+
+Beyond axe, the workflows assert keyboard focus order, labelled controls found by
+accessible name, announced `status` and `alert` roles for loading, success, and
+failure, the focusable chart with its table alternative, and row headers that
+name each numeric row.
+
+#### Defects the browser found
+
+Component tests had not exposed either of these, because a real browser
+schedules React state updates differently from jsdom:
+
+- `BudgetsPage` read `event.currentTarget.value` inside deferred state updaters.
+  React clears `currentTarget` after dispatch, so typing into the budget form
+  blanked the page in Chrome. The four handlers, including the per-month
+  exception fields, now capture the value before scheduling the update.
+- Approving a category proposal did not invalidate the `category-management`
+  query, so the new category did not appear in the management panel on the same
+  page until a reload. The decision now invalidates it with the other affected
+  reads.
+
+#### Installed-service acceptance
+
+The runbook procedure ran unchanged:
+
+    ./scripts/install_systemd_units.sh
+    systemctl --user enable --now money-tracker-api.service
+    systemctl --user status money-tracker-api.service
+    cd frontend
+    npm run test:e2e:installed
+
+The installer re-renders every unit. Before running it, the rendered gateway,
+worker, and llama.cpp units were compared with the installed files and were
+byte-identical, so the running Step 4 services were not altered. The unit
+started with `NRestarts=0`, and liveness and readiness returned 200 `healthy`.
+The workstation `.env` predates the web settings, so the service ran on the
+`WebSettings` defaults, which equal the values `scripts/upgrade_local_env.sh`
+would append (`127.0.0.1`, port 8000, loopback hosts and origins, checkout
+`frontend/dist`). The upgrader was not run, because it would also append
+logging, backup, and llama.cpp settings that change the other services.
+
+The three installed-service tests verify:
+
+- `systemctl --user is-active` reports `active`; liveness and readiness return
+  `{"status": "healthy"}`; all ten routes load by direct navigation and reload
+  inside the shell; the module script is a compiled `/assets/*.js` served with
+  a JavaScript content type;
+- a disallowed `Host` returns 403, a disallowed `Origin` returns 403 with no
+  `Access-Control-Allow-Origin`, and an allowed-origin `POST /api/v1/advice`
+  without the CSRF cookie and header returns 403 before any model call. The
+  journal records exactly the matching `web.request.blocked` events with
+  `host_not_allowed`, `origin_not_allowed`, and `csrf_validation_failed`;
+- `systemctl --user restart` replaces the main PID, the unit returns to
+  `active`, readiness returns 200, and a reloaded page renders again.
+  `Type=simple` reports `active` before uvicorn listens, so the test treats a
+  refused connection as not ready yet and relies on HTTP readiness.
+
+#### Commands and exact results
+
+Final results on 2026-09-16, after the last code change:
+
+| Command | Result |
+| --- | --- |
+| `uv run ruff check .` | All checks passed |
+| `uv run ruff format --check .` | 346 files already formatted |
+| `uv run mypy src` | No issues in 124 source files |
+| `uv run pytest -q` | 1174 passed, 142 skipped |
+| `RUN_POSTGRES_INTEGRATION_TESTS=1 LOG_LEVEL=CRITICAL uv run --env-file .env pytest -q` | 1308 passed, 8 skipped |
+| `RUN_POSTGRES_INTEGRATION_TESTS=1 LOG_LEVEL=CRITICAL uv run --env-file .env pytest -q tests/integration/money_tracker/web/test_api.py` | 10 passed |
+| `RUN_POSTGRES_INTEGRATION_TESTS=1 RUN_ADVICE_HTTP_INTEGRATION_TESTS=1 LOG_LEVEL=CRITICAL uv run --env-file .env pytest -q tests/integration/money_tracker/web/test_advice.py` | 1 passed |
+| `npm test -- --run` | 12 files, 67 tests passed |
+| `npm run typecheck` | Passed |
+| `npm run build` | Passed with no chunk-size warning |
+| `npm run test:e2e` | 5 passed |
+| `npm run test:e2e:installed` | 3 passed |
+
+The 142 skips of the ordinary suite are opt-in real-service tests: 138 need
+`RUN_POSTGRES_INTEGRATION_TESTS=1`, and one each needs the real test bot, a real
+inference service, the CLI end-to-end run, and capability probes. The 8 skips of
+the PostgreSQL suite are the CLI end-to-end run, two Restic backup drills, the
+capability probes, the router inference checkpoint, the real Bot API, the
+direct LLM integration, and the advice HTTP integration, which ran separately
+above. The backup drill cannot run on this workstation, which lacks Restic and
+PostgreSQL 17 client tools; this change touches neither backup, migrations,
+nor the receipt archive.
+
+#### Limits of this evidence
+
+- The E2E editor path uses one category and one source row. Multi-row splits
+  keep their component and real PostgreSQL HTTP coverage.
+- The browser never reaches Telegram: the messaging page requeues durable rows,
+  and delivery after a resend is outside the web boundary.
+- Axe runs the WCAG 2.0 and 2.1 A/AA rules only. Best-practice rules are not
+  gated, and the page `main` currently nests inside the shell `main` landmark.
+  Hover contrast is audited for the destructive filled button only, and focus
+  visibility is asserted through focus state rather than measured visually.
+- The runs use a desktop viewport; narrow layouts are not browser-tested.
+- The advice case asks one budget question. The other two advice evidence kinds
+  keep their component and opt-in integration coverage, and the model's
+  selection quality remains EVD-004 evidence rather than E2E evidence.

@@ -1,6 +1,8 @@
-# Frontend dependencies and compiled output
+# Frontend dependencies, compiled output, and browser test artifacts
 /frontend/node_modules/
 /frontend/dist/
+/frontend/test-results/
+/frontend/playwright-report/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

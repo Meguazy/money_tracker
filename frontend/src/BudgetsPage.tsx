@@ -26,6 +26,7 @@ import {
   loadBudgetPlan,
   replaceBudget,
 } from "./api";
+import { AccessibleTableScrollContainer } from "./AccessibleTableScrollContainer";
 import {
   currentRomeMonth,
   formatMoney,
@@ -227,24 +228,26 @@ export function BudgetsPage({ apis = defaultApis }: { apis?: BudgetApis }) {
                     ),
                   ]}
                   label="Categoria"
-                  onChange={(event) =>
+                  onChange={(event) => {
+                    const categoryId = event.currentTarget.value;
                     setEditor((current) => ({
                       ...current,
-                      categoryId: event.currentTarget.value,
-                    }))
-                  }
+                      categoryId,
+                    }));
+                  }}
                   required
                   value={editor.categoryId}
                 />
               ) : null}
               <TextInput
                 label="Budget mensile in euro"
-                onChange={(event) =>
+                onChange={(event) => {
+                  const recurringTarget = event.currentTarget.value;
                   setEditor((current) => ({
                     ...current,
-                    recurringTarget: event.currentTarget.value,
-                  }))
-                }
+                    recurringTarget,
+                  }));
+                }}
                 placeholder="400,00"
                 required
                 value={editor.recurringTarget}
@@ -266,32 +269,34 @@ export function BudgetsPage({ apis = defaultApis }: { apis?: BudgetApis }) {
                       <SimpleGrid cols={{ base: 1, sm: 2 }}>
                         <TextInput
                           label={`Mese eccezione ${index + 1}`}
-                          onChange={(event) =>
+                          onChange={(event) => {
+                            const period = event.currentTarget.value;
                             setEditor((current) => ({
                               ...current,
                               overrides: current.overrides.map((item) =>
                                 item.key === row.key
-                                  ? { ...item, period: event.currentTarget.value }
+                                  ? { ...item, period }
                                   : item,
                               ),
-                            }))
-                          }
+                            }));
+                          }}
                           required
                           type="month"
                           value={row.period}
                         />
                         <TextInput
                           label={`Budget eccezione ${index + 1} in euro`}
-                          onChange={(event) =>
+                          onChange={(event) => {
+                            const target = event.currentTarget.value;
                             setEditor((current) => ({
                               ...current,
                               overrides: current.overrides.map((item) =>
                                 item.key === row.key
-                                  ? { ...item, target: event.currentTarget.value }
+                                  ? { ...item, target }
                                   : item,
                               ),
-                            }))
-                          }
+                            }));
+                          }}
                           placeholder="600,00"
                           required
                           value={row.target}
@@ -397,7 +402,10 @@ function BudgetTable({
   }
   return (
     <Card className="table-card" mt="xl" radius="lg">
-      <Table.ScrollContainer minWidth={720}>
+      <AccessibleTableScrollContainer
+        ariaLabel="Piano dei budget mensili"
+        minWidth={720}
+      >
         <Table highlightOnHover>
           <Table.Caption>
             Budget di {monthLabel(period)}, dal più sforato al più libero.
@@ -471,7 +479,7 @@ function BudgetTable({
             })}
           </Table.Tbody>
         </Table>
-      </Table.ScrollContainer>
+      </AccessibleTableScrollContainer>
     </Card>
   );
 }

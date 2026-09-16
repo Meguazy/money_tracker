@@ -11,6 +11,32 @@ import { App } from "./App";
 
 const theme = createTheme({
   primaryColor: "dark",
+  colors: {
+    gray: [
+      "#f8f9fa",
+      "#f1f3f5",
+      "#e9ecef",
+      "#dee2e6",
+      "#ced4da",
+      "#adb5bd",
+      "#5f6872",
+      "#495057",
+      "#343a40",
+      "#212529",
+    ],
+    red: [
+      "#fff5f5",
+      "#ffe3e3",
+      "#ffc9c9",
+      "#ffa8a8",
+      "#ff8787",
+      "#ff6b6b",
+      "#b42318",
+      "#9a1d14",
+      "#801910",
+      "#67140d",
+    ],
+  },
   defaultRadius: "md",
   fontFamily:
     'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',

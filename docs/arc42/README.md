@@ -26,17 +26,17 @@ v6, tool-selection v5, routing confidence 0.5, and
 `explicit-finance-scope-v1`. The durable Telegram runtime passed owner-driven
 workflow, authorization, latency, fault, and reboot acceptance on 2026-09-11.
 
-Step 5 is active. Its implemented slices provide the loopback FastAPI host,
+Step 5 is complete. Its implemented slices provide the loopback FastAPI host,
 monthly overview, calendar analytics, and transaction register, audited manual
 create/correct/post/cancel workflows, the multi-allocation editor for both
 reconciling dimensions, the monthly budget planner, versioned category and funding-source/wallet administration, owner review of pending
 category proposals, consultation and mandatory review of retained receipt
 metadata, browser inspection and pinned requeue of the durable messaging queues, safe profile-settings consultation and default-source selection,
 compiled React shell, browser security policy, host unit, and the promoted
-read-only advice surface. Browser E2E, automated accessibility/contrast, and
-installed-service acceptance are still planned within Step 5.
-Receipt extraction
-remains assigned to Step 6.
+read-only advice surface. On 2026-09-16 real-browser E2E against the production
+API, PostgreSQL, and the promoted local model, automated WCAG 2.0/2.1 A/AA
+checks, and acceptance of the installed user service passed. Step 5.5 is next
+and has not started. Receipt extraction remains assigned to Step 6.
 
 ### Quality goals
 
@@ -289,7 +289,7 @@ catalog is promoted; every identifier carries a `candidate-` prefix.
 | Telegram Bot API transport (implemented) | Validate the bot, long poll, obtain file metadata, acknowledge callbacks, and deliver outbox messages | Bounded HTTPS client and messaging services | No authoritative finance data or correctness state | Gateway host service; separate production/test token selected from a private environment file |
 | FastAPI adapter (partial) | Expose monthly and calendar-range overviews with merchant and prior-period comparison, transaction register, manual lifecycle, budget planning, category and funding-source/wallet administration, pending category review, receipt metadata review, messaging operations, safe profile settings, promoted advice, health, CSRF bootstrap, compiled UI, and later REST resources | Narrow advice, reporting, finance, budget, category, funding-source, receipt-review, messaging-operations, and profile-settings ports | No independent data | Implemented on loopback with Host/Origin, CSRF, idempotency for writes, optimistic concurrency, proposal-wide and transition-wide command identity, and bounded errors |
 | Browser advice composition (implemented) | Enter the promoted advice read graph directly and map only deterministic tool facts to a strict HTTP union | `AdviceWorkflow`, active taxonomy/source configuration reads, `ReportingService`, clock, promoted model adapter and selection policy | No state; no checkpointer and no mutation service in its object graph | In-process in `money-tracker-api`; trusted profile/time/vocabulary injection, CSRF-protected read-only POST, content-free logs, and no prompt/completion/profile/secret exposure |
-| React dashboard (partial) | Display the monthly overview, calendar analytics with merchant and period comparison, transaction register, budget planner, categories, funding sources with tracked-wallet balances/history, retained receipt metadata, durable messaging state, fixed profile facts, and promoted tool-grounded advice; edit the multi-allocation manual lifecycle, monthly budgets, deterministic category and source lifecycle, manual wallet entries, the mandatory receipt review, and both queue requeues; choose the active default funding source while locale, currency, and timezone remain read-only | Same-origin REST API | Browser session/UI state only | Route-split compiled static assets with the chart engine isolated from its renderer; no secrets, infrastructure configuration, receipt images, prompts, completions, or original message reflection; accessible loading, empty, insufficient, clarification, error/retry, lifecycle history, responsive navigation, and chart/table alternatives |
+| React dashboard (partial) | Display the monthly overview, calendar analytics with merchant and period comparison, transaction register, budget planner, categories, funding sources with tracked-wallet balances/history, retained receipt metadata, durable messaging state, fixed profile facts, and promoted tool-grounded advice; edit the multi-allocation manual lifecycle, monthly budgets, deterministic category and source lifecycle, manual wallet entries, the mandatory receipt review, and both queue requeues; choose the active default funding source while locale, currency, and timezone remain read-only | Same-origin REST API | Browser session/UI state only | Route-split compiled static assets with the chart engine isolated from its renderer; no secrets, infrastructure configuration, receipt images, prompts, completions, or original message reflection; accessible loading, empty, insufficient, clarification, error/retry, lifecycle history, responsive navigation, chart/table alternatives, and named keyboard-focusable table scroll regions; real-browser WCAG A/AA acceptance |
 | Local model gateway | Provide typed chat, schema and tool capabilities | OpenAI-compatible local endpoint | No persistent domain data | Replaceable host inference process |
 | Calendar period resolver (implemented) | Resolve strict day, ISO-week, month, year, and bounded inclusive custom selections plus their deterministic predecessors into half-open query intervals | Pure domain date values used by reporting and the web adapter; no framework or repository dependency | No persistent data | In-process domain component; Europe/Rome calendar semantics, DST-safe boundaries, and a 366-day custom-range ceiling |
 | Receipt extractor adapter | Produce a versioned structured receipt draft | Selected local OCR/VLM pipeline | No authoritative data until validated | Local-only; selection remains evaluation-gated |
@@ -898,7 +898,9 @@ migration local to each bounded workflow.
    complete lifecycle and allocation facts.
 
 The overview and movement adapters own no authoritative state, model call, or
-receipt media access. Complete browser acceptance remains planned.
+receipt media access. Real-browser E2E drives this sequence through the
+production entry point and PostgreSQL, including a correction, a cancellation,
+and the overview returning to zero.
 
 ### Current browser advice
 
@@ -1245,8 +1247,10 @@ and the unit stops;
 this includes `database_schema_invalid` when required migrations are absent.
 Exit code 2 means a dependency was unreachable and the unit restarts. The
 Python entry points replace psycopg diagnostics with stable reason codes.
-The three Step 4 units passed enabled-service and reboot acceptance; the new API
-unit is checked and tested but has not completed installed browser acceptance.
+The three Step 4 units passed enabled-service and reboot acceptance. The API
+unit passed installed browser acceptance on 2026-09-16, including readiness
+after a real `systemctl --user restart`; because it is `Type=simple`, the unit
+reports active before uvicorn listens, so readiness is the HTTP probe.
 
 Systemd user services use lingering, or an equivalent host setup, to recover
 without a manual application start. Each service tolerates delayed database,
@@ -1530,6 +1534,12 @@ tracing and from the exit-code contract AD-018 defines for supervisors.
   media protocols for the components in scope.
 - End-to-end tests traverse real user entry points and clean isolated persistent
   records.
+- Browser E2E uses Playwright and headless Chrome against the production
+  `money-tracker-api run` entry point, the compiled build, a guarded
+  `money_tracker_test` database seeded through production services, and the
+  promoted local model. Axe enforces WCAG 2.0/2.1 A and AA rules on every route
+  and on populated, advice, and hovered states. A second configuration accepts
+  the installed systemd user service without replacing systemd.
 - Agent quality experiments complement rather than replace correctness tests.
 
 ## 9. Architecture Decisions
@@ -1593,8 +1603,9 @@ environment file.
   EVD-004 Step 3 text-role promotion implemented; later roles remain gated.
 - [AD-013: Host runtime and encrypted backup](decisions/AD-013-local-runtime-and-backup.md):
   Compose topology, encrypted Restic backup, verification, retention, and the
-  isolated restore drill, accepted Step 4 host units, and Step 5 API unit
-  implemented; scheduling and the clean-machine restore remain planned.
+  isolated restore drill, accepted Step 4 host units, and the browser-accepted
+  Step 5 API unit implemented; scheduling and the clean-machine restore remain
+  planned.
 - [AD-011: Evaluation-gated receipt extraction](decisions/AD-011-receipt-extraction.md):
   private original-media boundary and the owner-facing metadata lifecycle
   implemented; extractor evaluation and the extracted-draft preview workflow
@@ -1605,7 +1616,8 @@ environment file.
   multi-allocation editing, budget planning, category management/review,
   funding-source/wallet administration, profile settings, receipt metadata
   review, promoted read-only advice, HTTP security, and host deployment
-  implemented; complete browser acceptance planned.
+  implemented and accepted through real-browser E2E, WCAG A/AA automation, and
+  the installed user service.
 - [AD-020: Wallet availability and expiry projection](decisions/AD-020-wallet-availability-and-expiry.md):
   deterministic Europe/Rome first-expiry-first availability, immutable booked
   history, source lifecycle service, transactional locks, and local control-plane
@@ -1655,6 +1667,7 @@ still-running process did and why.
 | Langfuse is stopped | Core ingestion, finance, Telegram, API, and dashboard behavior continues without traces. |
 | A user outside the paired owner contacts the bot | The gateway rejects the update without exposing finance state. |
 | A browser uses a non-loopback route or disallowed origin | The API refuses access or mutation. |
+| A dashboard change lowers contrast or hides a control from the keyboard | The real-browser axe gate reports the WCAG A/AA violation before release. |
 | A restore is performed on an empty installation | Database, receipt references, retained media, and required configuration recover consistently. |
 | A model or prompt candidate misses a safety gate | It is not promoted; the current accepted configuration remains active. |
 
@@ -1676,11 +1689,12 @@ Quantitative evaluation gates are maintained in
 - The encrypted authoritative backup and isolated restore drill are implemented,
   but automatic scheduling, off-device secret verification, and a clean-machine
   restore remain later release work.
-- The real Telegram evidence uses a private test bot, not a production bot. The
-  implemented Step 5 web workflows, including funding-source and wallet
-  administration plus safe profile settings, have component, concurrent repository, and real PostgreSQL
-  HTTP coverage but still lack complete browser E2E and installed-service
-  acceptance.
+- The real Telegram evidence uses a private test bot, not a production bot.
+- Step 5 browser acceptance gates only the WCAG 2.0/2.1 A/AA axe rules at a
+  desktop viewport. Best-practice landmark rules are not gated and the page
+  `main` nests inside the shell `main`; narrow layouts, visual focus
+  indicators, and hover states other than the destructive filled button are not
+  browser-audited.
 
 ### Target architecture risks
 

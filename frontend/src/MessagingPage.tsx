@@ -21,6 +21,7 @@ import {
   replayInboxItem,
   resendOutboxItem,
 } from "./api";
+import { AccessibleTableScrollContainer } from "./AccessibleTableScrollContainer";
 import { formatOccurredAt } from "./format";
 
 type MessagingApis = {
@@ -191,7 +192,10 @@ export function MessagingPage({
               Nessun lavoro in ingresso ha esaurito i tentativi.
             </Text>
           ) : (
-            <Table.ScrollContainer minWidth={640}>
+            <AccessibleTableScrollContainer
+              ariaLabel="Dead letter in ingresso"
+              minWidth={640}
+            >
               <Table highlightOnHover mb="lg" striped>
                 <Table.Caption>
                   Lavori in ingresso che hanno esaurito i cinque tentativi
@@ -224,7 +228,7 @@ export function MessagingPage({
                   ))}
                 </Table.Tbody>
               </Table>
-            </Table.ScrollContainer>
+            </AccessibleTableScrollContainer>
           )}
 
           <Title mb="sm" order={2}>
@@ -242,7 +246,10 @@ export function MessagingPage({
                 al proprietario lo stesso messaggio due volte. Nessuna scrittura
                 finanziaria viene ripetuta.
               </Text>
-              <Table.ScrollContainer minWidth={640}>
+              <AccessibleTableScrollContainer
+                ariaLabel="Dead letter in uscita"
+                minWidth={640}
+              >
                 <Table highlightOnHover striped>
                   <Table.Caption>
                     Risposte logiche che hanno esaurito i cinque tentativi di
@@ -275,7 +282,7 @@ export function MessagingPage({
                     ))}
                   </Table.Tbody>
                 </Table>
-              </Table.ScrollContainer>
+              </AccessibleTableScrollContainer>
             </>
           )}
         </>

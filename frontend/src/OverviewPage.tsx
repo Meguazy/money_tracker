@@ -17,6 +17,7 @@ import { lazy, Suspense, useState } from "react";
 
 import type { MonthlyOverview } from "./api";
 import { loadMonthlyOverview } from "./api";
+import { AccessibleTableScrollContainer } from "./AccessibleTableScrollContainer";
 import { currentRomeMonth, formatMoney, monthLabel } from "./format";
 
 const BudgetChart = lazy(() =>
@@ -187,7 +188,10 @@ function MetricCard({
 function BudgetTable({ overview }: { overview: MonthlyOverview }) {
   return (
     <Card className="table-card" radius="lg">
-      <Table.ScrollContainer minWidth={560}>
+      <AccessibleTableScrollContainer
+        ariaLabel="Tabella dei budget del mese"
+        minWidth={560}
+      >
         <Table striped highlightOnHover>
           <Table.Caption>
             Alternativa tabellare al grafico: spesa, obiettivo e residuo esatti.
@@ -218,7 +222,7 @@ function BudgetTable({ overview }: { overview: MonthlyOverview }) {
             ))}
           </Table.Tbody>
         </Table>
-      </Table.ScrollContainer>
+      </AccessibleTableScrollContainer>
     </Card>
   );
 }

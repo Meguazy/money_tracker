@@ -28,6 +28,7 @@ import {
   renameFundingSource,
   setDefaultFundingSource,
 } from "./api";
+import { AccessibleTableScrollContainer } from "./AccessibleTableScrollContainer";
 import {
   currentLocalDateTime,
   formatMoney,
@@ -433,8 +434,15 @@ function SourceCard({
             </Text>
           </div>
           <Group gap="xs">
-            {source.is_default ? <Badge color="yellow">Predefinita</Badge> : null}
-            <Badge color={source.status === "active" ? "teal" : "gray"}>
+            {source.is_default ? (
+              <Badge color="yellow" variant="light">
+                Predefinita
+              </Badge>
+            ) : null}
+            <Badge
+              color={source.status === "active" ? "teal" : "gray"}
+              variant="light"
+            >
               {source.status === "active" ? "Attiva" : "Archiviata"}
             </Badge>
           </Group>
@@ -566,7 +574,10 @@ function WalletHistory({ source }: { source: ManagedFundingSource }) {
     return <Text c="dimmed">Nessun movimento wallet registrato.</Text>;
   }
   return (
-    <Table.ScrollContainer minWidth={620}>
+    <AccessibleTableScrollContainer
+      ariaLabel="Cronologia del wallet"
+      minWidth={620}
+    >
       <Table striped withTableBorder>
         <Table.Thead>
           <Table.Tr>
@@ -587,7 +598,7 @@ function WalletHistory({ source }: { source: ManagedFundingSource }) {
           ))}
         </Table.Tbody>
       </Table>
-    </Table.ScrollContainer>
+    </AccessibleTableScrollContainer>
   );
 }
 

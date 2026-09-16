@@ -2,8 +2,9 @@
 
 - Status: Step 5 overview, manual-movement, multi-allocation editing,
   budget-planning, calendar-analytics, category management/proposal review, funding-source/wallet administration, profile-settings consultation,
-  receipt metadata review, messaging operations, and read-only advice implemented;
-  complete browser and installed-service acceptance still in progress
+  receipt metadata review, messaging operations, and read-only advice implemented
+  and accepted through real-browser E2E, WCAG A/AA automation, and the
+  installed user service on 2026-09-16
 - Binding decision: [AD-009](../arc42/decisions/AD-009-local-web-application.md)
 - Delivery evidence: [Step 5](../roadmap/step-5-dashboard-and-advice.md)
 
@@ -280,7 +281,22 @@ The checked-in user unit is installed with the other host units:
     systemctl --user status money-tracker-api.service
 
 The installer refuses missing frontend assets. Rebuild before reinstalling or
-restarting after a frontend change. The unit restarts after dependency exit
+restarting after a frontend change. It re-renders every unit in
+`deploy/systemd/`, not only the API unit, and reloads the user manager. When the
+Step 4 services are already running, compare the rendered templates with the
+installed files first; identical files leave those services untouched:
+
+    root="$(pwd)"
+    for unit in money-tracker-llama money-tracker-telegram money-tracker-worker; do
+      sed "s|__MONEY_TRACKER_ROOT__|${root}|g" "deploy/systemd/${unit}.service" \
+        | diff - "${HOME}/.config/systemd/user/${unit}.service"
+    done
+
+An older `.env` without `MONEY_TRACKER_WEB_*` keys still serves the documented
+configuration, because the service defaults equal the values the upgrader would
+append. `scripts/upgrade_local_env.sh` appends every missing setting, including
+logging, backup, and llama.cpp keys that affect other services, so review its
+effect before running it on a live workstation. The unit restarts after dependency exit
 code 2 but not after operator/configuration exit code 1. Inspect bounded service
 diagnostics with:
 
@@ -288,7 +304,56 @@ diagnostics with:
     curl --fail http://127.0.0.1:8000/api/v1/health/live
     curl --fail http://127.0.0.1:8000/api/v1/health/ready
 
+The unit is `Type=simple`: `systemctl --user is-active` reports `active` a
+moment before uvicorn accepts connections. A refused connection immediately
+after a start or restart is therefore not a failure; wait for readiness to
+return 200, and treat a growing `NRestarts` or an exit code as the failure
+signal.
+
 ## Verification and rollback
+
+### Browser acceptance
+
+The browser suite drives headless Chrome through the production entry point:
+
+    cd frontend
+    npm ci
+    npm run build
+    npm run test:e2e
+
+It needs the compiled build, `.env` with `MONEY_TRACKER_TEST_DATABASE_URL`
+pointing at `money_tracker_test` on `127.0.0.1:5433`, the promoted llama.cpp
+service, free port 8765, and Chrome at `/usr/bin/google-chrome` or the path in
+`MONEY_TRACKER_E2E_BROWSER`; it does not download a Playwright browser. The
+runtime refuses any other database, drops and re-migrates only the application
+schemas of that test database, seeds its fixtures through production services,
+starts `money-tracker-api run` on `127.0.0.1:8765`, and cleans the schemas again
+in global teardown. Five serial tests cover direct navigation and reload of
+every route, keyboard entry, loading and failure recovery, the movement,
+budget, overview, analytics, correction, and cancellation workflow, source,
+wallet, default-source, category, receipt, and messaging controls, and advice
+through the local model compared with the deterministic budget plan. Axe
+enforces the WCAG 2.0/2.1 A and AA rules on every route and on populated,
+advice, and hovered states. A failing run leaves a trace and screenshot under
+the ignored `frontend/test-results/`.
+
+The installed-service acceptance targets the running unit on port 8000:
+
+    ./scripts/install_systemd_units.sh
+    systemctl --user enable --now money-tracker-api.service
+    cd frontend
+    npm run test:e2e:installed
+
+It reads only health, the compiled shell, and refusals, so it writes nothing to
+the application database, but it restarts `money-tracker-api.service` with
+`systemctl --user restart`. It verifies the active unit, liveness and
+readiness, direct navigation and reload of every route, compiled assets,
+403 for a disallowed Host and Origin without CORS permission, 403 for an
+advice POST without CSRF, a new main PID after restart, and readiness plus a
+rendered page afterwards. Results from 2026-09-16 are in the
+[Step 5 acceptance evidence](../roadmap/step-5-dashboard-and-advice.md#browser-accessibility-and-installed-service-acceptance-2026-09-16).
+
+### HTTP integration
 
 The isolated real-PostgreSQL HTTP check is:
 

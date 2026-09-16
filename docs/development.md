@@ -89,18 +89,19 @@ The current Step 5 slices serve `http://127.0.0.1:8000/`, the monthly overview,
 prior-period analytics, `/movimenti` with the monthly transaction register, audited manual lifecycle
 mutations with multi-allocation editing, `/budget` with the monthly budget
 planner, `/categorie` with pending proposal approval, active-category reuse,
-and cancellation, `/fonti` with source and wallet administration, `/impostazioni`
-with fixed profile facts and default-source selection, `/scontrini` with retained receipt metadata and its mandatory
+and cancellation, `/fonti` with source and wallet administration,
+`/impostazioni` with fixed profile facts and default-source selection,
+`/consigli` with promoted read-only advice, `/scontrini` with retained receipt metadata and its mandatory
 review, `/messaggistica` with the durable Telegram queues and their two requeue
 commands, and content-free health endpoints. They require exactly one
 profile. `/scontrini` shows metadata only; importing an original is still
 `money-tracker-admin receipt-store`, and no route returns receipt bytes.
 `/messaggistica` shows counts, ages and reason codes only, and needs
 `MONEY_TRACKER_TELEGRAM_ENVIRONMENT` to know which bot's rows are its own; the
-API reads no Bot API token. The complete configuration, browser protections, systemd procedure,
-and real PostgreSQL workflow test are in
-[Local Web Operations](operations/web.md). Advice exposure and complete browser
-E2E, accessibility/contrast automation, and installed-service acceptance remain
+API reads no Bot API token. The complete configuration, browser protections,
+systemd procedure, and real PostgreSQL workflow tests are in
+[Local Web Operations](operations/web.md). Complete browser E2E,
+accessibility/contrast automation, and installed-service acceptance remain
 open.
 
 ## Bootstrapping the owner profile

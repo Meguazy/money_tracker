@@ -5,8 +5,9 @@
   receipt metadata review state, private original-media storage, strict finance
   wire contracts, manual web mutations, monthly budgeting, and deterministic
   day/week/month/year/custom-range reads with merchant and period comparison
-  analytics are implemented. Receipt extraction/deletion, worker media wiring,
-  advice exposure, and browser acceptance remain planned.
+  analytics and the promoted read-only browser advice surface are implemented.
+  Receipt extraction/deletion, worker media wiring, and browser acceptance
+  remain planned.
 
 This document defines business semantics. Database tables, ORM classes, API
 wire shapes, and graph state may differ internally, but they must preserve these

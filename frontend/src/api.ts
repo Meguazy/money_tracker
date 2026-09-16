@@ -31,6 +31,43 @@ export type MonthlyOverview = {
   unbudgeted_categories: string[];
 };
 
+export type FundingClassSplit = Record<FundingClass, Money>;
+
+export type AdviceEvidence =
+  | {
+      kind: "category_spending";
+      period: { year: number; month: number };
+      category_name: string;
+      posted_spend: Money;
+      funding_split: FundingClassSplit;
+      assessment_status: "spending_without_threshold";
+    }
+  | {
+      kind: "funding_class_split";
+      period: { year: number; month: number };
+      funding_split: FundingClassSplit;
+      funding_sources: FundingSourceSpend[];
+      assessment_status: "consumption_not_balance";
+    }
+  | {
+      kind: "budgets_at_risk";
+      period: { year: number; month: number };
+      positions: BudgetPosition[];
+      unbudgeted_categories: string[];
+      assessment_status: "budget_evidence" | "insufficient_data";
+    };
+
+export type AdviceResponse =
+  | { status: "answered"; evidence: AdviceEvidence; reason: null }
+  | {
+      status: "needs_clarification";
+      evidence: null;
+      reason:
+        | "category_not_found"
+        | "capability_not_available"
+        | "request_not_understood";
+    };
+
 export type PeriodGranularity = "day" | "week" | "month" | "year" | "custom";
 
 export type RangeSelection =
@@ -397,6 +434,16 @@ async function csrfToken(): Promise<string> {
       throw error;
     });
   return csrfTokenRequest;
+}
+
+export async function requestAdvice(message: string): Promise<AdviceResponse> {
+  const token = await csrfToken();
+  const response = await fetch("/api/v1/advice", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-CSRF-Token": token },
+    body: JSON.stringify({ message }),
+  });
+  return responseJson<AdviceResponse>(response);
 }
 
 async function mutate<T>(

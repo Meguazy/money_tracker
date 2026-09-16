@@ -1,7 +1,8 @@
 # AD-012: Evaluation-Driven Model and Prompt Promotion
 
 - Status: accepted
-- Implementation: executable foundation implemented; promotion gates pending
+- Implementation: executable gates and the EVD-004 text stack promotion
+  implemented; later model-visible capabilities remain gate-controlled
 - Date: 2026-09-01
 
 ## Context
@@ -38,8 +39,13 @@ artifact locations, deterministic machine-readable reports, and collection of
 model alias, GGUF/build/template/context/projector metadata. Real
 OpenAI-compatible probes cover strict structured output, tool calls,
 tool-result continuation, and optional images. Local reports remain available
-without Langfuse; publication is explicit and aggregate-only. No target model or
-prompt has passed a promotion gate.
+without Langfuse; publication is explicit and aggregate-only.
+
+EVD-004 records the passing Step 3 promotion of `text-qwen3-14b`, router v6,
+extraction v6, category-fit v6, tool-selection v5, routing confidence 0.5, and
+`explicit-finance-scope-v1`. The read-only browser advice slice reuses that
+stack without changing a prompt, schema, tool registry, threshold, routing
+intent, or policy, so it does not constitute a new model-visible promotion.
 
 Roadmap Step 3 makes the candidate catalog executable rather than descriptive.
 A run may declare the profile it is measuring and is refused when either the

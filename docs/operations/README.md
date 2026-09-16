@@ -9,14 +9,15 @@
   analytics with merchant and prior-period comparison, manual movement lifecycle with multi-allocation editing, monthly
   budget planning, funding-source lifecycle and expiry-aware wallet administration,
   category-proposal review, receipt metadata consultation and its mandatory
-  review, browser inspection and requeue of the durable messaging queues, safe profile-settings consultation and default-source selection, and
-  checked-in host service units
+  review, browser inspection and requeue of the durable messaging queues, safe
+  profile-settings consultation and default-source selection, read-only browser
+  advice grounded in promoted deterministic tools, and checked-in host service units
 - Implemented Step 2: authoritative finance schema and transactional
   expense, wallet, budget, pending category-proposal, and versioned receipt-review
   repository operations, a safe local receipt-media adapter, and verified
   encrypted backup with an isolated restore drill
-- Planned operations: remaining dashboard advice, browser E2E acceptance, backup
-  scheduling and clean-machine restore,
+- Planned operations: browser E2E acceptance, automated accessibility/contrast,
+  installed-service acceptance, backup scheduling and clean-machine restore,
   workflow-worker receipt wiring, receipt extraction, and media deletion
 
 These guides describe accepted operational behavior and the controls future
@@ -81,7 +82,10 @@ the referenced file or entry point exists in the repository.
   only: it never returns an original, its archive key, or a deletion path. The
   messaging surface carries counts, ages, identifiers and reason codes only: it
   never returns a message, a bot key, or a Bot API credential, and it cannot
-  send, pair, move the offset, or delete. Advice exposure and full browser acceptance remain open.
+  send, pair, move the offset, or delete. Read-only browser advice enters the
+  promoted advice graph with trusted profile scope and returns only deterministic
+  tool evidence; no mutation service is reachable from that composition. Full
+  browser acceptance remains open.
 - Langfuse 4.26.0 and every dependency are pinned by digest. The non-cluster
   repair and health checks pass with the pre-existing volumes preserved.
 - Installed model paths remain workstation-owned and outside the repository.
@@ -104,8 +108,8 @@ the referenced file or entry point exists in the repository.
   clean-machine drill exists yet.
 - The private test bot passed real owner workflows, unauthorized-user checks,
   five fault injections, p95 latency, and an unattended reboot with all Step 4
-  host services. No production bot exists. Advice exposure, full browser acceptance, media deletion, and receipt
-  extraction do not exist yet.
+  host services. No production bot exists. Full browser acceptance, media
+  deletion, and receipt extraction do not exist yet.
 
 ## When to update these guides
 

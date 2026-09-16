@@ -14,6 +14,7 @@ from fastapi import APIRouter, FastAPI, Header, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from langchain_core.exceptions import ModelConnectionError
 from psycopg import Error as PsycopgError
 from pydantic import ValidationError
 
@@ -47,6 +48,8 @@ from money_tracker.domain import (
 )
 from money_tracker.messaging import MessagingConflictError
 from money_tracker.structured_logging import get_logger
+from money_tracker.web.advice import AdviceRun
+from money_tracker.web.advice_contracts import AdviceRequest, AdviceResponse
 from money_tracker.web.config import WebSettings
 from money_tracker.web.contracts import (
     BudgetCreateRequest,
@@ -158,6 +161,13 @@ class SettingsReader(Protocol):
         """Return fixed V1 preferences and eligible default sources."""
 
 
+class AdviceReader(Protocol):
+    """Execute only the promoted read-only advice workflow."""
+
+    def advise(self, *, profile_id: UUID, message: str) -> AdviceRun:
+        """Return deterministic evidence or a bounded clarification."""
+
+
 _LOGGER = get_logger("money_tracker.web.app")
 
 
@@ -175,6 +185,7 @@ def create_app(
     receipts: ReceiptReviewMutationAdapter,
     messaging: MessagingOperationsAdapter,
     readiness_check: Callable[[], bool],
+    advice: AdviceReader | None = None,
 ) -> FastAPI:
     """Compose the local web adapter around narrow application reads.
 
@@ -194,6 +205,7 @@ def create_app(
         messaging: Browser adapter over one bot's durable messaging state and
             its requeue commands. Its bot scope is bound at composition time.
         readiness_check: Content-free database/schema readiness probe.
+        advice: Optional read-only adapter for promoted advice capabilities.
 
     Returns:
         Configured FastAPI application with a closed browser boundary.
@@ -353,6 +365,37 @@ def create_app(
         except PsycopgError:
             return _database_problem(f"{API_V1_PREFIX}/settings")
         return ProfileSettingsResponse.from_application(result)
+
+    @router.post("/advice", response_model=AdviceResponse)
+    def read_only_advice(payload: AdviceRequest) -> AdviceResponse | JSONResponse:
+        """Return only evidence produced by a promoted deterministic read tool."""
+
+        instance = f"{API_V1_PREFIX}/advice"
+        if advice is None:
+            return _problem(
+                status=503,
+                title="Consigli non disponibili",
+                detail="Il servizio di consultazione non è configurato.",
+                code="advice_unavailable",
+                instance=instance,
+            )
+        try:
+            result = advice.advise(profile_id=profile_id, message=payload.message)
+        except PsycopgError:
+            return _database_problem(instance)
+        except ModelConnectionError:
+            _LOGGER.error(
+                "web.advice.model_unavailable",
+                reason_code="model_connection_error",
+            )
+            return _problem(
+                status=503,
+                title="Consigli non disponibili",
+                detail="Il modello locale non è disponibile. Riprova più tardi.",
+                code="advice_model_unavailable",
+                instance=instance,
+            )
+        return AdviceResponse.from_workflow(result)
 
     @router.get("/transactions", response_model=TransactionRegisterResponse)
     def transactions(period: str) -> TransactionRegisterResponse | JSONResponse:
@@ -1551,6 +1594,7 @@ def _mount_dashboard(app: FastAPI, static_dir: Path) -> None:
 
     @app.get("/", include_in_schema=False)
     @app.get("/analisi", include_in_schema=False)
+    @app.get("/consigli", include_in_schema=False)
     @app.get("/movimenti", include_in_schema=False)
     @app.get("/categorie", include_in_schema=False)
     @app.get("/fonti", include_in_schema=False)
@@ -1569,4 +1613,4 @@ def _mount_dashboard(app: FastAPI, static_dir: Path) -> None:
         return FileResponse(index)
 
 
-__all__ = ["DashboardReader", "SettingsReader", "create_app"]
+__all__ = ["AdviceReader", "DashboardReader", "SettingsReader", "create_app"]

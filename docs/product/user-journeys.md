@@ -157,6 +157,13 @@ guessed and no write tool is available.
 If data is insufficient, the answer identifies what is missing instead of
 producing a confident recommendation.
 
+The currently promoted V1 advice contract implements the budget-first portion
+through `budgets_at_risk` and can report exact category or funding consumption.
+It has no historical-comparison advice tool, so the browser exposes no inferred
+deviation or percentage. Deterministic period comparisons remain available in
+`/analisi`; extending advice to the later J8 comparison step requires a new
+evaluated model-visible contract and is not an implemented claim.
+
 ## J9: Modify or undo a write
 
 1. The owner selects `Modifica` or `Annulla` from the most recent summary, replies

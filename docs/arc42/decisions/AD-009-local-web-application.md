@@ -2,11 +2,11 @@
 
 - Status: accepted
 - Implementation: monthly overview, calendar analytics with merchant and
-  prior-period comparison,
-  transaction/manual-lifecycle, multi-allocation editing, budget-planning,
-  category management/review, funding-source/wallet administration, profile settings, receipt-metadata-review, messaging-operations,
-  HTTP security, and host deployment implemented; advice exposure and complete
-  browser acceptance in progress
+  prior-period comparison, transaction/manual-lifecycle, multi-allocation
+  editing, budget-planning, category management/review, funding-source/wallet
+  administration, profile settings, receipt-metadata-review,
+  messaging-operations, read-only advice, HTTP security, and host deployment
+  implemented; complete browser acceptance in progress
 - Date: 2026-09-01
 
 ## Context
@@ -23,8 +23,8 @@ React Router for navigation, Mantine for UI components, and Apache ECharts for
 analytics. Serve the production build from FastAPI on the same origin.
 
 Bind to `127.0.0.1`. Do not add a V1 login, but enforce allowed Host and Origin
-values, closed CORS, CSRF protection for mutations, and no secret-bearing API
-responses.
+values, closed CORS, CSRF protection for unsafe methods, and no secret-bearing
+API responses.
 
 The Step 2 contract boundary uses the `/api/v1` prefix, exact
 `minor_units`/EUR money objects, timezone-aware ISO timestamps, stable UUIDs,
@@ -349,7 +349,27 @@ a missing merchant, and ISO-week boundary movements. It verifies the normalized
 merchant projection, exact previous-week comparison, and whole-month budget
 aggregation through the production service and repository.
 
+The read-only browser advice component enters the already promoted advice graph
+directly with trusted intent. It reuses tool-selection v5, the V1 deterministic
+selection policy, the three-tool advice registry, and `ReportingService` without
+change. Profile, Rome time, and active vocabulary are supplied by composition;
+the object graph includes no mutation service and owns no data or checkpoint.
+
+`POST /api/v1/advice` keeps owner text out of URLs. It requires the shared CSRF
+control because POST is unsafe, but it accepts no `Idempotency-Key` and performs
+no command. The strict response is a discriminated union containing only exact
+tool evidence and bounded assessment/clarification states. It excludes the
+request, model prompt/completion, profile, credentials, URLs, private paths,
+receipt media, and infrastructure details. `/consigli` presents every numeric
+fact in accessible tables with initial, loading, insufficient, error/retry, and
+clarification states; it creates no cached advice query to invalidate.
+
+Unit and HTTP tests pin trusted scope, closed methods, CSRF, exact signed cents,
+and the absence of model artifacts. Component tests pin the complete state
+matrix. An opt-in integration crosses the real local model, HTTP,
+`ReportingService`, and PostgreSQL without substituting those boundaries.
+
 Frontend typecheck, component tests, production build, and a runtime dependency
-audit pass. This is partial Step 5 evidence: the advice surface and full
-browser E2E
-acceptance are still required before this decision is fully implemented.
+audit pass. This is partial Step 5 evidence: complete browser E2E,
+automated accessibility/contrast, and installed-service acceptance are still
+required before this decision is fully implemented.

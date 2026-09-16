@@ -55,7 +55,7 @@ in this table:
 | Service | Host/container | Responsibility | Core? |
 | --- | --- | --- | --- |
 | Application PostgreSQL | Docker Compose | Implemented finance source of truth, audit, workflow checkpoints, and durable messaging queues | Yes |
-| FastAPI/UI service | Host systemd user service | Implemented same-origin health, overview/analytics/register, audited control-plane slices, safe profile settings, and compiled dashboard; remaining analytics, advice, and acceptance planned | Yes during Step 5 |
+| FastAPI/UI service | Host systemd user service | Implemented same-origin health, overview/analytics/register, audited control-plane slices, safe profile settings, promoted read-only advice, and compiled dashboard; browser and installed-service acceptance remain planned | Yes during Step 5 |
 | Telegram gateway | Host systemd user service | Accepted authorized long polling, durable ingest, safe file metadata, callback acknowledgement, outbox dispatch | Yes |
 | Workflow worker | Host systemd user service | Accepted sequential routing/workflow processing | Yes |
 | llama.cpp server | Host systemd user service | Implemented unit for local promoted text inference | Yes for agent work |

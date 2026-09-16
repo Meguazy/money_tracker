@@ -25,7 +25,9 @@ from money_tracker.persistence.database import database_url_from_env
 from money_tracker.persistence.finance import PostgresFinanceRepository
 from money_tracker.persistence.messaging import PostgresMessagingRepository
 from money_tracker.process_exit import exit_code_for, failure_reason
+from money_tracker.runtime import LocalStructuredOutputModel
 from money_tracker.structured_logging import configure_logging, get_logger
+from money_tracker.web.advice import AdviceWorkflow
 from money_tracker.web.app import create_app
 from money_tracker.web.config import WebSettings
 from money_tracker.web.mutations import (
@@ -77,6 +79,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         profile_id = profiles[0]
         ids = UUID4Generator()
         clock = SystemClock()
+        reporting = ReportingService(repository)
         # Messaging is scoped by bot and environment rather than by profile.
         # The scope is read here, from configuration, and bound into the
         # adapter, so no HTTP request can name another bot. The web process
@@ -86,7 +89,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         app = create_app(
             settings=settings,
             profile_id=profile_id,
-            reporting=ReportingService(repository),
+            reporting=reporting,
             profile_settings=ProfileSettingsService(repository),
             mutations=ExpenseMutationAdapter(
                 FinanceService(
@@ -134,6 +137,12 @@ def main(argv: Sequence[str] | None = None) -> None:
                 scope=scope,
             ),
             readiness_check=lambda: repository.profile_exists(profile_id),
+            advice=AdviceWorkflow(
+                repository,
+                reporting,
+                clock=clock,
+                model=LocalStructuredOutputModel(),
+            ),
         )
         _LOGGER.info(
             "web.service.starting",

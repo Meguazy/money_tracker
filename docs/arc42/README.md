@@ -32,8 +32,9 @@ create/correct/post/cancel workflows, the multi-allocation editor for both
 reconciling dimensions, the monthly budget planner, versioned category and funding-source/wallet administration, owner review of pending
 category proposals, consultation and mandatory review of retained receipt
 metadata, browser inspection and pinned requeue of the durable messaging queues, safe profile-settings consultation and default-source selection,
-compiled React shell, browser security policy, and host unit. Advice exposure and
-browser E2E acceptance are still planned within Step 5.
+compiled React shell, browser security policy, host unit, and the promoted
+read-only advice surface. Browser E2E, automated accessibility/contrast, and
+installed-service acceptance are still planned within Step 5.
 Receipt extraction
 remains assigned to Step 6.
 
@@ -123,7 +124,7 @@ boundary is not end-to-end encrypted and must not be described as local storage.
 | Application to inference | OpenAI-compatible HTTP | Messages, schemas, tool calls, model settings | Implemented basic chat |
 | Application to Langfuse | SDK over local HTTP/OTLP | Redacted graph/model observations and aggregate scores | Implemented, optional and healthy |
 | Telegram gateway to Bot API | HTTPS long polling and send methods | Updates, callback queries, messages, and bounded file metadata; no Step 4 file download | Implemented and owner-accepted against the real private test bot |
-| Browser to application API | Same-origin HTTP JSON | Monthly overview, calendar analytics, transaction register, manual lifecycle, budget planning, category management/review, funding-source/wallet administration, receipt metadata review, messaging operations, safe profile settings, CSRF, and health implemented; remaining analytics, advice, and receipt extraction planned. No route returns receipt bytes or their archive key | Step 5 slices implemented |
+| Browser to application API | Same-origin HTTP JSON | Monthly overview, calendar analytics, transaction register, manual lifecycle, budget planning, category management/review, funding-source/wallet administration, receipt metadata review, messaging operations, safe profile settings, promoted read-only advice, CSRF, and health implemented; receipt extraction remains planned. No route returns receipt bytes or its archive key | Step 5 slices implemented |
 | Application to PostgreSQL | PostgreSQL protocol | Checkpoints, authoritative finance aggregates, normalized messaging offsets/inbox/outbox, pairing, actions, retries, and dead letters | Implemented foundation, finance repositories, and Step 4 messaging persistence |
 | Application to receipt archive | Private host filesystem | Fully decoded original JPEG/PNG/WebP keyed and verified by content hash; no derivatives | Local adapter/admin CLI and encrypted backup/restore implemented; API/worker media wiring and deletion planned. The control plane reads metadata only and never opens this boundary |
 | Backup process to repository | Restic repository protocol | Database dump, receipts and recovery configuration | Implemented and restore-tested; scheduling planned |
@@ -286,8 +287,9 @@ catalog is promoted; every identifier carries a `candidate-` prefix.
 | --- | --- | --- | --- | --- |
 | Workflow dispatcher, root router, and text specialists (implemented) | Route one intent and coordinate expense/refund, correction/undo, category review, query, or advice | Typed normalized work unit/outcome, versioned schemas, scoped tool registries, trusted correlations | Namespaced checkpoint references and workflow IDs; no domain ownership | Administration CLI and worker; mutation paths call replay-safe application services |
 | Telegram Bot API transport (implemented) | Validate the bot, long poll, obtain file metadata, acknowledge callbacks, and deliver outbox messages | Bounded HTTPS client and messaging services | No authoritative finance data or correctness state | Gateway host service; separate production/test token selected from a private environment file |
-| FastAPI adapter (partial) | Expose monthly and calendar-range overviews with merchant and prior-period comparison, transaction register, manual lifecycle, budget planning, category and funding-source/wallet administration, pending category review, receipt metadata review, messaging operations, safe profile settings, health, CSRF bootstrap, compiled UI, and later REST resources | Narrow reporting, finance, budget, category, funding-source, receipt-review, messaging-operations, and profile-settings reader ports | No independent data | Implemented on loopback with Host/Origin, CSRF, idempotency, optimistic concurrency, proposal-wide and transition-wide command identity, and bounded errors |
-| React dashboard (partial) | Display the monthly overview, calendar analytics with merchant and period comparison, transaction register, budget planner, categories, funding sources with tracked-wallet balances/history, retained receipt metadata, durable messaging state, and fixed profile facts; edit the multi-allocation manual lifecycle, monthly budgets, deterministic category and source lifecycle, manual wallet entries, the mandatory receipt review, and both queue requeues; choose the active default funding source while locale, currency, and timezone remain read-only | Same-origin REST API | Browser session/UI state only | Route-split compiled static assets with the chart engine isolated from its renderer; no secrets, infrastructure configuration, receipt images, or message content; accessible loading fallbacks, labelled controls, lifecycle history, responsive wrapping navigation, and chart/table alternatives |
+| FastAPI adapter (partial) | Expose monthly and calendar-range overviews with merchant and prior-period comparison, transaction register, manual lifecycle, budget planning, category and funding-source/wallet administration, pending category review, receipt metadata review, messaging operations, safe profile settings, promoted advice, health, CSRF bootstrap, compiled UI, and later REST resources | Narrow advice, reporting, finance, budget, category, funding-source, receipt-review, messaging-operations, and profile-settings ports | No independent data | Implemented on loopback with Host/Origin, CSRF, idempotency for writes, optimistic concurrency, proposal-wide and transition-wide command identity, and bounded errors |
+| Browser advice composition (implemented) | Enter the promoted advice read graph directly and map only deterministic tool facts to a strict HTTP union | `AdviceWorkflow`, active taxonomy/source configuration reads, `ReportingService`, clock, promoted model adapter and selection policy | No state; no checkpointer and no mutation service in its object graph | In-process in `money-tracker-api`; trusted profile/time/vocabulary injection, CSRF-protected read-only POST, content-free logs, and no prompt/completion/profile/secret exposure |
+| React dashboard (partial) | Display the monthly overview, calendar analytics with merchant and period comparison, transaction register, budget planner, categories, funding sources with tracked-wallet balances/history, retained receipt metadata, durable messaging state, fixed profile facts, and promoted tool-grounded advice; edit the multi-allocation manual lifecycle, monthly budgets, deterministic category and source lifecycle, manual wallet entries, the mandatory receipt review, and both queue requeues; choose the active default funding source while locale, currency, and timezone remain read-only | Same-origin REST API | Browser session/UI state only | Route-split compiled static assets with the chart engine isolated from its renderer; no secrets, infrastructure configuration, receipt images, prompts, completions, or original message reflection; accessible loading, empty, insufficient, clarification, error/retry, lifecycle history, responsive navigation, and chart/table alternatives |
 | Local model gateway | Provide typed chat, schema and tool capabilities | OpenAI-compatible local endpoint | No persistent domain data | Replaceable host inference process |
 | Calendar period resolver (implemented) | Resolve strict day, ISO-week, month, year, and bounded inclusive custom selections plus their deterministic predecessors into half-open query intervals | Pure domain date values used by reporting and the web adapter; no framework or repository dependency | No persistent data | In-process domain component; Europe/Rome calendar semantics, DST-safe boundaries, and a 366-day custom-range ceiling |
 | Receipt extractor adapter | Produce a versioned structured receipt draft | Selected local OCR/VLM pipeline | No authoritative data until validated | Local-only; selection remains evaluation-gated |
@@ -895,9 +897,37 @@ migration local to each bounded workflow.
    adjacent table expose the same overview values; the movement table retains
    complete lifecycle and allocation facts.
 
-The adapters own no authoritative state, model call, or receipt media access.
-Advice exposure and complete browser acceptance remain planned rather than
-implicit in these slices.
+The overview and movement adapters own no authoritative state, model call, or
+receipt media access. Complete browser acceptance remains planned.
+
+### Current browser advice
+
+1. `/consigli` sends a bounded message to `POST /api/v1/advice`. POST keeps the
+   owner text out of URL and access metadata; CSRF applies because the method is
+   unsafe, while no `Idempotency-Key` is accepted because no mutation occurs.
+2. The adapter enters the existing advice read graph with trusted intent. It
+   composes the promoted model adapter, `ReportingService`, configuration
+   reads, and a clock, with no dispatcher, checkpointer, or mutation service.
+3. Tool-selection v5 and `explicit-finance-scope-v1` choose only among
+   `budgets_at_risk`, `category_spending`, and `funding_class_split`; the direct
+   category-budget lookup remains query-only.
+4. Profile, current `Europe/Rome` month, active category names, and active
+   funding-source names come from runtime composition and current configuration,
+   not from an HTTP field or model output.
+5. The model chooses scope once and supplies no figure. Registry acceptance,
+   classification repair, and `ReportingService` execution are deterministic;
+   the HTTP evidence union validates and publishes only the resulting tool JSON.
+6. An empty budget survey becomes explicit `insufficient_data`; a category
+   result says no threshold exists; a funding result says consumption is not a
+   wallet balance. The promoted registry has no historical-comparison advice
+   tool, so the page links to `/analisi` instead of inventing a percentage.
+7. React renders initial, loading, clarification, insufficient-data,
+   dependency-error/retry, and answered states. Tables expose every numeric
+   evidence item directly. Advice owns no query cache, so finance writes do not
+   invalidate or silently rerun a prior owner question.
+8. Responses and logs omit the request, prompt, completion, profile, merchant
+   and category fields from logs, amounts from logs, credentials, URLs, private
+   paths, receipt media, and infrastructure details. No advice write exists.
 
 ### Current merchant and period comparison analytics
 
@@ -1066,10 +1096,10 @@ manual acceptance check.
    ambiguous data before any write.
 5. Category resolution selects an adequate existing node or persists a proposal
    and interrupts the workflow.
-6. A high-confidence existing assignment posts atomically with audit and an
-   outbound acknowledgement. Lower-confidence input remains a draft and asks a
-   targeted question.
-7. The owner receives a summary with modify and undo actions.
+6. Every resolved movement remains a draft because EVD-004 promoted no
+   automatic-post subset. Unresolved input remains in review and asks a targeted
+   question.
+7. The owner receives a summary and may explicitly post, modify, or cancel it.
 
 ### Current conversational category review
 
@@ -1096,12 +1126,12 @@ manual acceptance check.
 5. The owner reviews the complete draft through Telegram or the dashboard.
 6. Only an approved, reconciled draft is posted; otherwise it remains in review.
 
-### Telegram recovery and processing (implemented, not yet accepted)
+### Telegram recovery and processing (implemented and accepted)
 
 The migration/repository, production gateway, response renderer, sequential
-worker, and pairing implement every step below. Bot API validation has passed against the real test bot without sending owner
-content. No complete owner workflow has been accepted, and no systemd unit has
-started the processes yet.
+worker, pairing, and host units implement every step below. Owner workflows,
+fault injection, latency, restart, and unattended reboot acceptance passed
+against the real private test bot on 2026-09-11.
 
 0. An operator generates one short-lived code and the owner sends it as a
    private `/pair`. The code is consumed, the sole owner binding is created,
@@ -1574,8 +1604,8 @@ environment file.
   analytics including merchant and prior-period comparison, manual lifecycle,
   multi-allocation editing, budget planning, category management/review,
   funding-source/wallet administration, profile settings, receipt metadata
-  review, HTTP security, and host deployment implemented; advice exposure and
-  complete browser acceptance planned.
+  review, promoted read-only advice, HTTP security, and host deployment
+  implemented; complete browser acceptance planned.
 - [AD-020: Wallet availability and expiry projection](decisions/AD-020-wallet-availability-and-expiry.md):
   deterministic Europe/Rome first-expiry-first availability, immutable booked
   history, source lifecycle service, transactional locks, and local control-plane

@@ -96,6 +96,14 @@ surface enforces these controls:
   referrer, MIME-sniffing, and framing headers;
 - API responses return no environment, profile identity, private path, or secret.
 
+The advice route is a read-only `POST`: CSRF protects its content-bearing body,
+but it accepts no idempotency key or profile identity and its composed object
+graph contains no mutation adapter. It returns only a bounded discriminated
+union built from deterministic promoted-tool output; requests, prompts,
+completions, profile data, credentials, URLs, paths, receipt media, and
+infrastructure details are excluded. Its journal records only stable outcome,
+tool, and reason codes, never owner text or financial content.
+
 The profile-settings response is an explicit allowlist: fixed `it-IT`, `EUR`,
 and `Europe/Rome` facts plus minimal active source choices. It contains no
 generic configuration map and has no mutation route for those fixed facts. The

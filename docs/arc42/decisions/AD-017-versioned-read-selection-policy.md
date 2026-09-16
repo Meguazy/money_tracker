@@ -1,6 +1,8 @@
 # AD-017: Versioned deterministic read-selection policy
 
 - Status: Accepted
+- Implementation: V1 promoted and reused by Telegram, administration, and
+  read-only browser advice composition
 - Date: 2026-09-09
 - Extends: [AD-006](AD-006-bounded-agent-workflows.md), [AD-012](AD-012-evaluation-driven-promotion.md), and [AD-016](AD-016-explicit-workflow-dispatcher.md)
 
@@ -62,6 +64,11 @@ versions. The sweep script accepts the same version. A prior human-usefulness
 review may supply scores only for current cases whose message, outcome, and
 structured answer are exactly equal under the same rubric; changed results are
 shown to the owner again.
+
+Browser advice supplies the active category and funding-source names from the
+same trusted profile configuration on every request, then executes the accepted
+request through the existing read graph. It changes neither this policy nor its
+schemas, registry, prompt, threshold, or rollback path.
 
 ## Alternatives considered
 

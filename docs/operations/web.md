@@ -2,8 +2,8 @@
 
 - Status: Step 5 overview, manual-movement, multi-allocation editing,
   budget-planning, calendar-analytics, category management/proposal review, funding-source/wallet administration, profile-settings consultation,
-  receipt metadata review, and messaging-operations slices implemented;
-  complete control plane and release acceptance still in progress
+  receipt metadata review, messaging operations, and read-only advice implemented;
+  complete browser and installed-service acceptance still in progress
 - Binding decision: [AD-009](../arc42/decisions/AD-009-local-web-application.md)
 - Delivery evidence: [Step 5](../roadmap/step-5-dashboard-and-advice.md)
 
@@ -17,15 +17,20 @@ bootstrap endpoints. It also exposes the pending category-proposal queue and
 the deterministic approve, reuse-active-category, and cancel decisions, the
 versioned category rename/archive surface and taxonomy complexity warnings, the
 retained receipt metadata and its mandatory review, and the durable messaging
-queues with the two requeue commands. The settings surface exposes the fixed V1 locale, currency, and timezone plus the active default-source choice; only that choice is mutable through the existing funding-source command. Advice
-and receipt extraction remain Step 5 or Step 6 work and must not be
-described as available. Calendar analytics now include merchant breakdowns and
+queues with the two requeue commands. The settings surface exposes the fixed V1
+locale, currency, and timezone plus the active default-source choice. The
+read-only advice surface exposes only evidence returned by the promoted query
+tools. Receipt extraction remains Step 6 work. Calendar analytics include merchant breakdowns and
 explicit comparison with the deterministic previous period.
 
 ## Ownership and boundaries
 
 `money-tracker-api` is a host process. It owns HTTP composition and browser
-policy, but no finance data. `ReportingService` computes exact finance reads; `ProfileSettingsService` validates and projects the safe owner-facing profile subset;
+policy, but no finance data. `ReportingService` computes exact finance reads.
+`AdviceWorkflow` enters the already promoted advice graph with trusted intent,
+active vocabulary, Rome time, and profile scope; it receives no mutation
+adapter and returns only the selected tool's deterministic evidence.
+`ProfileSettingsService` validates and projects the safe owner-facing profile subset;
 `ExpenseMutationAdapter` translates strict browser commands into the existing
 `FinanceService`; `BudgetMutationAdapter` translates budget commands into the
 existing `FinanceAdministrationService`; `CategoryManagementMutationAdapter`
@@ -68,14 +73,25 @@ With the application database migrated and exactly one profile present, run:
     uv run --env-file .env money-tracker-api run
 
 Open `http://127.0.0.1:8000/` or `http://localhost:8000/` for the overview;
-use `/analisi` for posted calendar analytics and `/movimenti` for the register and manual lifecycle, and `/impostazioni` to inspect the fixed V1 profile facts and choose an active default funding source. The editor adds and
-removes category and funding-source rows, reconciles each dimension against the
-total separately, and shows each sum and its difference in exact cents. An
+use `/analisi` for posted calendar analytics, `/movimenti` for the register and
+manual lifecycle, `/consigli` for promoted read-only advice, and `/impostazioni`
+to inspect the fixed V1 profile facts and choose an active default funding
+source. The editor adds and removes category and funding-source rows, reconciles
+each dimension against the total separately, and shows each sum and its
+difference in exact cents. An
 archived category or funding source can never be selected: it appears as a
 disabled option only in the historical row that already uses it. Do not publish
 or forward this port. V1 has no login, TLS, LAN listener, or remote-access
 threat model.
 
+
+On `/consigli`, ask about exact category spending, the funding-class split, or
+categories at risk and without a budget. The response shows every numeric fact
+from the selected deterministic tool in a table. Missing budgets, insufficient
+data, and undefined percentages remain explicit; the page does not invent a
+target or percentage. Historical comparison is not in the promoted advice
+registry, so use `/analisi` for it. An unavailable local model returns a bounded
+retryable error and never falls back to generated financial figures.
 
 Use `/fonti` to manage payment resources independently from spending
 categories. Creation fixes the economic class and `BalanceMode`; rename changes
@@ -176,9 +192,10 @@ listener and allowed origins.
 
 | Route | Purpose | Content |
 | --- | --- | --- |
-| `GET /`, `GET /analisi`, `GET /movimenti`, `GET /budget`, `GET /categorie`, `GET /fonti`, `GET /scontrini`, `GET /messaggistica`, `GET /impostazioni` | Compiled React shell | Static application only; every route supports direct browser navigation, reload, and bookmarking. |
+| `GET /`, `GET /analisi`, `GET /movimenti`, `GET /budget`, `GET /categorie`, `GET /fonti`, `GET /scontrini`, `GET /messaggistica`, `GET /consigli`, `GET /impostazioni` | Compiled React shell | Static application only; every route supports direct browser navigation, reload, and bookmarking. |
 | `GET /api/v1/overview/monthly?period=YYYY-MM` | Deterministic monthly overview | Exact posted total, funding class/source split, budgets, and unbudgeted categories. |
 | `GET /api/v1/overview/range` | Deterministic calendar analytics | One strict day, ISO-week, month, year, or bounded custom selector; exact posted total, purpose, funding and merchant breakdowns, explicit prior-period absolute/delta/basis-point comparison, and budget positions only for an exact whole month. |
+| `POST /api/v1/advice` | Promoted read-only advice | Normalized owner question in the body; returns a strict category-spending, funding-split, budget-evidence, or clarification union derived only from the selected deterministic tool. Requires CSRF, accepts no profile or idempotency key, and performs no command. |
 | `GET /api/v1/transactions?period=YYYY-MM` | Monthly lifecycle register | Every movement state, exact allocations, optimistic versions, and safe category/source references. |
 | `POST /api/v1/expenses` | Create a manual draft | Strict complete movement body; returns safe ID, state, and version. |
 | `PUT /api/v1/expenses/{id}` | Correct a movement | Strict complete replacement plus `expected_version`. |
@@ -220,6 +237,9 @@ paths, owner text, or credentials.
   cross-origin access.
 - Every unsafe method requires an allowed Origin and equal non-empty values in
   the `money_tracker_csrf` HttpOnly cookie and `X-CSRF-Token` header.
+- The advice `POST` is read-only: it uses CSRF because its body contains owner
+  text, accepts no `Idempotency-Key`, creates no command claim or checkpoint,
+  and cannot reach a mutation adapter.
 - Every mutation additionally requires a non-empty `Idempotency-Key`. Reuse the
   same key only to retry the identical command; a changed command conflicts.
   This holds for movement, budget, funding-source, and wallet writes; the only settings change reuses the funding-source default command: each
@@ -303,6 +323,19 @@ merchant and missing-merchant buckets, a signed refund, the exact preceding ISO
 week and its zero-safe percentage contract, while keeping whole-month budgets
 separate.
 
+The advice HTTP integration is opt-in because it calls the installed local model
+as well as real PostgreSQL:
+
+    RUN_POSTGRES_INTEGRATION_TESTS=1 RUN_ADVICE_HTTP_INTEGRATION_TESTS=1 \
+      LOG_LEVEL=CRITICAL uv run --env-file .env pytest -q \
+      tests/integration/money_tracker/web/test_advice.py
+
+It enters the production advice graph, selects from the promoted advice
+registry, reads through `ReportingService`, and verifies exact budget evidence
+over HTTP and in PostgreSQL. If the pinned model service is unavailable, leave
+the test skipped in the ordinary suite and report the failed opt-in acceptance;
+do not substitute a fake model in this integration boundary.
+
 The source-create race check exercises two simultaneous generated candidates
 under one idempotency key and verifies that both receive the one stored ID:
 
@@ -312,6 +345,11 @@ under one idempotency key and verifies that both receive the one stored ID:
 A draft may legitimately be unreconciled, so both allocation dimensions are
 enforced when a movement is registered, not while it is still being edited.
 Registering an unreconciled movement returns a bounded 422 and changes nothing.
+
+When the local model is unavailable, advice returns a bounded 503 and the rest
+of the deterministic dashboard remains usable. Restore the pinned inference
+service or roll back the whole deployed web build; do not bypass the promoted
+selection contract or synthesize an answer in the HTTP adapter.
 
 To withdraw the web surface, stop and disable only
 `money-tracker-api.service`. No migration rollback is needed. Manual movements

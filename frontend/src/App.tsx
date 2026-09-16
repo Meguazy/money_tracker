@@ -7,6 +7,9 @@ const AnalyticsPage = lazy(() =>
     default: module.AnalyticsPage,
   })),
 );
+const AdvicePage = lazy(() =>
+  import("./AdvicePage").then((module) => ({ default: module.AdvicePage })),
+);
 const BudgetsPage = lazy(() =>
   import("./BudgetsPage").then((module) => ({ default: module.BudgetsPage })),
 );
@@ -77,6 +80,12 @@ export function App() {
             </NavLink>
             <NavLink
               className={({ isActive }) => (isActive ? "active" : "")}
+              to="/consigli"
+            >
+              Consigli
+            </NavLink>
+            <NavLink
+              className={({ isActive }) => (isActive ? "active" : "")}
               to="/movimenti"
             >
               Movimenti
@@ -132,6 +141,7 @@ export function App() {
           <Routes>
             <Route element={<OverviewPage />} path="/" />
             <Route element={<AnalyticsPage />} path="/analisi" />
+            <Route element={<AdvicePage />} path="/consigli" />
             <Route element={<TransactionsPage />} path="/movimenti" />
             <Route element={<CategoriesPage />} path="/categorie" />
             <Route element={<FundingSourcesPage />} path="/fonti" />

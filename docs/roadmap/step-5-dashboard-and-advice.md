@@ -12,8 +12,10 @@ consultation and mandatory review of retained receipt metadata, and browser
 inspection and requeue of the durable messaging queues. Daily, ISO-week,
 monthly, annual, and bounded custom-range analytics now expose separate purpose
 and funding views, deterministic merchant breakdowns, and explicit
-period-over-period comparison. The advice surface and complete browser E2E
-acceptance are still open.
+period-over-period comparison. The `/consigli` surface now exposes the already
+promoted monthly advice capabilities as read-only, tool-grounded evidence.
+Complete browser E2E, automated accessibility/contrast checks, and installed
+service acceptance are still open.
 No model, prompt, routing threshold, tool contract, or taxonomy policy changed,
 so EVD-004 remains the promoted text baseline.
 
@@ -564,11 +566,34 @@ so EVD-004 remains the promoted text baseline.
 - The accessible React route provides loading, retryable error, fixed-field labels, an empty state linked to `/fonti`, a labelled source selector, explicit confirmation, mutation feedback, and invalidation of settings, source, movement, overview, and analytics queries. Component tests cover these states and the complete default-source snapshot.
 - Unit and HTTP tests cover invariant validation, trusted injected scope, safe response shape, refusal of a settings write, and direct navigation. The real PostgreSQL HTTP lifecycle reads settings before and after an atomic default change and proves that fixed fields remain non-mutable. No model-visible contract, prompt, routing threshold, tool, taxonomy policy, advice path, or receipt pipeline changed, so EVD-004 remains promoted and no experiment decision-log entry is required.
 
+### Read-only web advice slice (2026-09-15)
+
+- `POST /api/v1/advice` keeps owner text out of URLs and requires same-origin
+  CSRF because POST is an unsafe HTTP method. It has no `Idempotency-Key` and
+  performs no write. Profile scope, current Rome time, and active vocabulary
+  come from trusted composition and configuration, never from the browser.
+- `AdviceWorkflow` directly enters the existing promoted advice read graph. Its
+  object graph contains the model adapter, `ReportingService`, configuration
+  reads, and a clock, but no finance, administration, review, or other mutation
+  service.
+- The strict response union covers `budgets_at_risk`, `category_spending`, and
+  `funding_class_split`. It contains the deterministic tool facts and explicit
+  assessment state, never prompt, completion, owner text, profile, credential,
+  URL, private path, receipt media, or infrastructure details.
+- An empty budget survey is `insufficient_data`; category spend is explicitly
+  without a budget/history threshold; funding results are consumption rather
+  than wallet balance. No promoted advice tool compares historical periods, so
+  the UI links to deterministic `/analisi` instead of inventing a result.
+- Unit, HTTP, component, and opt-in real-model/PostgreSQL HTTP tests cover exact
+  signed cents, trusted scope, CSRF, closed methods, numeric evidence, loading,
+  empty, insufficient, clarification, and error/retry states. The object graph
+  and client contract provide no mutation authority or advice cache to invalidate.
+- Tool-selection v5, read-result v2, `explicit-finance-scope-v1`, prompts,
+  schemas, registries, routing, and thresholds are unchanged. AD-012/AD-017
+  trigger no new evaluation; EVD-004 remains the promotion evidence.
+
 ### Work still required before completion
 
-- Expose the already promoted read-only advice capabilities without widening
-  their mutation authority; rerun and record any evaluation required by a
-  changed model-visible contract.
 - Add complete browser E2E coverage against real application services and
   PostgreSQL, accessibility/contrast automation, and installed-service browser
   acceptance. Step 5 remains in progress until every exit criterion above has

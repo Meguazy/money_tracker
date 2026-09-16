@@ -24,7 +24,7 @@ from money_tracker.application import (
     ReportingService,
 )
 from money_tracker.application.runtime import SystemClock, UUID4Generator
-from money_tracker.domain import CategoryStatus
+from money_tracker.domain import CategoryStatus, FundingSourceStatus
 from money_tracker.persistence.database import (
     database_url_from_env,
     open_postgres_checkpointer,
@@ -126,7 +126,9 @@ class _CurrentTaxonomyDispatcher:
                 if category.status is CategoryStatus.ACTIVE
             ),
             funding_source_names=tuple(
-                source.name for source in repository.get_funding_sources(profile_id)
+                source.name
+                for source in repository.get_funding_sources(profile_id)
+                if source.status is FundingSourceStatus.ACTIVE
             ),
             checkpointer=self.checkpointer,
         )

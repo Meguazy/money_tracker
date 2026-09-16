@@ -4,9 +4,9 @@ This directory contains the canonical product, architecture, delivery,
 evaluation, development, and operations documentation for Money Tracker.
 
 Steps 0–4 are complete. Step 5 is active: the repository now contains its first
-protected FastAPI/React monthly-overview slice, while the other dashboard and
-advice deliverables remain planned. Receipt extraction is still assigned to
-Step 6, and release hardening to Step 7. The roadmap and each step document are
+protected FastAPI/React dashboard and promoted read-only advice slices; browser
+E2E, accessibility/contrast automation, and installed-service acceptance remain
+open. Receipt extraction is assigned to Step 6, and release hardening to Step 7. The roadmap and each step document are
 the authority for this distinction.
 
 ## Required reading order

@@ -72,6 +72,7 @@ from money_tracker.messaging import (
 )
 from money_tracker.persistence.messaging import MessagingConflictError
 from money_tracker.web import WebSettings, create_app
+from money_tracker.web.advice import AdviceRun
 from money_tracker.web.mutations import (
     BudgetMutationAdapter,
     BudgetWriter,
@@ -890,6 +891,22 @@ class RecordingMessagingOperations:
         )
 
 
+@dataclass
+class RecordingAdviceReader:
+    """In-memory advice boundary recording only its trusted invocation."""
+
+    result: AdviceRun
+    requested_profile: UUID | None = None
+    requested_message: str | None = None
+
+    def advise(self, *, profile_id: UUID, message: str) -> AdviceRun:
+        """Return fixed tool facts and record trusted scope plus normalized text."""
+
+        self.requested_profile = profile_id
+        self.requested_message = message
+        return self.result
+
+
 class FixedIds:
     """Stable identifier source for adapter composition in boundary tests."""
 
@@ -911,6 +928,7 @@ def _app(
     receipt_writer: ReceiptReviewWriter | None = None,
     messaging_operations: MessagingOperationsWriter | None = None,
     settings_reader: RecordingProfileSettingsReader | None = None,
+    advice_reader: RecordingAdviceReader | None = None,
 ) -> FastAPI:
     """Compose an application with real middleware and an in-memory read port."""
 
@@ -945,6 +963,7 @@ def _app(
             scope=BOT_SCOPE,
         ),
         readiness_check=lambda: ready,
+        advice=advice_reader,
     )
 
 
@@ -1370,6 +1389,7 @@ def test_compiled_dashboard_is_served_from_the_api_origin(tmp_path: Path) -> Non
         route: client.get(route)
         for route in (
             "/analisi",
+            "/consigli",
             "/movimenti",
             "/categorie",
             "/budget",

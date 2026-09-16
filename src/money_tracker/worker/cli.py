@@ -3,6 +3,11 @@
 The worker runs as its own process so that Telegram ingestion and finance
 processing fail independently. It holds no Bot API credential: everything it
 needs arrives through durable messaging state written by the gateway.
+
+It opens the tracer the switch selects once, injects it into the model adapter,
+the dispatcher, and the worker, and flushes it within the export bound after the
+loop has honored a stop request. Spans are exported on the SDK's background
+thread while it runs, so no claim waits for the trace store.
 """
 
 from __future__ import annotations
@@ -10,8 +15,8 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from collections.abc import Sequence
-from dataclasses import dataclass
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from psycopg import Error as PsycopgError
@@ -38,11 +43,14 @@ from money_tracker.runtime import (
     build_workflow_dispatcher,
 )
 from money_tracker.runtime.read_graph import DEFAULT_SELECTION
+from money_tracker.runtime.trace_metadata import workflow_version_set
 from money_tracker.structured_logging import configure_logging, get_logger
 from money_tracker.telegram.config import TelegramSettings
+from money_tracker.tracing import DISABLED_TRACER, Tracer, open_tracer
 from money_tracker.worker.sequential import SequentialWorker
 from money_tracker.workflows import (
     CATEGORY_FIT,
+    DEFAULT_READ_SELECTION_POLICY,
     EXTRACTION,
     ROUTER,
     TOOL_SELECTION,
@@ -62,6 +70,24 @@ _IDLE_SECONDS = 1.0
 _MINIMUM_CONFIDENCE = 0.5
 
 
+def worker_version_set() -> dict[str, object]:
+    """Describe the prompts, contracts, and policies the worker composes.
+
+    Returns:
+        The version set recorded on every dispatch span, built from the same
+        promoted defaults the dispatcher assembly uses.
+    """
+
+    return workflow_version_set(
+        router_prompt=default_prompt(ROUTER),
+        minimum_confidence=_MINIMUM_CONFIDENCE,
+        extraction=DEFAULT_EXTRACTION_CANDIDATE,
+        category_fit=DEFAULT_CATEGORY_FIT_CANDIDATE,
+        selection=DEFAULT_SELECTION,
+        selection_policy=DEFAULT_READ_SELECTION_POLICY,
+    )
+
+
 @dataclass(slots=True)
 class _CurrentTaxonomyDispatcher:
     """Assemble the specialists against the owner's state as it is now.
@@ -77,6 +103,8 @@ class _CurrentTaxonomyDispatcher:
     model: StructuredOutputModel
     ids: IdGenerator
     checkpointer: BaseCheckpointSaver[str]
+    tracer: Tracer = DISABLED_TRACER
+    trace_metadata: Mapping[str, object] = field(default_factory=worker_version_set)
 
     def dispatch(
         self,
@@ -131,6 +159,8 @@ class _CurrentTaxonomyDispatcher:
                 if source.status is FundingSourceStatus.ACTIVE
             ),
             checkpointer=self.checkpointer,
+            tracer=self.tracer,
+            trace_metadata=self.trace_metadata,
         )
         return dispatcher.dispatch(message, context=context)
 
@@ -161,6 +191,7 @@ def main(argv: Sequence[str] | None = None) -> None:
 
     args = _parser().parse_args(argv)
     configure_logging()
+    tracer: Tracer = DISABLED_TRACER
     try:
         settings = TelegramSettings.from_env()
         database_url = database_url_from_env()
@@ -172,6 +203,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                 "this bot has no owner binding; pair the owner before processing"
             )
         ids = UUID4Generator()
+        tracer = open_tracer(identity_in_background=args.command == "run")
         with open_postgres_checkpointer(database_url) as checkpointer:
             worker = SequentialWorker(
                 bot_key=settings.bot_key,
@@ -182,12 +214,14 @@ def main(argv: Sequence[str] | None = None) -> None:
                 ),
                 dispatcher=_CurrentTaxonomyDispatcher(
                     repository=finance,
-                    model=LocalStructuredOutputModel(),
+                    model=LocalStructuredOutputModel(tracer=tracer),
                     ids=ids,
                     checkpointer=checkpointer,
+                    tracer=tracer,
                 ),
                 renderer=TelegramResponseRenderer(),
                 clock=SystemClock(),
+                tracer=tracer,
             )
             if args.command == "process-once":
                 processed = worker.process_once()
@@ -215,6 +249,10 @@ def main(argv: Sequence[str] | None = None) -> None:
         )
         print(f"Workflow worker failed: {failure_reason(error)}", file=sys.stderr)
         raise SystemExit(int(exit_code_for(error))) from None
+    finally:
+        # Bounded by the export timeout whether the store is up, slow, or
+        # stopped, which the unit's stop timeout comfortably covers.
+        tracer.shutdown()
 
 
 def _run_forever(worker: SequentialWorker) -> None:

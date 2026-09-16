@@ -14,6 +14,13 @@ file when the process may write one. And the server's own report is read from
 its `/props` endpoint, never from configuration, because the question is what
 answered rather than what was meant to; the report is re-read after a bounded
 interval so a restarted server with other weights is noticed.
+
+A one-shot command measures an unknown digest inline, because its single call
+is the only one it will ever trace. A long-running service must not make the
+work unit or request that happens to arrive first wait several seconds for a
+hash, so it measures in the background instead: calls made while a digest is
+still being measured are traced with `digest_pending` and an incomplete
+identity, and the next call after the measurement is complete.
 """
 
 from __future__ import annotations
@@ -50,17 +57,32 @@ PROPERTIES_RETRY_SECONDS: Final = 5.0
 PROPERTIES_TIMEOUT_SECONDS: Final = 2.0
 """Upper bound on one `/props` read."""
 
+PENDING_RECHECK_SECONDS: Final = 1.0
+"""How long an identity with a digest still being measured is reused."""
+
+SYSTEMD_CACHE_DIRECTORY_ENV: Final = "CACHE_DIRECTORY"
+"""Variable systemd sets to the unit's private `CacheDirectory=`."""
+
 PropertiesReader = Callable[[], Mapping[str, object] | None]
 
 
 def default_digest_cache_file() -> Path:
     """Return the private per-user digest cache location.
 
+    A hardened user service sees its home read-only. Its unit grants it one
+    writable `CacheDirectory=`, which systemd announces in `CACHE_DIRECTORY`,
+    and for a user unit that directory is the same per-user location a
+    terminal command uses, so services and commands share one cache.
+
     Returns:
+        `$CACHE_DIRECTORY/artifact-digests.json` under systemd, otherwise
         `$XDG_CACHE_HOME/money-tracker/artifact-digests.json`, defaulting the
         cache home to `~/.cache`.
     """
 
+    granted = os.getenv(SYSTEMD_CACHE_DIRECTORY_ENV, "").strip()
+    if granted:
+        return Path(granted.split(":", 1)[0]) / "artifact-digests.json"
     cache_home = os.getenv("XDG_CACHE_HOME", "").strip()
     base = Path(cache_home) if cache_home else Path.home() / ".cache"
     return base / "money-tracker" / "artifact-digests.json"
@@ -69,17 +91,28 @@ def default_digest_cache_file() -> Path:
 class ArtifactDigests:
     """Measure a local artifact's SHA-256 once per file revision."""
 
-    def __init__(self, cache_file: Path | None) -> None:
-        """Bind the optional persistent cache.
+    def __init__(self, cache_file: Path | None, *, background: bool = False) -> None:
+        """Bind the optional persistent cache and the measurement mode.
 
         Args:
             cache_file: Private JSON cache shared by local processes, or None
                 to remember digests only for this process.
+            background: Measure an unknown revision on a daemon thread and
+                answer None until it is known, instead of hashing inline.
         """
 
         self._cache_file = cache_file
+        self._background = background
         self._memory: dict[str, dict[str, object]] = {}
+        self._measuring: set[str] = set()
         self._lock = threading.Lock()
+
+    @property
+    def measuring(self) -> bool:
+        """Whether a background measurement is still running."""
+
+        with self._lock:
+            return bool(self._measuring)
 
     def digest(self, path: Path) -> str | None:
         """Return the digest of the file currently at `path`.
@@ -89,7 +122,8 @@ class ArtifactDigests:
 
         Returns:
             The `sha256:`-prefixed digest, or None when the path is not a
-            readable regular file.
+            readable regular file or, in background mode, while its digest is
+            still being measured.
         """
 
         try:
@@ -108,16 +142,70 @@ class ArtifactDigests:
         with self._lock:
             known = self._memory.get(key) or self._load().get(key)
             if known is not None and _same_revision(known, revision):
+                self._memory[key] = known
                 return str(known["sha256"])
-            try:
-                with _LOGGER.timed("tracing.identity.digest", artifact=resolved.name):
-                    measured = sha256_file(resolved)
-            except OSError:
+            if self._background:
+                if key not in self._measuring:
+                    self._measuring.add(key)
+                    threading.Thread(
+                        target=self._measure_in_background,
+                        args=(key, resolved, revision),
+                        name="money-tracker-artifact-digest",
+                        daemon=True,
+                    ).start()
                 return None
-            entry = {**revision, "sha256": measured}
+            return self._measure(key, resolved, revision)
+
+    def _measure(
+        self, key: str, path: Path, revision: Mapping[str, object]
+    ) -> str | None:
+        """Hash one revision and remember it in memory and in the cache file.
+
+        Args:
+            key: Resolved path the revision is remembered by.
+            path: Resolved artifact path.
+            revision: Size, modification time, inode, and device measured.
+
+        Returns:
+            The digest, or None when the file could not be read.
+        """
+
+        try:
+            with _LOGGER.timed("tracing.identity.digest", artifact=path.name):
+                measured = sha256_file(path)
+        except OSError:
+            return None
+        entry = {**revision, "sha256": measured}
+        self._memory[key] = entry
+        self._store(key, entry)
+        return measured
+
+    def _measure_in_background(
+        self, key: str, path: Path, revision: Mapping[str, object]
+    ) -> None:
+        """Hash one revision off the request path and publish the result.
+
+        Args:
+            key: Resolved path the revision is remembered by.
+            path: Resolved artifact path.
+            revision: Size, modification time, inode, and device measured.
+        """
+
+        try:
+            with _LOGGER.timed("tracing.identity.digest", artifact=path.name):
+                measured = sha256_file(path)
+        except Exception as error:
+            _LOGGER.warning(
+                "tracing.identity.digest_failed", exception_type=type(error).__name__
+            )
+            with self._lock:
+                self._measuring.discard(key)
+            return
+        entry = {**revision, "sha256": measured}
+        with self._lock:
             self._memory[key] = entry
             self._store(key, entry)
-            return measured
+            self._measuring.discard(key)
 
     def _load(self) -> dict[str, dict[str, object]]:
         """Read the persistent cache, treating anything unreadable as empty."""
@@ -250,8 +338,12 @@ class ModelIdentityResolver:
         self._lock = threading.Lock()
 
     @classmethod
-    def from_env(cls) -> ModelIdentityResolver:
+    def from_env(cls, *, background_digests: bool = False) -> ModelIdentityResolver:
         """Build a resolver from the process inference configuration.
+
+        Args:
+            background_digests: Measure unknown artifact digests off the
+                request path, as a long-running service must.
 
         Returns:
             A resolver reading the configured server with a persistent cache.
@@ -262,7 +354,9 @@ class ModelIdentityResolver:
         return cls(
             settings=settings,
             properties=llama_properties_reader(settings),
-            digests=ArtifactDigests(default_digest_cache_file()),
+            digests=ArtifactDigests(
+                default_digest_cache_file(), background=background_digests
+            ),
             server_binary=os.getenv("LLAMA_SERVER_BIN", "").strip() or None,
             configured_context_size=int(raw_context) if raw_context.isdigit() else None,
         )
@@ -287,7 +381,11 @@ class ModelIdentityResolver:
                 self._expires_at = now + PROPERTIES_RETRY_SECONDS
             else:
                 identity = self._resolve(properties)
-                self._expires_at = now + PROPERTIES_REFRESH_SECONDS
+                if self._digests.measuring:
+                    identity["digest_pending"] = True
+                    self._expires_at = now + PENDING_RECHECK_SECONDS
+                else:
+                    self._expires_at = now + PROPERTIES_REFRESH_SECONDS
             self._cached = identity
             return identity
 
@@ -322,6 +420,7 @@ class ModelIdentityResolver:
 
 
 __all__ = [
+    "PENDING_RECHECK_SECONDS",
     "ArtifactDigests",
     "ModelIdentityResolver",
     "PropertiesReader",

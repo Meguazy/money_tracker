@@ -185,6 +185,13 @@ prints whether one was claimed, which is the safe way to inspect behavior
 before running the loop. The worker refuses to start without an owner binding,
 because every accepted update belongs to one.
 
+With `MONEY_TRACKER_TRACING_ENABLED=true` both processes trace into the local
+Langfuse: each accepted update, each claim with its model calls, and each
+delivery that answers it land in one trace named `telegram-update`, derived from
+the update's source reference. Traces hold the owner's words and responses, but
+never a Telegram user, chat, file, or callback identity, the raw update, or a
+pairing code. See [LLM Tracing](tracing.md).
+
 ## Implemented long-polling durability
 
 Telegram supports webhooks and `getUpdates` long polling as mutually exclusive
@@ -381,8 +388,13 @@ unreviewed journal to a ticket.
 
 The units are user services because the application owns no system-wide
 resource. They set an owner-only umask, drop all capabilities, restrict
-namespaces and address families, expose home and the system read-only, and use
-the checkout-specific operations file in `Documentation=`. Telegram and worker
+namespaces and address families, declare home and the system read-only, and use
+the checkout-specific operations file in `Documentation=`. On this workstation
+the read-only and private-temporary directives are not in effect: AppArmor's
+restriction of unprivileged user namespaces keeps the user manager from giving
+a service its own mount namespace, which was observed on 2026-09-17. Do not rely
+on them until Step 7 qualifies the sandbox. The worker additionally declares a
+private `CacheDirectory` for model digests and puts `~/.local/bin` on `PATH`. Telegram and worker
 also hide host devices; llama.cpp retains them for GPU acceleration. They are
 not ordered against Docker: a user unit cannot depend on the
 system Docker service, so a database that starts late is handled by the exit

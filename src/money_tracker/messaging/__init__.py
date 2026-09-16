@@ -37,6 +37,7 @@ from money_tracker.messaging.contracts import (
     RequeueOutcome,
     WorkflowResult,
     require_aware,
+    telegram_source_reference,
     validate_bot_key,
 )
 from money_tracker.messaging.errors import (
@@ -87,6 +88,7 @@ __all__ = [
     "RetryPolicy",
     "WorkflowResult",
     "require_aware",
+    "telegram_source_reference",
     "requeue_command_key",
     "validate_bot_key",
 ]

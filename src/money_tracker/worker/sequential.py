@@ -20,6 +20,12 @@ would refuse it.
 The worker holds no Bot API token and imports no transport type. The only
 value crossing into workflow code is the normalized message; the only value
 crossing back out is the typed outcome.
+
+Each claim is also one stage of the update's trace. The `work-unit` span joins
+the trace the gateway started for the same source reference and holds the
+dispatch, the rendered response, and the terminal commit or failure, with the
+claim's attempt, replay, and queue-wait facts, so the store shows what the
+model saw, what the owner will be sent, and which durable state recorded it.
 """
 
 from __future__ import annotations
@@ -69,6 +75,12 @@ from money_tracker.presentation import (
 )
 from money_tracker.runtime.review_graph import review_question
 from money_tracker.structured_logging import get_logger, log_context
+from money_tracker.tracing import (
+    DISABLED_TRACER,
+    TELEGRAM_UPDATE_TRACE,
+    TraceObservation,
+    Tracer,
+)
 from money_tracker.workflows import (
     CallbackAction,
     ChannelMessage,
@@ -187,6 +199,7 @@ class SequentialWorker:
         clock: Clock,
         retry_policy: RetryPolicy | None = None,
         lease: timedelta = timedelta(minutes=5),
+        tracer: Tracer = DISABLED_TRACER,
     ) -> None:
         """Assemble one worker over durable state and the Step 3 dispatcher.
 
@@ -202,6 +215,8 @@ class SequentialWorker:
             lease: Bound on how long one claimed item may be held. It must
                 exceed the slowest realistic dispatch, because an expired lease
                 lets another worker claim work that is still running.
+            tracer: Tracing port chosen by the entry point; records nothing by
+                default.
         """
 
         self._bot_key = bot_key
@@ -213,6 +228,7 @@ class SequentialWorker:
         self._clock = clock
         self._retry_policy = retry_policy or RetryPolicy()
         self._lease = lease
+        self._tracer = tracer
 
     def process_once(self) -> bool:
         """Claim and finalize at most one inbox item.
@@ -236,19 +252,29 @@ class SequentialWorker:
         # record emitted anywhere in dispatch, persistence, or rendering can be
         # traced back to the update that caused it without being handed the
         # identifiers itself.
-        with log_context(
-            inbox_id=claim.update.id,
-            update_id=claim.update.update_id,
-            attempt_count=claim.attempt_count,
+        with (
+            log_context(
+                inbox_id=claim.update.id,
+                update_id=claim.update.update_id,
+                attempt_count=claim.attempt_count,
+            ),
+            self._tracer.span(
+                "work-unit",
+                trace_seed=claim.update.source_reference,
+                trace_name=TELEGRAM_UPDATE_TRACE,
+                input={"source_reference": claim.update.source_reference},
+                metadata=_claim_metadata(claim, claimed_at=now),
+            ) as span,
         ):
-            self._claim(claim)
+            self._claim(claim, span)
         return True
 
-    def _claim(self, claim: InboxClaim) -> None:
+    def _claim(self, claim: InboxClaim, span: TraceObservation) -> None:
         """Run one claimed item to a terminal state, whatever that state is.
 
         Args:
             claim: Leased inbox item this worker owns for the moment.
+            span: Recorder of this claim's `work-unit` trace stage.
         """
 
         _LOGGER.info(
@@ -257,14 +283,18 @@ class SequentialWorker:
             callback=claim.update.callback_action is not None,
         )
         try:
-            self._process(claim)
+            self._process(claim, span)
         except MessagingLeaseError:
             # The lease expired while dispatch was running, so another claim
             # already owns this item. Failing it here would overwrite whatever
             # that claim is doing; the durable state is already correct.
             _LOGGER.warning("work_unit.lease_lost")
+            span.record_metadata({"work_unit_outcome": "lease_lost"})
         except (ModelConnectionError, OptimisticConcurrencyError) as error:
-            self._fail(claim, _transient_code(error), transient=True)
+            self._fail(claim, _transient_code(error), transient=True, span=span)
+            span.record_failure(
+                _transient_code(error), exception_type=type(error).__name__
+            )
         except (
             AggregateNotFoundError,
             DomainError,
@@ -272,9 +302,12 @@ class SequentialWorker:
             StructuredOutputError,
             ValueError,
         ) as error:
-            self._fail(claim, _permanent_code(error), transient=False)
+            self._fail(claim, _permanent_code(error), transient=False, span=span)
+            span.record_failure(
+                _permanent_code(error), exception_type=type(error).__name__
+            )
 
-    def _process(self, claim: InboxClaim) -> None:
+    def _process(self, claim: InboxClaim, span: TraceObservation) -> None:
         """Dispatch one claimed item and commit everything it produced."""
 
         binding = self._repository.owner_binding(self._bot_key)
@@ -283,6 +316,7 @@ class SequentialWorker:
             raise ValueError("the bot has no owner binding for accepted work")
         profile_id = binding.profile_id
         correlation = self._correlate(claim, profile_id)
+        span.record_metadata(_correlation_metadata(claim, correlation))
         message = self._message(claim, correlation)
         _LOGGER.debug(
             "work_unit.dispatching",
@@ -308,10 +342,22 @@ class SequentialWorker:
                 movement_actions=correlation.movement_actions,
             ),
         )
-        response = self._render(outcome, claim, profile_id)
-        self._commit(
-            claim, profile_id, binding.telegram_user_id, outcome, response, correlation
-        )
+        with self._tracer.span(
+            "render", input={"outcome": outcome_facts(outcome)}
+        ) as rendering:
+            response = self._render(outcome, claim, profile_id)
+            rendering.record_output(_response_facts(response))
+        with self._tracer.span("commit") as committing:
+            committed = self._commit(
+                claim,
+                profile_id,
+                binding.telegram_user_id,
+                outcome,
+                response,
+                correlation,
+            )
+            committing.record_output(committed)
+        span.record_metadata({"work_unit_outcome": "committed", **committed})
 
     def _correlate(self, claim: InboxClaim, profile_id: UUID) -> _Correlation:
         """Resolve the trusted target a callback or reply is allowed to reach.
@@ -443,8 +489,13 @@ class SequentialWorker:
         outcome: DispatchOutcome,
         response: OwnerResponse,
         correlation: _Correlation,
-    ) -> None:
-        """Persist result, response, correlation, and completion together."""
+    ) -> dict[str, object]:
+        """Persist result, response, correlation, and completion together.
+
+        Returns:
+            Identifiers of what the terminal transaction committed, for the
+            trace.
+        """
 
         update = claim.update
         draft = self._response_draft(claim, response)
@@ -502,6 +553,17 @@ class SequentialWorker:
             proposal_id=outcome.proposal_id,
             revocations=len(revocations),
         )
+        return {
+            "workflow_status": outcome.status.value,
+            "response_kind": response.kind.value,
+            "outbox_id": str(response_id),
+            "outbox_logical_key": draft.logical_key,
+            "pending_action_id": (
+                None if pending_action is None else str(pending_action.id)
+            ),
+            "consumed_action_id": _optional_text(_consumed(correlation, outcome)),
+            "revocation_outbox_ids": [str(item.id) for item in revocations],
+        }
 
     def _revocations(
         self,
@@ -587,8 +649,22 @@ class SequentialWorker:
             ),
         )
 
-    def _fail(self, claim: InboxClaim, error_code: str, *, transient: bool) -> None:
-        """Schedule the bounded retry, or make the item a visible dead letter."""
+    def _fail(
+        self,
+        claim: InboxClaim,
+        error_code: str,
+        *,
+        transient: bool,
+        span: TraceObservation,
+    ) -> None:
+        """Schedule the bounded retry, or make the item a visible dead letter.
+
+        Args:
+            claim: Leased inbox item whose attempt failed.
+            error_code: Stable reason the attempt failed.
+            transient: Whether another attempt may succeed.
+            span: Recorder of this claim's `work-unit` trace stage.
+        """
 
         now = self._clock.now()
         terminal = not transient or self._retry_policy.exhausted(claim.attempt_count)
@@ -598,13 +674,24 @@ class SequentialWorker:
                 now, attempt_count=claim.attempt_count
             )
         response = self._renderer.failure(terminal=terminal)
+        notice = self._response_draft(claim, response)
         self._repository.fail_inbox(
             claim,
             error_code=error_code,
             transient=transient,
             retry_at=retry_at,
-            response=self._response_draft(claim, response),
+            response=notice,
             now=now,
+        )
+        span.record_metadata(
+            {
+                "work_unit_outcome": "dead_lettered" if terminal else "retry_scheduled",
+                "failure_reason_code": error_code,
+                "failure_transient": transient,
+                "retry_at": None if retry_at is None else retry_at.isoformat(),
+                "response_kind": response.kind.value,
+                "outbox_id": str(notice.id),
+            }
         )
         # A terminal failure is a dead letter the owner has to act on, which
         # is a different thing from a retry that has not run out of attempts.
@@ -618,6 +705,87 @@ class SequentialWorker:
             _LOGGER.error("work_unit.dead_lettered", **fields)
         else:
             _LOGGER.warning("work_unit.retry_scheduled", **fields)
+
+
+def _claim_metadata(claim: InboxClaim, *, claimed_at: datetime) -> dict[str, object]:
+    """Describe a claim for its trace stage without owner or Telegram identity.
+
+    Args:
+        claim: Leased inbox item.
+        claimed_at: Instant the lease was taken.
+
+    Returns:
+        Inbox identity, attempt and replay counts, and how long the update
+        waited in the durable queue.
+    """
+
+    update = claim.update
+    waited = claimed_at - update.accepted_at
+    return {
+        "entry_point": "money-tracker-worker",
+        "stage": "worker",
+        "bot_key": update.bot_key,
+        "inbox_id": str(update.id),
+        "update_id": update.update_id,
+        "attempt_count": claim.attempt_count,
+        "replay_count": claim.replay_count,
+        "queue_wait_ms": max(0, round(waited.total_seconds() * 1000)),
+        "claimed_until": claim.claimed_until.isoformat(),
+    }
+
+
+def _correlation_metadata(
+    claim: InboxClaim, correlation: _Correlation
+) -> dict[str, object]:
+    """Describe what a callback or reply resolved to before dispatch."""
+
+    update = claim.update
+    kind = (
+        "callback"
+        if update.callback_action is not None
+        else "reply"
+        if update.reply_to_message_id is not None
+        else "none"
+    )
+    action = correlation.action
+    return {
+        "correlation_kind": kind,
+        "correlation_resolved": action is not None,
+        "correlated_action_id": None if action is None else str(action.id),
+        "correlated_target_type": None if action is None else action.target_type.value,
+        "correlated_target_id": None if action is None else str(action.target_id),
+        "latest_movement_id": _optional_text(correlation.latest_movement_id),
+    }
+
+
+def _response_facts(response: OwnerResponse) -> dict[str, object]:
+    """Render an owner response as JSON primitives for the trace store."""
+
+    target = response.target
+    return {
+        "kind": response.kind.value,
+        "text": response.text,
+        "content_hash": response.content_hash,
+        "buttons": [
+            {"label": button.label, "callback_data": button.callback_data}
+            for button in response.buttons
+        ],
+        "target": (
+            None
+            if target is None
+            else {
+                "target_type": target.target_type.value,
+                "target_id": str(target.target_id),
+                "allowed_actions": list(target.allowed_actions),
+            }
+        ),
+    }
+
+
+def _optional_text(value: UUID | None) -> str | None:
+    """Render an optional identifier as text."""
+
+    return None if value is None else str(value)
 
 
 def _superseded_targets(

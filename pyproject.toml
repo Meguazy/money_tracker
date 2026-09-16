@@ -48,7 +48,10 @@ build-backend = "hatchling.build"
 packages = ["src/money_tracker"]
 
 [tool.pytest.ini_options]
-addopts = "--strict-config --strict-markers"
+# Long tracebacks print every argument of a failing test, and real-service
+# fixtures hold credential-bearing database URLs and API key pairs. The short
+# style names the failing lines and assertion values without those arguments.
+addopts = "--strict-config --strict-markers --tb=short"
 testpaths = ["tests"]
 markers = [
     "postgres: requires the real application PostgreSQL service",

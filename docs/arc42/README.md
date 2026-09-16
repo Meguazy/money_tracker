@@ -197,9 +197,9 @@ Money Tracker workstation
 | `config` | Convert environment variables into immutable model settings | Process environment | Runtime configuration | Secrets are not returned or logged |
 | `graph` | Define the initial one-node assistant | LangGraph and `BaseChatModel` | In-memory messages for one invocation | Stateless host process |
 | `llm` | Construct an OpenAI-compatible chat adapter | LangChain `ChatOpenAI` | No persistent data | Loopback endpoint by default |
-| `tracing` | Own the tracing port injected at entry points, the disabled tracer, the explicit switch and loopback-only settings, and `open_tracer` | Framework-neutral port; `tracing.langfuse` only when enabled; no domain, application, or workflow dependency | No persistent data | Every entry point that executes a model boundary; misconfiguration disables tracing with an `ERROR` record and never stops the process |
-| `tracing.langfuse` | Record dispatch spans, graph and node runs, and one generation per model request in the local Langfuse | Langfuse SDK, its LangChain callback with model runs ignored, and a process-owned OpenTelemetry provider | Spans buffered until the background export or the bounded flush | Only module importing the SDK; loaded lazily; no exception text reaches an SDK context manager; flush waits at most the export timeout |
-| `tracing.identity` | Name the serving model artifact with the capability report's fields | llama.cpp `/props` over loopback, reused for 60 s; `evaluations.metadata` assembly | Private revision-keyed digest cache under `$XDG_CACHE_HOME/money-tracker` | Digests measured once per file revision; no path enters a trace |
+| `tracing` | Own the tracing port injected at entry points, the disabled tracer, the explicit switch and loopback-only settings, the stable trace names, and `open_tracer`, which can resolve model identity in the background for a long-running service | Framework-neutral port; `tracing.langfuse` only when enabled; no domain, application, or workflow dependency | No persistent data | Every entry point that executes a model boundary or a stage of a traced work unit; misconfiguration disables tracing with an `ERROR` record and never stops the process |
+| `tracing.langfuse` | Record seeded, named stage spans, dispatch spans, graph and node runs, and one generation per model request in the local Langfuse | Langfuse SDK and its attribute propagation, its LangChain callback with model runs ignored, and a process-owned OpenTelemetry provider | Spans buffered until the background export or the bounded flush | Only module importing the SDK; loaded lazily; no exception text reaches an SDK context manager; export runs on the SDK's background thread; flush waits at most the export timeout |
+| `tracing.identity` | Name the serving model artifact with the capability report's fields | llama.cpp `/props` over loopback, reused for 60 s; `evaluations.metadata` assembly | Private revision-keyed digest cache in the unit's `CacheDirectory` or `$XDG_CACHE_HOME/money-tracker` | Digests measured once per file revision, inline for a command and on a background thread for a service, whose calls during a measurement carry `digest_pending`; no path enters a trace |
 | `tracing.redaction` | Remove credentials, database and credential-bearing URLs, Telegram URLs, token shapes, archive paths, and bytes from every observation value | Configured secret literals and private roots from the environment; `logging_safety` token patterns | No state | Last line of defence applied by the SDK; components keep forbidden values out by construction |
 | `structured_logging` | Configure process logging once, render each record as one JSON object of event name plus named fields, bind per-operation correlation identifiers, and route uncaught exceptions on any thread through logging | Standard library `logging` and `contextvars`; the redaction primitives in `logging_safety`; no domain, repository, or transport import | No persistent data; the journal is diagnostic and is neither authoritative nor backed up | Every host process and CLI; writes to standard error so machine-readable command output on standard out stays usable; credentials are filtered from messages, fields, and tracebacks, and owner content never enters a field |
 | `logging_safety` | Own the credential redaction contract and mute the HTTP loggers that would print a token-bearing URL | Standard library `logging` and `re` only | No state | Imported by `structured_logging` and usable by anything that logs |
@@ -208,8 +208,8 @@ Money Tracker workstation
 | `application` | Coordinate idempotent expense lifecycle and receipt registration/review, audited wallet entries, versioned funding-source lifecycle, replay-safe budget planning, pending proposal submission, owner category decisions, and read-only reporting plus safe profile-settings projection through narrow ports | Finance, administration, proposal, review, reporting, and receipt-metadata repository ports plus clock and ID contracts | Command, concurrency, review-boundary, and audit semantics, not stored state | Shared by CLI, API, and worker; profile scope comes from trusted caller context; node creation is reachable only through an owner decision, and receipt deletion is not exposed |
 | `application.profile_settings` | Validate and project the owner-facing V1 profile subset for the settings surface | `ProfileSettingsRepository` reads the active profile and its funding sources; default writes remain in `FundingSourceAdministrationService` | No state; returns fixed locale/currency/timezone facts and eligible active default choices | Shared in-process application service composed into FastAPI; trusted profile scope is an argument from composition, inconsistent default pointers fail closed, and no infrastructure or credential contract exists |
 | `workflows` | Own the bounded intent taxonomy, normalized channel work unit, deterministic pre-routing, strict versioned model boundaries, policy vetoes, and post-model read-selection policies, deterministic allocation resolution, draft and correction preparation, stable creation/correction/undo command identities, and the strict-schema retry boundary behind a narrow model port | Pydantic, `zoneinfo`, and pure domain values; no LangGraph, model client, repository, or transport import | Routing destinations, authority classes, stable routing and resolution reason codes, and the product calendar; no persistent state | Shared by the implemented worker; a model can select no deterministic route and supply no profile/timezone/authorization field, no resolved instant, no amount sign, and no funding-source identifier; reason codes carry no owner text |
-| `runtime` | Assemble the compiled root-router, expense/refund, correction/undo, category-review, and read graphs; dispatch one normalized work unit to exactly one specialist; adapt the local endpoint to the structured-output port; record dispatches and model requests through an injected tracer | LangGraph, LangChain, application services, the persistent checkpointer, `workflows` contracts, and the `tracing` port (never the SDK) | No domain state of its own; checkpoint contents remain owned by each graph state contract, and tracing adds only non-persisted callbacks | Host administration CLI and worker; dispatcher trusts only injected profile/correlation context and emits no presentation text; the default tracer records nothing |
-| `worker` | Claim the oldest eligible durable work unit, translate it into the normalized channel message, dispatch it once, and commit result, response, correlation, and completion together; commit failure notice with retry or dead-letter state | Messaging repository port, finance read ports, a narrow dispatch port, and the response renderer | No authoritative state; every identifier it creates is derived from the inbox row so a recovered attempt reproduces the same logical response | systemd host service, separate failure domain from the gateway; holds no Bot API credential and imports no transport type |
+| `runtime` | Assemble the compiled root-router, expense/refund, correction/undo, category-review, and read graphs; dispatch one normalized work unit to exactly one specialist; adapt the local endpoint to the structured-output port; record dispatches, their deterministic decision metadata, and model requests through an injected tracer | LangGraph, LangChain, application services, the persistent checkpointer, `workflows` contracts, and the `tracing` port (never the SDK) | No domain state of its own; checkpoint contents remain owned by each graph state contract, and tracing adds only non-persisted callbacks | Host administration CLI and worker; dispatcher trusts only injected profile/correlation context and emits no presentation text; the default tracer records nothing |
+| `worker` | Claim the oldest eligible durable work unit, translate it into the normalized channel message, dispatch it once, and commit result, response, correlation, and completion together; commit failure notice with retry or dead-letter state; record each claim as the `work-unit` stage of the update's trace | Messaging repository port, finance read ports, a narrow dispatch port, the response renderer, and the `tracing` port | No authoritative state; every identifier it creates is derived from the inbox row so a recovered attempt reproduces the same logical response | systemd host service, separate failure domain from the gateway; holds no Bot API credential and imports no transport type; flushes traces within the export timeout after a stop request |
 | `presentation` | Render typed dispatch outcomes, processing failures, committed movement facts, and paused review questions as Italian owner text and bounded controls | Dispatcher outcome contracts, messaging control values, and pure domain values; no model, transport, or repository import | No state; owns the callback code vocabulary and the response-kind names embedded in outbox logical keys | Worker library; content is a function of committed state only, so a replayed render reproduces the same logical response |
 | `api.contracts` | Define strict, versioned finance request/response, mutation-header, and problem wire shapes | Pydantic and domain response values; no web framework | No state; stable JSON field semantics only | Shared by the FastAPI adapter; no credentials or private media fields |
 | `web` | Compose versioned HTTP reads and writes, static UI serving, health, and browser policy | FastAPI, narrow application ports, typed settings, strict wire contracts, and `web.mutations` | No authoritative data; injects the sole trusted profile and bot scope and owns only HTTP semantics | Host user service on IPv4 loopback; exact Host/Origin, closed CORS, CSRF, CSP, bounded problems, no Bot API credential, and no secret endpoint |
@@ -226,7 +226,7 @@ Money Tracker workstation
 | `telegram.config` | Select one test/production bot and securely read its distinct owner-only token file | Process environment, private filesystem, messaging environment enum | No authoritative state; credential exists only in process memory | Host gateway; absolute path, owner UID, regular no-follow file, and mode 0600 required |
 | `telegram.transport` | Call official Bot API methods and reduce responses to typed values | `httpx`, bounded timeouts, messaging outbox contracts | No durable state | Host gateway only; every exception is replaced by a content-free reason code |
 | `telegram.ingestion` | Authorize one persisted private owner and normalize a complete observed batch | Telegram transport values and `MessagingRepository` | Acceptance policy only | Runs before persistence; groups/foreign users retain counters only and never trigger file lookup |
-| `telegram.gateway` | Run independent long-poll and outbox-delivery loops | Transport, ingestion service, repository, clock, retry policy | No in-memory correctness state | Production `money-tracker-telegram` entry point; no LangGraph, model, or finance repository dependency; user service unit checked in |
+| `telegram.gateway` | Run independent long-poll and outbox-delivery loops; record each committed update and each delivery that answers one as stages of that update's trace | Transport, ingestion service, repository, clock, retry policy, and the `tracing` port | No in-memory correctness state | Production `money-tracker-telegram` entry point; no LangGraph, model, or finance repository dependency; user service unit checked in; each loop opens its own spans on its own thread, and no Telegram user, chat, file, or callback identity enters a trace |
 | `development` | Validate canonical documentation and privacy-ignore invariants | Repository Markdown/YAML/filesystem | No persistent data | Service-independent development command |
 
 ### Human usefulness review runtime
@@ -299,7 +299,7 @@ catalog is promoted; every identifier carries a `candidate-` prefix.
 | Local model gateway | Provide typed chat, schema and tool capabilities | OpenAI-compatible local endpoint | No persistent domain data | Replaceable host inference process |
 | Calendar period resolver (implemented) | Resolve strict day, ISO-week, month, year, and bounded inclusive custom selections plus their deterministic predecessors into half-open query intervals | Pure domain date values used by reporting and the web adapter; no framework or repository dependency | No persistent data | In-process domain component; Europe/Rome calendar semantics, DST-safe boundaries, and a 366-day custom-range ceiling |
 | Receipt extractor adapter | Produce a versioned structured receipt draft | Selected local OCR/VLM pipeline | No authoritative data until validated | Local-only; selection remains evaluation-gated |
-| Langfuse adapter (`tracing.langfuse`, partial) | Record full-fidelity AD-021 traces; publish aggregate capability scores through `evaluations.publication` | Local Langfuse SDK behind the tracing port | Observability copies, not source of truth; owner content with ledger sensitivity | Optional Compose profile; administrative dispatch traced, worker, gateway, and web advice planned |
+| Langfuse adapter (`tracing.langfuse`, partial) | Record full-fidelity AD-021 traces; publish aggregate capability scores through `evaluations.publication` | Local Langfuse SDK behind the tracing port | Observability copies, not source of truth; owner content with ledger sensitivity; excluded from backup and kept 30 days by owner decision | Optional Compose profile; administrative dispatch, gateway, and worker traced; web advice planned |
 
 ### Step 4 messaging boundaries
 
@@ -310,14 +310,14 @@ administration and health commands are all implemented:
 
 | Component | Responsibility | Interface/dependencies | Data ownership | Deployment/security |
 | --- | --- | --- | --- | --- |
-| `messaging.contracts` | Define normalized inbox, outbox, pairing, pending-action, retry, dead-letter, requeue, and health values | Pure Python contracts and time/identifier values | No infrastructure state | Shared host library; contains no Bot API token or raw update |
+| `messaging.contracts` | Define normalized inbox, outbox, pairing, pending-action, retry, dead-letter, requeue, and health values, and the single `telegram:<bot-key>:<update-id>` source-reference derivation that outbox claims also carry | Pure Python contracts and time/identifier values | No infrastructure state | Shared host library; contains no Bot API token or raw update |
 | `messaging.scope` | Select one bot environment and derive the stable key that scopes its durable rows | One process environment variable and the environment enum | No state; the derivation is the single source of the bot key | Every messaging process, including the web host, which must know its scope without holding a credential |
 | `messaging.errors` | Name the failures the durable messaging port may raise | Nothing but the standard library | No state | Imported by callers that depend on the port rather than on PostgreSQL |
 | `messaging.service` (ingestion, pairing, worker, and operator surface implemented) | Authorize/normalize ingestion, consume one-use pairing, coordinate claim/dispatch/retry/replay/delivery, compose the content-free operations snapshot, and summarize text latency | Messaging repository port, response renderer, dispatch port, and durable acceptance/send timestamps | Application policy only, including which requeue transitions a caller may pin | Gateway/worker/admin/API host processes; owner scope comes only from binding records, pairing codes are never retained in clear, and no output contains messages or identities |
 | `persistence.messaging` | Implement the AD-018 transactions and uniqueness/lease rules | psycopg and the dedicated application PostgreSQL | Entire `messaging` schema | Least-privilege application role; content is private and included in authoritative backup |
 | `telegram.transport` | Implement the official HTTPS Bot API methods with bounded timeouts and redacted failures | `httpx` and configured Bot API base URL/token | No durable state | Gateway only; production/test configuration is mutually exclusive |
-| `telegram.gateway` | Run independent ingress and outbox loops | Bot API transport and messaging service | No in-memory correctness state | systemd host service; no model or finance repository dependency |
-| `worker` (implemented) | Translate one claimed row to `ChannelMessage`, construct `DispatchContext`, call the Step 3 dispatcher, and finalize messaging state | Messaging/finance read ports and a narrow dispatch port | No authoritative state; derives outbox and pending-action identity from the inbox row so a recovery reproduces them; a modification clarification creates a durable successor reply mapping for the selected movement | systemd host service; no token or Telegram client |
+| `telegram.gateway` | Run independent ingress and outbox loops, each tracing its own stage of an update | Bot API transport, messaging service, and tracing port | No in-memory correctness state | systemd host service; no model or finance repository dependency |
+| `worker` (implemented) | Translate one claimed row to `ChannelMessage`, construct `DispatchContext`, call the Step 3 dispatcher, and finalize messaging state, tracing the claim as one stage of the update | Messaging/finance read ports, a narrow dispatch port, and the tracing port | No authoritative state; derives outbox and pending-action identity from the inbox row so a recovery reproduces them; a modification clarification creates a durable successor reply mapping for the selected movement | systemd host service; no token or Telegram client |
 | `presentation.telegram` (implemented) | Render typed workflow outcomes, controls, and the pairing confirmation in Italian | Dispatch outcome plus bounded display projections | No state | Worker and gateway library; never exposes tool names, raw evaluation JSON, or internal IDs; content depends only on committed state so a replayed render is identical |
 | `store_telegram_token.sh` (implemented) | Install or rotate exactly one selected Bot API credential | Hidden standard input and non-executed `.env` path settings; no Bot API call | Atomically replaces the selected owner-only token file | Manual host operation; refuses shared paths, unsafe targets, foreign ownership, and non-private configuration, and prints neither path nor value |
 
@@ -365,16 +365,17 @@ No state survives the process and no financial write occurs.
 
 ### Current traced dispatch
 
-AD-021 governs what is recorded; this is the sequence for the one traced entry
-point, `money-tracker-admin route`.
+AD-021 governs what is recorded; this is the sequence for `money-tracker-admin
+route`. The worker runs the same steps 3 and 4 inside each claim, as the traced
+Telegram update below describes.
 
 1. The entry point calls `open_tracer()`. With the switch off it receives the
    disabled tracer, the SDK is never imported, and every later step records
    nothing.
-2. It opens the `work-unit` root span whose trace identifier is derived from
-   the work unit's source reference, and injects the tracer into
-   `LocalStructuredOutputModel` and the dispatcher together with the version
-   set it composed them with.
+2. It opens the `work-unit` root span of a trace named `admin-route`, whose
+   identifier is derived from the work unit's source reference, and injects the
+   tracer into `LocalStructuredOutputModel` and the dispatcher together with
+   the version set it composed them with.
 3. `WorkflowDispatcher.dispatch` opens a `dispatch` span holding the complete
    message, trusted context, and version set. Each graph invocation receives
    its thread identifier plus the tracer's callbacks only, so checkpoints are
@@ -390,6 +391,41 @@ point, `money-tracker-admin route`.
 5. The dispatch span records the typed outcome, the root span records the
    command result, and the entry point flushes within the export timeout before
    exiting. A stopped store costs that bound and nothing else.
+
+### Current traced Telegram update
+
+AD-021 governs the content; this is how one owner message becomes one trace
+across two processes. Every stage derives the trace identifier from the
+update's source reference `telegram:<bot-key>:<update-id>` and propagates the
+trace name `telegram-update`, so the stages join whichever reaches the store
+first.
+
+1. The gateway's ingress thread polls, and the ingestor commits the batch. For
+   each accepted update the thread then opens and closes a `telegram-ingest`
+   root span with the normalized update, the batch counters, the poll and
+   commit durations, and the callback acknowledgement result. Rejected and
+   pairing updates, and every Telegram user, chat, file, and callback identity,
+   stay out.
+2. The worker claims the inbox row and opens a `work-unit` root span with the
+   inbox identity, attempts, replays, and queue wait, and records what a
+   callback or reply resolved to.
+3. Inside it the dispatcher's `dispatch` span, graphs, nodes, and generations
+   are recorded exactly as in the traced dispatch above, plus the decision
+   metadata read from the typed decision and final graph states.
+4. A `render` span records the owner response and controls, and a `commit`
+   span the outbox row, logical key, pending action, consumed action, and
+   revocations of the terminal transaction. A failure instead records the retry
+   or dead-letter transition and its reason code on the root; a lost lease is
+   recorded without failing it.
+5. The gateway's outbox thread claims the response, whose claim carries the
+   inbox row's source reference, and opens a `telegram-delivery` root span with
+   the delivered text, the attempt, and the Telegram message identity or the
+   transport reason code. Work that answers no update is delivered untraced.
+
+Retries, replays, and delivery retries add further roots to the same trace.
+Spans are exported on the SDK's background thread, so no claim, commit, or
+delivery waits for the store; both processes flush within the export timeout
+after their loops honor a stop request.
 
 ### Current finance repository mutations
 
@@ -1253,12 +1289,25 @@ are explicit. The repair retained the pre-existing observability volumes; all
 profile services pass their health checks.
 
 Tracing is switched per process by `MONEY_TRACKER_TRACING_ENABLED`, default
-false, with the Langfuse keys and loopback base URL from `.env`. A traced
-process keeps a private digest cache of model artifacts under
-`$XDG_CACHE_HOME/money-tracker/` (mode 0700/0600) and reads llama.cpp `/props`
-with the inference key. Since AD-021 the Langfuse volumes hold owner content,
-so their exposure matches the application database even though they remain
-outside the authoritative backup set pending the Step 5.5 backup decision.
+false, with the Langfuse keys and loopback base URL from `.env`; every host unit
+reads that file, so the switch set there affects the gateway, worker, and API at
+their next start. A traced process keeps a private digest cache of model
+artifacts (mode 0700/0600) and reads llama.cpp `/props` with the inference key.
+The worker and API templates declare `CacheDirectory=money-tracker`, which is
+`~/.cache/money-tracker` for a user unit and stays writable under a read-only
+home, and put `~/.local/bin` on `PATH` so the executable digest resolves after
+an unattended boot; installed units change only when re-rendered. Since AD-021
+the Langfuse volumes hold owner content, so their exposure matches the
+application database; by owner decision they stay outside the authoritative
+backup set as a reconstructible copy kept 30 days.
+
+The units' mount-namespace directives are declared but not in effect on this
+workstation: with unprivileged user namespaces restricted by AppArmor, the user
+manager starts each service in its own user namespace but the host's mount
+namespace, so `ProtectHome=read-only`, `ProtectSystem=strict`, and
+`PrivateTmp=true` do not restrict it. This was observed on 2026-09-17 by
+comparing namespaces and writing under a protected home from a transient unit;
+qualifying the sandbox is Step 7 work.
 
 ### Target deployment
 
@@ -1481,6 +1530,9 @@ preflight without coupling Telegram recovery to dashboard availability.
 ### Observability and evaluation
 
 - Daily operation works when Langfuse is stopped.
+- One Telegram update is one trace across the gateway and worker processes,
+  joined by the identifier derived from its source reference rather than by
+  propagated context, so neither process depends on the other to trace.
 - [AD-021](decisions/AD-021-full-fidelity-llm-traces.md) makes runtime traces
   full fidelity: complete prompts, owner messages, repair turns, completions,
   parsed contracts, decision context, model artifact identity, and the
@@ -1583,9 +1635,12 @@ tracing and from the exit-code contract AD-018 defines for supervisors.
 - The recovery secret has an off-workstation copy and is passed to Restic only
   as a file path. A tested restore is a release gate; the isolated drill passes
   and the clean-machine drill remains open.
-- Langfuse backup is optional and separate because it is not authoritative.
-  AD-021 puts owner content in it, so whether its volumes enter the encrypted
-  backup set is an open owner decision within Step 5.5.
+- Langfuse is not authoritative and stays outside the encrypted backup set by
+  owner decision (2026-09-17): its volumes are a reconstructible observability
+  copy whose loss loses traces, never finance data. AD-021 puts owner content
+  in it, so runtime traces are kept 30 days and may be exported to a private
+  local file first; the procedure is a Step 5.5 deliverable and its scheduling
+  is Step 7.
 
 ### Testing
 
@@ -1699,10 +1754,11 @@ environment file.
   promoted V1 policy implemented between model parsing and registry acceptance;
   V0 remains the direct configuration rollback.
 - [AD-021: Full-fidelity local LLM traces](decisions/AD-021-full-fidelity-llm-traces.md):
-  tracing port, Langfuse adapter, identity, redaction, and the traced
-  administrative dispatch implemented; worker, gateway, web advice, channel
-  correlation, evaluation linkage, retention, deletion, and backup decision
-  planned.
+  tracing port, Langfuse adapter, identity, redaction, the traced
+  administrative dispatch, and one correlated trace per Telegram update across
+  gateway and worker implemented; backup exclusion and 30-day retention
+  decided; web advice, evaluation linkage, and the retention, export, and
+  deletion procedures planned.
 - [AD-018: Telegram processing transactions and ordering](decisions/AD-018-telegram-processing-transactions.md):
   reconciled Step 4 persistence, Bot API transport, authorized ingestion,
   persisted-offset runtime, outbox delivery, Italian response rendering, the
@@ -1759,10 +1815,20 @@ Quantitative evaluation gates are maintained in
   but automatic scheduling, off-device secret verification, and a clean-machine
   restore remain later release work.
 - The real Telegram evidence uses a private test bot, not a production bot.
-- Step 5.5 is partial: only `money-tracker-admin route` is traced. The worker,
-  gateway, and web advice produce no trace, retention and deletion are not yet
-  written procedures, and the Langfuse volumes, which now hold owner content,
-  are outside the backup set pending an owner decision.
+- Step 5.5 is partial: the administration command, gateway, and worker are
+  traced, but web advice is not, the running services have not yet been
+  restarted with tracing or measured against a stopped store, and retention
+  and deletion are not yet written procedures. Until they are, the Langfuse
+  volumes, which hold owner content and are deliberately outside the backup
+  set, grow without a bound.
+- The host units' `ProtectHome`, `ProtectSystem`, and `PrivateTmp` directives
+  are not applied by this workstation's user manager, which cannot create a
+  mount namespace while AppArmor restricts unprivileged user namespaces. The
+  services can write anywhere their user can. Earlier exposure scores measured
+  configuration, not effect; Step 7 must qualify the sandbox by observing it.
+- A service traced calls made in the first seconds after start-up with a new
+  model artifact carry `digest_pending` and an incomplete identity while the
+  weights are hashed in the background.
 - A traced model call names its artifact from a `/props` report reused for up to
   sixty seconds, so a server restarted with other weights inside that window is
   attributed to the previous artifact. The Langfuse public key is stamped on

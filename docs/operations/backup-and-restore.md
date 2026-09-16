@@ -107,11 +107,15 @@ no model artifact.
 
 ## Non-authoritative or separate data
 
-- Langfuse PostgreSQL, ClickHouse, Redis, and MinIO data are observability data
-  and may have a separate optional backup policy. Under AD-021 they can hold
-  complete owner messages and completions; whether they enter the encrypted
-  backup set or remain a reconstructible copy is an owner decision still open
-  in Step 5.5, and until it is made they are outside the set.
+- Langfuse PostgreSQL, ClickHouse, Redis, and MinIO data are observability data.
+  Under AD-021 they hold complete owner messages and completions. The owner
+  decided on 2026-09-17 that they stay outside the encrypted backup set as a
+  reconstructible copy: restoring the finance set restores no trace, and losing
+  the volumes loses traces only. Runtime traces are kept 30 days and may be
+  exported to a private local file first; the deletion and export procedures
+  are Step 5.5 deliverables in [LLM Tracing](tracing.md). Do not add the volumes
+  to a Restic snapshot by hand: a copy taken while ClickHouse and MinIO write is
+  not consistent, and it would keep owner content past its retention.
 - Python virtual environments, frontend build output, container layers, caches,
   and reproducible dependencies are rebuilt from source/locks.
 - Generated evaluation artifacts remain disposable unless a promotion decision

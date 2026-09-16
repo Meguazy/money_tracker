@@ -34,6 +34,7 @@ from money_tracker.messaging.contracts import (
     RequeueOutcome,
     WorkflowResult,
     require_aware,
+    telegram_source_reference,
     validate_bot_key,
 )
 from money_tracker.messaging.errors import (
@@ -884,6 +885,16 @@ class PostgresMessagingRepository:
             row["attempt_count"] += 1
             row["claim_token"] = claim_token
             row["claimed_until"] = claimed_until
+            row["source_reference"] = None
+            if row["inbox_id"] is not None:
+                source = connection.execute(
+                    "SELECT update_id FROM messaging.telegram_inbox WHERE id = %s",
+                    (row["inbox_id"],),
+                ).fetchone()
+                if source is not None:
+                    row["source_reference"] = telegram_source_reference(
+                        bot_key, source["update_id"]
+                    )
         return self._outbox_claim(row)
 
     def fail_outbox(
@@ -1313,6 +1324,7 @@ class PostgresMessagingRepository:
                 attempt_count=row["attempt_count"],
                 claim_token=row["claim_token"],
                 claimed_until=row["claimed_until"],
+                source_reference=row.get("source_reference"),
             )
         buttons = tuple(
             OutboundButton(
@@ -1339,6 +1351,7 @@ class PostgresMessagingRepository:
             attempt_count=row["attempt_count"],
             claim_token=row["claim_token"],
             claimed_until=row["claimed_until"],
+            source_reference=row.get("source_reference"),
         )
 
     @staticmethod

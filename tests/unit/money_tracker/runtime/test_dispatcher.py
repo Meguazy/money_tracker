@@ -375,7 +375,7 @@ def test_a_traced_dispatch_records_the_work_unit_and_its_outcome() -> None:
     dispatcher.dispatch(message, context=DispatchContext(profile_id=profile_id))
 
     (span,) = tracer.named("dispatch")
-    assert span.metadata == {"router_prompt": "candidate-router-it-v6"}
+    assert span.metadata["router_prompt"] == "candidate-router-it-v6"
     assert isinstance(span.input, dict)
     assert span.input["message"]["text"] == "Quanto ho speso per gli animali?"
     assert span.input["context"]["profile_id"] == str(profile_id)
@@ -403,3 +403,232 @@ def test_a_failing_dispatch_marks_its_span_and_propagates() -> None:
 
     (span,) = tracer.named("dispatch")
     assert span.failure == ("exception", "RuntimeError")
+
+
+def test_a_traced_read_records_its_decision_as_filterable_metadata() -> None:
+    """Record routing, admitted tools, the admitted request, and grounding."""
+
+    tracer = InMemoryTracer()
+    message = _message("Quanto ho speso con la carta?")
+    request = {"tool": "funding_class_split", "period": None, "category_name": None}
+    dispatcher, *_graphs = _dispatcher(
+        _decision(WorkflowIntent.QUERY),
+        read={
+            "outcome": DispatchStatus.ANSWERED.value,
+            "tool_request_json": json.dumps(request),
+            "executed_tool": ReadTool.FUNDING_CLASS_SPLIT.value,
+            "answer_json": json.dumps({"period": "2026-09"}),
+            "clarification_reason": None,
+        },
+    )
+    dispatcher.tracer = tracer
+
+    dispatcher.dispatch(message, context=DispatchContext(profile_id=uuid4()))
+
+    (span,) = tracer.named("dispatch")
+    assert span.metadata == {
+        "routing_intent": "query",
+        "routing_source": "model",
+        "routing_reason_code": "model_classification",
+        "routing_confidence": 0.99,
+        "routing_policy_veto": False,
+        "specialist": "read",
+        "read_admitted_tools": sorted(
+            ["budget_status", "category_spending", "funding_class_split"]
+        ),
+        "read_tool_request": request,
+        "read_executed_tool": "funding_class_split",
+        "read_grounded": True,
+        "outcome_status": "answered",
+        "thread_ids": [
+            f"router:{message.source_reference}",
+            f"read:{message.source_reference}",
+        ],
+    }
+
+
+def test_a_traced_expense_records_how_its_allocations_were_resolved() -> None:
+    """Record the converted answers, both allocation bases, and the review."""
+
+    tracer = InMemoryTracer()
+    proposal_id = uuid4()
+    message = _message("Ho speso 12 euro per un corso")
+    extraction = {
+        "polarity": "expense",
+        "amount_minor_units": 1200,
+        "payment_parts": [],
+    }
+    fit = {"outcome": "proposal", "proposed_name": "Corsi"}
+    dispatcher, *_graphs = _dispatcher(
+        _decision(WorkflowIntent.EXPENSE),
+        expense={
+            "outcome": DispatchStatus.AWAITING_CATEGORY_APPROVAL.value,
+            "extraction_json": json.dumps(extraction),
+            "category_fit_json": json.dumps(fit),
+            "expense_id": str(uuid4()),
+            "proposal_id": str(proposal_id),
+            "clarification_reason": None,
+        },
+    )
+    dispatcher.tracer = tracer
+
+    dispatcher.dispatch(message, context=DispatchContext(profile_id=uuid4()))
+
+    metadata = tracer.named("dispatch")[0].metadata
+    assert metadata["specialist"] == "expense"
+    assert metadata["extraction"] == extraction
+    assert metadata["category_fit"] == fit
+    assert metadata["allocation_funding_basis"] == "profile_default"
+    assert metadata["allocation_category_basis"] == "proposal"
+    assert metadata["review_opened"] is True
+    assert "resolution_reason" not in metadata
+    assert metadata["thread_ids"] == [
+        f"router:{message.source_reference}",
+        f"expense:{message.source_reference}",
+        f"category-review:{proposal_id}",
+    ]
+    assert tracer.graph_configs == ["router", "expense", "category-review"]
+
+
+def test_an_unresolved_movement_records_its_reason_and_split_basis() -> None:
+    """Name the resolution reason a clarification asks about."""
+
+    tracer = InMemoryTracer()
+    extraction = {
+        "polarity": "expense",
+        "payment_parts": [
+            {"funding_source_text": "carta", "amount_minor_units": 500},
+            {"funding_source_text": "buoni", "amount_minor_units": 400},
+        ],
+    }
+    dispatcher, *_graphs = _dispatcher(
+        _decision(WorkflowIntent.EXPENSE),
+        expense={
+            "outcome": DispatchStatus.CLARIFICATION.value,
+            "extraction_json": json.dumps(extraction),
+            "clarification_reason": "split_does_not_reconcile",
+        },
+    )
+    dispatcher.tracer = tracer
+
+    dispatcher.dispatch(_message("Ho speso 10"), context=DispatchContext(uuid4()))
+
+    metadata = tracer.named("dispatch")[0].metadata
+    assert metadata["resolution_reason"] == "split_does_not_reconcile"
+    assert metadata["allocation_funding_basis"] == "stated_split"
+    assert metadata["outcome_clarification_reason"] == "split_does_not_reconcile"
+
+
+def test_a_policy_veto_is_distinguishable_from_other_clarifications() -> None:
+    """Flag a valid classification that deterministic policy overruled."""
+
+    tracer = InMemoryTracer()
+    dispatcher, *_graphs = _dispatcher(
+        RoutingDecision(
+            intent=WorkflowIntent.CLARIFICATION,
+            source=RoutingSource.MODEL,
+            reason=RoutingReason.NO_CORRECTABLE_MOVEMENT,
+            confidence=0.91,
+        )
+    )
+    dispatcher.tracer = tracer
+
+    dispatcher.dispatch(_message("Correggi"), context=DispatchContext(uuid4()))
+
+    metadata = tracer.named("dispatch")[0].metadata
+    assert metadata["routing_policy_veto"] is True
+    assert metadata["routing_reason_code"] == "no_correctable_movement"
+    assert metadata["outcome_status"] == "clarification"
+    assert "specialist" not in metadata
+
+
+def test_a_traced_movement_change_names_how_its_target_was_resolved() -> None:
+    """Record that an action mapping, not routing, selected the movement."""
+
+    tracer = InMemoryTracer()
+    action_id = uuid4()
+    movement_id = uuid4()
+    dispatcher, *_graphs = _dispatcher(
+        RoutingDecision(
+            intent=WorkflowIntent.UNDO,
+            source=RoutingSource.DETERMINISTIC,
+            reason=RoutingReason.CALLBACK_ACTION,
+            callback_action=CallbackAction.UNDO_EXPENSE,
+            pending_action_id=action_id,
+        ),
+        movement={
+            "outcome": DispatchStatus.VOIDED.value,
+            "expense_id": str(movement_id),
+        },
+    )
+    dispatcher.tracer = tracer
+
+    dispatcher.dispatch(
+        _message(
+            "", callback_action=CallbackAction.UNDO_EXPENSE, pending_action_id=action_id
+        ),
+        context=DispatchContext(
+            profile_id=uuid4(),
+            movement_actions=(PendingMovementAction(action_id, movement_id),),
+        ),
+    )
+
+    metadata = tracer.named("dispatch")[0].metadata
+    assert metadata["specialist"] == "movement-change"
+    assert metadata["movement_target_basis"] == "pending_action"
+    assert metadata["movement_target_id"] == str(movement_id)
+    assert metadata["routing_callback_action"] == "undo_expense"
+
+
+def test_a_traced_review_resume_names_its_thread_and_decision() -> None:
+    """Join a resumed review to the thread the original expense opened."""
+
+    tracer = InMemoryTracer()
+    proposal_id = uuid4()
+    dispatcher, *_graphs = _dispatcher(
+        _decision(WorkflowIntent.CATEGORY_FOLLOW_UP, pending_action_id=proposal_id),
+        review={
+            "proposal_id": str(proposal_id),
+            "expense_id": str(uuid4()),
+            "outcome": DispatchStatus.APPROVED.value,
+            "settled_category_id": str(uuid4()),
+        },
+    )
+    dispatcher.tracer = tracer
+
+    dispatcher.dispatch(
+        _message("Approva"),
+        context=DispatchContext(
+            profile_id=uuid4(),
+            routing=RoutingContext(pending_category_review_ids=(proposal_id,)),
+        ),
+    )
+
+    metadata = tracer.named("dispatch")[0].metadata
+    assert metadata["specialist"] == "category-review"
+    assert metadata["review_proposal_id"] == str(proposal_id)
+    assert metadata["review_decision_action"] == "approve_category"
+    assert metadata["review_resumed"] is True
+    assert metadata["thread_ids"][-1] == f"category-review:{proposal_id}"
+
+
+def test_a_failing_specialist_still_records_what_routing_decided() -> None:
+    """Keep the routing facts that explain a specialist failure."""
+
+    class _Failing:
+        def invoke(self, value: object, config: object) -> object:
+            raise RuntimeError("specialist failed")
+
+    tracer = InMemoryTracer()
+    dispatcher, *_graphs = _dispatcher(_decision(WorkflowIntent.QUERY))
+    dispatcher.read = _Failing()
+    dispatcher.tracer = tracer
+
+    with pytest.raises(RuntimeError):
+        dispatcher.dispatch(_message(), context=DispatchContext(profile_id=uuid4()))
+
+    (span,) = tracer.named("dispatch")
+    assert span.failure == ("exception", "RuntimeError")
+    assert span.metadata["routing_intent"] == "query"
+    assert span.metadata["specialist"] == "read"
+    assert "outcome_status" not in span.metadata

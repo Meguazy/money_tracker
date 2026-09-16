@@ -11,9 +11,15 @@ operational journal, which still carries no owner content.
 
 from __future__ import annotations
 
+import threading
+from collections.abc import Callable, Mapping
+
 from money_tracker.structured_logging import get_logger
 from money_tracker.tracing.ports import (
+    ADMIN_ROUTE_TRACE,
     DISABLED_TRACER,
+    TELEGRAM_UPDATE_TRACE,
+    WEB_ADVICE_TRACE,
     DisabledTracer,
     ModelCallObservation,
     ModelCallRequest,
@@ -29,7 +35,11 @@ from money_tracker.tracing.settings import (
 _LOGGER = get_logger(__name__)
 
 
-def open_tracer(settings: TracingSettings | None = None) -> Tracer:
+def open_tracer(
+    settings: TracingSettings | None = None,
+    *,
+    identity_in_background: bool = False,
+) -> Tracer:
     """Build the tracer an entry point injects into the inference path.
 
     Tracing never decides whether an entry point can run. Unreadable or
@@ -38,6 +48,11 @@ def open_tracer(settings: TracingSettings | None = None) -> Tracer:
 
     Args:
         settings: Explicit settings; read from the environment when omitted.
+        identity_in_background: Resolve the serving model's identity on a
+            background thread starting now, and never make a model call wait
+            for an artifact digest. Long-running services that call the model
+            set this; a one-shot command leaves it off so its only call names
+            a complete identity.
 
     Returns:
         The disabled tracer unless tracing is switched on and correctly
@@ -63,18 +78,57 @@ def open_tracer(settings: TracingSettings | None = None) -> Tracer:
     from money_tracker.tracing.redaction import TraceRedactor
 
     try:
-        return LangfuseTracer(
+        identity = ModelIdentityResolver.from_env(
+            background_digests=identity_in_background
+        )
+        tracer = LangfuseTracer(
             settings,
-            identity=ModelIdentityResolver.from_env(),
+            identity=identity,
             redactor=TraceRedactor.from_env(),
         )
     except Exception as error:
         _LOGGER.exception("tracing.start.failed", exception_type=type(error).__name__)
         return DISABLED_TRACER
+    if identity_in_background:
+        threading.Thread(
+            target=_prewarm_identity,
+            args=(identity,),
+            name="money-tracker-identity-prewarm",
+            daemon=True,
+        ).start()
+    return tracer
+
+
+def _prewarm_identity(identity: Callable[[], Mapping[str, object]]) -> None:
+    """Resolve the model identity once so the first traced call finds it ready.
+
+    A server that is not up yet is not a fault here: the first model call reads
+    the report again, and the call would fail on the endpoint anyway.
+
+    Args:
+        identity: Resolver whose first call reads `/props` and starts any
+            digest measurement.
+    """
+
+    try:
+        resolved = identity()
+    except Exception as error:
+        _LOGGER.warning(
+            "tracing.identity.prewarm_failed", exception_type=type(error).__name__
+        )
+        return
+    _LOGGER.debug(
+        "tracing.identity.prewarmed",
+        metadata_complete=resolved.get("metadata_complete") is True,
+        digest_pending=resolved.get("digest_pending") is True,
+    )
 
 
 __all__ = [
+    "ADMIN_ROUTE_TRACE",
     "DISABLED_TRACER",
+    "TELEGRAM_UPDATE_TRACE",
+    "WEB_ADVICE_TRACE",
     "DisabledTracer",
     "ModelCallObservation",
     "ModelCallRequest",

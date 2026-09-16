@@ -16,7 +16,16 @@ from __future__ import annotations
 from collections.abc import Mapping
 from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any, Final, Protocol
+
+TELEGRAM_UPDATE_TRACE: Final = "telegram-update"
+"""Trace name shared by the gateway and worker stages of one Telegram update."""
+
+ADMIN_ROUTE_TRACE: Final = "admin-route"
+"""Trace name of one `money-tracker-admin route` work unit."""
+
+WEB_ADVICE_TRACE: Final = "web-advice"
+"""Trace name of one browser advice request."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -140,6 +149,7 @@ class Tracer(Protocol):
         input: object = None,
         metadata: Mapping[str, object] | None = None,
         trace_seed: str | None = None,
+        trace_name: str | None = None,
     ) -> AbstractContextManager[TraceObservation]:
         """Open a span nested under the currently open one.
 
@@ -151,8 +161,11 @@ class Tracer(Protocol):
             metadata: JSON-compatible facts known when the operation starts.
             trace_seed: Durable identity, such as a source reference, from
                 which the trace identifier is derived. Supplied only by the
-                entry point that owns the work unit, so every process handling
-                the same unit lands in the same trace.
+                component that owns a stage of the work unit, so every process
+                handling the same unit lands in the same trace.
+            trace_name: Stable name of the whole trace, given with a seed so
+                that every process joining the trace names it the same way
+                whichever stage reaches the store first.
 
         Returns:
             A context manager yielding the span's recorder.
@@ -242,6 +255,7 @@ class DisabledTracer:
         input: object = None,
         metadata: Mapping[str, object] | None = None,
         trace_seed: str | None = None,
+        trace_name: str | None = None,
     ) -> AbstractContextManager[TraceObservation]:
         """Return a context that records nothing."""
 
@@ -270,11 +284,14 @@ DISABLED_TRACER: Tracer = DisabledTracer()
 
 
 __all__ = [
+    "ADMIN_ROUTE_TRACE",
     "DISABLED_TRACER",
     "DisabledTracer",
     "ModelCallObservation",
     "ModelCallRequest",
     "TraceMessage",
     "TraceObservation",
+    "TELEGRAM_UPDATE_TRACE",
     "Tracer",
+    "WEB_ADVICE_TRACE",
 ]

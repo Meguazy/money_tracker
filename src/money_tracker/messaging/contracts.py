@@ -115,6 +115,24 @@ def validate_bot_key(value: str) -> str:
     return value
 
 
+def telegram_source_reference(bot_key: str, update_id: int) -> str:
+    """Name the durable source identity of one accepted Telegram update.
+
+    Finance command keys, workflow threads, and the trace that follows the
+    update through every process are all derived from this one value, so it is
+    built in exactly one place.
+
+    Args:
+        bot_key: Non-secret bot and environment persistence scope.
+        update_id: Telegram ordering and deduplication identity.
+
+    Returns:
+        `telegram:<bot-key>:<update-id>`.
+    """
+
+    return f"telegram:{bot_key}:{update_id}"
+
+
 def require_aware(value: datetime, *, field: str) -> datetime:
     """Require a timezone-aware instant at a persistence boundary.
 
@@ -214,7 +232,7 @@ class NormalizedTelegramUpdate:
     def source_reference(self) -> str:
         """Return the stable finance/workflow idempotency source."""
 
-        return f"telegram:{self.bot_key}:{self.update_id}"
+        return telegram_source_reference(self.bot_key, self.update_id)
 
 
 @dataclass(frozen=True, slots=True)
@@ -353,13 +371,26 @@ class PendingActionDraft:
 
 @dataclass(frozen=True, slots=True)
 class OutboxClaim:
-    """Leased outbound work ready for the Bot API sender."""
+    """Leased outbound work ready for the Bot API sender.
+
+    Attributes:
+        message: Response or control revocation to deliver.
+        status: Always sending while the lease is held.
+        attempt_count: Delivery attempts in the current automatic cycle.
+        claim_token: Lease identity the completion must present.
+        claimed_until: Instant the lease expires.
+        source_reference: Source identity of the inbox item this work answers,
+            or None for work no inbox item caused, such as the pairing
+            confirmation or a downtime notice. It lets delivery join the trace
+            of the update it answers.
+    """
 
     message: OutboundWork
     status: OutboxStatus
     attempt_count: int
     claim_token: UUID
     claimed_until: datetime
+    source_reference: str | None = None
 
     def __post_init__(self) -> None:
         """Validate the delivery lease."""

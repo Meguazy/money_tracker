@@ -10,6 +10,16 @@ Wants=network-online.target
 Type=simple
 WorkingDirectory=__MONEY_TRACKER_ROOT__
 EnvironmentFile=__MONEY_TRACKER_ROOT__/.env
+# Tracing names the serving llama.cpp executable by digest. `LLAMA_SERVER_BIN`
+# is a bare name resolved through ~/.local/bin, which a lingering user manager
+# lacks on PATH before any login session, so the identity would be incomplete
+# after an unattended boot. See the llama unit.
+Environment=PATH=%h/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+# Private writable cache of model artifact digests, so a restart never hashes
+# the ten-gigabyte weights again. It stays writable when the home becomes
+# read-only. See docs/operations/tracing.md.
+CacheDirectory=money-tracker
+CacheDirectoryMode=0700
 ExecStart=__MONEY_TRACKER_ROOT__/.venv/bin/money-tracker-api run
 Restart=always
 RestartSec=10

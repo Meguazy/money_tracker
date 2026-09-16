@@ -87,6 +87,22 @@ class RoutingReason(StrEnum):
     INVALID_MODEL_OUTPUT = "invalid_model_output"
 
 
+POLICY_VETO_REASONS = frozenset(
+    {
+        RoutingReason.LOW_CONFIDENCE,
+        RoutingReason.NO_PENDING_REVIEW,
+        RoutingReason.AMBIGUOUS_PENDING_REVIEW,
+        RoutingReason.NO_CORRECTABLE_MOVEMENT,
+    }
+)
+"""Reasons for which deterministic policy refused a schema-valid classification.
+
+A clarification can also come from the channel facts alone or from a boundary
+that never produced a valid answer. Only these reasons mean the model answered
+and policy overruled it, which is what an observer filtering for vetoes wants.
+"""
+
+
 @dataclass(frozen=True, slots=True)
 class RoutingContext:
     """Trusted runtime facts that bound a model routing decision.

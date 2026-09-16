@@ -1,8 +1,20 @@
-"""Independent ingress and outbox loops over durable messaging persistence."""
+"""Independent ingress and outbox loops over durable messaging persistence.
+
+Both loops are stages of the trace an owner message produces. After a poll
+batch commits, each accepted update opens a `telegram-ingest` span in the trace
+derived from its source reference, carrying the normalized update exactly as
+the inbox stores it and the batch facts, but no Telegram user, chat, or file
+identity and never the raw update. Delivering a response that answers an inbox
+item opens a `telegram-delivery` span in the same trace. Each loop runs on its
+own thread and opens and closes its spans there, so no span context crosses a
+thread the operation did not start.
+"""
 
 from __future__ import annotations
 
+import time
 from concurrent.futures import FIRST_EXCEPTION, ThreadPoolExecutor, wait
+from contextlib import AbstractContextManager
 from datetime import datetime, timedelta
 from threading import Event
 from typing import Protocol
@@ -12,6 +24,8 @@ from money_tracker.messaging import (
     TELEGRAM_UPDATE_RETENTION,
     ControlRevocationDraft,
     MessagingRepository,
+    NormalizedTelegramUpdate,
+    OutboxClaim,
     OutboxMessageDraft,
     RetryPolicy,
     downtime_gap,
@@ -24,6 +38,12 @@ from money_tracker.telegram.ingestion import TelegramUpdateIngestor
 from money_tracker.telegram.transport import (
     TelegramTransport,
     TelegramTransportError,
+)
+from money_tracker.tracing import (
+    DISABLED_TRACER,
+    TELEGRAM_UPDATE_TRACE,
+    TraceObservation,
+    Tracer,
 )
 
 _LOGGER = get_logger("money_tracker.telegram.gateway")
@@ -54,6 +74,7 @@ class TelegramGateway:
         ingestor: TelegramUpdateIngestor,
         clock: Clock,
         retry_policy: RetryPolicy | None = None,
+        tracer: Tracer = DISABLED_TRACER,
     ) -> None:
         """Assemble one environment-specific gateway process.
 
@@ -64,6 +85,8 @@ class TelegramGateway:
             ingestor: Authorization and normalization application service.
             clock: Aware runtime clock.
             retry_policy: Shared five-attempt delivery schedule.
+            tracer: Tracing port chosen by the entry point; records nothing by
+                default.
         """
 
         self._settings = settings
@@ -76,6 +99,7 @@ class TelegramGateway:
         self._ingestor = ingestor
         self._clock = clock
         self._retry_policy = retry_policy or RetryPolicy()
+        self._tracer = tracer
 
     def prepare(self) -> None:
         """Validate the bot, preserve backlog, and initialize offset ownership."""
@@ -144,15 +168,20 @@ class TelegramGateway:
 
         offset = self._repository.polling_offset(self._settings.bot_key)
         self._logger.debug("gateway.poll.started", offset=offset)
+        polled = time.perf_counter()
         updates = self._transport.get_updates(offset=offset)
+        ingested = time.perf_counter()
         report = self._ingestor.ingest(
             bot_key=self._settings.bot_key,
             expected_offset=offset,
             updates=updates,
             now=self._clock.now(),
         )
-        for callback_query_id in report.callback_query_ids:
-            self._acknowledge_callback(callback_query_id)
+        committed = time.perf_counter()
+        acknowledged = {
+            callback_query_id: self._acknowledge_callback(callback_query_id)
+            for callback_query_id in report.callback_query_ids
+        }
         # An entirely empty long poll is the normal steady state, so it stays
         # at DEBUG; anything the batch actually committed is worth keeping.
         accepted = len(report.accepted)
@@ -171,7 +200,53 @@ class TelegramGateway:
             self._logger.warning(
                 "gateway.ingest.rejected", rejected=report.rejected_count
             )
+        if self._tracer.enabled:
+            batch = {
+                "stage": "gateway-ingress",
+                "entry_point": "money-tracker-telegram",
+                "bot_key": self._settings.bot_key,
+                "polled_offset": offset,
+                "next_offset": report.next_offset,
+                "batch_accepted": accepted,
+                "batch_rejected": report.rejected_count,
+                "batch_unsupported": report.unsupported_count,
+                "poll_ms": round((ingested - polled) * 1000, 3),
+                "ingest_commit_ms": round((committed - ingested) * 1000, 3),
+            }
+            for update in report.accepted:
+                self._trace_ingested(update, batch, acknowledged)
         return report
+
+    def _trace_ingested(
+        self,
+        update: NormalizedTelegramUpdate,
+        batch: dict[str, object],
+        acknowledged: dict[str, bool],
+    ) -> None:
+        """Record one committed update as the first stage of its trace.
+
+        Args:
+            update: Normalized update the batch transaction stored.
+            batch: Facts shared by every update of the committed batch.
+            acknowledged: Callback acknowledgement result by query identity.
+        """
+
+        callback = update.callback_query_id
+        with self._tracer.span(
+            "telegram-ingest",
+            trace_seed=update.source_reference,
+            trace_name=TELEGRAM_UPDATE_TRACE,
+            input=_trace_update(update),
+            metadata={
+                **batch,
+                "inbox_id": str(update.id),
+                "update_id": update.update_id,
+                "callback_acknowledged": (
+                    None if callback is None else acknowledged.get(callback)
+                ),
+            },
+        ) as span:
+            span.record_output({"status": "accepted", "inbox_id": str(update.id)})
 
     def deliver_outbox_once(self) -> bool:
         """Attempt the oldest eligible outbound work through the transport.
@@ -198,6 +273,75 @@ class TelegramGateway:
         )
         if claim is None:
             return False
+        with self._delivery_span(claim) as span:
+            return self._deliver(claim, now=now, span=span)
+
+    def _delivery_span(
+        self, claim: OutboxClaim
+    ) -> AbstractContextManager[TraceObservation]:
+        """Open the delivery stage of the trace the claimed work answers.
+
+        Work no inbox item caused, such as the pairing confirmation or a
+        downtime notice, belongs to no trace and is delivered untraced.
+
+        Args:
+            claim: Leased outbound work.
+
+        Returns:
+            A context manager yielding the delivery recorder.
+        """
+
+        if claim.source_reference is None:
+            return DISABLED_TRACER.span("telegram-delivery")
+        work = claim.message
+        facts: dict[str, object] = {
+            "outbox_id": str(work.id),
+            "logical_key": work.logical_key,
+            "inbox_id": None if work.inbox_id is None else str(work.inbox_id),
+        }
+        if isinstance(work, ControlRevocationDraft):
+            facts["operation"] = "revoke_controls"
+            facts["target_message_id"] = work.target_message_id
+        else:
+            facts.update(
+                {
+                    "operation": "send_message",
+                    "response_kind": work.response_kind,
+                    "text": work.text,
+                    "buttons": [
+                        {"label": button.label, "callback_data": button.callback_data}
+                        for button in work.buttons
+                    ],
+                    "reply_to_message_id": work.reply_to_message_id,
+                }
+            )
+        return self._tracer.span(
+            "telegram-delivery",
+            trace_seed=claim.source_reference,
+            trace_name=TELEGRAM_UPDATE_TRACE,
+            input=facts,
+            metadata={
+                "stage": "gateway-delivery",
+                "entry_point": "money-tracker-telegram",
+                "bot_key": self._settings.bot_key,
+                "attempt_count": claim.attempt_count,
+            },
+        )
+
+    def _deliver(
+        self, claim: OutboxClaim, *, now: datetime, span: TraceObservation
+    ) -> bool:
+        """Send or revoke one claimed unit of work and record its outcome.
+
+        Args:
+            claim: Leased outbound work.
+            now: Instant the claim was taken.
+            span: Recorder of the delivery trace stage.
+
+        Returns:
+            True only when the work was durably completed.
+        """
+
         work = claim.message
         try:
             if isinstance(work, ControlRevocationDraft):
@@ -240,11 +384,25 @@ class TelegramGateway:
                 self._logger.error("gateway.outbox.dead_lettered", **fields)
             else:
                 self._logger.warning("gateway.outbox.retry_scheduled", **fields)
+            span.record_metadata(
+                {
+                    "delivery_outcome": (
+                        "dead_lettered" if retry_at is None else "retry_scheduled"
+                    ),
+                    "failure_reason_code": error.code,
+                    "failure_transient": error.transient,
+                    "retry_at": None if retry_at is None else retry_at.isoformat(),
+                }
+            )
+            span.record_failure(error.code, exception_type=type(error).__name__)
             return False
         self._repository.complete_outbox(
             claim,
             telegram_message_id=delivered,
             now=self._clock.now(),
+        )
+        span.record_output(
+            {"delivery_outcome": "sent", "telegram_message_id": delivered}
         )
         self._logger.info(
             "gateway.outbox.delivered",
@@ -331,8 +489,12 @@ class TelegramGateway:
                 if not delivered:
                     stop.wait(_OUTBOX_IDLE_SECONDS)
 
-    def _acknowledge_callback(self, callback_query_id: str) -> None:
-        """Best-effort callback acknowledgement after durable local commit."""
+    def _acknowledge_callback(self, callback_query_id: str) -> bool:
+        """Best-effort callback acknowledgement after durable local commit.
+
+        Returns:
+            Whether Telegram accepted the acknowledgement.
+        """
 
         try:
             self._transport.answer_callback_query(callback_query_id)
@@ -343,6 +505,8 @@ class TelegramGateway:
                 "gateway.callback.acknowledgement_failed",
                 reason_code=error.code,
             )
+            return False
+        return True
 
     def _retry_delay(
         self,
@@ -359,3 +523,33 @@ class TelegramGateway:
         if retry_after_seconds is not None:
             delay = max(delay, float(retry_after_seconds))
         return min(delay, self._settings.retry_maximum_seconds)
+
+
+def _trace_update(update: NormalizedTelegramUpdate) -> dict[str, object]:
+    """Render a stored update for its trace without Telegram identities.
+
+    The inbox row keeps the sender, chat, and file identities because delivery
+    and a later receipt download need them. The trace needs none of them to
+    explain a model decision, so they stay out, and the raw update was never
+    retained to begin with.
+
+    Args:
+        update: Normalized update the inbox stores.
+
+    Returns:
+        The owner content and the correlation facts as JSON primitives.
+    """
+
+    return {
+        "source_reference": update.source_reference,
+        "update_id": update.update_id,
+        "received_at": update.received_at.isoformat(),
+        "accepted_at": update.accepted_at.isoformat(),
+        "text": update.text,
+        "callback_action": update.callback_action,
+        "telegram_message_id": update.telegram_message_id,
+        "reply_to_message_id": update.reply_to_message_id,
+        "has_image": update.has_image,
+        "file_media_type": update.file_media_type,
+        "file_size": update.file_size,
+    }

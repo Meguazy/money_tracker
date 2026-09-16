@@ -3,9 +3,11 @@
 - Status: accepted
 - Implementation: tracing boundary, Langfuse adapter, model-artifact identity,
   last-line trace redaction, and tracing of `money-tracker-admin route`
-  implemented in the first Step 5.5 slice; worker, gateway, and web-advice
-  entry points, end-to-end channel correlation, evaluation linkage, retention,
-  export, deletion, and the backup decision remain open
+  implemented in the first Step 5.5 slice; the Telegram gateway and worker as
+  one correlated trace per update, deterministic decision metadata, and
+  background identity for services in the second; the backup and retention
+  decisions taken by the owner on 2026-09-17; web advice, evaluation linkage,
+  and the retention, export, and deletion procedures remain open
 - Date: 2026-09-16
 - Extends: [AD-002](../README.md#ad-002-self-hosted-langfuse)
 - Refines: [AD-004](AD-004-local-first-telegram-boundary.md) and
@@ -105,6 +107,18 @@ empty graph configuration and records nothing.
   so a model call is recorded once, by the adapter.
 - The trace identifier is derived from the work unit's durable source
   reference, so every process that handles the same unit can join one trace.
+  A Telegram update's trace, named `telegram-update`, holds a `telegram-ingest`
+  root from the gateway after its batch commits, a `work-unit` root from the
+  worker per claim with the dispatch, the rendered response, and the terminal
+  commit or failure, and a `telegram-delivery` root per delivery attempt of a
+  response that answers the update. Each is opened and closed on the thread
+  that does the work, so no span context crosses threads.
+- The dispatch span also carries the deterministic decisions taken around the
+  model as flat, filterable metadata: routed intent, source, reason code,
+  confidence, policy veto, allocation resolution bases, admitted read tools,
+  the admitted request, grounding, review resumption, and the graph threads
+  used. They are read from the typed decision and final graph states, so
+  recording them cannot alter a decision.
 
 ### Non-interference and degradation
 
@@ -112,7 +126,11 @@ Instrumentation never changes what is sent to the model endpoint. A real
 integration test records the inference request on the wire with tracing off and
 on and requires identical bytes. Identity resolution adds a separate `/props`
 read, reused for sixty seconds; weights and server-executable digests are
-measured once per file revision and cached privately.
+measured once per file revision and cached privately. A one-shot command
+measures an unknown digest inline so its only call is complete; a long-running
+service resolves identity on a background thread from start-up and never makes
+a request wait for a digest, tracing calls made during the measurement with
+`digest_pending`.
 
 An SDK fault never becomes an application fault: starting, updating, and ending
 an observation are guarded, and no exception reaches an SDK context manager, so
@@ -160,13 +178,17 @@ formats them, and export failures are recorded at `WARNING`.
   the ledger itself. Access stays loopback and login-protected, traces must
   never be attached to a support report, and retention, export, and deletion
   procedures are Step 5.5 deliverables rather than Step 7 afterthoughts.
-- Whether the Langfuse volumes enter the encrypted backup set is an explicit
-  owner decision this step must record; until then they remain outside it.
+- The owner decided on 2026-09-17 that the Langfuse volumes stay outside the
+  encrypted backup set as a reconstructible observability copy: losing them
+  loses traces, never finance data. Runtime traces are kept 30 days and may be
+  exported privately before deletion. Including the stores in a consistent
+  Restic snapshot, or exporting traces into it, was rejected.
 - Evaluation datasets, run manifests, and committed reports stay synthetic or
   pseudonymous under the experiment policy; runtime traces are not evaluation
   artifacts and are never committed.
-- A traced process pays a small, measured latency cost per work unit, one digest
-  measurement per new model artifact, and a bounded flush at exit.
+- A traced process pays a small, measured latency cost per work unit (budget:
+  at most 25 ms median while the store runs), one digest measurement per new
+  model artifact, and a flush at exit bounded by the export timeout.
 - Identity can lag a server restart with different weights by at most the
   sixty-second `/props` reuse interval.
 
@@ -182,3 +204,14 @@ integration tests against the running Langfuse and llama.cpp prove emission of
 the complete call, absence of forbidden values from a message deliberately
 carrying them, silence of the disabled path against a positive control, and
 byte-identical inference requests with tracing on and off.
+
+The [second slice](../../roadmap/step-5-5-llm-traceability.md#second-slice-telegram-gateway-and-worker-2026-09-17)
+injects the tracer into `money-tracker-telegram` and `money-tracker-worker`,
+records the ingest, claim, dispatch, render, commit, and delivery stages of one
+update in one trace, adds the decision metadata, and resolves identity in the
+background for services. Real tests drive the production gateway, worker, and
+dispatcher composition over PostgreSQL, the model, and Langfuse, with only the
+Bot API answered in-process, and prove the correlated trace, complete calls for
+every worker specialist including a resumed review, absence of forbidden values
+and Telegram identities, and a silent disabled channel. Measured in-process,
+a deterministic update adds about 2.7 ms and a model-backed one 6–12 ms.

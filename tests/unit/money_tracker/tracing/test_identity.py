@@ -5,13 +5,18 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import time
 from collections.abc import Mapping
 from pathlib import Path
 
 import pytest
 
 from money_tracker.config import Settings
-from money_tracker.tracing.identity import ArtifactDigests, ModelIdentityResolver
+from money_tracker.tracing.identity import (
+    ArtifactDigests,
+    ModelIdentityResolver,
+    default_digest_cache_file,
+)
 
 SETTINGS = Settings(
     llm_base_url="http://127.0.0.1:8080/v1",
@@ -233,3 +238,94 @@ def test_missing_server_facts_make_identity_incomplete(
     resolver, _reads = _resolver(tmp_path, [report], _Clock())
 
     assert resolver()["metadata_complete"] is False
+
+
+def _wait_until_measured(digests: ArtifactDigests) -> None:
+    """Wait for background measurement, failing rather than hanging."""
+
+    deadline = time.monotonic() + 10.0
+    while digests.measuring:
+        assert time.monotonic() < deadline, "background digest never finished"
+        time.sleep(0.01)
+
+
+def test_a_background_digest_never_makes_the_caller_wait(tmp_path: Path) -> None:
+    """Answer None while measuring off the request path, then the digest."""
+
+    weights = tmp_path / "model.gguf"
+    weights.write_bytes(b"weights")
+    cache = tmp_path / "cache" / "artifact-digests.json"
+    digests = ArtifactDigests(cache, background=True)
+
+    first = digests.digest(weights)
+    _wait_until_measured(digests)
+
+    assert first is None
+    assert digests.digest(weights) == _digest(b"weights")
+    stored = json.loads(cache.read_text(encoding="utf-8"))
+    assert stored[str(weights.resolve())]["sha256"] == _digest(b"weights")
+
+
+def test_a_background_digest_already_cached_is_answered_at_once(
+    tmp_path: Path,
+) -> None:
+    """Start no measurement for a revision another process already measured."""
+
+    weights = tmp_path / "model.gguf"
+    weights.write_bytes(b"weights")
+    cache = tmp_path / "artifact-digests.json"
+    ArtifactDigests(cache).digest(weights)
+
+    digests = ArtifactDigests(cache, background=True)
+
+    assert digests.digest(weights) == _digest(b"weights")
+    assert digests.measuring is False
+
+
+def test_identity_marks_a_pending_digest_and_rechecks_soon(tmp_path: Path) -> None:
+    """Trace an incomplete identity while measuring, then the complete one."""
+
+    weights = tmp_path / "model.Q5_K_M.gguf"
+    weights.write_bytes(b"weights")
+    binary = tmp_path / "llama-server"
+    binary.write_bytes(b"server")
+    clock = _Clock()
+    digests = ArtifactDigests(None, background=True)
+    resolver = ModelIdentityResolver(
+        settings=SETTINGS,
+        properties=lambda: _report(weights),
+        digests=digests,
+        server_binary=str(binary),
+        configured_context_size=4096,
+        clock=clock,
+    )
+
+    pending = resolver()
+    _wait_until_measured(digests)
+    clock.now = 0.5
+    still_cached = resolver()
+    clock.now = 1.5
+    complete = resolver()
+
+    assert pending["digest_pending"] is True
+    assert pending["metadata_complete"] is False
+    assert still_cached is pending
+    assert "digest_pending" not in complete
+    assert complete["metadata_complete"] is True
+
+
+def test_a_systemd_cache_directory_holds_the_digest_cache(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Use the writable directory a hardened unit grants over the home default."""
+
+    monkeypatch.setenv("CACHE_DIRECTORY", str(tmp_path / "granted"))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "xdg"))
+
+    assert default_digest_cache_file() == tmp_path / "granted" / "artifact-digests.json"
+
+    monkeypatch.delenv("CACHE_DIRECTORY")
+
+    assert default_digest_cache_file() == (
+        tmp_path / "xdg" / "money-tracker" / "artifact-digests.json"
+    )

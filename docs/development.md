@@ -483,8 +483,15 @@ environment and delete the traces they create:
       LOG_LEVEL=CRITICAL uv run --env-file .env pytest -q \
       tests/integration/money_tracker/tracing
 
-Every other test forces tracing off, so a switch set in `.env` never exports
-synthetic test messages into the owner's store.
+The channel tests in the same directory drive the production gateway, worker,
+and dispatcher composition and answer only the Bot API in-process. Every other
+test forces tracing off, so a switch set in `.env` never exports synthetic test
+messages into the owner's store.
+
+Pytest runs with `--tb=short` from `pyproject.toml`: real-service fixtures hold
+credential-bearing URLs and key pairs, and a long traceback prints a failing
+test's arguments. Do not add `--tb=long` or `--showlocals` to a real-service
+run.
 
 Real inference checks remain opt-in and never substitute a mock service:
 

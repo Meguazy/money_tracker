@@ -18,9 +18,12 @@ from money_tracker.telegram import (
     BotIdentity,
     TelegramGateway,
     TelegramInboundUpdate,
+    TelegramSentMessage,
     TelegramSettings,
     TelegramUpdateIngestor,
 )
+from money_tracker.telegram.transport import TelegramTransportError
+from tests.unit.money_tracker.tracing.memory_tracer import InMemoryTracer
 
 _NOW = datetime(2026, 9, 9, 8, tzinfo=UTC)
 _CODE = "one-use-synthetic-code"
@@ -594,3 +597,227 @@ def test_a_bot_that_never_polled_warns_nobody() -> None:
     _downtime_gateway(repository, _NOW + timedelta(days=400)).prepare()
 
     assert repository.notices == []
+
+
+def _traced_gateway(
+    repository: _Repository,
+    transport: _Transport,
+    tracer: InMemoryTracer,
+) -> TelegramGateway:
+    """Assemble the production gateway with an in-memory tracer."""
+
+    return TelegramGateway(
+        settings=_settings(),
+        transport=transport,  # type: ignore[arg-type]
+        repository=repository,  # type: ignore[arg-type]
+        ingestor=TelegramUpdateIngestor(repository),  # type: ignore[arg-type]
+        clock=_Clock(),
+        tracer=tracer,
+    )
+
+
+def test_each_accepted_update_starts_its_own_trace_after_commit() -> None:
+    """Open one ingest stage per stored update, seeded by its source reference."""
+
+    events: list[str] = []
+    tracer = InMemoryTracer()
+    repository = _Repository(events=events)
+    transport = _Transport(
+        (
+            _message(update_id=4),
+            _message(update_id=5, user_id=2002, chat_id=2002),
+            _message(update_id=6),
+        ),
+        events,
+    )
+
+    _traced_gateway(repository, transport, tracer).run_once()
+
+    spans = tracer.named("telegram-ingest")
+    assert [span.trace_seed for span in spans] == [
+        "telegram:telegram-test:4",
+        "telegram:telegram-test:6",
+    ]
+    assert {span.trace_name for span in spans} == {"telegram-update"}
+    first = spans[0]
+    assert isinstance(first.input, dict)
+    assert first.input["text"] == "Synthetic message"
+    assert first.input["update_id"] == 4
+    assert first.metadata["batch_accepted"] == 2
+    assert first.metadata["batch_rejected"] == 1
+    assert first.metadata["inbox_id"] == str(repository.rows[0].id)  # type: ignore[attr-defined]
+    recorded = repr([(span.input, span.metadata, span.output) for span in spans])
+    assert "1001" not in recorded
+    assert "2002" not in recorded
+
+
+def test_a_callback_ingest_records_its_acknowledgement() -> None:
+    """Say whether Telegram accepted the callback acknowledgement."""
+
+    events: list[str] = []
+    tracer = InMemoryTracer()
+    callback = TelegramInboundUpdate(
+        update_id=0,
+        kind="callback_query",
+        telegram_user_id=1001,
+        telegram_chat_id=1001,
+        chat_type="private",
+        received_at=_NOW,
+        telegram_message_id=8,
+        callback_data="a:00000000-0000-0000-0000-000000000001:undo",
+        callback_query_id="callback-query-identity",
+    )
+    repository = _Repository(events=events)
+
+    _traced_gateway(repository, _Transport((callback,), events), tracer).run_once()
+
+    (span,) = tracer.named("telegram-ingest")
+    assert span.metadata["callback_acknowledged"] is True
+    assert isinstance(span.input, dict)
+    assert span.input["callback_action"] == callback.callback_data
+    assert "callback-query-identity" not in repr(span.input)
+
+
+def test_an_untraced_gateway_opens_no_ingest_span() -> None:
+    """Leave the default gateway exactly as it was without a tracer."""
+
+    events: list[str] = []
+    repository = _Repository(events=events)
+    gateway = TelegramGateway(
+        settings=_settings(),
+        transport=_Transport((_message(update_id=1),), events),  # type: ignore[arg-type]
+        repository=repository,  # type: ignore[arg-type]
+        ingestor=TelegramUpdateIngestor(repository),  # type: ignore[arg-type]
+        clock=_Clock(),
+    )
+
+    report = gateway.run_once()
+
+    assert len(report.accepted) == 1
+
+
+def _delivery(
+    *,
+    source_reference: str | None,
+    transport: _Transport,
+    tracer: InMemoryTracer,
+    events: list[str],
+) -> TelegramGateway:
+    """Assemble a gateway whose repository leases one response."""
+
+    from money_tracker.messaging import OutboxClaim, OutboxStatus
+
+    repository = _Repository(events=events)
+    message = OutboxMessageDraft(
+        id=UUID("00000000-0000-0000-0000-00000000d001"),
+        bot_key="telegram-test",
+        telegram_chat_id=1001,
+        logical_key="inbox:x:response:movement",
+        response_kind="movement",
+        text="Risposta sintetica",
+        content_hash="a" * 64,
+        inbox_id=UUID("00000000-0000-0000-0000-00000000d002"),
+    )
+    claim = OutboxClaim(
+        message=message,
+        status=OutboxStatus.SENDING,
+        attempt_count=2,
+        claim_token=uuid4(),
+        claimed_until=_NOW + timedelta(minutes=1),
+        source_reference=source_reference,
+    )
+
+    def claim_next_outbox(*_: object, **__: object) -> OutboxClaim:
+        return claim
+
+    def complete_outbox(*_: object, **__: object) -> None:
+        events.append("complete-outbox")
+
+    def fail_outbox(*_: object, **values: object) -> None:
+        events.append(f"fail-outbox:{values['error_code']}")
+
+    repository.claim_next_outbox = claim_next_outbox  # type: ignore[attr-defined]
+    repository.complete_outbox = complete_outbox  # type: ignore[attr-defined]
+    repository.fail_outbox = fail_outbox  # type: ignore[attr-defined]
+    return _traced_gateway(repository, transport, tracer)
+
+
+class _SendingTransport(_Transport):
+    """Bot API fake that accepts every send."""
+
+    def send_message(self, _: object) -> TelegramSentMessage:
+        """Return one successful send identity."""
+
+        self.events.append("send")
+        return TelegramSentMessage(77)
+
+
+class _RefusingTransport(_Transport):
+    """Bot API fake whose sends are refused transiently."""
+
+    def send_message(self, _: object) -> TelegramSentMessage:
+        """Refuse like a rate-limited Bot API."""
+
+        raise TelegramTransportError("rate_limited", transient=True)
+
+
+def test_delivering_an_answer_joins_the_trace_of_its_update() -> None:
+    """Record the delivered text and message identity in the update's trace."""
+
+    events: list[str] = []
+    tracer = InMemoryTracer()
+    gateway = _delivery(
+        source_reference="telegram:telegram-test:41",
+        transport=_SendingTransport((), events),
+        tracer=tracer,
+        events=events,
+    )
+
+    assert gateway.deliver_outbox_once()
+
+    (span,) = tracer.named("telegram-delivery")
+    assert span.trace_seed == "telegram:telegram-test:41"
+    assert span.trace_name == "telegram-update"
+    assert isinstance(span.input, dict)
+    assert span.input["text"] == "Risposta sintetica"
+    assert span.input["operation"] == "send_message"
+    assert span.metadata["attempt_count"] == 2
+    assert span.output == {"delivery_outcome": "sent", "telegram_message_id": 77}
+    assert "1001" not in repr((span.input, span.metadata))
+
+
+def test_a_refused_delivery_records_its_reason_and_retry() -> None:
+    """Mark the delivery stage failed with the transport reason code."""
+
+    events: list[str] = []
+    tracer = InMemoryTracer()
+    gateway = _delivery(
+        source_reference="telegram:telegram-test:41",
+        transport=_RefusingTransport((), events),
+        tracer=tracer,
+        events=events,
+    )
+
+    assert not gateway.deliver_outbox_once()
+
+    (span,) = tracer.named("telegram-delivery")
+    assert span.failure == ("rate_limited", "TelegramTransportError")
+    assert span.metadata["delivery_outcome"] == "retry_scheduled"
+    assert span.metadata["failure_transient"] is True
+    assert events == ["fail-outbox:rate_limited"]
+
+
+def test_work_no_update_caused_is_delivered_untraced() -> None:
+    """Keep pairing confirmations and downtime notices out of every trace."""
+
+    events: list[str] = []
+    tracer = InMemoryTracer()
+    gateway = _delivery(
+        source_reference=None,
+        transport=_SendingTransport((), events),
+        tracer=tracer,
+        events=events,
+    )
+
+    assert gateway.deliver_outbox_once()
+    assert tracer.observations == []

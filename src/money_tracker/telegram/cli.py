@@ -1,4 +1,9 @@
-"""Production entry point for the durable Telegram gateway."""
+"""Production entry point for the durable Telegram gateway.
+
+`run` and `poll-once` ingest and deliver, so they open the tracer the switch
+selects and flush it within the export bound once the loops have stopped. The
+operator commands touch no owner message and stay untraced.
+"""
 
 from __future__ import annotations
 
@@ -34,6 +39,7 @@ from money_tracker.telegram.config import TelegramSettings
 from money_tracker.telegram.gateway import TelegramGateway
 from money_tracker.telegram.ingestion import TelegramUpdateIngestor
 from money_tracker.telegram.transport import BotApiClient
+from money_tracker.tracing import DISABLED_TRACER, Tracer, open_tracer
 
 _LOGGER = get_logger("money_tracker.telegram.cli")
 
@@ -335,6 +341,7 @@ def main(argv: Sequence[str] | None = None) -> None:
 
     args = _parser().parse_args(argv)
     configure_logging()
+    tracer: Tracer = DISABLED_TRACER
     try:
         settings = TelegramSettings.from_env()
         database_url = database_url_from_env()
@@ -381,12 +388,14 @@ def main(argv: Sequence[str] | None = None) -> None:
                     )
                 )
                 return
+            tracer = open_tracer()
             gateway = TelegramGateway(
                 settings=settings,
                 transport=transport,
                 repository=repository,
                 ingestor=TelegramUpdateIngestor(repository),
                 clock=_SystemClock(),
+                tracer=tracer,
             )
             if args.command == "poll-once":
                 gateway.prepare()
@@ -418,3 +427,5 @@ def main(argv: Sequence[str] | None = None) -> None:
         )
         print(f"Telegram gateway failed: {failure_reason(error)}", file=sys.stderr)
         raise SystemExit(int(exit_code_for(error))) from None
+    finally:
+        tracer.shutdown()

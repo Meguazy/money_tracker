@@ -33,7 +33,7 @@ from contextlib import AbstractContextManager, contextmanager
 from typing import Any, Literal
 from uuid import UUID
 
-from langfuse import Langfuse
+from langfuse import Langfuse, propagate_attributes
 from langfuse.langchain import CallbackHandler
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
@@ -299,8 +299,14 @@ class LangfuseTracer:
         input: object = None,
         metadata: Mapping[str, object] | None = None,
         trace_seed: str | None = None,
+        trace_name: str | None = None,
     ) -> Generator[TraceObservation]:
-        """Open a current span, optionally rooted at a seeded trace identifier."""
+        """Open a current span, optionally rooted at a seeded trace identifier.
+
+        A seeded span starts a stage of a trace other processes may already
+        have written to, so its trace name is propagated rather than inferred
+        from whichever root observation the store received first.
+        """
 
         arguments: dict[str, Any] = {
             "name": name,
@@ -310,7 +316,7 @@ class LangfuseTracer:
         }
         if trace_seed is not None:
             arguments["trace_context"] = {"trace_id": trace_id_for(trace_seed)}
-        with self._current(arguments) as observation:
+        with self._current(arguments, trace_name=trace_name) as observation:
             yield observation
 
     @contextmanager
@@ -400,12 +406,19 @@ class LangfuseTracer:
             return {"metadata_complete": False}
 
     @contextmanager
-    def _current(self, arguments: dict[str, Any]) -> Generator[_Observation]:
+    def _current(
+        self, arguments: dict[str, Any], *, trace_name: str | None = None
+    ) -> Generator[_Observation]:
         """Hold one observation current for the block, isolating SDK faults.
 
-        The SDK context manager is always exited as if the block succeeded, so
-        OpenTelemetry never records the exception text or stack trace; the
+        The SDK context managers are always exited as if the block succeeded,
+        so OpenTelemetry never records the exception text or stack trace; the
         failure is recorded on the observation as a reason code instead.
+
+        Args:
+            arguments: Keyword arguments for the SDK observation.
+            trace_name: Trace name to propagate to this observation and every
+                observation opened inside it, when given.
         """
 
         manager: AbstractContextManager[Any] | None
@@ -419,6 +432,17 @@ class LangfuseTracer:
             )
             manager = None
             observation = _Observation(None)
+        propagation: AbstractContextManager[Any] | None = None
+        if manager is not None and trace_name is not None:
+            try:
+                propagation = propagate_attributes(trace_name=trace_name)
+                propagation.__enter__()
+            except Exception as error:
+                _LOGGER.warning(
+                    "tracing.observation.propagation_failed",
+                    exception_type=type(error).__name__,
+                )
+                propagation = None
         try:
             yield observation
         except BaseException as error:
@@ -428,9 +452,11 @@ class LangfuseTracer:
                 )
             raise
         finally:
-            if manager is not None:
+            for context in (propagation, manager):
+                if context is None:
+                    continue
                 try:
-                    manager.__exit__(None, None, None)
+                    context.__exit__(None, None, None)
                 except Exception as error:
                     _LOGGER.warning(
                         "tracing.observation.end_failed",

@@ -155,13 +155,20 @@ The trace store follows
 [AD-021](../arc42/decisions/AD-021-full-fidelity-llm-traces.md): complete
 prompts, owner messages, completions, parsed contracts, decision context, and
 model artifact identity, without credentials, token-bearing or database URLs,
-receipt-archive paths, or bytes. It is local, loopback-only, and off unless
+receipt-archive paths, bytes, or Telegram user, chat, file, and callback
+identities. It is local, loopback-only, and off unless
 `MONEY_TRACKER_TRACING_ENABLED` is true. Because it holds owner content:
 
 - never attach a trace, a Langfuse export, or an observations API response to a
   support report, issue, or chat; share journal excerpts instead;
 - treat the Langfuse volumes and the bootstrap login like the finance database;
 - rotate a credential that ever appears in a trace, as for any other exposure.
+
+Real-service tests hold credential-bearing URLs and key pairs in their
+fixtures, and pytest's long traceback prints a failing test's arguments. The
+project runs pytest with `--tb=short`; do not override it with `--tb=long` or
+`--showlocals` against real services, and rotate what a failure printed if
+either was used.
 
 Operating details are in [LLM Tracing](tracing.md).
 
@@ -241,7 +248,7 @@ Before changing state:
 | Symptom | Safe first checks | Do not do |
 | --- | --- | --- |
 | Langfuse web becomes unhealthy again | Inspect web/worker/ClickHouse logs and confirm the pinned non-cluster flag remains effective. | Delete volumes or force migration state. |
-| Expected trace is missing | Check `tracing.enabled` or `tracing.configuration.rejected` in the command's journal, `tracing.export.degraded` or `tracing.flush.incomplete`, the store's health, and the environment filter. | Turn on SDK debug logging, which would print owner content, or paste observations outside the workstation. |
+| Expected trace is missing | Check `tracing.enabled` or `tracing.configuration.rejected` in the process's journal (for a service, since its last start), `tracing.export.degraded` or `tracing.flush.incomplete`, the store's health, and the environment filter. A Telegram update's trace is found from its source reference; pairing messages and rejected updates are never traced. | Turn on SDK debug logging, which would print owner content, or paste observations outside the workstation. |
 | CLI cannot reach model | Verify configured loopback endpoint, llama-server process, model path, build/GPU compatibility, and health response. | Print the full `.env` or replace locked dependencies ad hoc. |
 | Telegram gateway receives nothing | Verify token via redacted `getMe`, no webhook, gateway/network health, persisted offset, and paired owner. | Regenerate/delete the bot before checking delivery mode and logs. |
 | Same Telegram update appears again | Check inbox unique key and whether offset advanced only after commit. | Delete duplicate rows or re-run mutation without its original idempotency key. |

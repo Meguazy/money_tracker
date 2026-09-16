@@ -53,6 +53,7 @@ from money_tracker.workflows import (
     RoutingSource,
     WorkflowIntent,
 )
+from tests.unit.money_tracker.tracing.memory_tracer import InMemoryTracer
 
 BOT_KEY = "telegram-test"
 PROFILE = UUID("00000000-0000-0000-0000-0000000000aa")
@@ -335,9 +336,20 @@ def _worker(
     dispatcher: _Dispatcher,
     configuration: _Configuration | None = None,
     review: _Review | None = None,
+    tracer: InMemoryTracer | None = None,
 ) -> SequentialWorker:
     """Assemble the production worker over the test boundaries."""
 
+    if tracer is None:
+        return SequentialWorker(
+            bot_key=BOT_KEY,
+            repository=repository,
+            configuration=configuration or _Configuration(),
+            review=review or _Review(),
+            dispatcher=dispatcher,
+            renderer=TelegramResponseRenderer(),
+            clock=_Clock(),
+        )
     return SequentialWorker(
         bot_key=BOT_KEY,
         repository=repository,
@@ -346,6 +358,7 @@ def _worker(
         dispatcher=dispatcher,
         renderer=TelegramResponseRenderer(),
         clock=_Clock(),
+        tracer=tracer,
     )
 
 
@@ -773,3 +786,131 @@ def test_a_settled_review_retires_its_own_four_branches() -> None:
         PendingActionTarget.MOVEMENT,
         PendingActionTarget.CATEGORY_REVIEW,
     }
+
+
+def test_a_traced_claim_joins_the_trace_of_its_source_reference() -> None:
+    """Seed the work-unit stage by source reference and record its commit."""
+
+    tracer = InMemoryTracer()
+    repository = _bound(claim=_claim(attempt_count=2, replay_count=1))
+    dispatcher = _Dispatcher(_outcome(DispatchStatus.DRAFTED, expense_id=EXPENSE_ID))
+
+    _worker(repository, dispatcher, tracer=tracer).process_once()
+
+    assert [item.name for item in tracer.observations] == [
+        "work-unit",
+        "render",
+        "commit",
+    ]
+    (root,) = tracer.named("work-unit")
+    assert root.trace_seed == f"telegram:{BOT_KEY}:41"
+    assert root.trace_name == "telegram-update"
+    assert root.metadata["inbox_id"] == str(INBOX_ID)
+    assert root.metadata["attempt_count"] == 2
+    assert root.metadata["replay_count"] == 1
+    assert root.metadata["correlation_kind"] == "none"
+    assert root.metadata["work_unit_outcome"] == "committed"
+    response = repository.completions[0]["response"]
+    assert root.metadata["outbox_id"] == str(response.id)
+    assert root.metadata["outbox_logical_key"] == response.logical_key
+    (render,) = tracer.named("render")
+    assert isinstance(render.output, dict)
+    assert render.output["text"] == response.text
+    assert render.output["kind"] == "movement"
+    (commit,) = tracer.named("commit")
+    assert isinstance(commit.output, dict)
+    assert commit.output["workflow_status"] == "drafted"
+    assert commit.output["pending_action_id"] is not None
+    assert root.failure is None
+
+
+def test_a_traced_claim_names_no_telegram_identity() -> None:
+    """Keep sender, chat, and file identities out of the worker's trace stage."""
+
+    tracer = InMemoryTracer()
+    repository = _bound()
+    dispatcher = _Dispatcher(_outcome(DispatchStatus.DRAFTED, expense_id=EXPENSE_ID))
+
+    _worker(repository, dispatcher, tracer=tracer).process_once()
+
+    recorded = repr(
+        [(item.input, item.metadata, item.output) for item in tracer.observations]
+    )
+    assert "telegram_user_id" not in recorded
+    assert "telegram_chat_id" not in recorded
+    assert "1001" not in recorded
+
+
+def test_a_traced_retry_records_the_failure_and_its_schedule() -> None:
+    """Mark the attempt failed with its reason and the retry it scheduled."""
+
+    tracer = InMemoryTracer()
+    repository = _bound()
+    dispatcher = _Dispatcher(ModelConnectionError("llama.cpp is down"))
+
+    _worker(repository, dispatcher, tracer=tracer).process_once()
+
+    (root,) = tracer.named("work-unit")
+    assert root.failure == ("model_unavailable", "ModelConnectionError")
+    assert root.metadata["work_unit_outcome"] == "retry_scheduled"
+    assert root.metadata["failure_transient"] is True
+    assert root.metadata["retry_at"] == (NOW + timedelta(seconds=2)).isoformat()
+    assert tracer.named("commit") == []
+
+
+def test_a_traced_dead_letter_is_distinguishable_from_a_retry() -> None:
+    """Record the terminal transition a missing record causes."""
+
+    tracer = InMemoryTracer()
+    repository = _bound()
+    dispatcher = _Dispatcher(AggregateNotFoundError("movement is gone"))
+
+    _worker(repository, dispatcher, tracer=tracer).process_once()
+
+    (root,) = tracer.named("work-unit")
+    assert root.failure == ("referenced_record_missing", "AggregateNotFoundError")
+    assert root.metadata["work_unit_outcome"] == "dead_lettered"
+    assert root.metadata["retry_at"] is None
+
+
+def test_a_traced_lost_lease_fails_only_the_commit_stage() -> None:
+    """Record that another claim owns the item without failing the work unit."""
+
+    tracer = InMemoryTracer()
+    repository = _bound(complete_error=MessagingLeaseError("lease expired"))
+    dispatcher = _Dispatcher(_outcome(DispatchStatus.DRAFTED, expense_id=EXPENSE_ID))
+
+    _worker(repository, dispatcher, tracer=tracer).process_once()
+
+    (root,) = tracer.named("work-unit")
+    (commit,) = tracer.named("commit")
+    assert commit.failure == ("exception", "MessagingLeaseError")
+    assert root.failure is None
+    assert root.metadata["work_unit_outcome"] == "lease_lost"
+
+
+def test_a_traced_callback_records_what_it_resolved_to() -> None:
+    """Name the pending action and target a callback correlated to."""
+
+    tracer = InMemoryTracer()
+    action = _pending_action()
+    repository = _bound(
+        claim=_claim(_update(text=None, callback_action=f"a:{action.id}:approve")),
+        action=action,
+    )
+    dispatcher = _Dispatcher(
+        _outcome(
+            DispatchStatus.APPROVED,
+            expense_id=EXPENSE_ID,
+            settled_category_id=CATEGORY_ID,
+        )
+    )
+
+    _worker(repository, dispatcher, tracer=tracer).process_once()
+
+    (root,) = tracer.named("work-unit")
+    assert root.metadata["correlation_kind"] == "callback"
+    assert root.metadata["correlation_resolved"] is True
+    assert root.metadata["correlated_action_id"] == str(action.id)
+    assert root.metadata["correlated_target_type"] == "category_review"
+    assert root.metadata["consumed_action_id"] == str(action.id)

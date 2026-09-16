@@ -460,6 +460,7 @@ def test_completion_creates_one_outbox_and_restart_safe_action(
         claim_token=uuid4(),
     )
     assert outbox is not None and outbox.message.buttons == response.buttons
+    assert outbox.source_reference == update.source_reference
     assert (
         restarted.resolve_callback_action(
             bot_key=bot_key,
@@ -793,6 +794,7 @@ def test_an_operator_notice_is_queued_once_per_logical_key(
         claim_token=uuid4(),
     )
     assert claim is not None and claim.message.inbox_id is None
+    assert claim.source_reference is None
 
 
 @pytest.mark.postgres

@@ -27,6 +27,7 @@ class RecordedObservation:
         input: Input supplied when the observation opened.
         metadata: Metadata supplied when it opened, then merged updates.
         trace_seed: Seed supplied for a root span.
+        trace_name: Trace name supplied with the seed.
         request: Complete request, for a generation.
         output: Recorded result.
         failure: Recorded reason code and exception class.
@@ -39,6 +40,7 @@ class RecordedObservation:
     input: object = None
     metadata: dict[str, object] = field(default_factory=dict)
     trace_seed: str | None = None
+    trace_name: str | None = None
     request: ModelCallRequest | None = None
     output: object = None
     failure: tuple[str, str | None] | None = None
@@ -144,6 +146,7 @@ class InMemoryTracer:
         input: object = None,
         metadata: Mapping[str, object] | None = None,
         trace_seed: str | None = None,
+        trace_name: str | None = None,
     ) -> Generator[RecordedObservation]:
         """Open and keep one span."""
 
@@ -152,6 +155,7 @@ class InMemoryTracer:
             input=input,
             metadata=dict(metadata or {}),
             trace_seed=trace_seed,
+            trace_name=trace_name,
         )
         with self._open(observation):
             yield observation

@@ -10,6 +10,13 @@ the complete work unit, trusted context, version set, and typed outcome, and
 each graph invocation receives only the callbacks the tracer returns. Callbacks
 are not persisted by LangGraph, so a traced invocation checkpoints exactly
 what an untraced one does.
+
+The same span carries the deterministic decisions taken around the model as
+flat, filterable metadata: the routed intent, its reason code and confidence,
+whether policy vetoed the model, how allocations were resolved, which read tools
+the route admitted and what grounded result executed, and the graph threads the
+work unit touched. They are read from the typed decision and the graphs' final
+states after the fact, so recording them cannot change a decision.
 """
 
 from __future__ import annotations
@@ -45,6 +52,7 @@ from money_tracker.structured_logging import get_logger, log_context
 from money_tracker.tracing import DISABLED_TRACER, Tracer
 from money_tracker.workflows import (
     DEFAULT_READ_SELECTION_POLICY,
+    POLICY_VETO_REASONS,
     ChannelMessage,
     DispatchContext,
     DispatchOutcome,
@@ -66,6 +74,7 @@ from money_tracker.workflows import (
     initial_review_state,
     initial_router_state,
     outcome_facts,
+    registry_for,
     review_decision_from_message,
     routing_decision_from_state,
 )
@@ -160,6 +169,7 @@ class WorkflowDispatcher:
 
         # The source reference is the work unit's own identity, not owner
         # content, so it is what correlates every record a dispatch produces.
+        record = _DispatchRecord()
         with (
             log_context(source_reference=message.source_reference),
             self.tracer.span(
@@ -168,20 +178,29 @@ class WorkflowDispatcher:
                 metadata=self.trace_metadata,
             ) as span,
         ):
-            outcome = self._dispatch(message, context)
-            span.record_output(outcome_facts(outcome))
-            return outcome
+            try:
+                outcome = self._dispatch(message, context, record)
+                record.facts.update(_outcome_metadata(outcome))
+                span.record_output(outcome_facts(outcome))
+                return outcome
+            finally:
+                # Recorded on failure too: what routing decided before a
+                # specialist failed is exactly what explains the failure.
+                if self.tracer.enabled:
+                    span.record_metadata(record.metadata())
 
     def _dispatch(
         self,
         message: ChannelMessage,
         context: DispatchContext,
+        record: _DispatchRecord,
     ) -> DispatchOutcome:
         """Route and dispatch one message inside an established log context.
 
         Args:
             message: Channel-neutral work unit.
             context: Trusted owner scope and correlation facts.
+            record: Decision facts and threads collected for the trace.
 
         Returns:
             One compact result suitable for a durable gateway boundary.
@@ -195,7 +214,7 @@ class WorkflowDispatcher:
                 RouterState,
                 self.router.invoke(
                     initial_router_state(message, context=context.routing),
-                    self._graph_config("router", message.source_reference),
+                    self._graph_config("router", message.source_reference, record),
                 ),
             )
             decision = routing_decision_from_state(routed_state)
@@ -207,6 +226,7 @@ class WorkflowDispatcher:
             routing_outcome["intent"] = decision.intent.value
             routing_outcome["reason_code"] = decision.reason.value
             routing_outcome["confidence"] = decision.confidence
+        record.facts.update(_routing_metadata(decision))
         with log_context(intent=decision.intent.value):
             if decision.intent is WorkflowIntent.CLARIFICATION:
                 _LOGGER.info(
@@ -220,13 +240,14 @@ class WorkflowDispatcher:
             if context.profile_id is None:
                 _LOGGER.debug("dispatch.routing_only")
                 return DispatchOutcome(routing=decision, status=DispatchStatus.ROUTED)
-            return self._specialist(message, context, decision)
+            return self._specialist(message, context, decision, record)
 
     def _specialist(
         self,
         message: ChannelMessage,
         context: DispatchContext,
         decision: RoutingDecision,
+        record: _DispatchRecord,
     ) -> DispatchOutcome:
         """Send an accepted route to the one specialist that serves it.
 
@@ -234,6 +255,7 @@ class WorkflowDispatcher:
             message: Channel-neutral work unit.
             context: Trusted owner scope, with a profile already established.
             decision: Accepted routing decision.
+            record: Decision facts and threads collected for the trace.
 
         Returns:
             The specialist's typed outcome.
@@ -242,16 +264,22 @@ class WorkflowDispatcher:
         assert context.profile_id is not None
         with log_context(profile_id=context.profile_id):
             if decision.intent in {WorkflowIntent.EXPENSE, WorkflowIntent.REFUND}:
-                return self._dispatch_expense(message, context.profile_id, decision)
+                return self._dispatch_expense(
+                    message, context.profile_id, decision, record
+                )
             if decision.intent in {WorkflowIntent.QUERY, WorkflowIntent.ADVICE}:
-                return self._dispatch_read(message, context.profile_id, decision)
+                return self._dispatch_read(
+                    message, context.profile_id, decision, record
+                )
             if decision.intent in {
                 WorkflowIntent.CORRECTION,
                 WorkflowIntent.UNDO,
             }:
-                return self._dispatch_movement_change(message, context, decision)
+                return self._dispatch_movement_change(
+                    message, context, decision, record
+                )
             if decision.intent is WorkflowIntent.CATEGORY_FOLLOW_UP:
-                return self._dispatch_review(message, context, decision)
+                return self._dispatch_review(message, context, decision, record)
             _LOGGER.warning("dispatch.no_specialist")
             return DispatchOutcome(routing=decision, status=DispatchStatus.ROUTED)
 
@@ -260,19 +288,23 @@ class WorkflowDispatcher:
         message: ChannelMessage,
         profile_id: UUID,
         decision: RoutingDecision,
+        record: _DispatchRecord,
     ) -> DispatchOutcome:
         """Run a movement creation specialist and open any resulting review."""
 
+        record.facts["specialist"] = "expense"
         with _LOGGER.timed("workflow.expense") as timing:
-            final = self._invoke_expense(message, profile_id, decision)
+            final = self._invoke_expense(message, profile_id, decision, record)
             timing["outcome"] = final.get("outcome")
-        return self._expense_outcome(message, profile_id, decision, final)
+        record.facts.update(_movement_resolution_metadata(final))
+        return self._expense_outcome(message, profile_id, decision, final, record)
 
     def _invoke_expense(
         self,
         message: ChannelMessage,
         profile_id: UUID,
         decision: RoutingDecision,
+        record: _DispatchRecord,
     ) -> ExpenseWorkflowState:
         """Run the movement creation graph for one routed message.
 
@@ -280,6 +312,7 @@ class WorkflowDispatcher:
             message: Channel-neutral work unit.
             profile_id: Trusted owner scope.
             decision: Accepted routing decision.
+            record: Decision facts and threads collected for the trace.
 
         Returns:
             The graph's final state.
@@ -293,7 +326,7 @@ class WorkflowDispatcher:
                     profile_id=profile_id,
                     routed_intent=decision.intent,
                 ),
-                self._graph_config("expense", message.source_reference),
+                self._graph_config("expense", message.source_reference, record),
             ),
         )
 
@@ -303,6 +336,7 @@ class WorkflowDispatcher:
         profile_id: UUID,
         decision: RoutingDecision,
         final: ExpenseWorkflowState,
+        record: _DispatchRecord,
     ) -> DispatchOutcome:
         """Open any review the movement opened and build the typed outcome.
 
@@ -311,6 +345,7 @@ class WorkflowDispatcher:
             profile_id: Trusted owner scope.
             decision: Accepted routing decision.
             final: Final expense graph state.
+            record: Decision facts and threads collected for the trace.
 
         Returns:
             The dispatch outcome for this movement.
@@ -329,6 +364,7 @@ class WorkflowDispatcher:
                 expense_id=expense_id,
                 proposal_id=proposal_id,
             )
+            record.facts["review_opened"] = True
             self.review.invoke(
                 initial_review_state(
                     profile_id=profile_id,
@@ -336,7 +372,7 @@ class WorkflowDispatcher:
                     expense_id=expense_id,
                     source_reference=message.source_reference,
                 ),
-                self._graph_config("category-review", str(proposal_id)),
+                self._graph_config("category-review", str(proposal_id), record),
             )
         _LOGGER.info(
             "workflow.expense.settled",
@@ -358,13 +394,16 @@ class WorkflowDispatcher:
         message: ChannelMessage,
         profile_id: UUID,
         decision: RoutingDecision,
+        record: _DispatchRecord,
     ) -> DispatchOutcome:
         """Run one scoped read-only specialist."""
 
+        record.facts["specialist"] = "read"
         with _LOGGER.timed("workflow.read") as timing:
-            final = self._invoke_read(message, profile_id, decision)
+            final = self._invoke_read(message, profile_id, decision, record)
             timing["outcome"] = final.get("outcome")
             timing["executed_tool"] = final.get("executed_tool")
+        record.facts.update(read_decision_metadata(decision.intent, final))
         return self._read_outcome(decision, final)
 
     def _invoke_read(
@@ -372,6 +411,7 @@ class WorkflowDispatcher:
         message: ChannelMessage,
         profile_id: UUID,
         decision: RoutingDecision,
+        record: _DispatchRecord,
     ) -> ReadWorkflowState:
         """Run the read-only graph for one routed question.
 
@@ -379,6 +419,7 @@ class WorkflowDispatcher:
             message: Channel-neutral work unit.
             profile_id: Trusted owner scope.
             decision: Accepted routing decision.
+            record: Decision facts and threads collected for the trace.
 
         Returns:
             The graph's final state.
@@ -392,7 +433,7 @@ class WorkflowDispatcher:
                     profile_id=profile_id,
                     routed_intent=decision.intent,
                 ),
-                self._graph_config("read", message.source_reference),
+                self._graph_config("read", message.source_reference, record),
             ),
         )
 
@@ -436,13 +477,18 @@ class WorkflowDispatcher:
         message: ChannelMessage,
         context: DispatchContext,
         decision: RoutingDecision,
+        record: _DispatchRecord,
     ) -> DispatchOutcome:
         """Run correction or undo against a trusted movement reference."""
 
+        record.facts["specialist"] = "movement-change"
         target = decision.target_movement_id
+        record.facts["movement_target_basis"] = "routing"
         if target is None and decision.pending_action_id is not None:
             target = context.movement_for_action(decision.pending_action_id)
+            record.facts["movement_target_basis"] = "pending_action"
         if target is None:
+            record.facts["movement_target_basis"] = "unresolved"
             _LOGGER.info(
                 "workflow.movement_change.unresolved",
                 reason_code=DispatchReason.MOVEMENT_TARGET_REQUIRED.value,
@@ -461,9 +507,11 @@ class WorkflowDispatcher:
                     routed_intent=decision.intent,
                     target_movement_id=target,
                 ),
-                self._graph_config("movement-change", message.source_reference),
+                self._graph_config("movement-change", message.source_reference, record),
             ),
         )
+        record.facts["movement_target_id"] = str(target)
+        record.facts.update(_movement_resolution_metadata(final))
         status = DispatchStatus(_required(final.get("outcome"), "outcome"))
         _LOGGER.info(
             "workflow.movement_change.settled",
@@ -483,10 +531,13 @@ class WorkflowDispatcher:
         message: ChannelMessage,
         context: DispatchContext,
         decision: RoutingDecision,
+        record: _DispatchRecord,
     ) -> DispatchOutcome:
         """Resume the exact persistent review named by routing acceptance."""
 
+        record.facts["specialist"] = "category-review"
         proposal_id = decision.pending_action_id
+        record.facts["review_proposal_id"] = _optional_text(proposal_id)
         if (
             proposal_id is None
             or proposal_id not in context.routing.pending_category_review_ids
@@ -504,6 +555,9 @@ class WorkflowDispatcher:
                 clarification_reason=DispatchReason.REVIEW_NOT_PENDING.value,
             )
         review_decision = review_decision_from_message(message)
+        record.facts["review_decision_action"] = (
+            None if review_decision is None else review_decision.action.value
+        )
         if review_decision is None:
             _LOGGER.info(
                 "workflow.review.decision_required",
@@ -520,9 +574,10 @@ class WorkflowDispatcher:
             ReviewWorkflowState,
             self.review.invoke(
                 Command(resume=review_decision),
-                self._graph_config("category-review", str(proposal_id)),
+                self._graph_config("category-review", str(proposal_id), record),
             ),
         )
+        record.facts["review_resumed"] = True
         outcome = final.get("outcome")
         current_proposal = UUID(_required(final.get("proposal_id"), "proposal_id"))
         if outcome is None:
@@ -554,22 +609,46 @@ class WorkflowDispatcher:
             clarification_reason=final.get("clarification_reason"),
         )
 
-    def _graph_config(self, namespace: str, reference: str) -> dict[str, Any]:
+    def _graph_config(
+        self, namespace: str, reference: str, record: _DispatchRecord
+    ) -> dict[str, Any]:
         """Build one graph invocation's configuration.
 
         Args:
             namespace: Stable graph namespace.
             reference: Durable reference the thread is keyed by.
+            record: Collector that remembers the thread for the trace.
 
         Returns:
             The stable thread identifier plus whatever non-persisted keys the
             tracer contributes, which is nothing when tracing is disabled.
         """
 
-        return {
-            **_thread_config(namespace, reference),
-            **self.tracer.graph_config(graph=namespace),
+        config = _thread_config(namespace, reference)
+        record.thread_ids.append(config["configurable"]["thread_id"])
+        return {**config, **self.tracer.graph_config(graph=namespace)}
+
+
+@dataclass(slots=True)
+class _DispatchRecord:
+    """Decision facts and graph threads one dispatch collects for its trace.
+
+    Attributes:
+        facts: Flat JSON-compatible decision metadata keyed by stable names.
+        thread_ids: LangGraph thread identifiers invoked, in order.
+    """
+
+    facts: dict[str, object] = field(default_factory=dict)
+    thread_ids: list[str] = field(default_factory=list)
+
+    def metadata(self) -> dict[str, object]:
+        """Return the facts worth recording, with the threads that were used."""
+
+        recorded = {
+            key: value for key, value in self.facts.items() if value is not None
         }
+        recorded["thread_ids"] = list(self.thread_ids)
+        return recorded
 
 
 class _UnavailableSpecialist:
@@ -752,6 +831,116 @@ def trace_work_unit(
     }
 
 
+def _routing_metadata(decision: RoutingDecision) -> dict[str, object]:
+    """Describe a routing decision as flat, filterable trace metadata.
+
+    Args:
+        decision: Accepted or clarified routing decision.
+
+    Returns:
+        Intent, source, stable reason code, confidence, and whether
+        deterministic policy overruled a valid model classification.
+    """
+
+    return {
+        "routing_intent": decision.intent.value,
+        "routing_source": decision.source.value,
+        "routing_reason_code": decision.reason.value,
+        "routing_confidence": decision.confidence,
+        "routing_policy_veto": decision.reason in POLICY_VETO_REASONS,
+        "routing_command": None if decision.command is None else decision.command.value,
+        "routing_callback_action": (
+            None if decision.callback_action is None else decision.callback_action.value
+        ),
+    }
+
+
+def _outcome_metadata(outcome: DispatchOutcome) -> dict[str, object]:
+    """Describe how a dispatch ended as flat, filterable trace metadata."""
+
+    return {
+        "outcome_status": outcome.status.value,
+        "outcome_clarification_reason": outcome.clarification_reason,
+    }
+
+
+def _movement_resolution_metadata(final: Mapping[str, Any]) -> dict[str, object]:
+    """Describe how a movement specialist resolved its model answers.
+
+    The extraction and purpose judgment are the converted domain contracts the
+    deterministic side acted on. The funding basis says whether the owner named
+    the payment or the profile default applied, and the category basis whether
+    an existing node fit or a proposal was opened.
+
+    Args:
+        final: Final expense or movement-change graph state.
+
+    Returns:
+        Resolution facts; keys whose value is unknown are omitted.
+    """
+
+    extraction = _json_object(final.get("extraction_json"))
+    fit = _json_object(final.get("category_fit_json"))
+    facts: dict[str, object] = {
+        "resolution_reason": final.get("clarification_reason"),
+        "extraction": extraction,
+        "category_fit": fit,
+    }
+    if extraction is not None:
+        parts = extraction.get("payment_parts")
+        count = len(parts) if isinstance(parts, list) else 0
+        facts["allocation_funding_basis"] = (
+            "profile_default"
+            if count == 0
+            else "stated_single"
+            if count == 1
+            else "stated_split"
+        )
+    if fit is not None:
+        facts["allocation_category_basis"] = fit.get("outcome")
+    return facts
+
+
+def read_decision_metadata(
+    intent: WorkflowIntent, final: Mapping[str, Any]
+) -> dict[str, object]:
+    """Describe a read specialist's admitted tools and grounded result.
+
+    Shared by every entry point that runs the read graph, so a question asked
+    through Telegram and one asked in the browser are filterable by the same
+    keys.
+
+    Args:
+        intent: Trusted routed intent whose registry bounded the model.
+        final: Final read graph state.
+
+    Returns:
+        The route's admitted tools, the request that passed the selection
+        policy, the executed tool, and whether its answer is grounded in tool
+        output.
+    """
+
+    return {
+        "read_admitted_tools": sorted(tool.value for tool in registry_for(intent)),
+        "read_tool_request": _json_object(final.get("tool_request_json")),
+        "read_executed_tool": final.get("executed_tool"),
+        "read_grounded": final.get("answer_json") is not None,
+        "read_clarification_reason": final.get("clarification_reason"),
+    }
+
+
+def _json_object(value: object) -> dict[str, Any] | None:
+    """Decode a JSON object carried in graph state, or None when absent."""
+
+    if not isinstance(value, str):
+        return None
+    try:
+        decoded = json.loads(value)
+    except ValueError:
+        return None
+    return decoded if isinstance(decoded, dict) else None
+
+
 def _optional_text(value: UUID | None) -> str | None:
     """Render an optional identifier as text."""
 
@@ -778,4 +967,9 @@ def _optional_uuid(value: str | None) -> UUID | None:
     return None if value is None else UUID(value)
 
 
-__all__ = ["WorkflowDispatcher", "build_workflow_dispatcher", "trace_work_unit"]
+__all__ = [
+    "WorkflowDispatcher",
+    "build_workflow_dispatcher",
+    "read_decision_metadata",
+    "trace_work_unit",
+]

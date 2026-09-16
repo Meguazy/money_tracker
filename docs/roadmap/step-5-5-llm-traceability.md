@@ -7,10 +7,13 @@ and [AD-021](../arc42/decisions/AD-021-full-fidelity-llm-traces.md) records the
 trace-content decision. The
 [first slice](#first-slice-tracing-boundary-and-administrative-dispatch-2026-09-16)
 delivers the tracing boundary and traces `money-tracker-admin route`; the
-worker, gateway, and web-advice entry points, end-to-end channel correlation,
-evaluation linkage, retention, export, deletion, the backup decision, and
-owner acceptance remain open, as the
-[exit-criteria status](#exit-criteria-status) lists.
+[second slice](#second-slice-telegram-gateway-and-worker-2026-09-17) traces the
+Telegram gateway and the sequential worker as one correlated trace per update.
+The owner decided the backup, latency-budget, and retention questions on
+2026-09-17. Web advice, degradation measured on the running services,
+evaluation linkage, the retention, export, and deletion procedures, and owner
+acceptance remain open, as the [exit-criteria status](#exit-criteria-status)
+lists.
 
 This step is numbered 5.5 because it was inserted between two already-documented
 steps. Renumbering Steps 6 and 7 would have rewritten dated evaluation records
@@ -64,6 +67,27 @@ sections rather than leaving the two descriptions in conflict. It does not relax
 the separate rule that owner content stays out of logs: the journal and the
 trace store have different audiences, different retention, and different
 exposure in a support report.
+
+## Owner decisions of 2026-09-17
+
+Asked with their alternatives and consequences before the slices that depend
+on them:
+
+- **Langfuse volumes and backup: excluded.** The Langfuse PostgreSQL,
+  ClickHouse, Redis, and MinIO volumes stay outside the encrypted Restic set
+  and are treated as a reconstructible observability copy bounded by the
+  retention below. Losing them loses traces, never finance data. Including them
+  (a consistent multi-store snapshot) or exporting traces into the backup were
+  rejected; both would also have needed a Restic drill this workstation cannot
+  run.
+- **Latency budget: confirmed.** Tracing may add at most 25 ms median per work
+  unit or advice request while the store runs, and a process flush may wait at
+  most the export timeout (default 2 s) whether the store is up, slow, or
+  stopped.
+- **Retention: 30 days, export optional.** Runtime traces older than 30 days
+  are deleted; before deleting, the owner may export them to a private local
+  file that never enters Git. Until Step 7 schedules it, the deletion is run by
+  hand.
 
 ## Deliverables
 
@@ -257,14 +281,171 @@ rerun. Integration traces use the
 `integration-test` environment and are deleted by the tests that created them;
 smoke and measurement traces were deleted through the public API.
 
+### Second slice: Telegram gateway and worker (2026-09-17)
+
+What is traced, and from where. `money-tracker-telegram run` and `poll-once`
+and `money-tracker-worker run` and `process-once` open the tracer the switch
+selects and flush it within the export timeout when they stop, including after
+SIGINT or SIGTERM ends the loops. Every stage of one Telegram update lands in
+the trace derived from its source reference `telegram:<bot-key>:<update-id>`,
+named `telegram-update`:
+
+- `telegram-ingest`, one per accepted update after its batch commits, from the
+  gateway's ingress thread: the normalized update exactly as the inbox stores
+  it (text or callback data, message and reply identities, image media type
+  and size), the batch counters, poll and commit durations, and whether a
+  callback acknowledgement succeeded. The Telegram user, chat, and file
+  identities and the callback query identity are left out, the raw update was
+  never retained, and rejected or pairing messages open no trace.
+- `work-unit`, one per claim, from the worker: inbox and update identity,
+  attempt and replay counts, queue wait, what a callback or reply resolved to,
+  and the terminal outcome (`committed`, `retry_scheduled`, `dead_lettered`,
+  or `lease_lost`) with its reason code. It holds the dispatcher's `dispatch`
+  span with every graph, node, and model generation, a `render` span with the
+  exact owner response and controls, and a `commit` span naming the outbox row,
+  logical key, pending action, consumed action, and revocations.
+- `telegram-delivery`, one per delivery attempt of a response or control
+  revocation that answers an inbox item, from the gateway's outbox thread: the
+  delivered text and controls, the attempt, and the Telegram message identity
+  or the transport reason code. The pairing confirmation and downtime notices
+  answer no update and stay untraced.
+
+A retried or replayed update adds another `work-unit` to the same trace, and a
+retried delivery another `telegram-delivery`, so the history of one message is
+one place. `OutboxClaim` now carries the source reference of the inbox row it
+answers, and `telegram_source_reference` is the single definition of that
+identity for finance keys, threads, and traces.
+
+Deterministic decision metadata. The dispatch span of every entry point now
+records flat, filterable keys beside the version set: `routing_intent`,
+`routing_source`, `routing_reason_code`, `routing_confidence`,
+`routing_policy_veto` (a valid classification overruled by policy, from the new
+`POLICY_VETO_REASONS`), `routing_command`, `routing_callback_action`,
+`specialist`, `outcome_status`, `outcome_clarification_reason`, and
+`thread_ids`. Movement specialists add the converted `extraction` and
+`category_fit`, `resolution_reason`, `allocation_funding_basis`
+(`profile_default`, `stated_single`, `stated_split`), and
+`allocation_category_basis`; correction and undo add `movement_target_basis`
+and `movement_target_id`; the read specialist adds `read_admitted_tools`,
+`read_tool_request`, `read_executed_tool`, `read_grounded`, and
+`read_clarification_reason`; review resumes add `review_proposal_id`,
+`review_decision_action`, `review_resumed`, and `review_opened` on the expense
+that opened one. They are read from the typed decision and final graph states
+after the fact, so they cannot change a decision, and they are recorded even
+when a specialist fails.
+
+Cost and performance. Each generation carries its token usage, latency, attempt
+and repair flag, and endpoint failures as a reason code; graph nodes carry their
+own latency; work units carry attempts, replays, queue wait, and retry
+schedule; deliveries carry their attempt.
+
+Identity in the services. The worker's `run` resolves model identity on a
+background thread from start-up, and measures an unknown artifact digest off
+the request path: a call made while it is measured is traced with
+`digest_pending` and an incomplete identity, and the next call after it is
+complete. Measured on the target workstation with an empty cache: the first
+identity read took 7,758.7 ms inline and 10.3 ms in the background mode, whose
+digest was ready 7.77 s later, with the next call complete in 11.6 ms; a
+restarted process reading the persisted cache took 10.5–11.3 ms in either mode.
+The worker and API unit templates now declare `CacheDirectory=money-tracker`
+(mode 0700), which the resolver finds through `CACHE_DIRECTORY` and which is
+the same per-user cache commands use, and put `~/.local/bin` on `PATH` so the
+bare `llama-server` name resolves for the executable digest after an
+unattended boot. The installed units are not yet re-rendered; that restart is
+announced with the service measurements.
+
+Finding: the checked-in units' mount-namespace hardening is not in effect.
+Probing the running worker and a transient user unit showed a private user
+namespace but the host's mount namespace, and a write under a
+`ProtectHome=read-only` home succeeded: with
+`kernel.apparmor_restrict_unprivileged_userns=1` the user manager cannot apply
+`ProtectHome`, `ProtectSystem`, or `PrivateTmp`. The digest cache is therefore
+writable by the services today; `CacheDirectory=` keeps it writable once the
+hardening works. Fixing the sandbox is Step 7 work and is recorded as a risk.
+
+Payloads sent to the model are unchanged. The worker and gateway only open
+spans around the existing calls; the model adapter and dispatcher are the ones
+the first slice proved byte-identical, and graph configuration still gains only
+`callbacks`.
+
+Secrets and forbidden values.
+`test_forbidden_values_never_reach_a_channel_trace` sends, through the gateway
+and worker, an owner message carrying a Bot API token shape, a
+credential-bearing PostgreSQL URL, a Telegram API URL, and a path under the
+receipt archive, while the production `BotApiClient` puts its own token in
+every request URL. Reading the whole exported trace back, none of those values,
+the owner's Telegram identity, the Langfuse secret key, the configured database
+URLs, or the inference key appears; the owner's words and
+`<redacted-database-url>` do. Unit tests require the worker and gateway spans
+to carry no user or chat identity.
+
+Test hygiene incident. The first run of the new channel test failed an
+assertion, and pytest's long traceback printed the test's arguments, which
+included the Langfuse project key pair and the credential-bearing test database
+URL, into the development session. `--tb=short` is now part of the pytest
+configuration, so a failure names lines and assertion values without
+arguments, and the test reader's key pair is excluded from its representation.
+The owner was told to rotate both credentials; that rotation touches every
+service and is the owner's decision.
+
+Real integration tests. `tests/integration/money_tracker/tracing/test_channel_tracing.py`
+drives the production gateway, ingestor, worker, and the worker's dispatcher
+composition over the real repositories, checkpointer, model, and Langfuse; only
+the Bot API is answered in-process beneath the production client, as in every
+channel test. It proves one trace per update with `telegram-ingest`,
+`work-unit`, and `telegram-delivery` as roots and the delivered text equal to
+the rendered and committed response; complete input, output, usage, and
+artifact identity for every generation of the expense, query, advice,
+correction reply, and a category review resumed with *Proponine un'altra*
+through its own delivered control (the turn that asks the review question is
+replayed from its outcome, because whether a model proposes a category is not
+deterministic); `Modifica` and `Annulla` traced without model calls; forbidden
+values absent; and a silent disabled channel against a traced positive control.
+Shared helpers moved to `store.py` and `conftest.py` beside the tests.
+
+Latency. Measured in-process on the target workstation against PostgreSQL,
+the promoted model, and the running Langfuse, alternating traced and untraced
+components over the same database:
+
+| Stage, median (95th percentile) | Untraced | Traced | Added |
+| --- | ---: | ---: | ---: |
+| `/help` ingest, 100 runs each | 13.48 (13.97) ms | 13.79 (14.44) ms | +0.31 ms |
+| `/help` claim to commit, no model | 45.69 (48.17) ms | 47.74 (50.10) ms | +2.05 ms |
+| `/help` delivery | 15.62 (16.66) ms | 15.91 (16.79) ms | +0.29 ms |
+| Query with the real model, claim to commit, 10 runs each, run 1 | 2,274.89 ms | 2,280.72 ms | +5.83 ms |
+| Same, run 2 | 1,965.91 ms | 1,978.00 ms | +12.09 ms |
+| Flush with the store running | — | 6.8–7.6 ms | — |
+
+A whole deterministic update adds about 2.7 ms and a model-backed one 6–12 ms,
+inside the 25 ms budget; the model-backed difference is within the model's own
+run-to-run spread. Measurement traces used a temporary `measurement-slice2`
+environment and were deleted through the public API and verified absent. The
+behaviour with the store stopped, slow, or refusing on the running services
+belongs to the degradation slice.
+
+Validation. `uv run ruff check .`, `uv run ruff format --check .`,
+`uv run mypy src` (130 source files), `uv run money-tracker-validate-docs`, and
+`git diff --check` pass. `uv run pytest -q` reports 1,254 passed and 152
+skipped (from 1,229 and 147: 25 new unit tests, and the 5 real channel tests
+skip without their flag). The real PostgreSQL suite reports 1,388 passed and 18
+skipped (from 1,363 and 13). The real Langfuse suite,
+
+    RUN_POSTGRES_INTEGRATION_TESTS=1 RUN_LANGFUSE_INTEGRATION_TESTS=1 \
+      LOG_LEVEL=CRITICAL uv run --env-file .env pytest -q \
+      tests/integration/money_tracker/tracing
+
+reports 10 passed in 56 s, and the real advice HTTP test 1 passed. The frontend
+was not touched. After every run the `integration-test`, `measurement-slice2`,
+and `development` environments held no observation.
+
 ### Exit-criteria status
 
 | Exit criterion | Status |
 | --- | --- |
-| Every promoted-workflow LLM call appears with complete input, output, and artifact identity | Partial: the administrative entry point only; worker and web advice open |
-| One owner message produces one correlated end-to-end trace | Open: needs gateway, worker, and commit correlation, then a real message from the private test bot |
-| Core behaviour unchanged with Langfuse stopped; added latency within a stated budget | Partial: budget stated and met for the administrative entry point; services open |
-| No credential, token-bearing URL, database URL, or archive path in any trace; no receipt bytes | Met for the traced entry point; to be re-proven for each new one |
-| Trace retention and deletion documented and exercised | Open: deletion API probed and used by tests; procedure not yet written |
-| Real integration tests verify emission and a silent disabled path | Met for the traced entry point |
-| New ADR, with arc42, operations, and experiment documentation in agreement | Met: AD-021 and the reconciled documents |
+| Every promoted-workflow LLM call appears with complete input, output, and artifact identity | Partial: administrative dispatch and every worker specialist, including the resumed category review; web advice open |
+| One owner message produces one correlated end-to-end trace | Partial: gateway, worker, and delivery correlated and proven in-process; the real private test-bot message is open |
+| Core behaviour unchanged with Langfuse stopped; added latency within a stated budget | Partial: budget confirmed by the owner; met in-process for the admin, gateway, and worker paths; stopped, slow, and refusing store on the running services open |
+| No credential, token-bearing URL, database URL, or archive path in any trace; no receipt bytes | Met for the administrative and channel entry points; web advice and the acceptance trace open |
+| Trace retention and deletion documented and exercised | Open: owner decided 30 days and exclusion from backup; procedure and exercise open |
+| Real integration tests verify emission and a silent disabled path | Met for the administrative and channel entry points; web advice open |
+| New ADR, with arc42, operations, and experiment documentation in agreement | Met for the implemented slices |

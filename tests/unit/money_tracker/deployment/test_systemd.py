@@ -318,6 +318,29 @@ def test_llama_unit_finds_a_user_installed_binary_at_boot() -> None:
     assert "/usr/bin" in path
 
 
+@pytest.mark.parametrize(
+    "name", ["money-tracker-worker.service", "money-tracker-api.service"]
+)
+def test_model_calling_services_can_name_and_cache_the_artifact(name: str) -> None:
+    """Keep traced model identity complete and cheap in the services that call.
+
+    The worker and the API call the model, so a traced call names the serving
+    executable by digest and caches the weights digest. Without the user
+    binary directory on PATH the executable is unresolvable after an unattended
+    boot, and without a writable cache directory every restart under a
+    read-only home would hash the weights again.
+    """
+
+    text = (_UNIT_ROOT / name).read_text()
+
+    path = next(
+        line for line in text.splitlines() if line.startswith("Environment=PATH=")
+    )
+    assert "%h/.local/bin" in path
+    assert "CacheDirectory=money-tracker\n" in text
+    assert "CacheDirectoryMode=0700\n" in text
+
+
 def test_llama_launcher_refuses_a_silent_cpu_fallback(tmp_path: Path) -> None:
     """Fail loudly where llama.cpp would quietly run thirty times slower.
 

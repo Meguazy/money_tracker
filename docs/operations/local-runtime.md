@@ -61,7 +61,7 @@ in this table:
 | llama.cpp server | Host systemd user service | Implemented unit for local promoted text inference | Yes for agent work |
 | Receipt extractor dependencies | Host process/adapter | Local OCR/VLM selected by evaluation | Yes after Step 6 |
 | Receipt archive adapter | Host library/private filesystem | Implemented decoded-image validation and content-addressed original retention; admin CLI wired, API/worker planned | Yes once receipt ingestion is exposed |
-| Langfuse stack | Optional Compose profile | AD-021 full-fidelity trace store (administrative dispatch traced today) and aggregate experiment scores | No |
+| Langfuse stack | Optional Compose profile | AD-021 full-fidelity trace store (administrative dispatch, gateway, and worker traced when switched on) and aggregate experiment scores; outside the backup set, 30-day retention | No |
 | Restic backup | Host CLI today, systemd timer planned | Implemented encrypted authoritative backup, verification, retention, and isolated restore drill; scheduling planned | Yes once finance data exists |
 
 Python and llama.cpp stay on the host to keep GPU/model paths and loopback
@@ -85,8 +85,13 @@ steady-state sequence is:
 
 The checked-in systemd user units use explicit working directories and
 environment files, bounded stop timeouts, dependency-sensitive restart codes,
-owner-only umasks, restricted namespaces and address families, and read-only
-home/system views, and the locked virtualenv entry points.
+owner-only umasks, restricted namespaces and address families, declared
+read-only home/system views, and the locked virtualenv entry points. The
+read-only views are not in effect under this workstation's user manager, which
+cannot create a mount namespace while AppArmor restricts unprivileged user
+namespaces; qualifying them is Step 7 work. The worker and API also declare a
+private `CacheDirectory` for model digests and `~/.local/bin` on `PATH` for the
+trace identity of the serving llama.cpp executable.
 The llama unit deliberately retains device visibility for local GPU inference. User lingering or an equivalent boot setup is
 required if user services must start before graphical login.
 
@@ -121,7 +126,7 @@ The broader dependency behavior remains:
 | Application PostgreSQL unavailable | Gateway/worker/API report unhealthy and retry; no in-memory acknowledgement or finance write. |
 | Telegram network unavailable | Gateway backs off; locally committed inbox work may continue if no response transport is needed. |
 | llama.cpp unavailable | Gateway continues durable ingestion; model-dependent inbox work retries without losing order/idempotency. |
-| Langfuse unavailable | All core behavior continues; a traced process loses the affected spans and waits at most the export timeout when it flushes. Measured for the traced administrative dispatch in [LLM Tracing](tracing.md#degradation); services are not traced yet. |
+| Langfuse unavailable | All core behavior continues; a traced process loses the affected spans and waits at most the export timeout when it flushes. Measured for the traced administrative dispatch in [LLM Tracing](tracing.md#degradation); the gateway and worker trace when switched on, and their behaviour against a stopped store is still to be measured on the running services. |
 | Receipt extractor unavailable | Receipt remains in review/pending; text and read workflows continue. |
 | Backup destination unavailable | Finance runtime continues, but health becomes degraded and the operator is alerted locally; snapshots are not falsely marked successful. |
 | FastAPI unavailable | Telegram ingestion/processing continues; dashboard operations wait for API recovery. |

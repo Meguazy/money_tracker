@@ -16,7 +16,7 @@ import json
 import os
 import threading
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
@@ -30,6 +30,12 @@ from money_tracker.domain import BalanceMode, FundingClass
 from money_tracker.persistence.database import bootstrap_checkpointer, upgrade_database
 from money_tracker.tracing.langfuse import trace_id_for
 from money_tracker.workflows import ROUTER, default_prompt
+from tests.integration.money_tracker.tracing.store import (
+    VISIBILITY_SECONDS,
+    LangfuseReader,
+    named,
+    required,
+)
 
 pytestmark = [
     pytest.mark.langfuse,
@@ -43,123 +49,7 @@ pytestmark = [
     ),
 ]
 
-ENVIRONMENT = "integration-test"
-VISIBILITY_SECONDS = 90.0
 EXPENSE_TEXT = "Ho speso 12 euro per i croccantini dei gatti"
-
-
-def _required(name: str) -> str:
-    """Read a setting the real services need, failing rather than skipping."""
-
-    value = os.getenv(name, "").strip()
-    if not value:
-        raise RuntimeError(f"{name} is required for real Langfuse tests")
-    return value
-
-
-@dataclass
-class LangfuseReader:
-    """Read and delete observations through the real public API.
-
-    Attributes:
-        base_url: Local Langfuse base URL.
-        auth: Project key pair.
-        created: Trace identifiers this test run created, deleted at teardown.
-    """
-
-    base_url: str
-    auth: tuple[str, str]
-    created: list[str] = field(default_factory=list)
-
-    def observations(self, trace_id: str) -> list[dict[str, Any]]:
-        """Return every observation of one trace with payloads and metadata."""
-
-        response = httpx.get(
-            f"{self.base_url}/api/public/v2/observations",
-            params={
-                "traceId": trace_id,
-                "limit": 1000,
-                "fields": "core,basic,io,metadata,model,usage,metrics",
-                "expandMetadata": (
-                    "model_artifact,request_parameters,parse,response,"
-                    "router_prompt,read_selection_policy"
-                ),
-            },
-            auth=self.auth,
-            timeout=10.0,
-        )
-        response.raise_for_status()
-        data: list[dict[str, Any]] = response.json()["data"]
-        return data
-
-    def wait_for(
-        self, trace_id: str, ready: Callable[[list[dict[str, Any]]], bool]
-    ) -> list[dict[str, Any]]:
-        """Poll until the trace satisfies `ready`, within the ingestion bound."""
-
-        deadline = time.monotonic() + VISIBILITY_SECONDS
-        observed: list[dict[str, Any]] = []
-        while time.monotonic() < deadline:
-            observed = self.observations(trace_id)
-            if ready(observed):
-                return observed
-            time.sleep(1.0)
-        raise AssertionError(
-            f"trace {trace_id} incomplete after {VISIBILITY_SECONDS}s: "
-            f"{sorted(item['name'] for item in observed)}"
-        )
-
-    def matching_input(self, marker: str) -> list[dict[str, Any]]:
-        """Find observations in the test environment whose input names a marker."""
-
-        response = httpx.get(
-            f"{self.base_url}/api/public/v2/observations",
-            params={
-                "environment": ENVIRONMENT,
-                "limit": 50,
-                "filter": json.dumps(
-                    [
-                        {
-                            "type": "string",
-                            "column": "input",
-                            "operator": "matches",
-                            "value": marker,
-                        }
-                    ]
-                ),
-            },
-            auth=self.auth,
-            timeout=10.0,
-        )
-        response.raise_for_status()
-        data: list[dict[str, Any]] = response.json()["data"]
-        return data
-
-    def delete_created(self) -> None:
-        """Request deletion of every trace this test created."""
-
-        for trace_id in self.created:
-            httpx.delete(
-                f"{self.base_url}/api/public/traces/{trace_id}",
-                auth=self.auth,
-                timeout=10.0,
-            )
-
-
-@pytest.fixture
-def langfuse(monkeypatch: pytest.MonkeyPatch) -> Iterator[LangfuseReader]:
-    """Switch tracing on into the test environment and clean up afterwards."""
-
-    reader = LangfuseReader(
-        base_url=_required("LANGFUSE_BASE_URL").rstrip("/"),
-        auth=(_required("LANGFUSE_PUBLIC_KEY"), _required("LANGFUSE_SECRET_KEY")),
-    )
-    monkeypatch.setenv("MONEY_TRACKER_TRACING_ENABLED", "true")
-    monkeypatch.setenv("LANGFUSE_TRACING_ENVIRONMENT", ENVIRONMENT)
-    try:
-        yield reader
-    finally:
-        reader.delete_created()
 
 
 def _route(
@@ -188,14 +78,6 @@ def _route(
     return trace_id_for(reference), payload
 
 
-def _named(observations: list[dict[str, Any]], name: str) -> dict[str, Any]:
-    """Return the single observation carrying one name."""
-
-    matches = [item for item in observations if item["name"] == name]
-    assert len(matches) == 1, [item["name"] for item in observations]
-    return matches[0]
-
-
 def _complete_router_trace(observations: list[dict[str, Any]]) -> bool:
     """Tell whether the routing trace has reached the store in full."""
 
@@ -214,11 +96,11 @@ def test_a_routed_message_exports_its_complete_model_call(
 
     observations = langfuse.wait_for(trace_id, _complete_router_trace)
 
-    root = _named(observations, "work-unit")
-    dispatch = _named(observations, "dispatch")
-    router = _named(observations, "graph:router")
-    classify = _named(observations, "classify")
-    generation = _named(observations, "model:RouteClassification")
+    root = named(observations, "work-unit")
+    dispatch = named(observations, "dispatch")
+    router = named(observations, "graph:router")
+    classify = named(observations, "classify")
+    generation = named(observations, "model:RouteClassification")
     by_id = {item["id"]: item for item in observations}
     assert by_id[dispatch["parentObservationId"]]["name"] == "work-unit"
     assert by_id[router["parentObservationId"]]["name"] == "dispatch"
@@ -286,7 +168,7 @@ def test_forbidden_values_never_reach_the_trace_store(
         fake_token,
         "hunter2hunter2",
         "api.telegram.org",
-        _required("LANGFUSE_SECRET_KEY"),
+        required("LANGFUSE_SECRET_KEY"),
     ]
     for name in ("MONEY_TRACKER_DATABASE_URL", "MONEY_TRACKER_TEST_DATABASE_URL"):
         if value := os.getenv(name, "").strip():
@@ -398,7 +280,7 @@ def _proxy_handler(proxy: RecordingProxy) -> type[BaseHTTPRequestHandler]:
 def recording_proxy(monkeypatch: pytest.MonkeyPatch) -> Iterator[RecordingProxy]:
     """Put a recording proxy between the entry point and the real model."""
 
-    base_url = _required("LLM_BASE_URL").rstrip("/")
+    base_url = required("LLM_BASE_URL").rstrip("/")
     proxy = RecordingProxy(upstream=base_url.removesuffix("/v1"))
     server = ThreadingHTTPServer(("127.0.0.1", 0), _proxy_handler(proxy))
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -451,7 +333,7 @@ def test_tracing_leaves_the_model_request_byte_identical(
         "/v1/chat/completions",
         "/props",
     }
-    generation = _named(
+    generation = named(
         langfuse.wait_for(traced_trace, _complete_router_trace),
         "model:RouteClassification",
     )
@@ -509,11 +391,11 @@ def test_a_specialist_dispatch_traces_every_graph_and_its_grounded_result(
         pytest.fail(f"the model routed the question to {payload['intent']}")
     observations = langfuse.wait_for(trace_id, complete)
 
-    dispatch = _named(observations, "dispatch")
+    dispatch = named(observations, "dispatch")
     assert dispatch["metadata"]["read_selection_policy"] == (
         "explicit-finance-scope-v1"
     )
     assert json.loads(dispatch["output"]) == payload
-    selection = _named(observations, "model:WireToolRequest")
+    selection = named(observations, "model:WireToolRequest")
     assert selection["metadata"]["parse"]["valid"] in {True, False}
     assert {"select_tool"} <= {item["name"] for item in observations}

@@ -81,11 +81,24 @@ listens, so readiness is the HTTP probe rather than the unit state. Daily backup
 scheduling, off-device recovery-secret verification, and the clean-machine
 restore drill remain planned for Step 7.
 
+A Step 5.5 probe on 2026-09-17 found that the read-only filesystem views are
+declared but not in effect: the running worker and a transient unit shared the
+host's mount namespace inside a private user namespace, and a write under a
+`ProtectHome=read-only` home succeeded, because AppArmor's restriction of
+unprivileged user namespaces keeps the user manager from applying
+`ProtectHome`, `ProtectSystem`, and `PrivateTmp`. The exposure scores above
+describe configuration. Qualifying the sandbox by observation is Step 7 work.
+The same slice gave the worker and API templates a private `CacheDirectory` for
+trace identity digests and `~/.local/bin` on `PATH`.
+
 ## Consequences
 
 - Setup requires systemd unit installation and user lingering or equivalent
   boot activation.
 - Core health checks and service dependencies must tolerate delayed Docker,
   network, and model startup.
-- Langfuse data may have a separate optional backup policy; it is not part of
-  the authoritative finance restore set.
+- Langfuse data is not part of the authoritative finance restore set. After
+  AD-021 put owner content in it, the owner decided on 2026-09-17 to keep its
+  volumes outside the encrypted backup set as a reconstructible observability
+  copy with 30-day trace retention, rather than snapshot ClickHouse, MinIO, and
+  the Langfuse PostgreSQL consistently or export traces into Restic.

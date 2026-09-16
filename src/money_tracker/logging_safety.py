@@ -30,7 +30,9 @@ import logging
 import re
 from typing import Final
 
-HTTP_LOGGERS: Final = ("httpx", "httpcore", "urllib3")
+# `httpx2` is the client the OpenAI SDK now uses to reach the local inference
+# endpoint; it logs each request line with its URL at INFO like `httpx` does.
+HTTP_LOGGERS: Final = ("httpx", "httpx2", "httpcore", "urllib3")
 TRACING_SDK_LOGGERS: Final = ("langfuse", "opentelemetry")
 STRUCTURED_FIELDS_ATTRIBUTE: Final = "money_tracker_fields"
 _SDK_RECORD_REWRITTEN: Final = "money_tracker_sdk_record_rewritten"

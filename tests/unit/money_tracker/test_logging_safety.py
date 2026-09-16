@@ -107,5 +107,8 @@ def test_the_chatty_http_loggers_never_reach_a_handler(
     with caplog.at_level(logging.DEBUG):
         logging.getLogger("httpx").info(REQUEST_LINE)
         logging.getLogger("httpcore").info(REQUEST_LINE)
+        logging.getLogger("httpx2").info(
+            'HTTP Request: POST http://localhost:8080/v1/chat/completions "200 OK"'
+        )
 
     assert caplog.records == []

@@ -438,7 +438,7 @@ logical outbox row or financial mutation is never acceptable.
 
 The Bot API puts the token in the request path, so any library that logs a URL
 logs the credential. Every entry point therefore configures logging through
-`configure_logging`, which raises `httpx`, `httpcore`, and `urllib3` to WARNING
+`configure_logging`, which raises `httpx`, `httpx2`, `httpcore`, and `urllib3` to WARNING
 so the request line is never emitted, and installs a filter that redacts
 token-shaped runs from every record whatever produced it. The filter reaches
 messages, structured fields, and rendered tracebacks, and uncaught exceptions

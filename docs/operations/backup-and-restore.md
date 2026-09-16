@@ -108,7 +108,10 @@ no model artifact.
 ## Non-authoritative or separate data
 
 - Langfuse PostgreSQL, ClickHouse, Redis, and MinIO data are observability data
-  and may have a separate optional backup policy.
+  and may have a separate optional backup policy. Under AD-021 they can hold
+  complete owner messages and completions; whether they enter the encrypted
+  backup set or remain a reconstructible copy is an owner decision still open
+  in Step 5.5, and until it is made they are outside the set.
 - Python virtual environments, frontend build output, container layers, caches,
   and reproducible dependencies are rebuilt from source/locks.
 - Generated evaluation artifacts remain disposable unless a promotion decision

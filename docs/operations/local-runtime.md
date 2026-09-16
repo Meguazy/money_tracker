@@ -61,7 +61,7 @@ in this table:
 | llama.cpp server | Host systemd user service | Implemented unit for local promoted text inference | Yes for agent work |
 | Receipt extractor dependencies | Host process/adapter | Local OCR/VLM selected by evaluation | Yes after Step 6 |
 | Receipt archive adapter | Host library/private filesystem | Implemented decoded-image validation and content-addressed original retention; admin CLI wired, API/worker planned | Yes once receipt ingestion is exposed |
-| Langfuse stack | Optional Compose profile | Implemented local traces and aggregate experiment scores | No |
+| Langfuse stack | Optional Compose profile | AD-021 full-fidelity trace store (administrative dispatch traced today) and aggregate experiment scores | No |
 | Restic backup | Host CLI today, systemd timer planned | Implemented encrypted authoritative backup, verification, retention, and isolated restore drill; scheduling planned | Yes once finance data exists |
 
 Python and llama.cpp stay on the host to keep GPU/model paths and loopback
@@ -121,7 +121,7 @@ The broader dependency behavior remains:
 | Application PostgreSQL unavailable | Gateway/worker/API report unhealthy and retry; no in-memory acknowledgement or finance write. |
 | Telegram network unavailable | Gateway backs off; locally committed inbox work may continue if no response transport is needed. |
 | llama.cpp unavailable | Gateway continues durable ingestion; model-dependent inbox work retries without losing order/idempotency. |
-| Langfuse unavailable | All core behavior continues without trace callbacks. |
+| Langfuse unavailable | All core behavior continues; a traced process loses the affected spans and waits at most the export timeout when it flushes. Measured for the traced administrative dispatch in [LLM Tracing](tracing.md#degradation); services are not traced yet. |
 | Receipt extractor unavailable | Receipt remains in review/pending; text and read workflows continue. |
 | Backup destination unavailable | Finance runtime continues, but health becomes degraded and the operator is alerted locally; snapshots are not falsely marked successful. |
 | FastAPI unavailable | Telegram ingestion/processing continues; dashboard operations wait for API recovery. |
@@ -140,7 +140,8 @@ Current and planned configuration groups:
 - private receipt and evaluation data paths; the archive root is configured by
   `MONEY_TRACKER_RECEIPT_ARCHIVE_ROOT` for the administration CLI;
 - implemented FastAPI bind, exact Host/Origin, static-root, and CSRF settings;
-- optional Langfuse keys/profile;
+- optional Langfuse keys/profile plus the explicit `MONEY_TRACKER_TRACING_ENABLED`
+  switch and export timeout;
 - Restic repository, password source, retention, and staging path.
 
 Secrets remain local, mode-restricted, and excluded from API/UI output. Locale, currency, and timezone remain fixed V1 profile facts; the UI cannot rewrite runtime configuration or infrastructure. Stable

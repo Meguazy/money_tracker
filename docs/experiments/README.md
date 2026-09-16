@@ -310,10 +310,23 @@ safety.
 
 ## Privacy and trace policy
 
+This policy governs evaluation data: datasets, run manifests, raw results,
+published aggregate scores, and anything committed. Runtime product traces are
+governed separately by
+[AD-021](../arc42/decisions/AD-021-full-fidelity-llm-traces.md), which records
+them at full fidelity in the local store; they are not evaluation artifacts and
+are never committed or copied into a dataset without the privacy review below.
+
 - Never store Telegram tokens, user/chat IDs, file download URLs, image bytes,
-  Restic secrets, or database passwords in run manifests or traces.
-- Use pseudonymous test profile/session/workflow identifiers.
+  Restic secrets, or database passwords in run manifests, datasets, published
+  scores, or traces.
+- Use pseudonymous test profile/session/workflow identifiers in evaluation
+  datasets and fixtures.
 - Record hashes and local relative artifact references, not sensitive contents.
 - Do not commit private raw results. Commit only reviewed aggregate reports and
   baselines that cannot reconstruct personal data.
-- Langfuse tracing of private experiments remains local and optional.
+- Evaluation runs do not emit runtime traces; `--publish-langfuse` copies only
+  redacted aggregate capability scores. Langfuse tracing of private experiments
+  remains local and optional.
+- Tracing changes no prompt, schema, tool, threshold, or policy, so it triggers
+  no promotion gate; EVD-004 remains the promoted text baseline.

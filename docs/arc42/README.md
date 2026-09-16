@@ -35,8 +35,11 @@ metadata, browser inspection and pinned requeue of the durable messaging queues,
 compiled React shell, browser security policy, host unit, and the promoted
 read-only advice surface. On 2026-09-16 real-browser E2E against the production
 API, PostgreSQL, and the promoted local model, automated WCAG 2.0/2.1 A/AA
-checks, and acceptance of the installed user service passed. Step 5.5 is next
-and has not started. Receipt extraction remains assigned to Step 6.
+checks, and acceptance of the installed user service passed. Step 5.5 is in
+progress: [AD-021](decisions/AD-021-full-fidelity-llm-traces.md) makes runtime
+traces full fidelity, and the tracing boundary now traces the administrative
+dispatch command, while the worker, gateway, and web advice remain untraced.
+Receipt extraction remains assigned to Step 6.
 
 ### Quality goals
 
@@ -122,7 +125,7 @@ boundary is not end-to-end encrypted and must not be described as local storage.
 | Owner to CLI | Process arguments/stdin/stdout | One prompt and response | Implemented scaffold |
 | Owner to administration CLI | Process arguments/stdout plus private input file | Profile-scoped receipt import with safe JSON result | Implemented Step 2 receipt-store command |
 | Application to inference | OpenAI-compatible HTTP | Messages, schemas, tool calls, model settings | Implemented basic chat |
-| Application to Langfuse | SDK over local HTTP/OTLP | Redacted graph/model observations and aggregate scores | Implemented, optional and healthy |
+| Application to Langfuse | SDK over loopback HTTP/OTLP | Full-fidelity dispatch, graph, node, and model-call observations under AD-021, minus credentials, forbidden URLs, archive paths, and bytes; aggregate capability scores | Tracing boundary implemented behind an explicit switch; `money-tracker-admin route` traced, services not yet |
 | Telegram gateway to Bot API | HTTPS long polling and send methods | Updates, callback queries, messages, and bounded file metadata; no Step 4 file download | Implemented and owner-accepted against the real private test bot |
 | Browser to application API | Same-origin HTTP JSON | Monthly overview, calendar analytics, transaction register, manual lifecycle, budget planning, category management/review, funding-source/wallet administration, receipt metadata review, messaging operations, safe profile settings, promoted read-only advice, CSRF, and health implemented; receipt extraction remains planned. No route returns receipt bytes or its archive key | Step 5 slices implemented |
 | Application to PostgreSQL | PostgreSQL protocol | Checkpoints, authoritative finance aggregates, normalized messaging offsets/inbox/outbox, pairing, actions, retries, and dead letters | Implemented foundation, finance repositories, and Step 4 messaging persistence |
@@ -190,11 +193,14 @@ Money Tracker workstation
 
 | Component | Responsibility | Interface/dependencies | Data ownership | Deployment/security |
 | --- | --- | --- | --- | --- |
-| `cli` | Parse one prompt, invoke the graph, print output, flush traces | Python entry point; graph and observability | No persistent data | Host process; user terminal |
+| `cli` | Parse one prompt, invoke the graph, print output, flush traces | Python entry point; graph and `tracing` | No persistent data | Host process; user terminal; traced only when the tracing switch is on |
 | `config` | Convert environment variables into immutable model settings | Process environment | Runtime configuration | Secrets are not returned or logged |
 | `graph` | Define the initial one-node assistant | LangGraph and `BaseChatModel` | In-memory messages for one invocation | Stateless host process |
 | `llm` | Construct an OpenAI-compatible chat adapter | LangChain `ChatOpenAI` | No persistent data | Loopback endpoint by default |
-| `observability` | Enable and flush optional Langfuse callbacks | Langfuse SDK and environment keys | Buffered telemetry until flush | Local Langfuse only |
+| `tracing` | Own the tracing port injected at entry points, the disabled tracer, the explicit switch and loopback-only settings, and `open_tracer` | Framework-neutral port; `tracing.langfuse` only when enabled; no domain, application, or workflow dependency | No persistent data | Every entry point that executes a model boundary; misconfiguration disables tracing with an `ERROR` record and never stops the process |
+| `tracing.langfuse` | Record dispatch spans, graph and node runs, and one generation per model request in the local Langfuse | Langfuse SDK, its LangChain callback with model runs ignored, and a process-owned OpenTelemetry provider | Spans buffered until the background export or the bounded flush | Only module importing the SDK; loaded lazily; no exception text reaches an SDK context manager; flush waits at most the export timeout |
+| `tracing.identity` | Name the serving model artifact with the capability report's fields | llama.cpp `/props` over loopback, reused for 60 s; `evaluations.metadata` assembly | Private revision-keyed digest cache under `$XDG_CACHE_HOME/money-tracker` | Digests measured once per file revision; no path enters a trace |
+| `tracing.redaction` | Remove credentials, database and credential-bearing URLs, Telegram URLs, token shapes, archive paths, and bytes from every observation value | Configured secret literals and private roots from the environment; `logging_safety` token patterns | No state | Last line of defence applied by the SDK; components keep forbidden values out by construction |
 | `structured_logging` | Configure process logging once, render each record as one JSON object of event name plus named fields, bind per-operation correlation identifiers, and route uncaught exceptions on any thread through logging | Standard library `logging` and `contextvars`; the redaction primitives in `logging_safety`; no domain, repository, or transport import | No persistent data; the journal is diagnostic and is neither authoritative nor backed up | Every host process and CLI; writes to standard error so machine-readable command output on standard out stays usable; credentials are filtered from messages, fields, and tracebacks, and owner content never enters a field |
 | `logging_safety` | Own the credential redaction contract and mute the HTTP loggers that would print a token-bearing URL | Standard library `logging` and `re` only | No state | Imported by `structured_logging` and usable by anything that logs |
 | `persistence` | Apply versioned migrations, bootstrap persistent LangGraph checkpoints, and implement finance/messaging repositories | Alembic, psycopg, PostgreSQL checkpointer | Foundation schemas, workflow checkpoints, finance aggregates, and durable messaging state | Host administration CLI and shared host library; least-privilege loopback database role |
@@ -202,14 +208,14 @@ Money Tracker workstation
 | `application` | Coordinate idempotent expense lifecycle and receipt registration/review, audited wallet entries, versioned funding-source lifecycle, replay-safe budget planning, pending proposal submission, owner category decisions, and read-only reporting plus safe profile-settings projection through narrow ports | Finance, administration, proposal, review, reporting, and receipt-metadata repository ports plus clock and ID contracts | Command, concurrency, review-boundary, and audit semantics, not stored state | Shared by CLI, API, and worker; profile scope comes from trusted caller context; node creation is reachable only through an owner decision, and receipt deletion is not exposed |
 | `application.profile_settings` | Validate and project the owner-facing V1 profile subset for the settings surface | `ProfileSettingsRepository` reads the active profile and its funding sources; default writes remain in `FundingSourceAdministrationService` | No state; returns fixed locale/currency/timezone facts and eligible active default choices | Shared in-process application service composed into FastAPI; trusted profile scope is an argument from composition, inconsistent default pointers fail closed, and no infrastructure or credential contract exists |
 | `workflows` | Own the bounded intent taxonomy, normalized channel work unit, deterministic pre-routing, strict versioned model boundaries, policy vetoes, and post-model read-selection policies, deterministic allocation resolution, draft and correction preparation, stable creation/correction/undo command identities, and the strict-schema retry boundary behind a narrow model port | Pydantic, `zoneinfo`, and pure domain values; no LangGraph, model client, repository, or transport import | Routing destinations, authority classes, stable routing and resolution reason codes, and the product calendar; no persistent state | Shared by the implemented worker; a model can select no deterministic route and supply no profile/timezone/authorization field, no resolved instant, no amount sign, and no funding-source identifier; reason codes carry no owner text |
-| `runtime` | Assemble the compiled root-router, expense/refund, correction/undo, category-review, and read graphs; dispatch one normalized work unit to exactly one specialist; adapt the local endpoint to the structured-output port | LangGraph, LangChain, application services, the persistent checkpointer, and `workflows` contracts | No domain state of its own; checkpoint contents remain owned by each graph state contract | Host administration CLI and worker; dispatcher trusts only injected profile/correlation context and emits no presentation text |
+| `runtime` | Assemble the compiled root-router, expense/refund, correction/undo, category-review, and read graphs; dispatch one normalized work unit to exactly one specialist; adapt the local endpoint to the structured-output port; record dispatches and model requests through an injected tracer | LangGraph, LangChain, application services, the persistent checkpointer, `workflows` contracts, and the `tracing` port (never the SDK) | No domain state of its own; checkpoint contents remain owned by each graph state contract, and tracing adds only non-persisted callbacks | Host administration CLI and worker; dispatcher trusts only injected profile/correlation context and emits no presentation text; the default tracer records nothing |
 | `worker` | Claim the oldest eligible durable work unit, translate it into the normalized channel message, dispatch it once, and commit result, response, correlation, and completion together; commit failure notice with retry or dead-letter state | Messaging repository port, finance read ports, a narrow dispatch port, and the response renderer | No authoritative state; every identifier it creates is derived from the inbox row so a recovered attempt reproduces the same logical response | systemd host service, separate failure domain from the gateway; holds no Bot API credential and imports no transport type |
 | `presentation` | Render typed dispatch outcomes, processing failures, committed movement facts, and paused review questions as Italian owner text and bounded controls | Dispatcher outcome contracts, messaging control values, and pure domain values; no model, transport, or repository import | No state; owns the callback code vocabulary and the response-kind names embedded in outbox logical keys | Worker library; content is a function of committed state only, so a replayed render reproduces the same logical response |
 | `api.contracts` | Define strict, versioned finance request/response, mutation-header, and problem wire shapes | Pydantic and domain response values; no web framework | No state; stable JSON field semantics only | Shared by the FastAPI adapter; no credentials or private media fields |
 | `web` | Compose versioned HTTP reads and writes, static UI serving, health, and browser policy | FastAPI, narrow application ports, typed settings, strict wire contracts, and `web.mutations` | No authoritative data; injects the sole trusted profile and bot scope and owns only HTTP semantics | Host user service on IPv4 loopback; exact Host/Origin, closed CORS, CSRF, CSP, bounded problems, no Bot API credential, and no secret endpoint |
 | `web.mutations` | Translate strict browser movement, budget, funding-source/wallet, category-review, receipt-review, and messaging-requeue commands into existing audited use cases | Narrow writer protocols, request contracts, ID port, canonical command hashes, and the trusted messaging scope | No state; owns trusted web actor/source construction, not persistence or lifecycle policy | In-process API adapter; profile, bot scope, and command key are injected, and responses omit all three |
 | `backup` | Create verified encrypted authoritative snapshots, report their freshness, and restore only into explicitly empty isolated targets | Restic and PostgreSQL client executables, psycopg identity/receipt queries, private archive and configuration paths | Snapshot contents and the versioned integrity manifest in the owner repository; no finance state of its own | Host CLI under an exclusive lock; absolute-path and owner-only input checks, recovery secret passed only by file path, failures name no argument or environment |
-| `administration` | Expose bounded local profile bootstrap, funding-source configuration, receipt storage/registration, and one-shot dispatch of every Step 3 text route | Database URL, absolute archive setting, application services, the workflow dispatcher, and local model adapter | No independent state; emits safe identifiers, grounded facts, and reason codes only | Host CLI; active-profile preflight for specialists, explicit trusted correlations, no private paths or message content in JSON |
+| `administration` | Expose bounded local profile bootstrap, funding-source configuration, receipt storage/registration, and one-shot dispatch of every Step 3 text route | Database URL, absolute archive setting, application services, the workflow dispatcher, local model adapter, and `open_tracer` | No independent state; emits safe identifiers, grounded facts, and reason codes only | Host CLI; active-profile preflight for specialists, explicit trusted correlations, no private paths or message content in JSON; the first traced entry point, one trace per work unit |
 | `persistence.finance` | Bootstrap profile/taxonomy, persist versioned funding-source lifecycle plus complete expense and budget aggregates, append expiry-aware balance-safe wallet movements, validate/store pending proposals, and register/transition receipt metadata transactionally | psycopg and narrow application repository contracts | Finance tables, allocations, budgets/overrides, wallet ledger, proposals, versioned receipt metadata, audit, and idempotency records | Dedicated application PostgreSQL; no receipt bytes or paths; optimistic versions protect mutable aggregates |
 | `media.local` | Decode, validate, atomically retain, and integrity-check private receipt originals | Receipt-media port, Pillow, private filesystem | Original bytes under sharded SHA-256 keys; no database state | Host library outside web roots; `0700` directories, `0600` files, no-follow verified reads; root wired explicitly by admin CLI, API/worker planned |
 | `evaluations` | Probe real model protocols, capture exact runtime metadata, score deterministically, collect owner usefulness labels, optionally publish aggregates | OpenAI-compatible HTTP, local files, optional Langfuse SDK, and a temporary standard-library loopback HTTP interface | Ignored local run artifacts and browser-local draft scores, plus published aggregate scores keyed by suite and by the model that produced them; no domain authority | Host CLI; the review page binds only to `127.0.0.1`, uses a per-run submission token and no external assets, and excludes secrets, image bytes and paths |
@@ -293,7 +299,7 @@ catalog is promoted; every identifier carries a `candidate-` prefix.
 | Local model gateway | Provide typed chat, schema and tool capabilities | OpenAI-compatible local endpoint | No persistent domain data | Replaceable host inference process |
 | Calendar period resolver (implemented) | Resolve strict day, ISO-week, month, year, and bounded inclusive custom selections plus their deterministic predecessors into half-open query intervals | Pure domain date values used by reporting and the web adapter; no framework or repository dependency | No persistent data | In-process domain component; Europe/Rome calendar semantics, DST-safe boundaries, and a 366-day custom-range ceiling |
 | Receipt extractor adapter | Produce a versioned structured receipt draft | Selected local OCR/VLM pipeline | No authoritative data until validated | Local-only; selection remains evaluation-gated |
-| Langfuse adapter | Record redacted traces and experiment scores | Local Langfuse SDK | Observability copies, not source of truth | Optional development/evaluation profile |
+| Langfuse adapter (`tracing.langfuse`, partial) | Record full-fidelity AD-021 traces; publish aggregate capability scores through `evaluations.publication` | Local Langfuse SDK behind the tracing port | Observability copies, not source of truth; owner content with ledger sensitivity | Optional Compose profile; administrative dispatch traced, worker, gateway, and web advice planned |
 
 ### Step 4 messaging boundaries
 
@@ -349,12 +355,41 @@ qualified.
 
 ### Current CLI turn
 
-1. The CLI reads a prompt and creates optional callbacks.
+1. The CLI reads a prompt and opens the tracer the switch selects.
 2. The graph receives a human message and prepends its system contract.
 3. The model adapter calls the configured local inference API.
-4. The graph returns one assistant message; the CLI prints it and flushes traces.
+4. The graph returns one assistant message; the CLI prints it and flushes traces
+   within the export bound.
 
 No state survives the process and no financial write occurs.
+
+### Current traced dispatch
+
+AD-021 governs what is recorded; this is the sequence for the one traced entry
+point, `money-tracker-admin route`.
+
+1. The entry point calls `open_tracer()`. With the switch off it receives the
+   disabled tracer, the SDK is never imported, and every later step records
+   nothing.
+2. It opens the `work-unit` root span whose trace identifier is derived from
+   the work unit's source reference, and injects the tracer into
+   `LocalStructuredOutputModel` and the dispatcher together with the version
+   set it composed them with.
+3. `WorkflowDispatcher.dispatch` opens a `dispatch` span holding the complete
+   message, trusted context, and version set. Each graph invocation receives
+   its thread identifier plus the tracer's callbacks only, so checkpoints are
+   unchanged; the callback records the graph and its nodes and ignores chat
+   model runs.
+4. Inside a node, the adapter builds the turns and the strict
+   `response_format` exactly as before, then opens a `model:<Contract>`
+   generation carrying them, the chat model's allowlisted parameters, and the
+   serving artifact's identity. The request is sent unchanged; the raw
+   completion, provider metadata, token usage, and, only when recording, the
+   parsed contract or validation summary are attached. An endpoint failure is
+   recorded as a reason code and exception class and propagates unchanged.
+5. The dispatch span records the typed outcome, the root span records the
+   command result, and the entry point flushes within the export timeout before
+   exiting. A stopped store costs that bound and nothing else.
 
 ### Current finance repository mutations
 
@@ -1203,7 +1238,7 @@ Ubuntu workstation
 ├── external Restic repository                  [owner-selected, unscheduled]
 └── Docker Compose
     ├── application-postgres on 127.0.0.1:5433  [default, healthy]
-    └── observability profile                    [optional, healthy]
+    └── observability profile                    [optional, healthy; AD-021 trace store]
         ├── Langfuse web on 127.0.0.1:3000
         ├── Langfuse worker
         ├── PostgreSQL
@@ -1216,6 +1251,14 @@ Application and Langfuse PostgreSQL have separate roles, databases, lifecycles,
 and named volumes. The non-cluster ClickHouse setting and digest-pinned images
 are explicit. The repair retained the pre-existing observability volumes; all
 profile services pass their health checks.
+
+Tracing is switched per process by `MONEY_TRACKER_TRACING_ENABLED`, default
+false, with the Langfuse keys and loopback base URL from `.env`. A traced
+process keeps a private digest cache of model artifacts under
+`$XDG_CACHE_HOME/money-tracker/` (mode 0700/0600) and reads llama.cpp `/props`
+with the inference key. Since AD-021 the Langfuse volumes hold owner content,
+so their exposure matches the application database even though they remain
+outside the authoritative backup set pending the Step 5.5 backup decision.
 
 ### Target deployment
 
@@ -1438,7 +1481,18 @@ preflight without coupling Telegram recovery to dashboard availability.
 ### Observability and evaluation
 
 - Daily operation works when Langfuse is stopped.
-- Traces use pseudonymous profile/session identifiers and component versions.
+- [AD-021](decisions/AD-021-full-fidelity-llm-traces.md) makes runtime traces
+  full fidelity: complete prompts, owner messages, repair turns, completions,
+  parsed contracts, decision context, model artifact identity, and the
+  prompt, contract, and policy versions in force. They never carry credentials,
+  token-bearing or database URLs, receipt-archive paths, or receipt bytes, and
+  they go only to the loopback Langfuse behind an explicit switch.
+- The trace store and the journal stay separate. Traces never enter the journal
+  or a support report; tracing SDK log records are rewritten into content-free
+  `tracing.*` events.
+- Tracing never changes a model request or a checkpoint. It enters through a
+  port injected at entry points, and its faults and a stopped store cost at most
+  the bounded flush.
 - Deterministic evaluators guard monetary, schema, routing, tool, reconciliation,
   and idempotency behavior. Human or model review supplements subjective quality.
 - Private receipt and finance datasets never enter Git.
@@ -1476,6 +1530,11 @@ tracing and from the exit-code contract AD-018 defines for supervisors.
   rejected request is recorded with its status, stable code and route, and an
   unavailable database is recorded with the traceback that is the only
   explanation the response deliberately withholds.
+- Records from the Langfuse and OpenTelemetry SDK loggers are held at `WARNING`
+  or above and rewritten into content-free `tracing.export.degraded` and
+  `tracing.sdk.reported` events, with export failures at `WARNING`, because the
+  SDKs interpolate endpoint URLs, transport errors, and at `DEBUG` whole traced
+  payloads.
 - The journal explains behavior. PostgreSQL owns state and the audit trail, and
   backup does not cover logs.
 
@@ -1525,6 +1584,8 @@ tracing and from the exit-code contract AD-018 defines for supervisors.
   as a file path. A tested restore is a release gate; the isolated drill passes
   and the clean-machine drill remains open.
 - Langfuse backup is optional and separate because it is not authoritative.
+  AD-021 puts owner content in it, so whether its volumes enter the encrypted
+  backup set is an open owner decision within Step 5.5.
 
 ### Testing
 
@@ -1567,6 +1628,9 @@ replacement with another compatible server.
 Operate Langfuse locally with telemetry disabled and keep tracing optional.
 Prompts, traces, scores, and service storage remain on the workstation. Core
 finance operation must not depend on Langfuse availability.
+[AD-021](decisions/AD-021-full-fidelity-llm-traces.md) extends this decision
+with what product traces contain and how the tracing boundary enters the
+inference path.
 
 ### AD-003: Headless local initialization
 
@@ -1634,6 +1698,11 @@ environment file.
 - [AD-017: Versioned deterministic read-selection policy](decisions/AD-017-versioned-read-selection-policy.md):
   promoted V1 policy implemented between model parsing and registry acceptance;
   V0 remains the direct configuration rollback.
+- [AD-021: Full-fidelity local LLM traces](decisions/AD-021-full-fidelity-llm-traces.md):
+  tracing port, Langfuse adapter, identity, redaction, and the traced
+  administrative dispatch implemented; worker, gateway, web advice, channel
+  correlation, evaluation linkage, retention, deletion, and backup decision
+  planned.
 - [AD-018: Telegram processing transactions and ordering](decisions/AD-018-telegram-processing-transactions.md):
   reconciled Step 4 persistence, Bot API transport, authorized ingestion,
   persisted-offset runtime, outbox delivery, Italian response rendering, the
@@ -1690,6 +1759,14 @@ Quantitative evaluation gates are maintained in
   but automatic scheduling, off-device secret verification, and a clean-machine
   restore remain later release work.
 - The real Telegram evidence uses a private test bot, not a production bot.
+- Step 5.5 is partial: only `money-tracker-admin route` is traced. The worker,
+  gateway, and web advice produce no trace, retention and deletion are not yet
+  written procedures, and the Langfuse volumes, which now hold owner content,
+  are outside the backup set pending an owner decision.
+- A traced model call names its artifact from a `/props` report reused for up to
+  sixty seconds, so a server restarted with other weights inside that window is
+  attributed to the previous artifact. The Langfuse public key is stamped on
+  every span by the SDK; it identifies the project and grants nothing alone.
 - Step 5 browser acceptance gates only the WCAG 2.0/2.1 A/AA axe rules at a
   desktop viewport. Best-practice landmark rules are not gated and the page
   `main` nests inside the shell `main`; narrow layouts, visual focus

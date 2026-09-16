@@ -75,7 +75,9 @@ other secrets through the bot.
   deterministic nodes after schema, invariant, and authorization checks.
 - Structured output gets one repair attempt. Continued invalid output becomes a
   typed failure/clarification, never free-form execution.
-- Traces omit image bytes and token-bearing URLs.
+- Traces omit credentials, token-bearing and database URLs, receipt-archive
+  paths, and image bytes; they do carry complete prompts and completions under
+  AD-021.
 
 ## Local web controls
 
@@ -140,15 +142,28 @@ threat model and ADR.
 
 ## Logging and observability
 
-Use structured event identifiers, pseudonymous profile/session/workflow IDs,
-component versions, outcome/status, latency, retry number, and safe error codes.
-Do not log raw environment dictionaries, database DSNs with passwords, full
-Telegram updates by default, token-bearing URLs, receipt bytes, or unredacted
-personal finance prompts in general system logs.
+The journal and the trace store are separate surfaces with separate rules.
 
-Langfuse is local and opt-in, but local does not mean unrestricted. Trace only
-the content necessary for the selected development/evaluation purpose and apply
-the private dataset policy.
+The journal records stable event names, identifiers, component versions,
+outcome/status, latency, retry number, and safe error codes. It never records
+owner message text, prompts, completions, amounts, category or merchant names,
+tokens, URLs, database DSNs, raw environment dictionaries, full Telegram
+updates, or receipt bytes. Tracing SDK records reach it only as content-free
+`tracing.*` events.
+
+The trace store follows
+[AD-021](../arc42/decisions/AD-021-full-fidelity-llm-traces.md): complete
+prompts, owner messages, completions, parsed contracts, decision context, and
+model artifact identity, without credentials, token-bearing or database URLs,
+receipt-archive paths, or bytes. It is local, loopback-only, and off unless
+`MONEY_TRACKER_TRACING_ENABLED` is true. Because it holds owner content:
+
+- never attach a trace, a Langfuse export, or an observations API response to a
+  support report, issue, or chat; share journal excerpts instead;
+- treat the Langfuse volumes and the bootstrap login like the finance database;
+- rotate a credential that ever appears in a trace, as for any other exposure.
+
+Operating details are in [LLM Tracing](tracing.md).
 
 ### Reading the journal
 
@@ -226,6 +241,7 @@ Before changing state:
 | Symptom | Safe first checks | Do not do |
 | --- | --- | --- |
 | Langfuse web becomes unhealthy again | Inspect web/worker/ClickHouse logs and confirm the pinned non-cluster flag remains effective. | Delete volumes or force migration state. |
+| Expected trace is missing | Check `tracing.enabled` or `tracing.configuration.rejected` in the command's journal, `tracing.export.degraded` or `tracing.flush.incomplete`, the store's health, and the environment filter. | Turn on SDK debug logging, which would print owner content, or paste observations outside the workstation. |
 | CLI cannot reach model | Verify configured loopback endpoint, llama-server process, model path, build/GPU compatibility, and health response. | Print the full `.env` or replace locked dependencies ad hoc. |
 | Telegram gateway receives nothing | Verify token via redacted `getMe`, no webhook, gateway/network health, persisted offset, and paired owner. | Regenerate/delete the bot before checking delivery mode and logs. |
 | Same Telegram update appears again | Check inbox unique key and whether offset advanced only after commit. | Delete duplicate rows or re-run mutation without its original idempotency key. |

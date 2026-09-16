@@ -53,7 +53,9 @@ from money_tracker.runtime import (
     build_workflow_dispatcher,
 )
 from money_tracker.runtime.read_graph import DEFAULT_SELECTION
+from money_tracker.runtime.trace_metadata import workflow_version_set
 from money_tracker.structured_logging import configure_logging, get_logger
+from money_tracker.tracing import Tracer, open_tracer
 from money_tracker.workflows import (
     CATEGORY_FIT,
     DEFAULT_READ_SELECTION_POLICY,
@@ -312,8 +314,66 @@ def _route(args: argparse.Namespace) -> dict[str, object]:
     if not 0.0 <= args.minimum_confidence <= 1.0:
         raise SystemExit("--minimum-confidence must lie between 0 and 1")
 
+    tracer = open_tracer()
+    try:
+        return _traced_route(args, message, tracer)
+    finally:
+        tracer.shutdown()
+
+
+def _traced_route(
+    args: argparse.Namespace,
+    message: ChannelMessage,
+    tracer: Tracer,
+) -> dict[str, object]:
+    """Assemble and dispatch one validated work unit under a root trace span.
+
+    Args:
+        args: Parsed ``route`` arguments.
+        message: Validated channel work unit.
+        tracer: Tracing port injected into the model adapter and dispatcher.
+
+    Returns:
+        Non-sensitive routing and specialist outcome facts.
+
+    Raises:
+        SystemExit: If profile scope is unknown or local inference is
+            unavailable.
+    """
+
+    with tracer.span(
+        "work-unit",
+        trace_seed=message.source_reference,
+        input={"source_reference": message.source_reference},
+        metadata={"entry_point": "money-tracker-admin route"},
+    ) as root:
+        facts = _dispatch_route(args, message, tracer)
+        root.record_output(facts)
+        return facts
+
+
+def _dispatch_route(
+    args: argparse.Namespace,
+    message: ChannelMessage,
+    tracer: Tracer,
+) -> dict[str, object]:
+    """Assemble the routing-only or complete dispatcher and run it once.
+
+    Args:
+        args: Parsed ``route`` arguments.
+        message: Validated channel work unit.
+        tracer: Tracing port injected into the model adapter and dispatcher.
+
+    Returns:
+        Non-sensitive routing and specialist outcome facts.
+
+    Raises:
+        SystemExit: If profile scope is unknown or local inference is
+            unavailable.
+    """
+
     ids = UUID4Generator()
-    model = LocalStructuredOutputModel()
+    model = LocalStructuredOutputModel(tracer=tracer)
     context = DispatchContext(
         profile_id=args.profile_id,
         routing=RoutingContext(
@@ -335,7 +395,12 @@ def _route(args: argparse.Namespace) -> dict[str, object]:
                 model=model,
                 instructions=default_prompt(ROUTER).text,
                 minimum_confidence=args.minimum_confidence,
-            )
+            ),
+            tracer=tracer,
+            trace_metadata=workflow_version_set(
+                router_prompt=default_prompt(ROUTER),
+                minimum_confidence=args.minimum_confidence,
+            ),
         )
         try:
             return outcome_facts(dispatcher.dispatch(message, context=context))
@@ -388,6 +453,15 @@ def _route(args: argparse.Namespace) -> dict[str, object]:
             funding_source_names=funding_source_names,
             selection_policy=ReadSelectionPolicyVersion(args.read_selection_policy),
             checkpointer=checkpointer,
+            tracer=tracer,
+            trace_metadata=workflow_version_set(
+                router_prompt=default_prompt(ROUTER),
+                minimum_confidence=args.minimum_confidence,
+                extraction=DEFAULT_EXTRACTION_CANDIDATE,
+                category_fit=DEFAULT_CATEGORY_FIT_CANDIDATE,
+                selection=DEFAULT_SELECTION,
+                selection_policy=ReadSelectionPolicyVersion(args.read_selection_policy),
+            ),
         )
         return dispatcher.dispatch(message, context=context)
 

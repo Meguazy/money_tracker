@@ -40,7 +40,9 @@ from typing import Any, Final, TextIO
 from money_tracker.logging_safety import (
     STRUCTURED_FIELDS_ATTRIBUTE,
     CredentialFilter,
+    TracingSdkRecordFilter,
     quiet_http_loggers,
+    quiet_tracing_sdk_loggers,
     redact_credentials,
 )
 
@@ -469,19 +471,23 @@ def configure_logging(
     resolved_level = _level(level) if isinstance(level, str) else level
     formatter = _formatter(log_format)
     credential_filter = CredentialFilter()
+    sdk_filter = TracingSdkRecordFilter()
     root = logging.getLogger()
     for existing in list(root.handlers):
         if getattr(existing, _HANDLER_MARKER, False):
             root.removeHandler(existing)
         else:
+            existing.addFilter(sdk_filter)
             existing.addFilter(credential_filter)
     handler = logging.StreamHandler(stream)
     handler.setFormatter(formatter)
+    handler.addFilter(sdk_filter)
     handler.addFilter(credential_filter)
     setattr(handler, _HANDLER_MARKER, True)
     root.addHandler(handler)
     root.setLevel(resolved_level)
     quiet_http_loggers()
+    quiet_tracing_sdk_loggers(resolved_level)
     logging.captureWarnings(True)
     if capture_uncaught:
         _capture_uncaught_exceptions()

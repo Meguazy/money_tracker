@@ -118,6 +118,15 @@ descriptions, amounts, model completion, profile, credential, or provider URL;
 model unavailability is reported without attaching a provider exception
 traceback that could contain a URL.
 
+AD-021 adds a trace store that holds exactly the content this decision keeps
+out of the journal, and keeps the two apart. Records from the Langfuse and
+OpenTelemetry SDK loggers are held at `WARNING` or above, so the callback's
+`DEBUG` payload records never form, and every record they do emit is rewritten
+on each handler into a content-free `tracing.export.degraded` or
+`tracing.sdk.reported` event carrying only the SDK logger name and exception
+class. Export failures are recorded at `WARNING`, since the application already
+carried on without the optional store.
+
 Documented privacy contracts are honored rather than restated: `BotIdentity`
 declares its bot id as never emitted by diagnostics and the transport therefore
 records only that the credential validated; the model boundary logs the

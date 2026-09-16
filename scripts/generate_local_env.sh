@@ -43,6 +43,9 @@ LANGFUSE_BASE_URL=http://localhost:3000
 LANGFUSE_PUBLIC_KEY=pk-lf-$(random_hex 24)
 LANGFUSE_SECRET_KEY=sk-lf-$(random_hex 24)
 LANGFUSE_TRACING_ENVIRONMENT=development
+# Full-fidelity traces (AD-021) stay off until the operator switches them on.
+MONEY_TRACKER_TRACING_ENABLED=false
+MONEY_TRACKER_TRACING_EXPORT_TIMEOUT_SECONDS=2
 
 LANGFUSE_INIT_USER_EMAIL=admin@money-tracker.local
 LANGFUSE_INIT_USER_NAME=Local-Admin

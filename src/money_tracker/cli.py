@@ -4,17 +4,18 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Sequence
+from typing import cast
 
 from langchain.messages import HumanMessage
 from langchain_core.runnables import RunnableConfig
 
 from money_tracker.graph import build_graph
-from money_tracker.observability import create_callbacks, flush_traces
 from money_tracker.structured_logging import (
     configure_logging,
     get_logger,
     log_context,
 )
+from money_tracker.tracing import open_tracer
 
 _LOGGER = get_logger("money_tracker.cli")
 
@@ -55,17 +56,21 @@ def main(argv: Sequence[str] | None = None) -> None:
         _LOGGER.warning("cli.prompt.empty")
         raise SystemExit("A non-empty prompt is required.")
 
-    callbacks = create_callbacks()
-    config: RunnableConfig = {
-        "run_name": "money-tracker-cli",
-        "tags": ["local-inference", "money-tracker"],
-    }
-    if callbacks:
-        config["callbacks"] = callbacks
+    tracer = open_tracer()
+    # This scaffold calls its chat model directly rather than through the
+    # structured-output adapter, so the callback records the model run itself.
+    config = cast(
+        RunnableConfig,
+        {
+            "run_name": "money-tracker-cli",
+            "tags": ["local-inference", "money-tracker"],
+            **tracer.graph_config(graph="assistant", include_model_runs=True),
+        },
+    )
 
     # The prompt is owner content and never reaches a field; its length is
     # enough to tell an empty turn from a long one while diagnosing.
-    with log_context(prompt_characters=len(prompt), traced=bool(callbacks)):
+    with log_context(prompt_characters=len(prompt), traced=tracer.enabled):
         try:
             with _LOGGER.timed("cli.turn"):
                 result = build_graph().invoke(
@@ -74,4 +79,4 @@ def main(argv: Sequence[str] | None = None) -> None:
                 )
             print(result["messages"][-1].text)
         finally:
-            flush_traces(enabled=bool(callbacks))
+            tracer.shutdown()

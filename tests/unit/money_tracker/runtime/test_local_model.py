@@ -15,7 +15,9 @@ from openai import APIStatusError
 from pydantic import Field
 
 from money_tracker.runtime import LocalStructuredOutputModel
+from money_tracker.tracing import DISABLED_TRACER
 from money_tracker.workflows import RepairRequest, RouteClassification
+from tests.unit.money_tracker.tracing.memory_tracer import InMemoryTracer
 
 COMPLETION = json.dumps(
     {"intent": "expense", "confidence": 0.94, "evidence": "12 euro"}
@@ -254,3 +256,176 @@ def test_a_rejected_request_still_propagates() -> None:
             message="12 euro di pizza",
             schema=RouteClassification,
         )
+
+
+class ParameterizedRecordingChatModel(RecordingChatModel):
+    """A recording model carrying the attributes a real client exposes.
+
+    It holds an endpoint and a key exactly as `ChatOpenAI` does, so the test can
+    prove neither reaches the recorded request parameters.
+    """
+
+    model_name: str = "local-model"
+    temperature: float = 0.1
+    request_timeout: float = 120.0
+    max_retries: int = 2
+    openai_api_base: str = "http://127.0.0.1:8080/v1"
+    openai_api_key: str = "local-secret-api-key"
+    usage: dict[str, int] = Field(default_factory=dict)
+
+    def _generate(
+        self,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager: Any = None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        """Record the request and answer with provider usage metadata."""
+
+        self.requests.append({"messages": list(messages), "kwargs": dict(kwargs)})
+        text = self.completions[len(self.requests) - 1]
+        message = AIMessage(
+            content=text,
+            usage_metadata={
+                "input_tokens": 120,
+                "output_tokens": 30,
+                "total_tokens": 150,
+            },
+            response_metadata={"finish_reason": "stop"},
+        )
+        return ChatResult(generations=[ChatGeneration(message=message)])
+
+
+REPAIR = RepairRequest(
+    invalid_output='{"intent": "spesa"}',
+    validation_error="intent: Input should be 'expense'",
+)
+
+
+def _requests_for(tracer: Any) -> list[dict[str, Any]]:
+    """Send an initial request and a repair through one adapter configuration."""
+
+    chat_model = ParameterizedRecordingChatModel(completions=[COMPLETION, COMPLETION])
+    adapter = LocalStructuredOutputModel(chat_model, tracer=tracer)
+    for repair in (None, REPAIR):
+        adapter.complete_json(
+            instructions="classify",
+            message="ho speso 12 euro",
+            schema=RouteClassification,
+            repair=repair,
+        )
+    return [
+        {
+            "messages": [(type(item), item.content) for item in request["messages"]],
+            "kwargs": request["kwargs"],
+        }
+        for request in chat_model.requests
+    ]
+
+
+def test_tracing_does_not_change_what_is_sent_to_the_model() -> None:
+    """Send byte-for-byte the same turns and schema whether or not a trace records.
+
+    The integration suite repeats this over the wire against the real endpoint;
+    this test pins the adapter's own contribution, repair turn included.
+    """
+
+    assert _requests_for(InMemoryTracer()) == _requests_for(DISABLED_TRACER)
+
+
+def test_a_traced_request_records_the_complete_call() -> None:
+    """Record every turn, the bound schema, parameters, completion, and parse."""
+
+    tracer = InMemoryTracer()
+    chat_model = ParameterizedRecordingChatModel(completions=[COMPLETION])
+    LocalStructuredOutputModel(chat_model, tracer=tracer).complete_json(
+        instructions="classify",
+        message="ho speso 12 euro",
+        schema=RouteClassification,
+        repair=REPAIR,
+    )
+
+    (call,) = tracer.observations
+    assert call.request is not None
+    assert call.name == "model:RouteClassification"
+    assert call.request.attempt == 2
+    assert [(item.role, item.content) for item in call.request.messages] == [
+        ("system", "classify"),
+        ("user", "ho speso 12 euro"),
+        ("assistant", '{"intent": "spesa"}'),
+        ("user", chat_model.requests[0]["messages"][3].content),
+    ]
+    assert (
+        call.request.response_format
+        == chat_model.requests[0]["kwargs"]["response_format"]
+    )
+    assert call.request.parameters == {
+        "model_name": "local-model",
+        "temperature": 0.1,
+        "request_timeout": 120.0,
+        "max_retries": 2,
+    }
+    assert call.completion == {
+        "completion": COMPLETION,
+        "usage": {"input_tokens": 120, "output_tokens": 30, "total_tokens": 150},
+        "response_metadata": {"finish_reason": "stop"},
+    }
+    assert call.parse == {
+        "contract": {
+            "intent": "expense",
+            "confidence": 0.94,
+            "evidence": "12 euro",
+            "unknowns": [],
+        },
+        "validation_error": None,
+    }
+
+
+def test_a_traced_invalid_completion_records_the_validation_summary() -> None:
+    """Record the field paths that will trigger the single corrective retry."""
+
+    tracer = InMemoryTracer()
+    invalid = '{"intent": "spesa", "confidence": 2}'
+    result = LocalStructuredOutputModel(
+        ParameterizedRecordingChatModel(completions=[invalid]), tracer=tracer
+    ).complete_json(
+        instructions="classify",
+        message="ho speso 12 euro",
+        schema=RouteClassification,
+    )
+
+    (call,) = tracer.observations
+    assert result == invalid
+    assert call.parse is not None
+    assert call.parse["contract"] is None
+    assert "intent" in str(call.parse["validation_error"])
+    assert "spesa" not in str(call.parse["validation_error"])
+
+
+@pytest.mark.parametrize(
+    ("status_code", "expected", "reason"),
+    [
+        (503, ModelConnectionError, "endpoint_unavailable_503"),
+        (400, APIStatusError, "endpoint_rejected_400"),
+    ],
+)
+def test_a_traced_endpoint_failure_records_a_reason_code(
+    status_code: int, expected: type[Exception], reason: str
+) -> None:
+    """Record why the call failed without the provider's error text."""
+
+    tracer = InMemoryTracer()
+    adapter = LocalStructuredOutputModel(
+        FailingChatModel(status_code=status_code), tracer=tracer
+    )
+
+    with pytest.raises(expected):
+        adapter.complete_json(
+            instructions="classify",
+            message="12 euro di pizza",
+            schema=RouteClassification,
+        )
+
+    (call,) = tracer.observations
+    assert call.failure == (reason, "APIStatusError")
+    assert call.completion is None

@@ -24,7 +24,7 @@ the step document, which is the only place any of them is written down.
 | [3](roadmap/step-3-evaluated-text-workflows.md) | Evaluated text workflows | Complete (2026-09-09) |
 | [4](roadmap/step-4-durable-telegram-mvp.md) | Durable Telegram MVP | Complete (2026-09-11) |
 | [5](roadmap/step-5-dashboard-and-advice.md) | Local dashboard, budgets, analytics, and advice | Complete (2026-09-16) |
-| [5.5](roadmap/step-5-5-llm-traceability.md) | Full LLM call traceability in Langfuse | Planned |
+| [5.5](roadmap/step-5-5-llm-traceability.md) | Full LLM call traceability in Langfuse | In progress (started 2026-09-16) |
 | [6](roadmap/step-6-evaluated-receipt-workflow.md) | Evaluated receipt workflow | Planned |
 | [7](roadmap/step-7-hardening-and-release.md) | Operational hardening and personal V1 release | Planned |
 

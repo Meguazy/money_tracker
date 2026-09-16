@@ -26,6 +26,7 @@ from money_tracker.workflows import (
     WorkflowIntent,
     routing_update,
 )
+from tests.unit.money_tracker.tracing.memory_tracer import InMemoryTracer
 
 
 @dataclass
@@ -337,3 +338,68 @@ def test_a_settled_review_carries_the_movement_it_posted(
 
     assert result.status is status
     assert result.expense_id == expense_id
+
+
+def test_an_untraced_dispatch_hands_graphs_only_their_thread() -> None:
+    """Keep graph configuration exactly as it was before tracing existed."""
+
+    message = _message("Quanto ho speso?")
+    dispatcher, _expense, _movement, read, _review = _dispatcher(
+        _decision(WorkflowIntent.QUERY),
+        read={"outcome": "answered", "executed_tool": "category_spending"},
+    )
+
+    dispatcher.dispatch(message, context=DispatchContext(profile_id=uuid4()))
+
+    (_state, config) = read.calls[0]
+    assert config == {"configurable": {"thread_id": f"read:{message.source_reference}"}}
+
+
+def test_a_traced_dispatch_records_the_work_unit_and_its_outcome() -> None:
+    """Record the complete message, trusted context, versions, and outcome."""
+
+    tracer = InMemoryTracer()
+    profile_id = uuid4()
+    message = _message("Quanto ho speso per gli animali?")
+    dispatcher, _expense, _movement, read, _review = _dispatcher(
+        _decision(WorkflowIntent.QUERY),
+        read={
+            "outcome": "answered",
+            "executed_tool": "category_spending",
+            "answer_json": json.dumps({"period": "2026-09"}),
+        },
+    )
+    dispatcher.tracer = tracer
+    dispatcher.trace_metadata = {"router_prompt": "candidate-router-it-v6"}
+
+    dispatcher.dispatch(message, context=DispatchContext(profile_id=profile_id))
+
+    (span,) = tracer.named("dispatch")
+    assert span.metadata == {"router_prompt": "candidate-router-it-v6"}
+    assert isinstance(span.input, dict)
+    assert span.input["message"]["text"] == "Quanto ho speso per gli animali?"
+    assert span.input["context"]["profile_id"] == str(profile_id)
+    assert isinstance(span.output, dict)
+    assert span.output["executed_tool"] == "category_spending"
+    assert span.output["answer"] == {"period": "2026-09"}
+    assert tracer.graph_configs == ["router", "read"]
+    (_state, config) = read.calls[0]
+    assert config == {
+        "configurable": {"thread_id": f"read:{message.source_reference}"},
+        "callbacks": [tracer.handlers[1]],
+    }
+
+
+def test_a_failing_dispatch_marks_its_span_and_propagates() -> None:
+    """Record a failure by exception class and leave the error to the caller."""
+
+    tracer = InMemoryTracer()
+    dispatcher, *_graphs = _dispatcher(_decision(WorkflowIntent.QUERY))
+    dispatcher.router = _Graph({})
+    dispatcher.tracer = tracer
+
+    with pytest.raises(RuntimeError):
+        dispatcher.dispatch(_message(), context=DispatchContext(profile_id=uuid4()))
+
+    (span,) = tracer.named("dispatch")
+    assert span.failure == ("exception", "RuntimeError")

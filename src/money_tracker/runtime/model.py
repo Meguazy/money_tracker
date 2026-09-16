@@ -10,6 +10,16 @@ requires an unsupported capability to be disabled explicitly.
 The adapter returns raw completion text. Parsing, the single corrective retry,
 and the failure policy stay in `money_tracker.workflows.model`, so provider
 behaviour cannot quietly change how many attempts a boundary gets.
+
+It is also where each request is traced, because it is the only place that
+holds the complete request: every turn, the bound `response_format`, and the
+attempt. The injected tracer observes the request and never shapes it; the
+turns and the bound schema are built before the tracer sees them, identically
+whether tracing is on or off. When a trace is recording, the completion is
+validated against its contract a second time, purely to record the parsed
+contract or the field paths that will trigger the corrective retry. That parse
+is the same deterministic `model_validate_json` the boundary applies, so it
+cannot disagree with it, and its result never reaches the caller.
 """
 
 from __future__ import annotations
@@ -20,11 +30,18 @@ from langchain_core.exceptions import ModelConnectionError
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from openai import APIStatusError
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from money_tracker.llm import create_chat_model
 from money_tracker.structured_logging import get_logger
-from money_tracker.workflows import RepairRequest
+from money_tracker.tracing import (
+    DISABLED_TRACER,
+    ModelCallObservation,
+    ModelCallRequest,
+    TraceMessage,
+    Tracer,
+)
+from money_tracker.workflows import RepairRequest, summarize_validation_error
 
 _LOGGER = get_logger("money_tracker.runtime.model")
 
@@ -80,7 +97,12 @@ REPAIR_INSTRUCTION = (
 class LocalStructuredOutputModel:
     """Produce one strict-schema completion from a local endpoint."""
 
-    def __init__(self, chat_model: BaseChatModel | None = None) -> None:
+    def __init__(
+        self,
+        chat_model: BaseChatModel | None = None,
+        *,
+        tracer: Tracer = DISABLED_TRACER,
+    ) -> None:
         """Bind the adapter to a chat model, or build one from settings.
 
         Sampling parameters come from the injected model rather than being
@@ -90,9 +112,12 @@ class LocalStructuredOutputModel:
         Args:
             chat_model: Explicit chat model. Environment settings are used when
                 omitted.
+            tracer: Tracing port chosen by the entry point. The default records
+                nothing, which is what every evaluation and test relies on.
         """
 
         self._chat_model = chat_model or create_chat_model()
+        self._tracer = tracer
 
     def complete_json(
         self,
@@ -130,23 +155,60 @@ class LocalStructuredOutputModel:
                     content=REPAIR_INSTRUCTION.format(problems=repair.validation_error)
                 )
             )
-        constrained = self._chat_model.bind(
-            response_format={
-                "type": "json_schema",
-                "json_schema": {
-                    "name": schema.__name__,
-                    "strict": True,
-                    "schema": strict_json_schema(schema),
-                },
-            }
-        )
+        response_format: dict[str, Any] = {
+            "type": "json_schema",
+            "json_schema": {
+                "name": schema.__name__,
+                "strict": True,
+                "schema": strict_json_schema(schema),
+            },
+        }
+        constrained = self._chat_model.bind(response_format=response_format)
         _LOGGER.debug(
             "inference.request.started",
             schema=schema.__name__,
             repair=repair is not None,
         )
+        request = ModelCallRequest(
+            boundary=schema.__name__,
+            attempt=1 if repair is None else 2,
+            messages=tuple(_trace_message(turn) for turn in turns),
+            response_format=response_format,
+            parameters=_request_parameters(self._chat_model),
+        )
+        with self._tracer.model_call(request) as call:
+            content = self._invoke(constrained, turns, schema, call)
+            if call.recording:
+                _record_parse(call, schema, content)
+        return content
+
+    def _invoke(
+        self,
+        constrained: Any,
+        turns: list[BaseMessage],
+        schema: type[BaseModel],
+        call: ModelCallObservation,
+    ) -> str:
+        """Send one prepared request and return its text completion.
+
+        Args:
+            constrained: Chat model with the strict `response_format` bound.
+            turns: Complete ordered request turns.
+            schema: Contract the completion must satisfy.
+            call: Recorder for the request's generation.
+
+        Returns:
+            Raw completion text.
+
+        Raises:
+            ModelConnectionError: If the endpoint is unreachable or answered with
+                a server-side status.
+            APIStatusError: If the endpoint rejected the request itself.
+            RuntimeError: If the endpoint returned a non-text content block.
+        """
+
         try:
-            content = constrained.invoke(turns).content
+            response = constrained.invoke(turns)
         except APIStatusError as error:
             # llama.cpp accepts connections while it is still reading the model
             # off disk and answers 503 until it is ready. A refused connection
@@ -166,24 +228,44 @@ class LocalStructuredOutputModel:
                     schema=schema.__name__,
                     status_code=error.status_code,
                 )
+                call.record_failure(
+                    f"endpoint_rejected_{error.status_code}",
+                    exception_type=type(error).__name__,
+                )
                 raise
             _LOGGER.warning(
                 "inference.endpoint.unavailable",
                 schema=schema.__name__,
                 status_code=error.status_code,
             )
+            call.record_failure(
+                f"endpoint_unavailable_{error.status_code}",
+                exception_type=type(error).__name__,
+            )
             raise ModelConnectionError(
                 f"local inference endpoint returned {error.status_code}"
             ) from error
+        except ModelConnectionError as error:
+            call.record_failure(
+                "endpoint_unreachable", exception_type=type(error).__name__
+            )
+            raise
+        content = response.content
         if not isinstance(content, str):
             _LOGGER.error(
                 "inference.response.not_text",
                 schema=schema.__name__,
                 content_type=type(content).__name__,
             )
+            call.record_failure("response_not_text")
             raise RuntimeError(
                 "structured boundary requires text content from the endpoint"
             )
+        call.record_completion(
+            completion=content,
+            usage=_usage(response),
+            response_metadata=dict(getattr(response, "response_metadata", {}) or {}),
+        )
         # The completion is model output derived from owner text, so its length
         # is recorded and its content is not.
         _LOGGER.debug(
@@ -192,3 +274,78 @@ class LocalStructuredOutputModel:
             completion_characters=len(content),
         )
         return content
+
+
+_TRACED_PARAMETERS = (
+    "model_name",
+    "temperature",
+    "request_timeout",
+    "max_retries",
+    "seed",
+    "top_p",
+    "max_tokens",
+)
+"""Chat model attributes that shape a request, recorded beside it.
+
+The endpoint URL and API key are also chat model attributes, which is why the
+recorded set is an allowlist rather than everything the model carries.
+"""
+
+
+def _request_parameters(chat_model: BaseChatModel) -> dict[str, object]:
+    """Read the sampling and transport parameters a request is sent with.
+
+    Args:
+        chat_model: Chat model the adapter invokes.
+
+    Returns:
+        Allowlisted parameters that are set, never a URL or credential.
+    """
+
+    parameters: dict[str, object] = {}
+    for name in _TRACED_PARAMETERS:
+        value = getattr(chat_model, name, None)
+        if isinstance(value, str | int | float | bool):
+            parameters[name] = value
+    return parameters
+
+
+def _trace_message(turn: BaseMessage) -> TraceMessage:
+    """Describe one request turn by the role the endpoint receives."""
+
+    roles = {"system": "system", "human": "user", "ai": "assistant"}
+    return TraceMessage(role=roles.get(turn.type, turn.type), content=turn.text)
+
+
+def _usage(response: Any) -> dict[str, int] | None:
+    """Return the token counts the endpoint reported, when it reported any."""
+
+    usage = getattr(response, "usage_metadata", None)
+    if not usage:
+        return None
+    return {
+        key: int(value)
+        for key, value in dict(usage).items()
+        if key in {"input_tokens", "output_tokens", "total_tokens"}
+    }
+
+
+def _record_parse(
+    call: ModelCallObservation, schema: type[BaseModel], content: str
+) -> None:
+    """Record whether a completion satisfies its contract, for the trace only.
+
+    Args:
+        call: Recorder for the request's generation.
+        schema: Contract the boundary will validate against.
+        content: Raw completion text.
+    """
+
+    try:
+        parsed = schema.model_validate_json(content)
+    except ValidationError as error:
+        call.record_parse(
+            contract=None, validation_error=summarize_validation_error(error)
+        )
+        return
+    call.record_parse(contract=parsed.model_dump(mode="json"), validation_error=None)

@@ -310,3 +310,65 @@ def test_a_thread_that_dies_is_recorded_with_its_name(emitted: StringIO) -> None
     assert record["level"] == "CRITICAL"
     assert record["thread"] == "money-tracker-telegram-0"
     assert "RuntimeError: loop died" in str(record["error"])
+
+
+def test_tracing_sdk_debug_records_never_form(emitted: StringIO) -> None:
+    """Keep a traced payload out of the journal even at DEBUG.
+
+    The Langfuse callback logs complete chain inputs at DEBUG, which is exactly
+    the owner content the journal must not hold.
+    """
+
+    logging.getLogger("langfuse").debug("on_chain_start inputs=%s", "Ho speso 12 euro")
+
+    assert _records(emitted) == []
+
+
+def test_tracing_sdk_records_become_content_free_events(emitted: StringIO) -> None:
+    """Keep that tracing degraded, drop the URL, error text, and traceback."""
+
+    exporter = logging.getLogger(
+        "opentelemetry.exporter.otlp.proto.http.trace_exporter"
+    )
+    try:
+        raise ConnectionError("http://localhost:3000/api/public/otel/v1/traces refused")
+    except ConnectionError:
+        exporter.error(
+            "Failed to export span batch code: %s, reason: %s",
+            None,
+            "http://localhost:3000/api/public/otel/v1/traces",
+            exc_info=True,
+        )
+    logging.getLogger("langfuse").warning("Masking error: %s", "Ho speso 12 euro")
+
+    records = _records(emitted)
+
+    assert [record["event"] for record in records] == [
+        "tracing.export.degraded",
+        "tracing.sdk.reported",
+    ]
+    assert records[0]["exception_type"] == "ConnectionError"
+    assert records[0]["level"] == "WARNING"
+    assert "error" not in records[0]
+    assert "localhost" not in json.dumps(records)
+    assert "Ho speso" not in json.dumps(records)
+
+
+def test_a_strict_process_level_also_silences_tracing_sdk_warnings() -> None:
+    """Never let the SDK loggers be noisier than the process asked for."""
+
+    root = logging.getLogger()
+    previous_handlers = list(root.handlers)
+    previous_level = root.level
+    stream = StringIO()
+    configure_logging(level="CRITICAL", stream=stream, capture_uncaught=False)
+    try:
+        logging.getLogger("opentelemetry.sdk").warning("Exporter failed")
+    finally:
+        for handler in list(root.handlers):
+            root.removeHandler(handler)
+        for handler in previous_handlers:
+            root.addHandler(handler)
+        root.setLevel(previous_level)
+
+    assert stream.getvalue() == ""

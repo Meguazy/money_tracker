@@ -236,47 +236,112 @@ def collect_model_metadata(
     projector_hash = (
         sha256_file(projector) if projector and projector.is_file() else None
     )
-    template = props.get("chat_template_tool_use") or props.get("chat_template")
-    template_hash = sha256_text(str(template)) if template else None
 
-    binary_path: Path | None = None
-    if settings.server_binary:
-        resolved = shutil.which(settings.server_binary)
-        candidate = Path(resolved) if resolved else Path(settings.server_binary)
-        binary_path = candidate if candidate.is_file() else None
+    binary_path = resolve_server_binary(settings.server_binary)
     binary_hash = sha256_file(binary_path) if binary_path else None
     server_version = (
         _command_output([str(binary_path), "--version"])
         if binary_path
         else str(props.get("build_info") or props.get("version") or "").strip() or None
     )
-    context_size = _context_size(props, settings.context_size)
-    quantization = _quantization(filename, props)
+    return model_metadata_from_properties(
+        model_alias=settings.model_alias,
+        properties=props,
+        filename=filename,
+        gguf_sha256=model_hash,
+        vision_projector_sha256=projector_hash,
+        server_version=server_version,
+        server_binary_sha256=binary_hash,
+        configured_context_size=settings.context_size,
+        vision_required=vision_required,
+    )
+
+
+def resolve_server_binary(configured: str | None) -> Path | None:
+    """Resolve the configured inference server executable to a regular file.
+
+    Args:
+        configured: Executable name or path from configuration.
+
+    Returns:
+        The executable path, or None when it is unset or not a regular file.
+    """
+
+    if not configured:
+        return None
+    resolved = shutil.which(configured)
+    candidate = Path(resolved) if resolved else Path(configured)
+    return candidate if candidate.is_file() else None
+
+
+def model_metadata_from_properties(
+    *,
+    model_alias: str,
+    properties: Mapping[str, object],
+    filename: str | None,
+    gguf_sha256: str | None,
+    vision_projector_sha256: str | None,
+    server_version: str | None,
+    server_binary_sha256: str | None,
+    configured_context_size: int | None,
+    vision_required: bool,
+) -> ModelMetadata:
+    """Assemble model identity from server properties and measured digests.
+
+    This is the single definition of what identifies the model that answered
+    and of when that identity counts as complete. The capability runner hashes
+    artifacts as it goes; runtime tracing supplies digests it has cached. Both
+    therefore publish the same fields under the same completeness rule.
+
+    Args:
+        model_alias: Model identifier sent with inference requests.
+        properties: Safe JSON object returned by llama.cpp ``/props``.
+        filename: Weights filename, without any directory.
+        gguf_sha256: Measured weights digest with its algorithm prefix.
+        vision_projector_sha256: Measured projector digest, when one applies.
+        server_version: Version string of the server build.
+        server_binary_sha256: Measured server executable digest.
+        configured_context_size: Context size from configuration, used when the
+            server does not report one.
+        vision_required: Require a projector digest for completeness.
+
+    Returns:
+        Model metadata with an explicit completeness decision.
+    """
+
+    template = properties.get("chat_template_tool_use") or properties.get(
+        "chat_template"
+    )
+    template_hash = sha256_text(str(template)) if template else None
+    context_size = _context_size(properties, configured_context_size)
+    quantization = _quantization(filename, properties)
     metadata_complete = all(
         (
             filename,
-            model_hash,
+            gguf_sha256,
             quantization,
             template_hash,
             server_version,
-            binary_hash,
+            server_binary_sha256,
             context_size,
         )
-    ) and (not vision_required or projector_hash is not None)
+    ) and (not vision_required or vision_projector_sha256 is not None)
 
     return ModelMetadata(
         endpoint_kind="llama.cpp",
-        model_alias=settings.model_alias,
+        model_alias=model_alias,
         gguf_filename=filename,
-        gguf_sha256=model_hash,
+        gguf_sha256=gguf_sha256,
         quantization=quantization,
-        vision_projector_sha256=projector_hash,
+        vision_projector_sha256=vision_projector_sha256,
         chat_template_sha256=template_hash,
-        chat_template_capabilities=_normalized_strings(props.get("chat_template_caps")),
-        modalities=_normalized_strings(props.get("modalities")),
+        chat_template_capabilities=_normalized_strings(
+            properties.get("chat_template_caps")
+        ),
+        modalities=_normalized_strings(properties.get("modalities")),
         context_size=context_size,
         server_version=server_version,
-        server_binary_sha256=binary_hash,
+        server_binary_sha256=server_binary_sha256,
         metadata_complete=bool(metadata_complete),
     )
 

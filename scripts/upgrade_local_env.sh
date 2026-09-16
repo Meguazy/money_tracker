@@ -71,6 +71,16 @@ if ! has_setting LOG_FORMAT; then
   updated=true
 fi
 
+if ! has_setting MONEY_TRACKER_TRACING_ENABLED; then
+  printf 'MONEY_TRACKER_TRACING_ENABLED=false\n' >>"${env_file}"
+  updated=true
+fi
+
+if ! has_setting MONEY_TRACKER_TRACING_EXPORT_TIMEOUT_SECONDS; then
+  printf 'MONEY_TRACKER_TRACING_EXPORT_TIMEOUT_SECONDS=2\n' >>"${env_file}"
+  updated=true
+fi
+
 if ! has_setting MONEY_TRACKER_RECEIPT_ARCHIVE_ROOT; then
   receipt_archive_root="${XDG_DATA_HOME:-${HOME}/.local/share}/money-tracker/receipts"
   printf 'MONEY_TRACKER_RECEIPT_ARCHIVE_ROOT=%s\n' "${receipt_archive_root}" >>"${env_file}"

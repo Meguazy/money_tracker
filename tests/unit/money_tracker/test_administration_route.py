@@ -20,6 +20,7 @@ from money_tracker.workflows import (
     SupportedCommand,
     WorkflowIntent,
 )
+from tests.unit.money_tracker.tracing.memory_tracer import InMemoryTracer
 
 
 class StubEndpoint(BaseChatModel):
@@ -272,3 +273,65 @@ def test_unreachable_endpoint_names_the_missing_service(
                 "0.8",
             ]
         )
+
+
+def test_a_traced_route_is_rooted_at_its_source_reference(
+    endpoint: StubEndpoint,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Root one trace per work unit, nest dispatch and the model call, then flush.
+
+    The tracer factory is the boundary to the trace store, so it is replaced
+    here by an in-memory implementation of the same port.
+    """
+
+    tracer = InMemoryTracer()
+    monkeypatch.setattr("money_tracker.administration.open_tracer", lambda: tracer)
+    endpoint.completions = [_classification("expense", 0.93)]
+
+    payload = _run(
+        [
+            "route",
+            "--text",
+            "Ho speso 12 euro per i croccantini dei gatti",
+            "--minimum-confidence",
+            "0.8",
+            "--source-reference",
+            "local-admin:route:traced",
+        ],
+        capsys,
+    )
+
+    assert [item.name for item in tracer.observations] == [
+        "work-unit",
+        "dispatch",
+        "model:RouteClassification",
+    ]
+    root, dispatch, _call = tracer.observations
+    assert root.trace_seed == "local-admin:route:traced"
+    assert root.output == payload
+    assert dispatch.metadata["routing_minimum_confidence"] == 0.8
+    assert str(dispatch.metadata["router_prompt"]).startswith("candidate-router-it-")
+    assert tracer.graph_configs == ["router"]
+    assert {"pre_route", "classify"} <= set(tracer.handlers[0].runs)
+    assert tracer.shutdowns == 1
+
+
+def test_an_unreachable_model_still_flushes_the_trace(
+    endpoint: StubEndpoint,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Record the failed work unit and deliver it before the command exits."""
+
+    tracer = InMemoryTracer()
+    monkeypatch.setattr("money_tracker.administration.open_tracer", lambda: tracer)
+    endpoint.fail_with_connection_error = True
+
+    with pytest.raises(SystemExit):
+        main(["route", "--text", "12 euro di pizza", "--minimum-confidence", "0.8"])
+
+    (root,) = tracer.named("work-unit")
+    assert root.failure == ("exception", "SystemExit")
+    assert tracer.shutdowns == 1

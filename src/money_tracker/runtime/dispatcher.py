@@ -4,12 +4,19 @@ The root router and specialist graphs intentionally remain independently
 compiled units.  This dispatcher is the single application-facing entry point:
 it invokes routing once, passes only the accepted route and trusted references
 to one specialist, and converts graph state into a compact typed outcome.
+
+Tracing enters through an injected port. Each dispatch opens one span holding
+the complete work unit, trusted context, version set, and typed outcome, and
+each graph invocation receives only the callbacks the tracer returns. Callbacks
+are not persisted by LangGraph, so a traced invocation checkpoints exactly
+what an untraced one does.
 """
 
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from typing import Any, Protocol, cast
 from uuid import UUID
 
@@ -35,6 +42,7 @@ from money_tracker.runtime.review_graph import (
 )
 from money_tracker.runtime.router_graph import build_router_graph
 from money_tracker.structured_logging import get_logger, log_context
+from money_tracker.tracing import DISABLED_TRACER, Tracer
 from money_tracker.workflows import (
     DEFAULT_READ_SELECTION_POLICY,
     ChannelMessage,
@@ -57,6 +65,7 @@ from money_tracker.workflows import (
     initial_read_state,
     initial_review_state,
     initial_router_state,
+    outcome_facts,
     review_decision_from_message,
     routing_decision_from_state,
 )
@@ -84,6 +93,10 @@ class WorkflowDispatcher:
         movement_change: Compiled correction/undo specialist.
         read: Compiled query/advice specialist.
         review: Compiled persistent category-review specialist.
+        tracer: Tracing port injected by the entry point.
+        trace_metadata: Contract, prompt, and policy versions in force, recorded
+            on every dispatch span. They describe the assembly, so the entry
+            point that assembled it supplies them.
     """
 
     router: Graph
@@ -91,13 +104,23 @@ class WorkflowDispatcher:
     movement_change: Graph
     read: Graph
     review: Graph
+    tracer: Tracer = DISABLED_TRACER
+    trace_metadata: Mapping[str, object] = field(default_factory=dict)
 
     @classmethod
-    def routing_only(cls, router: Graph) -> WorkflowDispatcher:
+    def routing_only(
+        cls,
+        router: Graph,
+        *,
+        tracer: Tracer = DISABLED_TRACER,
+        trace_metadata: Mapping[str, object] | None = None,
+    ) -> WorkflowDispatcher:
         """Build the same entry point for diagnostics without finance access.
 
         Args:
             router: Compiled root router.
+            tracer: Tracing port injected by the entry point.
+            trace_metadata: Versions in force for the router assembly.
 
         Returns:
             A dispatcher that can return routing outcomes while a missing
@@ -111,6 +134,8 @@ class WorkflowDispatcher:
             movement_change=unavailable,
             read=unavailable,
             review=unavailable,
+            tracer=tracer,
+            trace_metadata=dict(trace_metadata or {}),
         )
 
     def dispatch(
@@ -135,8 +160,17 @@ class WorkflowDispatcher:
 
         # The source reference is the work unit's own identity, not owner
         # content, so it is what correlates every record a dispatch produces.
-        with log_context(source_reference=message.source_reference):
-            return self._dispatch(message, context)
+        with (
+            log_context(source_reference=message.source_reference),
+            self.tracer.span(
+                "dispatch",
+                input=trace_work_unit(message, context),
+                metadata=self.trace_metadata,
+            ) as span,
+        ):
+            outcome = self._dispatch(message, context)
+            span.record_output(outcome_facts(outcome))
+            return outcome
 
     def _dispatch(
         self,
@@ -161,7 +195,7 @@ class WorkflowDispatcher:
                 RouterState,
                 self.router.invoke(
                     initial_router_state(message, context=context.routing),
-                    _thread_config("router", message.source_reference),
+                    self._graph_config("router", message.source_reference),
                 ),
             )
             decision = routing_decision_from_state(routed_state)
@@ -259,7 +293,7 @@ class WorkflowDispatcher:
                     profile_id=profile_id,
                     routed_intent=decision.intent,
                 ),
-                _thread_config("expense", message.source_reference),
+                self._graph_config("expense", message.source_reference),
             ),
         )
 
@@ -302,7 +336,7 @@ class WorkflowDispatcher:
                     expense_id=expense_id,
                     source_reference=message.source_reference,
                 ),
-                _thread_config("category-review", str(proposal_id)),
+                self._graph_config("category-review", str(proposal_id)),
             )
         _LOGGER.info(
             "workflow.expense.settled",
@@ -358,7 +392,7 @@ class WorkflowDispatcher:
                     profile_id=profile_id,
                     routed_intent=decision.intent,
                 ),
-                _thread_config("read", message.source_reference),
+                self._graph_config("read", message.source_reference),
             ),
         )
 
@@ -427,7 +461,7 @@ class WorkflowDispatcher:
                     routed_intent=decision.intent,
                     target_movement_id=target,
                 ),
-                _thread_config("movement-change", message.source_reference),
+                self._graph_config("movement-change", message.source_reference),
             ),
         )
         status = DispatchStatus(_required(final.get("outcome"), "outcome"))
@@ -486,7 +520,7 @@ class WorkflowDispatcher:
             ReviewWorkflowState,
             self.review.invoke(
                 Command(resume=review_decision),
-                _thread_config("category-review", str(proposal_id)),
+                self._graph_config("category-review", str(proposal_id)),
             ),
         )
         outcome = final.get("outcome")
@@ -520,6 +554,23 @@ class WorkflowDispatcher:
             clarification_reason=final.get("clarification_reason"),
         )
 
+    def _graph_config(self, namespace: str, reference: str) -> dict[str, Any]:
+        """Build one graph invocation's configuration.
+
+        Args:
+            namespace: Stable graph namespace.
+            reference: Durable reference the thread is keyed by.
+
+        Returns:
+            The stable thread identifier plus whatever non-persisted keys the
+            tracer contributes, which is nothing when tracing is disabled.
+        """
+
+        return {
+            **_thread_config(namespace, reference),
+            **self.tracer.graph_config(graph=namespace),
+        }
+
 
 class _UnavailableSpecialist:
     """Fail closed if routing-only assembly reaches finance unexpectedly."""
@@ -552,6 +603,8 @@ def build_workflow_dispatcher(
     funding_source_names: tuple[str, ...] = (),
     selection_policy: ReadSelectionPolicyVersion = DEFAULT_READ_SELECTION_POLICY,
     checkpointer: BaseCheckpointSaver[str] | None = None,
+    tracer: Tracer = DISABLED_TRACER,
+    trace_metadata: Mapping[str, object] | None = None,
 ) -> WorkflowDispatcher:
     """Assemble the single dispatcher from independently bounded graphs.
 
@@ -577,12 +630,17 @@ def build_workflow_dispatcher(
         selection_policy: Versioned post-model policy; defaults to the V1
             policy promoted by EVD-004.
         checkpointer: Persistent serializer-safe graph checkpoint adapter.
+        tracer: Tracing port injected by the entry point.
+        trace_metadata: Versions in force for this assembly, recorded on every
+            dispatch span.
 
     Returns:
         A dispatcher whose ``dispatch`` method is the sole channel-facing call.
     """
 
     return WorkflowDispatcher(
+        tracer=tracer,
+        trace_metadata=dict(trace_metadata or {}),
         router=cast(
             Graph,
             build_router_graph(
@@ -647,6 +705,59 @@ def build_workflow_dispatcher(
     )
 
 
+def trace_work_unit(
+    message: ChannelMessage, context: DispatchContext
+) -> dict[str, Any]:
+    """Render a work unit and its trusted context as JSON primitives.
+
+    The trace store holds the complete message by decision, so nothing here is
+    summarized. Primitives are produced up front because the store's redaction
+    walks JSON structures and would pass an opaque object through untouched.
+
+    Args:
+        message: Channel-neutral work unit.
+        context: Trusted owner scope and correlations.
+
+    Returns:
+        The message and context as nested JSON-compatible mappings.
+    """
+
+    return {
+        "message": {
+            "source_reference": message.source_reference,
+            "received_at": message.received_at.isoformat(),
+            "text": message.text,
+            "callback_action": (
+                None
+                if message.callback_action is None
+                else message.callback_action.value
+            ),
+            "pending_action_id": _optional_text(message.pending_action_id),
+            "reply_to_action_id": _optional_text(message.reply_to_action_id),
+            "has_image": message.has_image,
+        },
+        "context": {
+            "profile_id": _optional_text(context.profile_id),
+            "pending_category_review_ids": [
+                str(item) for item in context.routing.pending_category_review_ids
+            ],
+            "latest_correctable_movement_id": _optional_text(
+                context.routing.latest_correctable_movement_id
+            ),
+            "movement_actions": [
+                {"action_id": str(item.action_id), "movement_id": str(item.movement_id)}
+                for item in context.movement_actions
+            ],
+        },
+    }
+
+
+def _optional_text(value: UUID | None) -> str | None:
+    """Render an optional identifier as text."""
+
+    return None if value is None else str(value)
+
+
 def _thread_config(namespace: str, reference: str) -> dict[str, dict[str, str]]:
     """Build a collision-free stable LangGraph thread identifier."""
 
@@ -667,4 +778,4 @@ def _optional_uuid(value: str | None) -> UUID | None:
     return None if value is None else UUID(value)
 
 
-__all__ = ["WorkflowDispatcher", "build_workflow_dispatcher"]
+__all__ = ["WorkflowDispatcher", "build_workflow_dispatcher", "trace_work_unit"]

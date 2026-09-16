@@ -1,6 +1,7 @@
 # Operations Guide
 
-- Status: Steps 1–5 complete; Step 5 local dashboard browser-accepted on 2026-09-16
+- Status: Steps 1–5 complete; Step 5 local dashboard browser-accepted on 2026-09-16;
+  Step 5.5 LLM traceability in progress
 - Current executable operations: local inference/CLI, dedicated application
   PostgreSQL, migrations/checkpoint bootstrap, optional healthy Langfuse,
   capability evaluation, profile-scoped receipt storage, one-shot Step 3
@@ -13,12 +14,15 @@
   profile-settings consultation and default-source selection, read-only browser
   advice grounded in promoted deterministic tools, real-browser E2E and WCAG
   A/AA automation against isolated PostgreSQL and the local model, and
-  checked-in host service units including the browser-accepted API unit
+  checked-in host service units including the browser-accepted API unit, and
+  opt-in full-fidelity tracing of `money-tracker-admin route` into the local
+  Langfuse
 - Implemented Step 2: authoritative finance schema and transactional
   expense, wallet, budget, pending category-proposal, and versioned receipt-review
   repository operations, a safe local receipt-media adapter, and verified
   encrypted backup with an isolated restore drill
-- Planned operations: backup scheduling and clean-machine restore,
+- Planned operations: tracing of the worker, gateway, and web advice; trace
+  retention, export, and deletion; backup scheduling and clean-machine restore,
   workflow-worker receipt wiring, receipt extraction, and media deletion
 
 These guides describe accepted operational behavior and the controls future
@@ -43,6 +47,9 @@ the referenced file or entry point exists in the repository.
 - [Backup and Restore](backup-and-restore.md): host prerequisites, backup
   configuration, the implemented `money-tracker-backup` sequence, retention,
   the isolated restore drill, and recovery acceptance.
+- [LLM Tracing](tracing.md): what AD-021 traces contain, the explicit switch,
+  reading a trace, measured degradation, journal events, and verification;
+  retention, deletion, and backup still planned.
 - [Security and Troubleshooting](security-and-troubleshooting.md): trust
   boundaries, secret handling, logging, incident response, and failure triage.
 - [Development](../development.md): commands verified for the current scaffold.
@@ -65,8 +72,11 @@ the referenced file or entry point exists in the repository.
 ## Current known operational state
 
 - The CLI, environment generator/upgrader, llama.cpp launcher, database
-  administration CLI, single Step 3 workflow dispatcher, capability runner,
-  and optional Langfuse callbacks exist.
+  administration CLI, single Step 3 workflow dispatcher, and capability runner
+  exist. The earlier optional Langfuse callbacks covered only the scaffold CLI.
+  Step 5.5 replaces them with an injected tracing boundary behind
+  `MONEY_TRACKER_TRACING_ENABLED`, which today traces `money-tracker-admin route`
+  and the scaffold; no host service is traced yet.
 - The dedicated application PostgreSQL is healthy, independently persistent,
   least-privileged, and separate from the Langfuse database. It owns the
   authoritative finance schema, persistent workflow checkpoints, and the
@@ -90,7 +100,9 @@ the referenced file or entry point exists in the repository.
   Real-browser E2E, WCAG A/AA automation, and acceptance of the installed
   `money-tracker-api.service`, including a real restart, passed on 2026-09-16.
 - Langfuse 4.26.0 and every dependency are pinned by digest. The non-cluster
-  repair and health checks pass with the pre-existing volumes preserved.
+  repair and health checks pass with the pre-existing volumes preserved. Under
+  AD-021 its volumes may hold owner content, so treat them like the finance
+  database; whether they join the backup set is still an owner decision.
 - Installed model paths remain workstation-owned and outside the repository.
   EVD-004 promotes `text-qwen3-14b` with `Qwen3-14B-Q5_K_M.gguf`, router v6,
   extraction v6, category-fit v6, tool-selection v5, routing confidence 0.5,

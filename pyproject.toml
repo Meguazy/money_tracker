@@ -54,6 +54,7 @@ markers = [
     "postgres: requires the real application PostgreSQL service",
     "inference: requires a real OpenAI-compatible local inference service",
     "telegram: requires the real Telegram test bot over the official Bot API",
+    "langfuse: requires the real local Langfuse instance and may enable tracing",
 ]
 
 [tool.coverage.run]

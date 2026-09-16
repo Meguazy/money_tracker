@@ -395,8 +395,18 @@ With a real inference server running:
     uv run --env-file .env money-tracker \\
       "Help me review this month's spending"
 
-The generated environment points the SDK at local Langfuse. Removing either
-project key disables tracing without disabling inference or database operation.
+Tracing is off unless `MONEY_TRACKER_TRACING_ENABLED` is true; the generated
+Langfuse keys alone do not enable it, and a non-loopback `LANGFUSE_BASE_URL` is
+refused. Switch it on for one command:
+
+    MONEY_TRACKER_TRACING_ENABLED=true uv run --env-file .env \
+      money-tracker-admin route --text 'Quanto ho speso questo mese?' \
+      --minimum-confidence 0.5
+
+Entry points inject the tracer from `money_tracker.tracing.open_tracer()` into
+`LocalStructuredOutputModel` and the dispatcher; nothing else imports the
+Langfuse SDK. Traces are full fidelity under AD-021 and belong in the local
+store only. See [LLM Tracing](operations/tracing.md).
 
 ## Application logging
 
@@ -464,6 +474,17 @@ through the real endpoint:
       RUN_INFERENCE_INTEGRATION_TESTS=1 \
       uv run --env-file .env pytest -q \
       tests/integration/money_tracker/runtime
+
+Real Langfuse tracing checks need the observability profile, the local model,
+and the isolated test database. They write to the `integration-test` Langfuse
+environment and delete the traces they create:
+
+    RUN_POSTGRES_INTEGRATION_TESTS=1 RUN_LANGFUSE_INTEGRATION_TESTS=1 \
+      LOG_LEVEL=CRITICAL uv run --env-file .env pytest -q \
+      tests/integration/money_tracker/tracing
+
+Every other test forces tracing off, so a switch set in `.env` never exports
+synthetic test messages into the owner's store.
 
 Real inference checks remain opt-in and never substitute a mock service:
 

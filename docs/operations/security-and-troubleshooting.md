@@ -162,7 +162,10 @@ identities. It is local, loopback-only, and off unless
 - never attach a trace, a Langfuse export, or an observations API response to a
   support report, issue, or chat; share journal excerpts instead;
 - treat the Langfuse volumes and the bootstrap login like the finance database;
-- rotate a credential that ever appears in a trace, as for any other exposure.
+- rotate a credential that ever appears in a trace, as for any other exposure;
+- treat a `money-tracker-traces export` file exactly like the traces: keep it
+  in an owner-only directory outside the checkout and delete it when no longer
+  needed.
 
 Real-service tests hold credential-bearing URLs and key pairs in their
 fixtures, and pytest's long traceback prints a failing test's arguments. The
@@ -247,6 +250,7 @@ Before changing state:
 
 | Symptom | Safe first checks | Do not do |
 | --- | --- | --- |
+| A trace deletion reports `remaining` | Langfuse applies deletions asynchronously; wait and rerun the same `money-tracker-traces delete --trace-id ... --confirm`, then check `langfuse-worker` health. | Delete ClickHouse rows or volumes by hand. |
 | Langfuse web becomes unhealthy again | Inspect web/worker/ClickHouse logs and confirm the pinned non-cluster flag remains effective. | Delete volumes or force migration state. |
 | Expected trace is missing | Check `tracing.enabled` or `tracing.configuration.rejected` in the process's journal (for a service, since its last start), `tracing.export.degraded` or `tracing.flush.incomplete`, the store's health, and the environment filter. A Telegram update's trace is found from its source reference; pairing messages and rejected updates are never traced. | Turn on SDK debug logging, which would print owner content, or paste observations outside the workstation. |
 | CLI cannot reach model | Verify configured loopback endpoint, llama-server process, model path, build/GPU compatibility, and health response. | Print the full `.env` or replace locked dependencies ad hoc. |

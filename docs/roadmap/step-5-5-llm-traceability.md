@@ -11,11 +11,12 @@ delivers the tracing boundary and traces `money-tracker-admin route`; the
 Telegram gateway and the sequential worker as one correlated trace per update;
 the [third slice](#third-slice-web-advice-2026-09-17) traces browser advice;
 the [fourth slice](#fourth-slice-evaluation-linkage-2026-09-17) links a
-promoted configuration to the runs that promoted it. The owner decided the
-backup, latency-budget, and retention questions on 2026-09-17. Degradation
-measured on the running services, the retention, export, and deletion
-procedures, and owner acceptance remain open, as the
-[exit-criteria status](#exit-criteria-status) lists.
+promoted configuration to the runs that promoted it; the
+[fifth slice](#fifth-slice-retention-export-and-deletion-2026-09-17)
+implements and exercises retention, private export, and verified deletion. The
+owner decided the backup, latency-budget, and retention questions on
+2026-09-17. Degradation measured on the running services and owner acceptance
+remain open, as the [exit-criteria status](#exit-criteria-status) lists.
 
 This step is numbered 5.5 because it was inserted between two already-documented
 steps. Renumbering Steps 6 and 7 would have rewritten dated evaluation records
@@ -540,7 +541,7 @@ Publication. `evaluations.publication` is extended, not replaced. It no longer
 imports the SDK or calls `get_client()` from the environment: the tracing
 package gains an `EvaluationPublisher` port, implemented by the Langfuse adapter,
 and `open_evaluation_publisher`, which validates keys, the loopback endpoint,
-and the export bound through `TracingSettings.for_publication` and never uses
+and the export bound through `TracingSettings.for_command` and never uses
 the cloud default. The command's flag or subcommand is the explicit request, so
 the runtime switch is not consulted. `publish_capability_report` keeps its
 content and scores. `money-tracker-eval publish-promotion --decision EVD-004`
@@ -576,6 +577,77 @@ web was not touched. After the runs, and once Langfuse had applied the
 asynchronous deletions, the `integration-test`, `evaluation`, `probe-scores`,
 and `development` environments held no observation.
 
+### Fifth slice: retention, export, and deletion (2026-09-17)
+
+What Langfuse offers. In Langfuse 4.26.0 OSS a project retention setting does
+not exist: the web image lists the `data-retention` entitlement only under the
+`self-hosted:enterprise` plan (and the cloud Pro, Team, and Enterprise plans),
+`LANGFUSE_INIT_PROJECT_RETENTION` is applied only with that entitlement, and the
+worker's retention jobs act only on projects that have one. The public API
+offers observations filtered by environment and start time with cursor
+pagination, and per-trace `DELETE /api/public/traces/{traceId}`, applied
+asynchronously; deleting a trace also removed its scores in ClickHouse.
+
+The procedure. `money_tracker.tracing.retention.TraceStore` and the new
+`money-tracker-traces` entry point implement the owner's 30-day decision over
+that API with the same loopback-only settings as tracing (the settings
+constructor is now `TracingSettings.for_command`, shared with evaluation
+publication). `plan` finds the traces of one environment, by default the
+tracing environment, whose most recent observation is older than 30 days
+(`--older-than-days` or `--before` to choose), keeps whole any trace a retry or
+delivery carried past the cutoff, and prints counts, dates, and identifiers
+without content. `export` writes those traces, or named ones, one JSON line per
+trace with every observation and its content, into a new file created with
+`O_EXCL` and mode 0600, refusing a relative path, an existing file, a missing
+or group- or world-writable parent, and any path inside the checkout; it prints
+counts, size, and SHA-256, never the path, and removes a partial file when the
+store fails. `delete` is a dry run unless `--confirm` is given; a confirmed
+deletion, by age or repeated `--trace-id`, requests each deletion and re-reads
+every trace until it is gone or `--verify-seconds` (600 by default) passes, and
+exits 1 if anything remains. Failures are reason codes without URL, key, or
+content: exit 1 for configuration, destination, or verification, 2 for an
+unreachable store. There is no timer; Step 7 schedules the command.
+
+Exercised. `test_trace_retention.py` writes, through the production tracer,
+two traces before a cutoff, one trace on both sides of it, and one after it,
+into `integration-test`, then drives `money-tracker-traces` against the running
+store: the plan selects the two old traces and neither the spanning nor the
+newer one, and counts the spanning trace as kept; the export writes both with
+their marker content into a 0600 file whose digest matches the reported one,
+without printing its path; the dry run leaves them readable; the confirmed
+deletion by age verifies both gone while the spanning and newer traces remain;
+and the confirmed deletion by identifier verifies those gone and leaves the
+marker unsearchable. Other tests of a run write to the same environment and
+their deletions are still pending when this one runs, so its assertions require
+its own traces to be selected or excluded rather than an exact set. Alone it
+passed in 230 s, most of it waiting for asynchronous deletion.
+Against the owner's `development` environment, `plan` and an unconfirmed
+`delete` found nothing older than 30 days and changed nothing, and a
+non-loopback `LANGFUSE_BASE_URL` was refused with exit 1. Nineteen unit tests
+over an in-memory implementation of the observations and deletion contract
+cover cutoff and spanning selection, pagination, export refusals and cleanup,
+verification with delayed and never-applied deletions, dry-run safety,
+identifier selection with missing traces, the 30-day default, and ambiguous
+selections.
+
+Backup. The owner's decision is recorded in AD-021, AD-013, arc42, and the
+backup, tracing, and security runbooks: the Langfuse volumes are a
+reconstructible copy outside the Restic set, so no Restic drill was needed or
+run; an export file is owner content outside the backup that the operator keeps
+private or removes.
+
+Validation. `uv run ruff check .`, `uv run ruff format --check .`,
+`uv run mypy src` (133 source files), `uv run money-tracker-validate-docs`, and
+`git diff --check` pass. `uv run pytest -q` reports 1,301 passed and 158
+skipped (19 new unit tests; the real retention test skips without its flag).
+The real PostgreSQL suite reports 1,435 passed and 24 skipped, the real
+Langfuse suite 16 passed in 205 s, and the real advice HTTP test 1 passed. A
+first full Langfuse run failed the retention test on an exact-set assertion
+that other tests' pending deletions broke; the assertion was corrected as
+described above. After the runs and the asynchronous deletions, the
+`integration-test`, `development`, `evaluation`, and `retention-probe`
+environments held no observation. The web was not touched.
+
 ### Exit-criteria status
 
 | Exit criterion | Status |
@@ -584,6 +656,6 @@ and `development` environments held no observation.
 | One owner message produces one correlated end-to-end trace | Partial: gateway, worker, and delivery correlated and proven in-process; the real private test-bot message is open |
 | Core behaviour unchanged with Langfuse stopped; added latency within a stated budget | Partial: budget confirmed by the owner; met for the admin, gateway, worker, and advice paths; stopped, slow, and refusing store on the running services open |
 | No credential, token-bearing URL, database URL, or archive path in any trace; no receipt bytes | Met for every traced entry point; the acceptance trace open |
-| Trace retention and deletion documented and exercised | Open: owner decided 30 days and exclusion from backup; procedure and exercise open |
+| Trace retention and deletion documented and exercised | Met: 30-day retention, private export, and verified deletion by age and identifier implemented, documented, and exercised against the real store; backup exclusion recorded; scheduling is Step 7 |
 | Real integration tests verify emission and a silent disabled path | Met for every traced entry point |
 | New ADR, with arc42, operations, and experiment documentation in agreement | Met for the implemented slices |

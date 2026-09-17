@@ -181,16 +181,16 @@ def test_publication_settings_ignore_the_runtime_switch_but_not_the_rules(
 
     configured.setenv("MONEY_TRACKER_TRACING_ENABLED", "false")
 
-    settings = TracingSettings.for_publication(environment="evaluation")
+    settings = TracingSettings.for_command(environment="evaluation")
 
     assert settings.enabled is True
     assert settings.environment == "evaluation"
     assert settings.base_url == "http://127.0.0.1:3000"
     configured.setenv("LANGFUSE_BASE_URL", "https://cloud.langfuse.com")
     with pytest.raises(TracingConfigurationError) as refused:
-        TracingSettings.for_publication(environment="evaluation")
+        TracingSettings.for_command(environment="evaluation")
     assert refused.value.reason_code == "non_loopback_endpoint"
     configured.delenv("LANGFUSE_SECRET_KEY")
     with pytest.raises(TracingConfigurationError) as missing:
-        TracingSettings.for_publication(environment="evaluation")
+        TracingSettings.for_command(environment="evaluation")
     assert missing.value.reason_code == "missing_project_keys"

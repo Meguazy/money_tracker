@@ -17,13 +17,14 @@
   checked-in host service units including the browser-accepted API unit, and
   opt-in full-fidelity tracing of `money-tracker-admin route`, of the Telegram
   gateway and worker, one trace per update, and of web advice into the local
-  Langfuse
+  Langfuse, with evaluation-promotion publication and a 30-day trace retention
+  command offering private export and verified deletion
 - Implemented Step 2: authoritative finance schema and transactional
   expense, wallet, budget, pending category-proposal, and versioned receipt-review
   repository operations, a safe local receipt-media adapter, and verified
   encrypted backup with an isolated restore drill
-- Planned operations: trace retention, export, and deletion (30 days,
-  decided); backup scheduling and clean-machine restore,
+- Planned operations: backup and trace-retention scheduling and clean-machine
+  restore,
   workflow-worker receipt wiring, receipt extraction, and media deletion
 
 These guides describe accepted operational behavior and the controls future
@@ -50,8 +51,8 @@ the referenced file or entry point exists in the repository.
   the isolated restore drill, and recovery acceptance.
 - [LLM Tracing](tracing.md): what AD-021 traces contain, one trace per
   Telegram update, decision metadata, the explicit switch, identity in
-  services, reading a trace, measured degradation, journal events, and
-  verification; retention and deletion decided but not yet executable.
+  services, reading a trace, measured degradation, the 30-day retention with
+  private export and verified deletion, journal events, and verification.
 - [Security and Troubleshooting](security-and-troubleshooting.md): trust
   boundaries, secret handling, logging, incident response, and failure triage.
 - [Development](../development.md): commands verified for the current scaffold.

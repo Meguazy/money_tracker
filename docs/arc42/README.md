@@ -200,6 +200,7 @@ Money Tracker workstation
 | `tracing` | Own the tracing port injected at entry points, the disabled tracer, the explicit switch and loopback-only settings, the stable trace names, and `open_tracer`, which can resolve model identity in the background for a long-running service | Framework-neutral port; `tracing.langfuse` only when enabled; no domain, application, or workflow dependency | No persistent data | Every entry point that executes a model boundary or a stage of a traced work unit; misconfiguration disables tracing with an `ERROR` record and never stops the process |
 | `tracing.langfuse` | Record seeded, named stage spans, dispatch spans, graph and node runs, and one generation per model request in the local Langfuse | Langfuse SDK and its attribute propagation, its LangChain callback with model runs ignored, and a process-owned OpenTelemetry provider | Spans buffered until the background export or the bounded flush | Only module importing the SDK; loaded lazily; no exception text reaches an SDK context manager; export runs on the SDK's background thread; flush waits at most the export timeout |
 | `tracing.identity` | Name the serving model artifact with the capability report's fields | llama.cpp `/props` over loopback, reused for 60 s; `evaluations.metadata` assembly | Private revision-keyed digest cache in the unit's `CacheDirectory` or `$XDG_CACHE_HOME/money-tracker` | Digests measured once per file revision, inline for a command and on a background thread for a service, whose calls during a measurement carry `digest_pending`; no path enters a trace |
+| `tracing.retention` | Plan, privately export, and delete traces of one environment by age or identifier, keeping a trace whole until its most recent observation passes the cutoff, and verify each deletion by re-reading | Langfuse public observations and trace-deletion API over loopback with `for_command` settings; no SDK | No state; export files are new owner-only files outside the checkout that the operator owns | Operator-invoked through `money-tracker-traces` (`tracing.cli`), dry run unless confirmed, 30-day default by owner decision; no timer until Step 7; failures are reason codes without URL, key, or content |
 | `tracing.redaction` | Remove credentials, database and credential-bearing URLs, Telegram URLs, token shapes, archive paths, and bytes from every observation value | Configured secret literals and private roots from the environment; `logging_safety` token patterns | No state | Last line of defence applied by the SDK; components keep forbidden values out by construction |
 | `structured_logging` | Configure process logging once, render each record as one JSON object of event name plus named fields, bind per-operation correlation identifiers, and route uncaught exceptions on any thread through logging | Standard library `logging` and `contextvars`; the redaction primitives in `logging_safety`; no domain, repository, or transport import | No persistent data; the journal is diagnostic and is neither authoritative nor backed up | Every host process and CLI; writes to standard error so machine-readable command output on standard out stays usable; credentials are filtered from messages, fields, and tracebacks, and owner content never enters a field |
 | `logging_safety` | Own the credential redaction contract and mute the HTTP loggers that would print a token-bearing URL | Standard library `logging` and `re` only | No state | Imported by `structured_logging` and usable by anything that logs |
@@ -1655,8 +1656,8 @@ tracing and from the exit-code contract AD-018 defines for supervisors.
   owner decision (2026-09-17): its volumes are a reconstructible observability
   copy whose loss loses traces, never finance data. AD-021 puts owner content
   in it, so runtime traces are kept 30 days and may be exported to a private
-  local file first; the procedure is a Step 5.5 deliverable and its scheduling
-  is Step 7.
+  local file first with `money-tracker-traces`, which deletes by age or
+  identifier and verifies each deletion; scheduling it is Step 7.
 
 ### Testing
 
@@ -1772,9 +1773,10 @@ environment file.
 - [AD-021: Full-fidelity local LLM traces](decisions/AD-021-full-fidelity-llm-traces.md):
   tracing port, Langfuse adapter, identity, redaction, the traced
   administrative dispatch, one correlated trace per Telegram update across
-  gateway and worker, one trace per web advice request, and evaluation linkage
-  implemented; backup exclusion and 30-day retention decided; the retention,
-  export, and deletion procedures planned.
+  gateway and worker, one trace per web advice request, evaluation linkage, and
+  the retention, export, and verified deletion command implemented; backup
+  exclusion and 30-day retention decided; retention scheduling planned for
+  Step 7.
 - [AD-018: Telegram processing transactions and ordering](decisions/AD-018-telegram-processing-transactions.md):
   reconciled Step 4 persistence, Bot API transport, authorized ingestion,
   persisted-offset runtime, outbox delivery, Italian response rendering, the
@@ -1833,10 +1835,11 @@ Quantitative evaluation gates are maintained in
 - The real Telegram evidence uses a private test bot, not a production bot.
 - Step 5.5 is partial: the administration command, gateway, worker, and web
   advice are traced, but the running services have not yet been restarted with
-  tracing or measured against a stopped store, and retention and deletion are
-  not yet written procedures. Until they are, the Langfuse
-  volumes, which hold owner content and are deliberately outside the backup
-  set, grow without a bound.
+  tracing or measured against a stopped store. Trace retention is an operator
+  command with no timer until Step 7: if it is not run, the Langfuse volumes,
+  which hold owner content and are deliberately outside the backup set, keep
+  traces past the 30 days the owner decided. A private export holds the same
+  content outside any store and is the operator's to protect and remove.
 - The host units' `ProtectHome`, `ProtectSystem`, and `PrivateTmp` directives
   are not applied by this workstation's user manager, which cannot create a
   mount namespace while AppArmor restricts unprivileged user namespaces. The

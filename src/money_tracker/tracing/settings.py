@@ -107,17 +107,17 @@ class TracingSettings:
         return cls._store_from_env()
 
     @classmethod
-    def for_publication(cls, *, environment: str) -> TracingSettings:
-        """Read the local store configuration for an explicit publication.
+    def for_command(cls, *, environment: str) -> TracingSettings:
+        """Read the local store configuration for an explicit operator command.
 
-        Publishing evaluation evidence is requested by its own command-line
-        flag or command, which is the explicit switch, so the runtime tracing
-        switch is not consulted. Every other rule is the same: both keys are
-        required, the endpoint must be loopback, and the SDK's cloud default is
-        never used.
+        Publishing evaluation evidence and planning, exporting, or deleting
+        traces are each requested by their own command, which is the explicit
+        switch, so the runtime tracing switch is not consulted. Every other rule
+        is the same: both keys are required, the endpoint must be loopback, and
+        the SDK's cloud default is never used.
 
         Args:
-            environment: Langfuse environment the evidence is published into.
+            environment: Langfuse environment the command works in.
 
         Returns:
             Complete, validated loopback settings.

@@ -393,7 +393,15 @@ with:
 
     uv run --env-file .env money-tracker-eval publish-promotion --decision EVD-004
 
-Its real-store check needs only the observability profile:
+Trace retention, export, and verified deletion are the `money-tracker-traces`
+command described in [LLM Tracing](operations/tracing.md). Its real-store test,
+like the publication check below, needs only the observability profile and
+takes about four minutes because Langfuse deletes asynchronously:
+
+    RUN_LANGFUSE_INTEGRATION_TESTS=1 LOG_LEVEL=CRITICAL uv run --env-file .env \
+      pytest -q tests/integration/money_tracker/tracing/test_trace_retention.py
+
+The publication's real-store check needs only the observability profile:
 
     RUN_LANGFUSE_INTEGRATION_TESTS=1 LOG_LEVEL=CRITICAL uv run --env-file .env \
       pytest -q tests/integration/money_tracker/tracing/test_evaluation_publication.py

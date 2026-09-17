@@ -8,7 +8,7 @@
   background identity for services in the second; the backup and retention
   decisions taken by the owner on 2026-09-17; one trace per web advice request
   in the third; evaluation linkage in the fourth; the retention, export, and
-  deletion procedures remain open
+  verified deletion command in the fifth; scheduling retention remains Step 7
 - Date: 2026-09-16
 - Extends: [AD-002](../README.md#ad-002-self-hosted-langfuse)
 - Refines: [AD-004](AD-004-local-first-telegram-boundary.md) and
@@ -125,6 +125,18 @@ empty graph configuration and records nothing.
   the read graph keeps its fixed source reference and an untraced request
   invokes it without configuration.
 
+### Retention, export, and deletion
+
+Runtime traces are kept 30 days by owner decision. Langfuse OSS has no
+retention setting, so `money-tracker-traces` applies it through the public API:
+it plans by age within one environment, keeping a trace whole until its most
+recent observation passes the cutoff; exports the selected traces, content
+included, to a new owner-only file outside the checkout; and deletes by age or
+identifier only with `--confirm`, verifying each asynchronous deletion by
+re-reading. It uses the same loopback-only settings as tracing, is run by hand,
+and gains a timer only in Step 7. The Langfuse volumes stay outside the
+encrypted backup set.
+
 ### Non-interference and degradation
 
 Instrumentation never changes what is sent to the model endpoint. A real
@@ -238,3 +250,9 @@ adds `workflows.promotion` and routes `evaluations.publication` through the
 tracing package's publication port, so no evaluation code imports the SDK and a
 non-loopback or keyless store publishes nothing. A real test publishes the
 EVD-004 evidence and reads the decision, configuration, and six runs back.
+
+The [fifth slice](../../roadmap/step-5-5-llm-traceability.md#fifth-slice-retention-export-and-deletion-2026-09-17)
+adds `tracing.retention` and `money-tracker-traces`. A real test writes traces
+on both sides of a cutoff and proves the plan, a private 0600 export with its
+digest, a dry run that deletes nothing, and verified deletions by age and by
+identifier that leave the spanning and newer traces until they are named.

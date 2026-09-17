@@ -112,8 +112,10 @@ no model artifact.
   decided on 2026-09-17 that they stay outside the encrypted backup set as a
   reconstructible copy: restoring the finance set restores no trace, and losing
   the volumes loses traces only. Runtime traces are kept 30 days and may be
-  exported to a private local file first; the deletion and export procedures
-  are Step 5.5 deliverables in [LLM Tracing](tracing.md). Do not add the volumes
+  exported to a private local file first with `money-tracker-traces`, as
+  [LLM Tracing](tracing.md#retention-export-deletion-and-backup) describes; an
+  export file is owner content outside this backup and the operator's to keep
+  private or remove. Do not add the volumes
   to a Restic snapshot by hand: a copy taken while ClickHouse and MinIO write is
   not consistent, and it would keep owner content past its retention.
 - Python virtual environments, frontend build output, container layers, caches,

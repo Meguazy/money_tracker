@@ -119,7 +119,7 @@ def open_evaluation_publisher(*, environment: str) -> EvaluationPublisher | None
     """
 
     try:
-        settings = TracingSettings.for_publication(environment=environment)
+        settings = TracingSettings.for_command(environment=environment)
     except TracingConfigurationError as error:
         _LOGGER.error("tracing.configuration.rejected", reason_code=error.reason_code)
         return None

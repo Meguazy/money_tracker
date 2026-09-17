@@ -183,6 +183,12 @@ Never use `down -v`, delete a volume, or force a migration to clear an error.
 
 | Event | Level | Meaning |
 | --- | --- | --- |
+| `traces.plan.completed` | INFO | A retention plan was computed; counts only |
+| `traces.export.completed` | INFO | A private export was written; counts and size, never the path |
+| `traces.delete.requested`, `traces.delete.verified` | INFO | Deletions were requested and confirmed by re-reading |
+| `traces.delete.unverified` | WARNING | Some deletions were not yet applied when verification stopped |
+| `traces.export.refused` | ERROR | The export destination was unsafe; `reason_code` says why |
+| `traces.store.failed` | ERROR | The store refused or was unreachable; `reason_code` and `transient` |
 | `tracing.enabled` | INFO | The process traces into the named environment |
 | `tracing.configuration.rejected` | ERROR | Tracing was requested but cannot be honored; `reason_code` says why |
 | `tracing.export.degraded` | WARNING | The exporter could not deliver spans; the store is down, slow, or refusing |
@@ -216,20 +222,62 @@ Langfuse's public scores endpoint answers 404, so read them in the UI.
 
 ## Retention, export, deletion, and backup
 
-Decided by the owner on 2026-09-17; the procedures are planned within Step 5.5
-and none is executable yet:
+Decided by the owner on 2026-09-17:
 
 - the Langfuse volumes stay outside the encrypted backup set as a
-  reconstructible observability copy;
+  reconstructible observability copy, so a finance restore restores no trace
+  and losing the volumes loses traces only;
 - runtime traces are kept 30 days and may be exported to a private local file
   before they are deleted;
-- the deletion is run by hand until Step 7 schedules it.
+- the deletion is run by hand until Step 7 schedules it; no timer exists.
 
 Langfuse 4.26.0 OSS offers no project retention setting: the `data-retention`
 entitlement belongs to the self-hosted Enterprise plan, and
-`LANGFUSE_INIT_PROJECT_RETENTION` is ignored without it. The public API's
-`DELETE /api/public/traces/{traceId}` removes a trace asynchronously and the
-integration tests use it to delete what they create.
+`LANGFUSE_INIT_PROJECT_RETENTION` is ignored without it. `money-tracker-traces`
+implements the policy over the public API instead. Each run needs the project
+keys and a loopback `LANGFUSE_BASE_URL`; the runtime switch is not consulted.
+
+Run it monthly, and before removing a model artifact you may still want to
+investigate. First see what would go, changing nothing:
+
+    uv run --env-file .env money-tracker-traces plan
+
+It lists, for the tracing environment (`--environment` to choose another), the
+traces whose most recent observation is older than 30 days
+(`--older-than-days N` or `--before INSTANT` to choose another cutoff), with
+their observation counts and dates, and how many traces were kept whole because
+a retry or delivery crossed the cutoff. It never prints content.
+
+Optionally export them first. The file holds complete prompts, messages, and
+completions, so the command creates it new, with mode 0600, only in an existing
+directory no one else can write, and never inside the checkout; keep it on
+private storage and never attach it anywhere:
+
+    install -d -m 700 ~/private/money-tracker-trace-exports
+    uv run --env-file .env money-tracker-traces export \
+      --output ~/private/money-tracker-trace-exports/traces-$(date +%F).jsonl
+
+Each line is one trace with all its observations; the command prints the trace
+and observation counts, the size, and the SHA-256 of the file.
+
+Then delete. Without `--confirm` the command repeats the plan with
+`"dry_run": true` and deletes nothing:
+
+    uv run --env-file .env money-tracker-traces delete
+    uv run --env-file .env money-tracker-traces delete --confirm
+
+A confirmed deletion requests `DELETE /api/public/traces/{traceId}` for every
+selected trace, which Langfuse applies asynchronously, then re-reads each trace
+for up to `--verify-seconds` (600 by default; one to two minutes were typical
+on this workstation) and prints `deleted_verified` and `remaining`. It exits 1
+when anything remains readable; run it again later. Delete named traces, such
+as smoke or measurement traces, with repeated `--trace-id` instead of an age;
+identifiers that no longer exist are reported as `missing_traces`.
+
+Exit code 1 means configuration, an export destination, or verification
+failed; 2 means the store was unreachable. Published evaluation evidence lives
+in the `evaluation` environment and is reconstructible from Git with
+`publish-promotion`, so the default runs never touch it.
 
 ## Verification
 
@@ -247,6 +295,10 @@ including a resumed category review, absence of forbidden values and Telegram
 identities, and a silent disabled channel. For web advice it starts the
 production `money-tracker-api run` process and proves over real HTTP a complete
 trace, absence of forbidden values, a silent disabled API, a byte-identical
-selection request, and a clean exit on SIGINT. It uses the `integration-test`
-environment and deletes the traces it creates. Do not run it in parallel with
+selection request, and a clean exit on SIGINT. The retention test writes
+traces on both sides of a cutoff and drives `money-tracker-traces` through a
+plan, a private export, a dry run, and verified deletions by age and by
+identifier; it takes about four minutes because deletion is asynchronous. The
+suite uses the `integration-test` environment and deletes the traces it
+creates. Do not run it in parallel with
 browser E2E, which shares `money_tracker_test`.

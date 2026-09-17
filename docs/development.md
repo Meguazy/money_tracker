@@ -484,7 +484,10 @@ environment and delete the traces they create:
       tests/integration/money_tracker/tracing
 
 The channel tests in the same directory drive the production gateway, worker,
-and dispatcher composition and answer only the Bot API in-process. Every other
+and dispatcher composition and answer only the Bot API in-process; the advice
+tests start the production `money-tracker-api run` process on a free loopback
+port and need the compiled `frontend/dist`. The browser E2E runtime starts its
+API with tracing forced off. Every other
 test forces tracing off, so a switch set in `.env` never exports synthetic test
 messages into the owner's store.
 

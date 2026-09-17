@@ -303,6 +303,9 @@ def serve() -> int:
             ),
             "MONEY_TRACKER_WEB_STATIC_DIR": str(repository_root / "frontend/dist"),
             "MONEY_TRACKER_TELEGRAM_ENVIRONMENT": "test",
+            # `.env` may switch tracing on for the host services; synthetic
+            # browser fixtures must never reach the owner's trace store.
+            "MONEY_TRACKER_TRACING_ENABLED": "false",
             "LOG_LEVEL": "CRITICAL",
         }
     )

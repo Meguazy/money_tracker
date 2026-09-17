@@ -1,8 +1,8 @@
 # LLM Tracing
 
 - Status: Step 5.5 in progress. `money-tracker-admin route`, the Telegram
-  gateway, and the sequential worker are traced; web advice is not traced yet,
-  and the installed services have not been restarted with tracing
+  gateway, the sequential worker, and web advice are traced; the installed
+  services have not been restarted with tracing
 - Decision: [AD-021](../arc42/decisions/AD-021-full-fidelity-llm-traces.md)
 - Store: the optional local Langfuse in the `observability` Compose profile
 
@@ -20,7 +20,7 @@ stays content-free; use it for support reports and never attach a trace.
 | `money-tracker-worker run`, `process-once` | Yes | `telegram-update` | One `work-unit` stage per claim, in the trace of the update it claims |
 | `money-tracker-telegram` operator commands | No | — | `health`, `pair`, `replay`, and the others touch no owner message |
 | `money-tracker` scaffold CLI | Yes | — | Not a promoted workflow; records its single model run |
-| `money-tracker-api` web advice | No | — | Planned in Step 5.5 |
+| `money-tracker-api` web advice | Yes | `web-advice` | One `advice-request` trace per `POST /api/v1/advice`, derived from a `web:advice:<uuid>` reference the journal's `web.advice.completed` names; other API routes call no model and are untraced |
 | `money-tracker-eval` | No runtime traces | — | `--publish-langfuse` still publishes aggregate capability scores only |
 
 A traced work unit holds a `dispatch` span with the complete message, trusted
@@ -43,6 +43,12 @@ telegram-update
 │   └── commit            outbox row, logical key, pending and consumed actions
 └── telegram-delivery     gateway, per attempt: delivered text, message identity
 ```
+
+A browser advice request is its own trace: an `advice-request` root with the
+message, trusted profile and instant, selection versions, read decision
+metadata, and tool facts, over `graph:read`, its nodes, and the
+`model:<Contract>` generation. Find it from the `request_reference` of the
+`web.advice.completed` journal event.
 
 A retry, a manual replay, or a delivery retry adds another root to the same
 trace. The pairing confirmation and downtime notices answer no update and are
@@ -160,6 +166,7 @@ Measured on the target workstation:
 | Admin routing, store running | About 2.4 ms added per routing work unit (real model: 788.0 ms to 792.1 ms median); exit flush 7–174 ms |
 | Admin routing, `langfuse-web` stopped | Identical result and exit code; per-unit cost unchanged; exit flush waits at most the export timeout (959 ms measured, 3.48 s versus 2.13 s end to end); spans dropped |
 | Gateway and worker in-process, store running | `/help` update: +0.31 ms ingest, +2.05 ms claim to commit, +0.29 ms delivery (medians of 100); model-backed query: +5.8 and +12.1 ms claim to commit in two runs of 10; flush 6.8–7.6 ms |
+| Web advice over HTTP, store running | +2.76 ms median per request against an instant endpoint (41.24 to 44.00 ms, 100 each); +7.62 ms against the promoted model (1,163.26 to 1,170.88 ms, 10 each); SIGINT exit in 0.36–0.46 s with exit code 0 |
 | Services with the store stopped, slow, or refusing | Not yet measured on the running services |
 | Misconfigured tracing | Runs untraced with `tracing.configuration.rejected` |
 
@@ -218,6 +225,9 @@ For the channel it drives the production gateway, worker, and dispatcher
 composition, answering only the Bot API in-process, and proves one trace per
 update with its three stages, complete calls for every worker specialist
 including a resumed category review, absence of forbidden values and Telegram
-identities, and a silent disabled channel. It uses the `integration-test`
+identities, and a silent disabled channel. For web advice it starts the
+production `money-tracker-api run` process and proves over real HTTP a complete
+trace, absence of forbidden values, a silent disabled API, a byte-identical
+selection request, and a clean exit on SIGINT. It uses the `integration-test`
 environment and deletes the traces it creates. Do not run it in parallel with
 browser E2E, which shares `money_tracker_test`.

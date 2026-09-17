@@ -27,7 +27,7 @@ implementation state is still `planned`.
 | [AD-018](AD-018-telegram-processing-transactions.md) | Telegram processing transactions and ordering | Accepted | Implemented and owner-accepted through production entry points; operator inspection and pinned requeue also exposed to the Step 5 browser surface |
 | [AD-019](AD-019-structured-application-logging.md) | Structured application logging | Accepted | Implemented across every entry point, adapter, application service, and persistence boundary |
 | [AD-020](AD-020-wallet-availability-and-expiry.md) | Wallet availability and expiry projection | Accepted | Domain projection, source administration, PostgreSQL locking, local API, and React control-plane surface implemented |
-| [AD-021](AD-021-full-fidelity-llm-traces.md) | Full-fidelity local LLM traces | Accepted | Tracing port, Langfuse adapter, artifact identity, redaction, traced administrative dispatch, and one correlated trace per Telegram update across gateway and worker implemented in Step 5.5; backup exclusion and 30-day retention decided; web advice, evaluation linkage, and retention, export, and deletion procedures planned |
+| [AD-021](AD-021-full-fidelity-llm-traces.md) | Full-fidelity local LLM traces | Accepted | Tracing port, Langfuse adapter, artifact identity, redaction, traced administrative dispatch, one correlated trace per Telegram update across gateway and worker, and one trace per web advice request implemented in Step 5.5; backup exclusion and 30-day retention decided; evaluation linkage and retention, export, and deletion procedures planned |
 
 ## Maintenance rules
 

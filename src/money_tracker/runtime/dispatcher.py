@@ -48,6 +48,10 @@ from money_tracker.runtime.review_graph import (
     build_review_graph,
 )
 from money_tracker.runtime.router_graph import build_router_graph
+from money_tracker.runtime.trace_metadata import (
+    read_decision_metadata,
+    state_json_object,
+)
 from money_tracker.structured_logging import get_logger, log_context
 from money_tracker.tracing import DISABLED_TRACER, Tracer
 from money_tracker.workflows import (
@@ -74,7 +78,6 @@ from money_tracker.workflows import (
     initial_review_state,
     initial_router_state,
     outcome_facts,
-    registry_for,
     review_decision_from_message,
     routing_decision_from_state,
 )
@@ -879,8 +882,8 @@ def _movement_resolution_metadata(final: Mapping[str, Any]) -> dict[str, object]
         Resolution facts; keys whose value is unknown are omitted.
     """
 
-    extraction = _json_object(final.get("extraction_json"))
-    fit = _json_object(final.get("category_fit_json"))
+    extraction = state_json_object(final.get("extraction_json"))
+    fit = state_json_object(final.get("category_fit_json"))
     facts: dict[str, object] = {
         "resolution_reason": final.get("clarification_reason"),
         "extraction": extraction,
@@ -899,46 +902,6 @@ def _movement_resolution_metadata(final: Mapping[str, Any]) -> dict[str, object]
     if fit is not None:
         facts["allocation_category_basis"] = fit.get("outcome")
     return facts
-
-
-def read_decision_metadata(
-    intent: WorkflowIntent, final: Mapping[str, Any]
-) -> dict[str, object]:
-    """Describe a read specialist's admitted tools and grounded result.
-
-    Shared by every entry point that runs the read graph, so a question asked
-    through Telegram and one asked in the browser are filterable by the same
-    keys.
-
-    Args:
-        intent: Trusted routed intent whose registry bounded the model.
-        final: Final read graph state.
-
-    Returns:
-        The route's admitted tools, the request that passed the selection
-        policy, the executed tool, and whether its answer is grounded in tool
-        output.
-    """
-
-    return {
-        "read_admitted_tools": sorted(tool.value for tool in registry_for(intent)),
-        "read_tool_request": _json_object(final.get("tool_request_json")),
-        "read_executed_tool": final.get("executed_tool"),
-        "read_grounded": final.get("answer_json") is not None,
-        "read_clarification_reason": final.get("clarification_reason"),
-    }
-
-
-def _json_object(value: object) -> dict[str, Any] | None:
-    """Decode a JSON object carried in graph state, or None when absent."""
-
-    if not isinstance(value, str):
-        return None
-    try:
-        decoded = json.loads(value)
-    except ValueError:
-        return None
-    return decoded if isinstance(decoded, dict) else None
 
 
 def _optional_text(value: UUID | None) -> str | None:
@@ -967,9 +930,4 @@ def _optional_uuid(value: str | None) -> UUID | None:
     return None if value is None else UUID(value)
 
 
-__all__ = [
-    "WorkflowDispatcher",
-    "build_workflow_dispatcher",
-    "read_decision_metadata",
-    "trace_work_unit",
-]
+__all__ = ["WorkflowDispatcher", "build_workflow_dispatcher", "trace_work_unit"]

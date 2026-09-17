@@ -411,6 +411,12 @@ A draft may legitimately be unreconciled, so both allocation dimensions are
 enforced when a movement is registered, not while it is still being edited.
 Registering an unreconciled movement returns a bounded 422 and changes nothing.
 
+With `MONEY_TRACKER_TRACING_ENABLED=true` each advice request is one
+`web-advice` trace in the local Langfuse, holding the question, the selection
+call, and the tool facts; its `web.advice.completed` journal event names the
+request reference to find it by. The HTTP response and the model request are
+the same with tracing on or off. See [LLM Tracing](tracing.md).
+
 When the local model is unavailable, advice returns a bounded 503 and the rest
 of the deterministic dashboard remains usable. Restore the pinned inference
 service or roll back the whole deployed web build; do not bypass the promoted

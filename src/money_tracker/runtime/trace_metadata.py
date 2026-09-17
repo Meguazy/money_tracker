@@ -1,4 +1,4 @@
-"""The version set a traced dispatch records beside its payloads.
+"""The version set and decision facts a traced workflow records.
 
 A complete prompt in a trace is not yet an attributable one: EVD-004 promotes a
 combination of prompt versions, contract versions, a routing threshold, and a
@@ -12,6 +12,10 @@ trace store rather than one serialized blob.
 
 from __future__ import annotations
 
+import json
+from collections.abc import Mapping
+from typing import Any
+
 from money_tracker.domain.taxonomy_seed import TAXONOMY_VERSION
 from money_tracker.runtime.read_graph import SelectionBoundary
 from money_tracker.workflows import (
@@ -22,14 +26,16 @@ from money_tracker.workflows import (
     WORKFLOW_STATE_VERSION,
     PromptVersion,
     ReadSelectionPolicyVersion,
+    WorkflowIntent,
+    registry_for,
 )
 from money_tracker.workflows.candidates import CategoryFitCandidate, ExtractionCandidate
 
 
 def workflow_version_set(
     *,
-    router_prompt: PromptVersion,
-    minimum_confidence: float,
+    router_prompt: PromptVersion | None = None,
+    minimum_confidence: float | None = None,
     extraction: ExtractionCandidate | None = None,
     category_fit: CategoryFitCandidate | None = None,
     selection: SelectionBoundary | None = None,
@@ -38,8 +44,11 @@ def workflow_version_set(
     """Describe the prompts, contracts, and policies a dispatcher runs with.
 
     Args:
-        router_prompt: Router instruction version composed into the router.
-        minimum_confidence: Routing confidence threshold in force.
+        router_prompt: Router instruction version composed into the router,
+            when the assembly routes at all. Browser advice names its route
+            by interface and composes no router.
+        minimum_confidence: Routing confidence threshold in force, with the
+            router.
         extraction: Extraction boundary composed into the specialists, when any.
         category_fit: Category-fit boundary composed into the specialists.
         selection: Read-tool selection boundary composed into the read graph.
@@ -51,12 +60,11 @@ def workflow_version_set(
         composed are omitted rather than reported as defaults.
     """
 
-    versions: dict[str, object] = {
-        "router_prompt": router_prompt.id,
-        "router_contract": ROUTER_CONTRACT_VERSION,
-        "routing_minimum_confidence": minimum_confidence,
-        "workflow_state": WORKFLOW_STATE_VERSION,
-    }
+    versions: dict[str, object] = {"workflow_state": WORKFLOW_STATE_VERSION}
+    if router_prompt is not None:
+        versions["router_prompt"] = router_prompt.id
+        versions["router_contract"] = ROUTER_CONTRACT_VERSION
+        versions["routing_minimum_confidence"] = minimum_confidence
     if extraction is not None:
         versions["extraction_prompt"] = extraction.version
         versions["extraction_contract"] = EXTRACTION_CONTRACT_VERSION
@@ -74,4 +82,51 @@ def workflow_version_set(
     return versions
 
 
-__all__ = ["workflow_version_set"]
+def read_decision_metadata(
+    intent: WorkflowIntent, final: Mapping[str, Any]
+) -> dict[str, object]:
+    """Describe a read specialist's admitted tools and grounded result.
+
+    Shared by every entry point that runs the read graph, so a question asked
+    through Telegram and one asked in the browser are filterable by the same
+    keys.
+
+    Args:
+        intent: Trusted routed intent whose registry bounded the model.
+        final: Final read graph state.
+
+    Returns:
+        The route's admitted tools, the request that passed the selection
+        policy, the executed tool, and whether its answer is grounded in tool
+        output.
+    """
+
+    return {
+        "read_admitted_tools": sorted(tool.value for tool in registry_for(intent)),
+        "read_tool_request": state_json_object(final.get("tool_request_json")),
+        "read_executed_tool": final.get("executed_tool"),
+        "read_grounded": final.get("answer_json") is not None,
+        "read_clarification_reason": final.get("clarification_reason"),
+    }
+
+
+def state_json_object(value: object) -> dict[str, Any] | None:
+    """Decode a JSON object carried in graph state, or None when absent.
+
+    Args:
+        value: A state field holding a serialized contract, or anything else.
+
+    Returns:
+        The decoded object, or None when the field is absent or not an object.
+    """
+
+    if not isinstance(value, str):
+        return None
+    try:
+        decoded = json.loads(value)
+    except ValueError:
+        return None
+    return decoded if isinstance(decoded, dict) else None
+
+
+__all__ = ["read_decision_metadata", "state_json_object", "workflow_version_set"]

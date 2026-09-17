@@ -8,12 +8,12 @@ trace-content decision. The
 [first slice](#first-slice-tracing-boundary-and-administrative-dispatch-2026-09-16)
 delivers the tracing boundary and traces `money-tracker-admin route`; the
 [second slice](#second-slice-telegram-gateway-and-worker-2026-09-17) traces the
-Telegram gateway and the sequential worker as one correlated trace per update.
+Telegram gateway and the sequential worker as one correlated trace per update;
+the [third slice](#third-slice-web-advice-2026-09-17) traces browser advice.
 The owner decided the backup, latency-budget, and retention questions on
-2026-09-17. Web advice, degradation measured on the running services,
-evaluation linkage, the retention, export, and deletion procedures, and owner
-acceptance remain open, as the [exit-criteria status](#exit-criteria-status)
-lists.
+2026-09-17. Degradation measured on the running services, evaluation linkage,
+the retention, export, and deletion procedures, and owner acceptance remain
+open, as the [exit-criteria status](#exit-criteria-status) lists.
 
 This step is numbered 5.5 because it was inserted between two already-documented
 steps. Renumbering Steps 6 and 7 would have rewritten dated evaluation records
@@ -438,14 +438,83 @@ reports 10 passed in 56 s, and the real advice HTTP test 1 passed. The frontend
 was not touched. After every run the `integration-test`, `measurement-slice2`,
 and `development` environments held no observation.
 
+### Third slice: web advice (2026-09-17)
+
+What is traced, and from where. `money-tracker-api run` opens the tracer with
+background identity and injects it into `AdviceWorkflow` and its model adapter;
+it flushes after uvicorn stops. Each `POST /api/v1/advice` is one trace named
+`web-advice`, derived from a `web:advice:<uuid>` reference generated for that
+request, never from the fixed `web:advice` constant. Its `advice-request` root
+holds the owner question, trusted profile, and instant; the selection versions
+(tool-selection prompt, tool contract, schema, read-selection policy, workflow
+state); the read decision metadata shared with the dispatcher
+(`read_admitted_tools`, `read_tool_request`, `read_executed_tool`,
+`read_grounded`, `read_clarification_reason`) with `routing_intent` `advice`
+and `routing_source` `interface`; and the tool facts. Beneath it are
+`graph:read`, its nodes, and the `model:WireToolRequest` generation. The
+journal's `web.advice.completed` gains only the request reference, so an
+operator finds the trace without owner content. `read_decision_metadata`
+moved into `runtime.trace_metadata`, and `workflow_version_set` accepts an
+assembly without a router.
+
+Payloads sent to the model are unchanged. The read graph still receives the
+fixed `web:advice` source reference and the same state, and an untraced
+request invokes it with no configuration at all. A unit test compares the
+selection instructions and results with tracing on and off, and
+`test_tracing_leaves_the_advice_model_request_byte_identical` puts a recording
+proxy between two real API processes and llama.cpp and requires the
+`/v1/chat/completions` bodies to be identical and equal to what the generation
+recorded.
+
+Secrets and forbidden values. `test_forbidden_values_never_reach_an_advice_trace`
+sends a question carrying a Bot API token shape, a credential-bearing
+PostgreSQL URL, a Telegram API URL, and an archive path to the real API process
+and finds none of them, the Langfuse secret key, the configured or test database
+URLs, or the inference key in the exported trace, while the question and
+`<redacted-database-url>` are there.
+
+Real integration tests. `tests/integration/money_tracker/tracing/test_advice_tracing.py`
+starts the production entry point on a free loopback port against the isolated
+database and sends real HTTP requests through Host, Origin, and CSRF checks. It
+proves the complete trace with artifact identity, forbidden-value absence, a
+silent disabled API whose journal has no `tracing.enabled` against a traced
+positive control, the byte-identical selection request, and exit code 0 within
+10 s of SIGINT. The browser E2E runtime now forces tracing off for its API, so
+a switch set in `.env` cannot export its fixtures.
+
+Latency. Two real API processes, one traced, ran side by side on the same
+database, with requests alternating:
+
+| Advice request over HTTP, median (95th percentile) | Untraced | Traced | Added |
+| --- | ---: | ---: | ---: |
+| Instant in-process endpoint, 100 each | 41.24 (45.63) ms | 44.00 (45.79) ms | +2.76 ms |
+| Promoted model, 10 each | 1,163.26 (1,183.54) ms | 1,170.88 (1,183.94) ms | +7.62 ms |
+| SIGINT to exit, store running | 0.36 s | 0.36–0.46 s | — |
+
+Both are inside the 25 ms budget. The instant endpoint answered `/props` with
+503, so that run also paid the identity retry path. Measurement traces used a
+temporary `measurement-slice3` environment and were deleted and verified absent.
+
+Validation. `uv run ruff check .`, `uv run ruff format --check .`,
+`uv run mypy src` (130 source files), `uv run money-tracker-validate-docs`, and
+`git diff --check` pass. `uv run pytest -q` reports 1,257 passed and 156
+skipped (3 new unit tests; the 4 real advice tests skip without their flag). The
+real PostgreSQL suite reports 1,391 passed and 22 skipped. The real Langfuse
+suite reports 14 passed in 74 s, and the real advice HTTP test 1 passed. The
+frontend was not changed, but the web process and the E2E runtime were:
+`npm test -- --run` reports 67 passed, `npm run typecheck` and `npm run build`
+pass, and `npm run test:e2e` reports 5 passed. After every run the
+`integration-test`, `measurement-slice3`, and `development` environments held no
+observation.
+
 ### Exit-criteria status
 
 | Exit criterion | Status |
 | --- | --- |
-| Every promoted-workflow LLM call appears with complete input, output, and artifact identity | Partial: administrative dispatch and every worker specialist, including the resumed category review; web advice open |
+| Every promoted-workflow LLM call appears with complete input, output, and artifact identity | Met in integration: administrative dispatch, every worker specialist including the resumed category review, and web advice; to be confirmed on the running services at acceptance |
 | One owner message produces one correlated end-to-end trace | Partial: gateway, worker, and delivery correlated and proven in-process; the real private test-bot message is open |
-| Core behaviour unchanged with Langfuse stopped; added latency within a stated budget | Partial: budget confirmed by the owner; met in-process for the admin, gateway, and worker paths; stopped, slow, and refusing store on the running services open |
-| No credential, token-bearing URL, database URL, or archive path in any trace; no receipt bytes | Met for the administrative and channel entry points; web advice and the acceptance trace open |
+| Core behaviour unchanged with Langfuse stopped; added latency within a stated budget | Partial: budget confirmed by the owner; met for the admin, gateway, worker, and advice paths; stopped, slow, and refusing store on the running services open |
+| No credential, token-bearing URL, database URL, or archive path in any trace; no receipt bytes | Met for every traced entry point; the acceptance trace open |
 | Trace retention and deletion documented and exercised | Open: owner decided 30 days and exclusion from backup; procedure and exercise open |
-| Real integration tests verify emission and a silent disabled path | Met for the administrative and channel entry points; web advice open |
+| Real integration tests verify emission and a silent disabled path | Met for every traced entry point |
 | New ADR, with arc42, operations, and experiment documentation in agreement | Met for the implemented slices |

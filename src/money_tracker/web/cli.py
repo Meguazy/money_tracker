@@ -1,4 +1,11 @@
-"""Production entry point for the loopback FastAPI/dashboard process."""
+"""Production entry point for the loopback FastAPI/dashboard process.
+
+The process opens the tracer the switch selects once, resolving model identity
+in the background, and injects it only into the advice composition, the one
+route that calls a model. Spans are exported on the SDK's background thread, so
+no request waits for the trace store, and the tracer is flushed within the
+export timeout after uvicorn has stopped.
+"""
 
 from __future__ import annotations
 
@@ -27,6 +34,7 @@ from money_tracker.persistence.messaging import PostgresMessagingRepository
 from money_tracker.process_exit import exit_code_for, failure_reason
 from money_tracker.runtime import LocalStructuredOutputModel
 from money_tracker.structured_logging import configure_logging, get_logger
+from money_tracker.tracing import DISABLED_TRACER, Tracer, open_tracer
 from money_tracker.web.advice import AdviceWorkflow
 from money_tracker.web.app import create_app
 from money_tracker.web.config import WebSettings
@@ -66,6 +74,7 @@ def main(argv: Sequence[str] | None = None) -> None:
 
     _parser().parse_args(argv)
     configure_logging()
+    tracer: Tracer = DISABLED_TRACER
     try:
         settings = WebSettings.from_env()
         database_url = database_url_from_env()
@@ -86,6 +95,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         # deliberately reads no Bot API credential: it inspects and requeues
         # durable rows and never speaks to Telegram.
         scope = MessagingScope.from_env()
+        tracer = open_tracer(identity_in_background=True)
         app = create_app(
             settings=settings,
             profile_id=profile_id,
@@ -141,7 +151,8 @@ def main(argv: Sequence[str] | None = None) -> None:
                 repository,
                 reporting,
                 clock=clock,
-                model=LocalStructuredOutputModel(),
+                model=LocalStructuredOutputModel(tracer=tracer),
+                tracer=tracer,
             ),
         )
         _LOGGER.info(
@@ -162,6 +173,8 @@ def main(argv: Sequence[str] | None = None) -> None:
         _LOGGER.exception("web.service.failed", reason=failure_reason(error))
         print(f"Web service failed: {failure_reason(error)}", file=sys.stderr)
         raise SystemExit(int(exit_code_for(error))) from None
+    finally:
+        tracer.shutdown()
 
 
 __all__ = ["main"]

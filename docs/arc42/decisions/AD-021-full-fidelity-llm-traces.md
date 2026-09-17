@@ -6,8 +6,9 @@
   implemented in the first Step 5.5 slice; the Telegram gateway and worker as
   one correlated trace per update, deterministic decision metadata, and
   background identity for services in the second; the backup and retention
-  decisions taken by the owner on 2026-09-17; web advice, evaluation linkage,
-  and the retention, export, and deletion procedures remain open
+  decisions taken by the owner on 2026-09-17; one trace per web advice request
+  in the third; evaluation linkage and the retention, export, and deletion
+  procedures remain open
 - Date: 2026-09-16
 - Extends: [AD-002](../README.md#ad-002-self-hosted-langfuse)
 - Refines: [AD-004](AD-004-local-first-telegram-boundary.md) and
@@ -119,6 +120,10 @@ empty graph configuration and records nothing.
   the admitted request, grounding, review resumption, and the graph threads
   used. They are read from the typed decision and final graph states, so
   recording them cannot alter a decision.
+- Browser advice has no durable work unit, so each request generates its own
+  `web:advice:<uuid>` reference, from which its `web-advice` trace is derived;
+  the read graph keeps its fixed source reference and an untraced request
+  invokes it without configuration.
 
 ### Non-interference and degradation
 
@@ -215,3 +220,10 @@ Bot API answered in-process, and prove the correlated trace, complete calls for
 every worker specialist including a resumed review, absence of forbidden values
 and Telegram identities, and a silent disabled channel. Measured in-process,
 a deterministic update adds about 2.7 ms and a model-backed one 6–12 ms.
+
+The [third slice](../../roadmap/step-5-5-llm-traceability.md#third-slice-web-advice-2026-09-17)
+injects the tracer into `money-tracker-api`'s advice composition. Real tests
+start the production API process and prove over HTTP a complete trace per
+request, absence of forbidden values, a silent disabled API, a byte-identical
+selection request, and a clean exit on SIGINT; an advice request adds 2.8 ms
+median against an instant endpoint and 7.6 ms against the promoted model.

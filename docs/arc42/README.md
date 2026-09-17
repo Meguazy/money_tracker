@@ -294,12 +294,12 @@ catalog is promoted; every identifier carries a `candidate-` prefix.
 | Workflow dispatcher, root router, and text specialists (implemented) | Route one intent and coordinate expense/refund, correction/undo, category review, query, or advice | Typed normalized work unit/outcome, versioned schemas, scoped tool registries, trusted correlations | Namespaced checkpoint references and workflow IDs; no domain ownership | Administration CLI and worker; mutation paths call replay-safe application services |
 | Telegram Bot API transport (implemented) | Validate the bot, long poll, obtain file metadata, acknowledge callbacks, and deliver outbox messages | Bounded HTTPS client and messaging services | No authoritative finance data or correctness state | Gateway host service; separate production/test token selected from a private environment file |
 | FastAPI adapter (partial) | Expose monthly and calendar-range overviews with merchant and prior-period comparison, transaction register, manual lifecycle, budget planning, category and funding-source/wallet administration, pending category review, receipt metadata review, messaging operations, safe profile settings, promoted advice, health, CSRF bootstrap, compiled UI, and later REST resources | Narrow advice, reporting, finance, budget, category, funding-source, receipt-review, messaging-operations, and profile-settings ports | No independent data | Implemented on loopback with Host/Origin, CSRF, idempotency for writes, optimistic concurrency, proposal-wide and transition-wide command identity, and bounded errors |
-| Browser advice composition (implemented) | Enter the promoted advice read graph directly and map only deterministic tool facts to a strict HTTP union | `AdviceWorkflow`, active taxonomy/source configuration reads, `ReportingService`, clock, promoted model adapter and selection policy | No state; no checkpointer and no mutation service in its object graph | In-process in `money-tracker-api`; trusted profile/time/vocabulary injection, CSRF-protected read-only POST, content-free logs, and no prompt/completion/profile/secret exposure |
+| Browser advice composition (implemented) | Enter the promoted advice read graph directly, map only deterministic tool facts to a strict HTTP union, and record each request as one `web-advice` trace | `AdviceWorkflow`, active taxonomy/source configuration reads, `ReportingService`, clock, promoted model adapter and selection policy, and the `tracing` port | No state; no checkpointer and no mutation service in its object graph | In-process in `money-tracker-api`; trusted profile/time/vocabulary injection, CSRF-protected read-only POST, content-free logs carrying only a request reference, no prompt/completion/profile/secret exposure over HTTP; the trace holds the request and selection call under AD-021 |
 | React dashboard (partial) | Display the monthly overview, calendar analytics with merchant and period comparison, transaction register, budget planner, categories, funding sources with tracked-wallet balances/history, retained receipt metadata, durable messaging state, fixed profile facts, and promoted tool-grounded advice; edit the multi-allocation manual lifecycle, monthly budgets, deterministic category and source lifecycle, manual wallet entries, the mandatory receipt review, and both queue requeues; choose the active default funding source while locale, currency, and timezone remain read-only | Same-origin REST API | Browser session/UI state only | Route-split compiled static assets with the chart engine isolated from its renderer; no secrets, infrastructure configuration, receipt images, prompts, completions, or original message reflection; accessible loading, empty, insufficient, clarification, error/retry, lifecycle history, responsive navigation, chart/table alternatives, and named keyboard-focusable table scroll regions; real-browser WCAG A/AA acceptance |
 | Local model gateway | Provide typed chat, schema and tool capabilities | OpenAI-compatible local endpoint | No persistent domain data | Replaceable host inference process |
 | Calendar period resolver (implemented) | Resolve strict day, ISO-week, month, year, and bounded inclusive custom selections plus their deterministic predecessors into half-open query intervals | Pure domain date values used by reporting and the web adapter; no framework or repository dependency | No persistent data | In-process domain component; Europe/Rome calendar semantics, DST-safe boundaries, and a 366-day custom-range ceiling |
 | Receipt extractor adapter | Produce a versioned structured receipt draft | Selected local OCR/VLM pipeline | No authoritative data until validated | Local-only; selection remains evaluation-gated |
-| Langfuse adapter (`tracing.langfuse`, partial) | Record full-fidelity AD-021 traces; publish aggregate capability scores through `evaluations.publication` | Local Langfuse SDK behind the tracing port | Observability copies, not source of truth; owner content with ledger sensitivity; excluded from backup and kept 30 days by owner decision | Optional Compose profile; administrative dispatch, gateway, and worker traced; web advice planned |
+| Langfuse adapter (`tracing.langfuse`, partial) | Record full-fidelity AD-021 traces; publish aggregate capability scores through `evaluations.publication` | Local Langfuse SDK behind the tracing port | Observability copies, not source of truth; owner content with ledger sensitivity; excluded from backup and kept 30 days by owner decision | Optional Compose profile; administrative dispatch, gateway, worker, and web advice traced |
 
 ### Step 4 messaging boundaries
 
@@ -1001,6 +1001,14 @@ and the overview returning to zero.
 8. Responses and logs omit the request, prompt, completion, profile, merchant
    and category fields from logs, amounts from logs, credentials, URLs, private
    paths, receipt media, and infrastructure details. No advice write exists.
+9. With tracing switched on, the request is one trace named `web-advice`,
+   derived from a `web:advice:<uuid>` reference generated for that request: an
+   `advice-request` root with the message, trusted profile and instant, the
+   selection versions, the read decision metadata, and the tool facts, over the
+   read graph's node spans and its `model:<Contract>` generation. The graph still
+   sees the fixed `web:advice` source reference, and an untraced request invokes
+   it without any configuration. The journal's `web.advice.completed` names the
+   request reference, so an operator can find the trace without owner content.
 
 ### Current merchant and period comparison analytics
 
@@ -1293,7 +1301,9 @@ false, with the Langfuse keys and loopback base URL from `.env`; every host unit
 reads that file, so the switch set there affects the gateway, worker, and API at
 their next start. A traced process keeps a private digest cache of model
 artifacts (mode 0700/0600) and reads llama.cpp `/props` with the inference key.
-The worker and API templates declare `CacheDirectory=money-tracker`, which is
+The API opens its tracer with background identity, like the worker, and flushes
+it after uvicorn stops. The worker and API templates declare
+`CacheDirectory=money-tracker`, which is
 `~/.cache/money-tracker` for a user unit and stays writable under a read-only
 home, and put `~/.local/bin` on `PATH` so the executable digest resolves after
 an unattended boot; installed units change only when re-rendered. Since AD-021
@@ -1755,10 +1765,10 @@ environment file.
   V0 remains the direct configuration rollback.
 - [AD-021: Full-fidelity local LLM traces](decisions/AD-021-full-fidelity-llm-traces.md):
   tracing port, Langfuse adapter, identity, redaction, the traced
-  administrative dispatch, and one correlated trace per Telegram update across
-  gateway and worker implemented; backup exclusion and 30-day retention
-  decided; web advice, evaluation linkage, and the retention, export, and
-  deletion procedures planned.
+  administrative dispatch, one correlated trace per Telegram update across
+  gateway and worker, and one trace per web advice request implemented; backup
+  exclusion and 30-day retention decided; evaluation linkage and the retention,
+  export, and deletion procedures planned.
 - [AD-018: Telegram processing transactions and ordering](decisions/AD-018-telegram-processing-transactions.md):
   reconciled Step 4 persistence, Bot API transport, authorized ingestion,
   persisted-offset runtime, outbox delivery, Italian response rendering, the
@@ -1815,10 +1825,10 @@ Quantitative evaluation gates are maintained in
   but automatic scheduling, off-device secret verification, and a clean-machine
   restore remain later release work.
 - The real Telegram evidence uses a private test bot, not a production bot.
-- Step 5.5 is partial: the administration command, gateway, and worker are
-  traced, but web advice is not, the running services have not yet been
-  restarted with tracing or measured against a stopped store, and retention
-  and deletion are not yet written procedures. Until they are, the Langfuse
+- Step 5.5 is partial: the administration command, gateway, worker, and web
+  advice are traced, but the running services have not yet been restarted with
+  tracing or measured against a stopped store, and retention and deletion are
+  not yet written procedures. Until they are, the Langfuse
   volumes, which hold owner content and are deliberately outside the backup
   set, grow without a bound.
 - The host units' `ProtectHome`, `ProtectSystem`, and `PrivateTmp` directives

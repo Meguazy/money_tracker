@@ -13,10 +13,13 @@ the [third slice](#third-slice-web-advice-2026-09-17) traces browser advice;
 the [fourth slice](#fourth-slice-evaluation-linkage-2026-09-17) links a
 promoted configuration to the runs that promoted it; the
 [fifth slice](#fifth-slice-retention-export-and-deletion-2026-09-17)
-implements and exercises retention, private export, and verified deletion. The
+implements and exercises retention, private export, and verified deletion; the
+[sixth slice](#sixth-slice-degradation-in-real-processes-2026-09-17) proves the
+product unchanged and bounded against a stopped, slow, and refusing store. The
 owner decided the backup, latency-budget, and retention questions on
-2026-09-17. Degradation measured on the running services and owner acceptance
-remain open, as the [exit-criteria status](#exit-criteria-status) lists.
+2026-09-17. Restarting the installed services with tracing and owner
+acceptance with a real test-bot message remain open, as the
+[exit-criteria status](#exit-criteria-status) lists.
 
 This step is numbered 5.5 because it was inserted between two already-documented
 steps. Renumbering Steps 6 and 7 would have rewritten dated evaluation records
@@ -648,13 +651,76 @@ described above. After the runs and the asynchronous deletions, the
 `integration-test`, `development`, `evaluation`, and `retention-probe`
 environments held no observation. The web was not touched.
 
+### Sixth slice: degradation in real processes (2026-09-17)
+
+How the failures are produced. The Langfuse SDK keeps one client per project key
+per process and ignores the endpoint of any later one, so a pytest process that
+has already traced cannot point a second tracer at a failing store. Each
+degradation test therefore runs production code in a process of its own: a
+`channel_harness` module running the production gateway, ingestor, worker, and
+dispatcher composition (only the Bot API answered in-process), the production
+`money-tracker-api run`, and the production `money-tracker-worker run`. The
+store is stopped (a closed loopback port), slow (a proxy holding every request
+6 s, past the export bound, then dropping it), or refusing (every request
+answered 503). The Compose stack was never stopped. The export timeout is 1 s.
+
+What must not change, and did not. For each mode: the gateway and worker
+delivered the same `/help` answers as an untraced channel over the same
+database, answered a model-backed question, and left no pending, retrying,
+dead-lettered, or undelivered row; the API served the same advice payload as an
+untraced process and exited 0 on SIGINT; the worker service committed its
+queued update and exited 0 on SIGINT; and every journal named
+`tracing.export.degraded` or `tracing.flush.incomplete` without the store
+endpoint, `/api/public`, a traceback, the Langfuse secret key, the database
+URL, or the owner's words. `test_degradation.py` holds these nine checks.
+
+| Store (export timeout 1 s) | `/help` update end to end, median of 30, untraced → traced | Flush | API advice, median of 5 | API SIGINT stop | Worker SIGINT stop |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Running | 80.13 → 83.27 ms (+3.14) | 10.8 ms | 1,175.7 ms | 0.41 s | 0.16 s |
+| Stopped | 80.17 → 82.66 ms (+2.49) | 906.4 ms | 1,170.6 ms | 0.31 s | 1.01 s |
+| Slow | 79.68 → 81.82 ms (+2.14) | 1,003.5 ms | 1,175.2 ms | 1.31 s | 1.21 s |
+| Refusing | 79.46 → 81.71 ms (+2.25) | 1,003.5 ms | 1,172.9 ms | 0.31 s | 0.21 s |
+
+Every exit code was 0 and every answer identical. The worker's stop includes
+up to its one-second idle wait.
+
+Two defects found and corrected. First, the flush bound did not hold against a
+slow store: the harness flush took 1,987.7 ms with a 1 s timeout, because
+OpenTelemetry's `force_flush` waits for an export already in flight before
+honouring its timeout. The SDK and a default provider also register exit
+handlers that flush again with a thirty-second or unbounded wait. The adapter
+now runs every flush on a helper thread it waits for no longer than the export
+timeout, builds its provider with `shutdown_on_exit=False`, and releases the
+Langfuse resource manager's exit handler at shutdown; after the change every
+flush and stop above stayed within the bound. Releasing that handler relies on
+a private SDK attribute, recorded as a risk that these tests guard. Second, the
+first version of the slow proxy forwarded each held request to the real store,
+which left 18 test and measurement traces the tests could not name; they were
+removed with `money-tracker-traces delete --environment integration-test
+--before ... --confirm`, verified gone, and the proxy now drops held requests.
+The 77 measurement traces of the running-store row were likewise deleted and
+verified with the same command.
+
+What remains for acceptance. The installed services have not been re-rendered,
+switched on, or restarted, because that interrupts the owner's test bot; their
+behaviour with `langfuse-web` stopped is observed during acceptance.
+
+Validation. `uv run ruff check .`, `uv run ruff format --check .`,
+`uv run mypy src` (133 source files), `uv run money-tracker-validate-docs`, and
+`git diff --check` pass. `uv run pytest -q` reports 1,301 passed and 167
+skipped (the 9 degradation tests skip without their flag). The real PostgreSQL
+suite reports 1,435 passed and 33 skipped, the real Langfuse suite 25 passed in
+299 s, and the real advice HTTP test 1 passed. The web was not touched. After
+the runs and the asynchronous deletions, the `integration-test`, `development`,
+`evaluation`, and `measurement-degradation` environments held no observation.
+
 ### Exit-criteria status
 
 | Exit criterion | Status |
 | --- | --- |
 | Every promoted-workflow LLM call appears with complete input, output, and artifact identity | Met in integration: administrative dispatch, every worker specialist including the resumed category review, and web advice; to be confirmed on the running services at acceptance |
 | One owner message produces one correlated end-to-end trace | Partial: gateway, worker, and delivery correlated and proven in-process; the real private test-bot message is open |
-| Core behaviour unchanged with Langfuse stopped; added latency within a stated budget | Partial: budget confirmed by the owner; met for the admin, gateway, worker, and advice paths; stopped, slow, and refusing store on the running services open |
+| Core behaviour unchanged with Langfuse stopped; added latency within a stated budget | Partial: budget confirmed by the owner; met in real gateway, worker, and API processes against a running, stopped, slow, and refusing store, with a bounded flush and stop; the installed services with `langfuse-web` stopped open until acceptance |
 | No credential, token-bearing URL, database URL, or archive path in any trace; no receipt bytes | Met for every traced entry point; the acceptance trace open |
 | Trace retention and deletion documented and exercised | Met: 30-day retention, private export, and verified deletion by age and identifier implemented, documented, and exercised against the real store; backup exclusion recorded; scheduling is Step 7 |
 | Real integration tests verify emission and a silent disabled path | Met for every traced entry point |

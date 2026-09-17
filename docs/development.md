@@ -509,6 +509,12 @@ API with tracing forced off. Every other
 test forces tracing off, so a switch set in `.env` never exports synthetic test
 messages into the owner's store.
 
+The degradation tests there run the gateway and worker, the production API, and
+the production worker service in processes of their own, because the Langfuse
+SDK keeps one client per project key per process, against a closed port and a
+fault-injection proxy that holds or refuses every request; they never stop a
+container.
+
 Pytest runs with `--tb=short` from `pyproject.toml`: real-service fixtures hold
 credential-bearing URLs and key pairs, and a long traceback prints a failing
 test's arguments. Do not add `--tb=long` or `--showlocals` to a real-service

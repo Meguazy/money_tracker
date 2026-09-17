@@ -126,7 +126,7 @@ The broader dependency behavior remains:
 | Application PostgreSQL unavailable | Gateway/worker/API report unhealthy and retry; no in-memory acknowledgement or finance write. |
 | Telegram network unavailable | Gateway backs off; locally committed inbox work may continue if no response transport is needed. |
 | llama.cpp unavailable | Gateway continues durable ingestion; model-dependent inbox work retries without losing order/idempotency. |
-| Langfuse unavailable | All core behavior continues; a traced process loses the affected spans and waits at most the export timeout when it flushes. Measured for the traced administrative dispatch in [LLM Tracing](tracing.md#degradation); the gateway and worker trace when switched on, and their behaviour against a stopped store is still to be measured on the running services. |
+| Langfuse unavailable | All core behavior continues; a traced process loses the affected spans and waits at most the export timeout when it flushes. Measured for the traced administrative dispatch in [LLM Tracing](tracing.md#degradation); real gateway, worker, and API processes against a stopped, slow, and refusing store behaved identically and stopped within the bound; the installed services are observed at owner acceptance. |
 | Receipt extractor unavailable | Receipt remains in review/pending; text and read workflows continue. |
 | Backup destination unavailable | Finance runtime continues, but health becomes degraded and the operator is alerted locally; snapshots are not falsely marked successful. |
 | FastAPI unavailable | Telegram ingestion/processing continues; dashboard operations wait for API recovery. |

@@ -168,8 +168,16 @@ Measured on the target workstation:
 | Admin routing, `langfuse-web` stopped | Identical result and exit code; per-unit cost unchanged; exit flush waits at most the export timeout (959 ms measured, 3.48 s versus 2.13 s end to end); spans dropped |
 | Gateway and worker in-process, store running | `/help` update: +0.31 ms ingest, +2.05 ms claim to commit, +0.29 ms delivery (medians of 100); model-backed query: +5.8 and +12.1 ms claim to commit in two runs of 10; flush 6.8–7.6 ms |
 | Web advice over HTTP, store running | +2.76 ms median per request against an instant endpoint (41.24 to 44.00 ms, 100 each); +7.62 ms against the promoted model (1,163.26 to 1,170.88 ms, 10 each); SIGINT exit in 0.36–0.46 s with exit code 0 |
-| Services with the store stopped, slow, or refusing | Not yet measured on the running services |
+| Gateway, worker, and API processes against a stopped, slow, or refusing store (export timeout 1 s) | Identical answers and HTTP payloads, queue drained, no retry or dead letter; `/help` update end to end +2.1 to +2.5 ms median (+3.1 ms with the store running); flush 906–1,004 ms (10.8 ms running); SIGINT exit 0 in 0.31–1.31 s for the API and 0.16–1.21 s for the worker; journal names `tracing.export.degraded` or `tracing.flush.incomplete` without endpoint, traceback, or content |
+| Installed services with `langfuse-web` stopped | To be observed at owner acceptance |
 | Misconfigured tracing | Runs untraced with `tracing.configuration.rejected` |
+
+The flush bound is enforced by the adapter, not trusted to the SDKs: a flush
+runs on a helper thread that the process waits for no longer than the export
+timeout, the OpenTelemetry provider has no exit handler, and the Langfuse SDK's
+exit handler, which would flush again with a thirty-second or unbounded wait,
+is released at shutdown. A store that holds requests otherwise doubled the
+bound.
 
 Simulate a stopped store only with non-destructive commands, and restore it:
 

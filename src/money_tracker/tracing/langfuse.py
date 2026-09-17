@@ -23,10 +23,19 @@ register a global one. That keeps tracing from altering process-wide state,
 and it lets `shutdown` deliver buffered spans within a stated bound. The SDK's
 own shutdown is deliberately not called: it joins internal queues without a
 timeout and, once the SDK is shared within a process, can wait forever.
+
+The bound is enforced here rather than trusted to the SDKs. OpenTelemetry's
+`force_flush` waits for an export already in flight before honouring its
+timeout, which doubled the bound against a store that holds requests, and both
+the SDK and a default provider register exit handlers that flush again with a
+thirty-second or unbounded wait. The adapter therefore waits for a flush on a
+helper thread for no longer than the export timeout, builds its provider
+without an exit handler, and releases the SDK's handler when it shuts down.
 """
 
 from __future__ import annotations
 
+import atexit
 import threading
 import time
 from collections.abc import Callable, Generator, Mapping
@@ -245,7 +254,10 @@ def _provider_for(settings: TracingSettings) -> TracerProvider:
                     "langfuse.environment": settings.environment,
                     "langfuse.release": __version__,
                 }
-            )
+            ),
+            # An exit handler would flush again after the bounded one, with the
+            # provider's own thirty-second wait.
+            shutdown_on_exit=False,
         )
         _PROVIDERS[settings.public_key] = provider
     return provider
@@ -385,10 +397,13 @@ class LangfuseTracer:
         """Deliver buffered spans, waiting no longer than the export bound.
 
         A stopped or slow store costs at most that bound; spans it could not
-        take are dropped and the drop is recorded, never retried later.
+        take are dropped and the drop is recorded, never retried later. The
+        SDK's own exit handler is released afterwards, because it would flush
+        again without a bound as the interpreter exits.
         """
 
         self._flush_spans()
+        self._release_exit_handler()
 
     def publish(self, publication: EvaluationPublication) -> bool:
         """Export aggregate evaluation evidence as one trace, then flush it.
@@ -444,29 +459,7 @@ class LangfuseTracer:
     def _flush_scores(self) -> bool:
         """Deliver queued scores, waiting no longer than the export bound."""
 
-        finished = threading.Event()
-        outcome = {"delivered": False}
-
-        def flush() -> None:
-            try:
-                self._client.flush()
-                outcome["delivered"] = True
-            except Exception as error:
-                _LOGGER.warning(
-                    "tracing.flush.failed", exception_type=type(error).__name__
-                )
-            finally:
-                finished.set()
-
-        threading.Thread(
-            target=flush, name="money-tracker-score-flush", daemon=True
-        ).start()
-        if not finished.wait(self._flush_timeout_millis / 1000):
-            _LOGGER.warning(
-                "tracing.flush.incomplete", duration_ms=self._flush_timeout_millis
-            )
-            return False
-        return outcome["delivered"]
+        return self._bounded(self._client.flush, name="money-tracker-score-flush")
 
     def _flush_spans(self) -> bool:
         """Force-flush this process's provider within the export bound.
@@ -475,20 +468,59 @@ class LangfuseTracer:
             True when every buffered span was delivered.
         """
 
-        started = time.perf_counter()
-        try:
-            delivered = self._provider.force_flush(
+        return self._bounded(
+            lambda: self._provider.force_flush(
                 timeout_millis=self._flush_timeout_millis
-            )
-        except Exception as error:
-            _LOGGER.warning("tracing.flush.failed", exception_type=type(error).__name__)
-            return False
+            ),
+            name="money-tracker-span-flush",
+        )
+
+    def _bounded(self, flush: Callable[[], object], *, name: str) -> bool:
+        """Run one flush on a helper thread and wait no longer than the bound.
+
+        Args:
+            flush: Flush to run; a false result means spans were not delivered.
+            name: Helper thread name.
+
+        Returns:
+            True when the flush finished within the bound and delivered.
+        """
+
+        finished = threading.Event()
+        outcome = {"delivered": False}
+
+        def run() -> None:
+            try:
+                outcome["delivered"] = flush() is not False
+            except Exception as error:
+                _LOGGER.warning(
+                    "tracing.flush.failed", exception_type=type(error).__name__
+                )
+            finally:
+                finished.set()
+
+        started = time.perf_counter()
+        threading.Thread(target=run, name=name, daemon=True).start()
+        completed = finished.wait(self._flush_timeout_millis / 1000)
         duration_ms = round((time.perf_counter() - started) * 1000, 3)
-        if not delivered:
+        if not completed or not outcome["delivered"]:
             _LOGGER.warning("tracing.flush.incomplete", duration_ms=duration_ms)
             return False
         _LOGGER.debug("tracing.flush.completed", duration_ms=duration_ms)
         return True
+
+    def _release_exit_handler(self) -> None:
+        """Stop the SDK from flushing again, unbounded, at interpreter exit."""
+
+        try:
+            resources = getattr(self._client, "_resources", None)
+            if resources is not None:
+                atexit.unregister(resources.shutdown)
+        except Exception as error:
+            _LOGGER.warning(
+                "tracing.exit_handler.release_failed",
+                exception_type=type(error).__name__,
+            )
 
     def _safe_identity(self) -> Mapping[str, object]:
         """Resolve model identity without letting a fault reach the call."""

@@ -154,7 +154,12 @@ an observation are guarded, and no exception reaches an SDK context manager, so
 OpenTelemetry never attaches exception text or a stack trace. Export runs on the
 SDK's background thread. A stopped or slow store costs at most the export
 timeout (default two seconds) when a process flushes; spans the store could not
-take are dropped and the drop is recorded, never retried later. Tracing SDK log
+take are dropped and the drop is recorded, never retried later. The adapter
+enforces that bound itself: each flush runs on a helper thread waited for no
+longer than the timeout, its OpenTelemetry provider has no exit handler, and the
+SDK's exit handler is released at shutdown, because OpenTelemetry waits for an
+export in flight before honouring a flush timeout and both SDKs otherwise flush
+again at interpreter exit with a thirty-second or unbounded wait. Tracing SDK log
 records are rewritten into content-free `tracing.*` events before any handler
 formats them, and export failures are recorded at `WARNING`.
 
@@ -256,3 +261,9 @@ adds `tracing.retention` and `money-tracker-traces`. A real test writes traces
 on both sides of a cutoff and proves the plan, a private 0600 export with its
 digest, a dry run that deletes nothing, and verified deletions by age and by
 identifier that leave the spanning and newer traces until they are named.
+
+The [sixth slice](../../roadmap/step-5-5-llm-traceability.md#sixth-slice-degradation-in-real-processes-2026-09-17)
+runs the gateway and worker, the API, and the worker service entry point in
+processes of their own against a stopped, slow, and refusing store, proves
+identical behaviour, the latency budget, a bounded flush and stop, and a
+content-free journal, and corrects the flush bound the slow store exceeded.

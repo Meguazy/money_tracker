@@ -183,6 +183,7 @@ def _api(
     *,
     tracing: bool,
     llm_base_url: str | None = None,
+    overrides: dict[str, str] | None = None,
 ) -> Iterator[ApiProcess]:
     """Run the production API entry point until the block ends, then stop it."""
 
@@ -206,6 +207,7 @@ def _api(
     )
     if llm_base_url is not None:
         environment["LLM_BASE_URL"] = llm_base_url
+    environment.update(overrides or {})
     journal = tmp_path / f"api-{port}.jsonl"
     with journal.open("wb") as sink:
         process = subprocess.Popen(

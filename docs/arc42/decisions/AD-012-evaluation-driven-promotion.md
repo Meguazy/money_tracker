@@ -58,6 +58,18 @@ is named on every surface a score is read on. A sweep script owns the candidate
 switch end to end, because the switch is two steps that must agree and only one
 of them is visible from the runner.
 
+Step 5.5 makes a promotion traceable from runtime. `money_tracker.workflows.promotion`
+records EVD-004 as code: decision, model profile and weights digest, pinned
+prompt, threshold, and policy versions, and the run identifier of each of the
+six suites. A unit test requires every run to be published, eligible, and on
+the promoted weights, the decision log entry to name the same runs and digest,
+and the runtime defaults to equal the pinned versions, with the router,
+extraction, and tool-selection instruction texts hashing to what their runs
+recorded. Runtime traces carry the decision and runs when their versions match,
+and `money-tracker-eval publish-promotion` publishes the committed evidence to
+the local store. The record adds no promotion: a new one still needs its gates
+and a decision-log entry first.
+
 ## Consequences
 
 - Exact and rule-based graders precede subjective review.

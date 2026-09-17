@@ -162,7 +162,31 @@ endpoint is unavailable. A blocking pass additionally requires the exact model
 alias, GGUF hash and quantization, llama.cpp executable hash/version, chat
 template hash, context size, and projector metadata when vision is required.
 Set `--publish-langfuse` only when aggregate redacted scores should be copied to
-the optional local observability service.
+the optional local observability service. Publication follows the tracing
+rules: the flag is the explicit request, both project keys are required, the
+store must be on a loopback address, and the SDK's cloud default is never used;
+anything else publishes nothing and records `tracing.configuration.rejected`.
+Evidence goes to the Langfuse `evaluation` environment, apart from runtime
+traces and their 30-day retention.
+
+A recorded promotion's evidence can be published the same way:
+
+    uv run --env-file .env money-tracker-eval publish-promotion --decision EVD-004
+
+`money_tracker.workflows.promotion` holds each promotion as code: the decision,
+the promoted model and weights digest, the pinned prompt, threshold, and policy
+versions, and the published run identifier of every suite the decision rests
+on. The command reads those runs from `out/evaluations/`, refuses a run that is
+missing, not eligible, or measured on other weights, and publishes one
+`evaluation-promotion` trace with the configuration and each run's gates,
+metrics, dataset, instruction version and hash, and source commit. Every
+runtime trace whose composed versions match the record carries the same
+`promotion_decision` and run identifiers in its version set, and one that does
+not names the `promotion_mismatch`, so filtering the store by the decision
+leads from a runtime call to the runs that promoted its configuration. A unit
+test holds the record to the committed runs, the decision log, and the runtime
+defaults; changing it is part of recording a promotion, never a substitute for
+one.
 
 Do not create committed data by copying personal messages, receipts, merchant
 identifiers, Telegram IDs, tokens, or Langfuse exports.
@@ -326,7 +350,8 @@ are never committed or copied into a dataset without the privacy review below.
 - Do not commit private raw results. Commit only reviewed aggregate reports and
   baselines that cannot reconstruct personal data.
 - Evaluation runs do not emit runtime traces; `--publish-langfuse` copies only
-  redacted aggregate capability scores. Langfuse tracing of private experiments
-  remains local and optional.
+  redacted aggregate capability scores, and `publish-promotion` only the
+  aggregate evidence already committed under `out/evaluations/`. Langfuse
+  tracing of private experiments remains local and optional.
 - Tracing changes no prompt, schema, tool, threshold, or policy, so it triggers
   no promotion gate; EVD-004 remains the promoted text baseline.

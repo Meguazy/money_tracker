@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from contextlib import AbstractContextManager, nullcontext
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Final, Protocol
 
 TELEGRAM_UPDATE_TRACE: Final = "telegram-update"
@@ -61,6 +61,56 @@ class ModelCallRequest:
     messages: tuple[TraceMessage, ...]
     response_format: Mapping[str, object]
     parameters: Mapping[str, object]
+
+
+@dataclass(frozen=True, slots=True)
+class EvaluationRecord:
+    """One aggregate evaluation fact published as an observation.
+
+    Attributes:
+        name: Stable observation name.
+        input: JSON-compatible identity of what was measured.
+        output: JSON-compatible aggregate result.
+        metadata: Flat JSON-compatible facts keyed by stable names.
+        scores: Numeric scores attached to the observation, by name.
+    """
+
+    name: str
+    input: Mapping[str, object]
+    output: Mapping[str, object]
+    metadata: Mapping[str, object] = field(default_factory=dict)
+    scores: Mapping[str, float] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
+class EvaluationPublication:
+    """One published body of evaluation evidence, as one trace.
+
+    Attributes:
+        trace_seed: Reference the trace identifier is derived from.
+        trace_name: Stable trace name.
+        root: The evidence as a whole.
+        children: The individual measured facts beneath it.
+    """
+
+    trace_seed: str
+    trace_name: str
+    root: EvaluationRecord
+    children: tuple[EvaluationRecord, ...] = ()
+
+
+class EvaluationPublisher(Protocol):
+    """Narrow port publishing aggregate evaluation evidence to the local store."""
+
+    def publish(self, publication: EvaluationPublication) -> bool:
+        """Export one publication and wait for it within the export bound.
+
+        Args:
+            publication: Aggregate evidence to publish.
+
+        Returns:
+            True when the store accepted everything within the bound.
+        """
 
 
 class TraceObservation(Protocol):
@@ -287,6 +337,9 @@ __all__ = [
     "ADMIN_ROUTE_TRACE",
     "DISABLED_TRACER",
     "DisabledTracer",
+    "EvaluationPublication",
+    "EvaluationPublisher",
+    "EvaluationRecord",
     "ModelCallObservation",
     "ModelCallRequest",
     "TraceMessage",

@@ -34,6 +34,10 @@ from money_tracker.evaluations.ingestion import (
     run_ingestion_suite,
 )
 from money_tracker.evaluations.metadata import CapabilitySettings
+from money_tracker.evaluations.publication import (
+    PromotionEvidenceError,
+    publish_promotion,
+)
 from money_tracker.evaluations.routing import run_routing_suite
 from money_tracker.evaluations.suites import (
     SuiteReport,
@@ -50,6 +54,7 @@ from money_tracker.workflows import (
     DEFAULT_READ_SELECTION_POLICY,
     ReadSelectionPolicyVersion,
 )
+from money_tracker.workflows.promotion import PROMOTIONS
 from money_tracker.workflows.prompts import (
     CATEGORY_FIT,
     CATEGORY_LEAF,
@@ -158,6 +163,38 @@ def _require_declared_model(
                 + [f"  - {problem}" for problem in problems]
             )
         )
+
+
+def _publish_promotion(decision: str, scores_root: Path) -> None:
+    """Publish one recorded promotion's evidence and report the trace to find.
+
+    Args:
+        decision: Decision identifier with a code-owned promotion record.
+        scores_root: Committed published scores the evidence is read from.
+
+    Raises:
+        SystemExit: With status one when the committed runs do not support the
+            record or the store did not accept the evidence.
+    """
+
+    try:
+        outcome = publish_promotion(PROMOTIONS[decision], out_root=scores_root)
+    except PromotionEvidenceError as error:
+        _LOGGER.error("evaluation.promotion.evidence_rejected", decision=decision)
+        raise SystemExit(f"promotion evidence refused: {error}") from None
+    print(
+        json.dumps(
+            {
+                "decision": outcome.decision,
+                "published": outcome.published,
+                "evaluation_runs": outcome.run_ids,
+                "trace_reference": outcome.trace_reference,
+            },
+            sort_keys=True,
+        )
+    )
+    if not outcome.published:
+        raise SystemExit(1)
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -416,6 +453,25 @@ def _parser() -> argparse.ArgumentParser:
             "so a shell can resolve a path without parsing"
         ),
     )
+    promotion = subparsers.add_parser(
+        "publish-promotion",
+        help=(
+            "publish a recorded promotion's committed run evidence to the "
+            "local Langfuse"
+        ),
+    )
+    promotion.add_argument(
+        "--decision",
+        required=True,
+        choices=sorted(PROMOTIONS),
+        help="decision identifier from the experiment decision log",
+    )
+    promotion.add_argument(
+        "--scores-root",
+        type=Path,
+        default=repository_root / "out" / "evaluations",
+        help="committed published scores the evidence is read from",
+    )
     for suite in (
         capabilities,
         routing,
@@ -574,6 +630,9 @@ def main(argv: Sequence[str] | None = None) -> None:
         )
     if args.suite == "catalog":
         _run_catalog(args.profile, args.field)
+        return
+    if args.suite == "publish-promotion":
+        _publish_promotion(args.decision, args.scores_root)
         return
     settings = CapabilitySettings.from_env()
     _require_declared_model(args.model_profile, settings)

@@ -21,6 +21,9 @@ from money_tracker.tracing.ports import (
     TELEGRAM_UPDATE_TRACE,
     WEB_ADVICE_TRACE,
     DisabledTracer,
+    EvaluationPublication,
+    EvaluationPublisher,
+    EvaluationRecord,
     ModelCallObservation,
     ModelCallRequest,
     TraceMessage,
@@ -99,6 +102,48 @@ def open_tracer(
     return tracer
 
 
+def open_evaluation_publisher(*, environment: str) -> EvaluationPublisher | None:
+    """Build the publisher an evaluation command uses for aggregate evidence.
+
+    The command's own flag or subcommand is the explicit request, so the
+    runtime tracing switch is not consulted; the keys, loopback endpoint, and
+    export bound are validated exactly as for tracing, and the SDK's cloud
+    default is never used.
+
+    Args:
+        environment: Langfuse environment the evidence is published into.
+
+    Returns:
+        A publisher bound to the local store, or None when configuration
+        cannot be honored, which is recorded with a reason code.
+    """
+
+    try:
+        settings = TracingSettings.for_publication(environment=environment)
+    except TracingConfigurationError as error:
+        _LOGGER.error("tracing.configuration.rejected", reason_code=error.reason_code)
+        return None
+
+    from money_tracker.tracing.langfuse import LangfuseTracer
+    from money_tracker.tracing.redaction import TraceRedactor
+
+    try:
+        return LangfuseTracer(
+            settings,
+            identity=_no_model_identity,
+            redactor=TraceRedactor.from_env(),
+        )
+    except Exception as error:
+        _LOGGER.exception("tracing.start.failed", exception_type=type(error).__name__)
+        return None
+
+
+def _no_model_identity() -> Mapping[str, object]:
+    """Report no model identity; a publisher records no model call."""
+
+    return {"metadata_complete": False}
+
+
 def _prewarm_identity(identity: Callable[[], Mapping[str, object]]) -> None:
     """Resolve the model identity once so the first traced call finds it ready.
 
@@ -130,6 +175,9 @@ __all__ = [
     "TELEGRAM_UPDATE_TRACE",
     "WEB_ADVICE_TRACE",
     "DisabledTracer",
+    "EvaluationPublication",
+    "EvaluationPublisher",
+    "EvaluationRecord",
     "ModelCallObservation",
     "ModelCallRequest",
     "TraceMessage",
@@ -137,5 +185,6 @@ __all__ = [
     "Tracer",
     "TracingConfigurationError",
     "TracingSettings",
+    "open_evaluation_publisher",
     "open_tracer",
 ]

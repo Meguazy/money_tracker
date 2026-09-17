@@ -104,6 +104,51 @@ class TracingSettings:
             raise TracingConfigurationError(
                 "invalid_switch", f"{TRACING_ENABLED_ENV} must be true or false"
             )
+        return cls._store_from_env()
+
+    @classmethod
+    def for_publication(cls, *, environment: str) -> TracingSettings:
+        """Read the local store configuration for an explicit publication.
+
+        Publishing evaluation evidence is requested by its own command-line
+        flag or command, which is the explicit switch, so the runtime tracing
+        switch is not consulted. Every other rule is the same: both keys are
+        required, the endpoint must be loopback, and the SDK's cloud default is
+        never used.
+
+        Args:
+            environment: Langfuse environment the evidence is published into.
+
+        Returns:
+            Complete, validated loopback settings.
+
+        Raises:
+            TracingConfigurationError: If a key is missing, the endpoint is not
+                loopback, or the timeout is not a positive integer.
+        """
+
+        settings = cls._store_from_env()
+        return cls(
+            enabled=True,
+            base_url=settings.base_url,
+            public_key=settings.public_key,
+            secret_key=settings.secret_key,
+            environment=environment,
+            export_timeout_seconds=settings.export_timeout_seconds,
+        )
+
+    @classmethod
+    def _store_from_env(cls) -> TracingSettings:
+        """Read and validate the store keys, endpoint, and export bound.
+
+        Returns:
+            Enabled settings for the configured local store.
+
+        Raises:
+            TracingConfigurationError: If a key is missing, the endpoint is not
+                loopback, or the timeout is not a positive integer.
+        """
+
         public_key = os.getenv(LANGFUSE_PUBLIC_KEY_ENV, "").strip()
         secret_key = os.getenv(LANGFUSE_SECRET_KEY_ENV, "").strip()
         if not public_key or not secret_key:

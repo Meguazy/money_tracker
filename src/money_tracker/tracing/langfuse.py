@@ -27,6 +27,7 @@ timeout and, once the SDK is shared within a process, can wait forever.
 
 from __future__ import annotations
 
+import threading
 import time
 from collections.abc import Callable, Generator, Mapping
 from contextlib import AbstractContextManager, contextmanager
@@ -41,6 +42,8 @@ from opentelemetry.sdk.trace import TracerProvider
 from money_tracker import __version__
 from money_tracker.structured_logging import get_logger
 from money_tracker.tracing.ports import (
+    EvaluationPublication,
+    EvaluationRecord,
     ModelCallObservation,
     ModelCallRequest,
     TraceObservation,
@@ -249,7 +252,12 @@ def _provider_for(settings: TracingSettings) -> TracerProvider:
 
 
 class LangfuseTracer:
-    """Tracer exporting to the local, owner-controlled Langfuse instance."""
+    """Tracer and evaluation publisher for the local Langfuse instance.
+
+    It implements both narrow ports: the runtime tracing port entry points
+    inject, and the evaluation publication port the evaluation command uses, so
+    one module owns every use of the SDK.
+    """
 
     enabled = True
 
@@ -380,6 +388,93 @@ class LangfuseTracer:
         take are dropped and the drop is recorded, never retried later.
         """
 
+        self._flush_spans()
+
+    def publish(self, publication: EvaluationPublication) -> bool:
+        """Export aggregate evaluation evidence as one trace, then flush it.
+
+        The root and each child are evaluator observations; their scores are
+        attached to them. Scores travel on the SDK's own ingestion queue, whose
+        flush has no timeout, so that flush runs on a daemon thread the caller
+        waits for no longer than the export bound.
+
+        Args:
+            publication: Aggregate evidence to publish.
+
+        Returns:
+            True when every span and score was delivered within the bound.
+        """
+
+        root = publication.root
+        arguments = self._evaluator_arguments(root)
+        arguments["trace_context"] = {"trace_id": trace_id_for(publication.trace_seed)}
+        with self._current(arguments, trace_name=publication.trace_name) as recorded:
+            recorded.record_output(dict(root.output))
+            self._score(root.scores)
+            for child in publication.children:
+                with self._current(self._evaluator_arguments(child)) as observation:
+                    observation.record_output(dict(child.output))
+                    self._score(child.scores)
+        return self._flush_scores() and self._flush_spans()
+
+    @staticmethod
+    def _evaluator_arguments(record: EvaluationRecord) -> dict[str, Any]:
+        """Build the SDK arguments of one evaluator observation."""
+
+        return {
+            "name": record.name,
+            "as_type": "evaluator",
+            "input": dict(record.input),
+            "metadata": dict(record.metadata),
+        }
+
+    def _score(self, scores: Mapping[str, float]) -> None:
+        """Attach numeric scores to the current observation, isolating faults."""
+
+        for name, value in scores.items():
+            try:
+                self._client.score_current_span(
+                    name=name, value=float(value), data_type="NUMERIC"
+                )
+            except Exception as error:
+                _LOGGER.warning(
+                    "tracing.score.failed", exception_type=type(error).__name__
+                )
+
+    def _flush_scores(self) -> bool:
+        """Deliver queued scores, waiting no longer than the export bound."""
+
+        finished = threading.Event()
+        outcome = {"delivered": False}
+
+        def flush() -> None:
+            try:
+                self._client.flush()
+                outcome["delivered"] = True
+            except Exception as error:
+                _LOGGER.warning(
+                    "tracing.flush.failed", exception_type=type(error).__name__
+                )
+            finally:
+                finished.set()
+
+        threading.Thread(
+            target=flush, name="money-tracker-score-flush", daemon=True
+        ).start()
+        if not finished.wait(self._flush_timeout_millis / 1000):
+            _LOGGER.warning(
+                "tracing.flush.incomplete", duration_ms=self._flush_timeout_millis
+            )
+            return False
+        return outcome["delivered"]
+
+    def _flush_spans(self) -> bool:
+        """Force-flush this process's provider within the export bound.
+
+        Returns:
+            True when every buffered span was delivered.
+        """
+
         started = time.perf_counter()
         try:
             delivered = self._provider.force_flush(
@@ -387,12 +482,13 @@ class LangfuseTracer:
             )
         except Exception as error:
             _LOGGER.warning("tracing.flush.failed", exception_type=type(error).__name__)
-            return
+            return False
         duration_ms = round((time.perf_counter() - started) * 1000, 3)
         if not delivered:
             _LOGGER.warning("tracing.flush.incomplete", duration_ms=duration_ms)
-            return
+            return False
         _LOGGER.debug("tracing.flush.completed", duration_ms=duration_ms)
+        return True
 
     def _safe_identity(self) -> Mapping[str, object]:
         """Resolve model identity without letting a fault reach the call."""

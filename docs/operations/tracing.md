@@ -71,6 +71,7 @@ Langfuse UI:
 | `read_admitted_tools`, `read_tool_request`, `read_executed_tool`, `read_grounded` | The route's registry, the admitted request, and the grounded result |
 | `review_proposal_id`, `review_decision_action`, `review_resumed`, `review_opened` | Category review resumption |
 | `thread_ids` | LangGraph threads the work unit used, which join a resumed review to the expense that opened it |
+| `promotion_decision`, `promotion_evaluation_runs`, `promotion_model_profile`, `promotion_gguf_sha256` | The decision that promoted this configuration and the run of each suite it rests on; `none` with `promotion_mismatch` naming what differs, such as the `model-only-v0` rollback |
 
 The `work-unit` root adds `work_unit_outcome` (`committed`, `retry_scheduled`,
 `dead_lettered`, `lease_lost`), `failure_reason_code`, `attempt_count`,
@@ -194,6 +195,24 @@ Never use `down -v`, delete a volume, or force a migration to clear an error.
 | `tracing.sdk.reported` | WARNING or above | The Langfuse SDK reported a problem; only its logger name and exception class are kept |
 
 None of these carries a URL, payload, or traceback.
+
+## Evaluation evidence
+
+Published evaluation evidence lives in the `evaluation` environment, not with
+runtime traces. `money-tracker-eval capabilities --publish-langfuse` publishes a
+screen's aggregate probe outcomes, and
+
+    uv run --env-file .env money-tracker-eval publish-promotion --decision EVD-004
+
+publishes one `evaluation-promotion` trace per call: the promoted configuration
+and, for each of the six runs EVD-004 rests on, its gates, metrics, dataset,
+instruction version, and source commit, read from `out/evaluations/`. Filter
+the store by `promotion_decision` to go from a runtime call to that evidence.
+Both commands are their own explicit request, need both project keys and a
+loopback `LANGFUSE_BASE_URL`, and wait at most the export timeout.
+`publish-promotion` exits 1 when nothing was published; a capability screen
+records `langfuse_published: false` in its manifest instead. Scores are stored with the observations, but this
+Langfuse's public scores endpoint answers 404, so read them in the UI.
 
 ## Retention, export, deletion, and backup
 

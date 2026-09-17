@@ -386,7 +386,17 @@ a local image only for a model expected to support vision:
 
 Add `--publish-langfuse` only to copy redacted aggregate scores to the optional
 local Langfuse instance. Image bytes, local paths, API keys, and private inputs
-are not published.
+are not published, and a missing key or non-loopback `LANGFUSE_BASE_URL`
+publishes nothing. Publish the committed evidence of a recorded promotion, so a
+promoted configuration in a runtime trace leads to the runs that promoted it,
+with:
+
+    uv run --env-file .env money-tracker-eval publish-promotion --decision EVD-004
+
+Its real-store check needs only the observability profile:
+
+    RUN_LANGFUSE_INTEGRATION_TESTS=1 LOG_LEVEL=CRITICAL uv run --env-file .env \
+      pytest -q tests/integration/money_tracker/tracing/test_evaluation_publication.py
 
 ## Application CLI and tracing
 

@@ -9,11 +9,13 @@ trace-content decision. The
 delivers the tracing boundary and traces `money-tracker-admin route`; the
 [second slice](#second-slice-telegram-gateway-and-worker-2026-09-17) traces the
 Telegram gateway and the sequential worker as one correlated trace per update;
-the [third slice](#third-slice-web-advice-2026-09-17) traces browser advice.
-The owner decided the backup, latency-budget, and retention questions on
-2026-09-17. Degradation measured on the running services, evaluation linkage,
-the retention, export, and deletion procedures, and owner acceptance remain
-open, as the [exit-criteria status](#exit-criteria-status) lists.
+the [third slice](#third-slice-web-advice-2026-09-17) traces browser advice;
+the [fourth slice](#fourth-slice-evaluation-linkage-2026-09-17) links a
+promoted configuration to the runs that promoted it. The owner decided the
+backup, latency-budget, and retention questions on 2026-09-17. Degradation
+measured on the running services, the retention, export, and deletion
+procedures, and owner acceptance remain open, as the
+[exit-criteria status](#exit-criteria-status) lists.
 
 This step is numbered 5.5 because it was inserted between two already-documented
 steps. Renumbering Steps 6 and 7 would have rewritten dated evaluation records
@@ -506,6 +508,73 @@ frontend was not changed, but the web process and the E2E runtime were:
 pass, and `npm run test:e2e` reports 5 passed. After every run the
 `integration-test`, `measurement-slice3`, and `development` environments held no
 observation.
+
+### Fourth slice: evaluation linkage (2026-09-17)
+
+What links a promoted version to its runs. `money_tracker.workflows.promotion`
+records EVD-004 as code: the decision and date, profile `text-qwen3-14b` and
+its GGUF digest, the pinned router, extraction, category-fit, and
+tool-selection prompt identifiers, the 0.5 routing bar, the
+`explicit-finance-scope-v1` policy, and the published run of each suite:
+`ROU-20260909-145350-b1919d44`, `ING-20260909-150059-3f9abaac`,
+`CAT-20260909-150354-f2f4e790`, `TOO-20260909-150703-7b2c9501`,
+`ADV-20260909-144755-762f53cc`, and `REV-20260909-150839-7a1a525f`.
+`workflow_version_set` compares the versions an assembly composes with the
+record: when they match, every dispatch and advice span carries
+`promotion_decision`, `promotion_evaluation_runs`, `promotion_model_profile`,
+and `promotion_gguf_sha256`, which a generation's artifact identity can be
+checked against; when they do not, as with `model-only-v0` or another bar,
+`promotion_decision` is `none` and `promotion_mismatch` names the keys.
+
+Holding the record to the evidence. Unit tests require every named run to exist
+under `out/evaluations/<suite>/text-qwen3-14b/`, carry its identifier, be
+eligible and passing, and have measured the promoted weights; the EVD-004 entry
+of the decision log to name the same runs, digest, and profile; the runtime
+defaults to equal the pinned versions; and the default router, extraction, and
+tool-selection texts to hash to the `instructions_sha256` their runs recorded
+(the category-fit run hashed its text with the fixture taxonomy rendered in,
+so only its identifier is compared). The worker's version set is linked to
+EVD-004, and a rollback assembly is not.
+
+Publication. `evaluations.publication` is extended, not replaced. It no longer
+imports the SDK or calls `get_client()` from the environment: the tracing
+package gains an `EvaluationPublisher` port, implemented by the Langfuse adapter,
+and `open_evaluation_publisher`, which validates keys, the loopback endpoint,
+and the export bound through `TracingSettings.for_publication` and never uses
+the cloud default. The command's flag or subcommand is the explicit request, so
+the runtime switch is not consulted. `publish_capability_report` keeps its
+content and scores. `money-tracker-eval publish-promotion --decision EVD-004`
+reads the committed runs, refuses a missing, ineligible, renamed, or
+other-weights run, and publishes one new `evaluation-promotion` trace with an
+evaluator root for the configuration and one evaluator child per run with its
+gates, metrics, dataset, instruction version and hash, selection policy, bar,
+and source commit, scored `gate/<suite>`. Evidence goes to the `evaluation`
+environment, apart from runtime traces and their retention. Score delivery uses
+the SDK's queue, whose flush has no timeout, so it runs on a daemon thread
+waited for no longer than the export timeout. Every publication is a new trace,
+because replacing one under the same identifier could race Langfuse's
+asynchronous deletion.
+
+Nothing model-visible changed and nothing was promoted; the decision log was
+not touched.
+
+Real integration test. `test_evaluation_publication.py` publishes the EVD-004
+evidence with the runtime switch off into `integration-test`, reads back the
+evaluator root with the decision and pinned versions and the six children with
+their run identifiers and passing gates, and deletes the trace. A probe showed
+that the publication's six scores reach ClickHouse and are deleted with the
+trace; this Langfuse answers 404 on its public scores endpoints, so the test
+reads observations only.
+
+Validation. `uv run ruff check .`, `uv run ruff format --check .`,
+`uv run mypy src` (131 source files), `uv run money-tracker-validate-docs`, and
+`git diff --check` pass. `uv run pytest -q` reports 1,282 passed and 157
+skipped (25 new unit tests; the real publication test skips without its flag).
+The real PostgreSQL suite reports 1,416 passed and 23 skipped, the real
+Langfuse suite 15 passed in 76 s, and the real advice HTTP test 1 passed. The
+web was not touched. After the runs, and once Langfuse had applied the
+asynchronous deletions, the `integration-test`, `evaluation`, `probe-scores`,
+and `development` environments held no observation.
 
 ### Exit-criteria status
 

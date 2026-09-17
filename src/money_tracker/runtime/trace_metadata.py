@@ -30,6 +30,7 @@ from money_tracker.workflows import (
     registry_for,
 )
 from money_tracker.workflows.candidates import CategoryFitCandidate, ExtractionCandidate
+from money_tracker.workflows.promotion import PROMOTED_TEXT_STACK
 
 
 def workflow_version_set(
@@ -56,7 +57,8 @@ def workflow_version_set(
 
     Returns:
         Flat metadata naming every version that shapes a model request or the
-        deterministic decision taken after it. Boundaries that are not
+        deterministic decision taken after it, and whether they are the
+        configuration a recorded promotion rests on. Boundaries that are not
         composed are omitted rather than reported as defaults.
     """
 
@@ -79,6 +81,7 @@ def workflow_version_set(
         versions["tool_selection_schema"] = selection.schema.__name__
     if selection_policy is not None:
         versions["read_selection_policy"] = selection_policy.value
+    versions.update(PROMOTED_TEXT_STACK.linkage(versions))
     return versions
 
 

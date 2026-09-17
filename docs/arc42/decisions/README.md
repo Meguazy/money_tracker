@@ -17,7 +17,7 @@ implementation state is still `planned`.
 | [AD-009](AD-009-local-web-application.md) | Local FastAPI and React web application | Accepted | Monthly overview, analytics, lifecycle, budgets, administration, review, messaging, and read-only advice implemented; real-browser E2E, WCAG A/AA automation, and installed-service acceptance passed in Step 5 |
 | [AD-010](AD-010-telegram-durable-messaging.md) | Telegram long polling and durable messaging | Accepted | Implemented and owner-accepted with recovery, authorization, and latency evidence; recovery commands also reachable from the local control plane |
 | [AD-011](AD-011-receipt-extraction.md) | Evaluation-gated receipt extraction | Accepted | Private original archive and owner metadata review implemented; extraction and extracted-draft preview planned |
-| [AD-012](AD-012-evaluation-driven-promotion.md) | Evaluation-driven model and prompt promotion | Accepted | Evaluation foundation and EVD-004 Step 3 text promotion implemented |
+| [AD-012](AD-012-evaluation-driven-promotion.md) | Evaluation-driven model and prompt promotion | Accepted | Evaluation foundation and EVD-004 Step 3 text promotion implemented; the promotion is code-owned and traceable from runtime traces to its runs since Step 5.5 |
 | [AD-013](AD-013-local-runtime-and-backup.md) | Host runtime and encrypted backup | Accepted | Compose topology, encrypted backup/restore, accepted Step 4 units, and browser-accepted Step 5 API unit implemented; scheduling planned |
 | [AD-014](AD-014-private-receipt-archive.md) | Private content-addressed receipt archive | Accepted | Local adapter, admin CLI, replay-safe versioned review state, browser metadata review, filesystem/PostgreSQL integration, and encrypted archive backup/restore implemented; API/worker media wiring and deletion planned |
 
@@ -27,7 +27,7 @@ implementation state is still `planned`.
 | [AD-018](AD-018-telegram-processing-transactions.md) | Telegram processing transactions and ordering | Accepted | Implemented and owner-accepted through production entry points; operator inspection and pinned requeue also exposed to the Step 5 browser surface |
 | [AD-019](AD-019-structured-application-logging.md) | Structured application logging | Accepted | Implemented across every entry point, adapter, application service, and persistence boundary |
 | [AD-020](AD-020-wallet-availability-and-expiry.md) | Wallet availability and expiry projection | Accepted | Domain projection, source administration, PostgreSQL locking, local API, and React control-plane surface implemented |
-| [AD-021](AD-021-full-fidelity-llm-traces.md) | Full-fidelity local LLM traces | Accepted | Tracing port, Langfuse adapter, artifact identity, redaction, traced administrative dispatch, one correlated trace per Telegram update across gateway and worker, and one trace per web advice request implemented in Step 5.5; backup exclusion and 30-day retention decided; evaluation linkage and retention, export, and deletion procedures planned |
+| [AD-021](AD-021-full-fidelity-llm-traces.md) | Full-fidelity local LLM traces | Accepted | Tracing port, Langfuse adapter, artifact identity, redaction, traced administrative dispatch, one correlated trace per Telegram update across gateway and worker, one trace per web advice request, and evaluation linkage implemented in Step 5.5; backup exclusion and 30-day retention decided; retention, export, and deletion procedures planned |
 
 ## Maintenance rules
 

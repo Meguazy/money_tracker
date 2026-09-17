@@ -7,8 +7,8 @@
   one correlated trace per update, deterministic decision metadata, and
   background identity for services in the second; the backup and retention
   decisions taken by the owner on 2026-09-17; one trace per web advice request
-  in the third; evaluation linkage and the retention, export, and deletion
-  procedures remain open
+  in the third; evaluation linkage in the fourth; the retention, export, and
+  deletion procedures remain open
 - Date: 2026-09-16
 - Extends: [AD-002](../README.md#ad-002-self-hosted-langfuse)
 - Refines: [AD-004](AD-004-local-first-telegram-boundary.md) and
@@ -158,7 +158,12 @@ formats them, and export failures are recorded at `WARNING`.
   are made content-free before they reach it.
 - **AD-012 and AD-017** remain: prompts, schemas, tools, thresholds, and the
   read-selection policy are code-owned and unchanged. EVD-004 stays the promoted
-  text baseline; tracing is not a promotion input.
+  text baseline; tracing is not a promotion input. Traces do point back at
+  promotions: a code-owned record of each decision, held by a unit test to the
+  decision log and the committed runs, lets every runtime version set name the
+  decision and run identifiers its configuration was promoted by, and the
+  evaluation command publishes that committed evidence through the same
+  loopback-only rules into a separate `evaluation` environment.
 
 ## Alternatives considered
 
@@ -227,3 +232,9 @@ start the production API process and prove over HTTP a complete trace per
 request, absence of forbidden values, a silent disabled API, a byte-identical
 selection request, and a clean exit on SIGINT; an advice request adds 2.8 ms
 median against an instant endpoint and 7.6 ms against the promoted model.
+
+The [fourth slice](../../roadmap/step-5-5-llm-traceability.md#fourth-slice-evaluation-linkage-2026-09-17)
+adds `workflows.promotion` and routes `evaluations.publication` through the
+tracing package's publication port, so no evaluation code imports the SDK and a
+non-loopback or keyless store publishes nothing. A real test publishes the
+EVD-004 evidence and reads the decision, configuration, and six runs back.

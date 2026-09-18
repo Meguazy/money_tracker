@@ -1,0 +1,101 @@
+---
+config:
+  flowchart:
+    curve: linear
+    nodeSpacing: 45
+    rankSpacing: 55
+---
+flowchart TD;
+    IN([" ChannelMessage "]):::io
+    subgraph RT_BOX["<b>router_graph</b>"]
+    direction TB
+        rt_pre_route(pre_route):::node
+        rt_classify(classify):::node
+        rt_pre_route -.-> rt_classify;
+    end
+    subgraph EX_BOX["<b>expense_graph</b>"]
+    direction TB
+        ex_extract(extract):::node
+        ex_classify_category(classify_category):::node
+        ex_persist(persist):::node
+        ex_classify_category -.-> ex_persist;
+        ex_extract -.-> ex_classify_category;
+        ex_clarification(["clarification"]):::term
+        ex_classify_category --> ex_clarification;
+        ex_clarification(["clarification"]):::term
+        ex_extract --> ex_clarification;
+        ex_drafted(["drafted"]):::term
+        ex_persist --> ex_drafted;
+        ex_awaiting_category_approval(["awaiting_category_approval"]):::term
+        ex_persist --> ex_awaiting_category_approval;
+    end
+    subgraph RD_BOX["<b>read_graph</b>"]
+    direction TB
+        rd_select_tool(select_tool):::node
+        rd_execute_tool(execute_tool):::node
+        rd_select_tool -.-> rd_execute_tool;
+        rd_clarification(["clarification"]):::term
+        rd_select_tool --> rd_clarification;
+        rd_answered(["answered"]):::term
+        rd_execute_tool --> rd_answered;
+    end
+    subgraph MV_BOX["<b>movement_change_graph</b>"]
+    direction TB
+        mv_extract_correction(extract_correction):::node
+        mv_classify_correction_category(classify_correction_category):::node
+        mv_apply_correction(apply_correction):::node
+        mv_apply_undo(apply_undo):::node
+        mv_apply_posting(apply_posting):::node
+        mv_classify_correction_category -.-> mv_apply_correction;
+        mv_extract_correction -.-> mv_classify_correction_category;
+        mv_clarification(["clarification"]):::term
+        mv_classify_correction_category --> mv_clarification;
+        mv_clarification(["clarification"]):::term
+        mv_extract_correction --> mv_clarification;
+        mv_corrected(["corrected"]):::term
+        mv_apply_correction --> mv_corrected;
+        mv_posted(["posted"]):::term
+        mv_apply_posting --> mv_posted;
+        mv_voided(["voided"]):::term
+        mv_apply_undo --> mv_voided;
+    end
+    subgraph RV_BOX["<b>review_graph</b>"]
+    direction TB
+        rv_ask_owner(ask_owner):::node
+        rv_settle_review(settle_review):::node
+        rv_ask_owner --> rv_settle_review;
+        rv_settle_review -.-> rv_ask_owner;
+        rv_approved(["approved"]):::term
+        rv_settle_review --> rv_approved;
+        rv_reused(["reused"]):::term
+        rv_settle_review --> rv_reused;
+        rv_cancelled(["cancelled"]):::term
+        rv_settle_review --> rv_cancelled;
+    end
+    DEC{{" RoutingDecision<br/>intent · confidence · reason "}}:::dec
+    IN --> rt_pre_route;
+    rt_pre_route --> DEC;
+    rt_classify --> DEC;
+    DEC -.->|"expense · refund"| ex_extract;
+    DEC -.->|"query · advice"| rd_select_tool;
+    DEC -.->|"correction"| mv_extract_correction;
+    DEC -.->|"undo"| mv_apply_undo;
+    DEC -.->|"post_expense<br/>callback"| mv_apply_posting;
+    DEC -.->|"category_follow_up"| rv_ask_owner;
+    S_CLAR(["clarification"]):::term
+    S_ROUTED(["routed"]):::term
+    DEC -.->|"clarification"| S_CLAR;
+    DEC -.->|"profile_id is None"| S_ROUTED;
+    DEC -.->|"receipt · command<br/>non_finance · unsupported"| S_ROUTED;
+    rv_ask_owner -. interrupt .-> PAUSE([" paused: owner is asked "]):::io
+    PAUSE -. "owner replies (new turn)" .-> IN;
+    ex_awaiting_category_approval -. "dispatcher opens the review" .-> PAUSE;
+    classDef node fill:#f2f0ff,stroke:#7c6bd4,line-height:1.2
+    classDef io fill:#ffffff,stroke:#333333,stroke-width:2px
+    classDef dec fill:#ffe9b8,stroke:#b8860b,stroke-width:2px
+    classDef term fill:#bfb6fc,stroke:#7c6bd4
+    style RT_BOX fill:#fbfaff,stroke:#c3bbf0
+    style EX_BOX fill:#fbfaff,stroke:#c3bbf0
+    style RD_BOX fill:#fbfaff,stroke:#c3bbf0
+    style MV_BOX fill:#fbfaff,stroke:#c3bbf0
+    style RV_BOX fill:#fbfaff,stroke:#c3bbf0

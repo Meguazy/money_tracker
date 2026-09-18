@@ -1,0 +1,26 @@
+---
+config:
+  flowchart:
+    curve: linear
+---
+graph TD;
+	__start__([<p>__start__</p>]):::first
+	extract_correction(extract_correction)
+	classify_correction_category(classify_correction_category)
+	apply_correction(apply_correction)
+	apply_undo(apply_undo)
+	apply_posting(apply_posting)
+	__end__([<p>__end__</p>]):::last
+	__start__ -.-> apply_posting;
+	__start__ -.-> apply_undo;
+	__start__ -.-> extract_correction;
+	classify_correction_category -.-> __end__;
+	classify_correction_category -.-> apply_correction;
+	extract_correction -.-> __end__;
+	extract_correction -.-> classify_correction_category;
+	apply_correction --> __end__;
+	apply_posting --> __end__;
+	apply_undo --> __end__;
+	classDef default fill:#f2f0ff,line-height:1.2
+	classDef first fill-opacity:0
+	classDef last fill:#bfb6fc

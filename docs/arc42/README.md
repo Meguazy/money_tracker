@@ -1713,9 +1713,10 @@ tracing and from the exit-code contract AD-018 defines for supervisors.
 - Browser E2E uses Playwright and headless Chrome against the production
   `money-tracker-api run` entry point, the compiled build, a guarded
   `money_tracker_test` database seeded through production services, and the
-  promoted local model. Axe enforces WCAG 2.0/2.1 A and AA rules on every route
-  and on populated, advice, and hovered states. A second configuration accepts
-  the installed systemd user service without replacing systemd.
+  promoted local model, with the browser time zone pinned to Europe/Rome. Axe
+  enforces WCAG 2.0/2.1 A and AA rules on every route and on populated, advice,
+  and hovered states. A second configuration accepts the installed systemd user
+  service without replacing systemd.
 - Repository policy is executable code under `development` and is unit-tested
   with real temporary Git repositories. Versioned hooks and the `pr-metadata`
   workflow call that implementation.
@@ -1938,6 +1939,13 @@ Quantitative evaluation gates are maintained in
   execution, duration, and minutes are known only after the pipeline merges.
 - The backup drill cannot run on this workstation, which lacks Restic and the
   PostgreSQL 17 client tools; its CI job is its only routine execution.
+- The dashboard's date-time fields default to Europe/Rome wall time but are
+  converted to an instant in the browser's own time zone. A browser outside
+  Europe/Rome therefore records wallet entries and movements shifted by the
+  zone difference, and the API rejects an entry that lands in the future; each
+  correction shifts a movement again. The owner's loopback browser runs in
+  Europe/Rome, so Playwright pins that zone. A fix slice must convert Rome wall
+  time explicitly before the pin is removed.
 - Some Telegram and worker CLI integration tests compare standard error exactly
   and inherit the ambient `LOG_LEVEL`. The full PostgreSQL suite therefore runs
   with `LOG_LEVEL=CRITICAL`, locally and in CI, until those tests pin their own

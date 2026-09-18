@@ -19,6 +19,10 @@ export default defineConfig({
     baseURL: `http://127.0.0.1:${port}`,
     browserName: "chromium",
     headless: true,
+    // The loopback dashboard's browser runs on the owner's Europe/Rome
+    // workstation. Date-time inputs are still parsed in the browser's zone
+    // (see the arc42 risks), so pin that zone instead of the runner's UTC.
+    timezoneId: "Europe/Rome",
     launchOptions: {
       executablePath:
         process.env.MONEY_TRACKER_E2E_BROWSER ??

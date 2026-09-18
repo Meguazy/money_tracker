@@ -507,7 +507,7 @@ check always reports. Each job mirrors a local gate:
 | `RUN_POSTGRES_INTEGRATION_TESTS=1 LOG_LEVEL=CRITICAL uv run --env-file .env pytest -q` | `postgres-integration` | `application-postgres` from `compose.yaml`; the suite includes the migration round trip |
 | Restic and PostgreSQL 17 backup and restore drill | `backup-drill` | Restic 0.18.1 release binary checked against a pinned SHA-256; `postgresql-client-17` from PGDG after checking the signing-key fingerprint |
 | `npm ci`, `npm run typecheck`, `npm run test:ci`, `npm run build` | `frontend` | Node from `frontend/.nvmrc`; Vitest writes JUnit |
-| `npm run test:e2e:ci` | `e2e-browser` | Playwright's bundled Chromium; only the `@local-model` case is excluded |
+| `npm run test:e2e:ci` | `e2e-browser` | Playwright's bundled Chromium with the browser time zone pinned to Europe/Rome, as in local runs; only the `@local-model` case is excluded |
 | Both Compose profiles, image digests, `systemd-analyze verify` | `compose-and-deploy` | Units are rendered against the checkout, and the synced package provides every `ExecStart` executable |
 | ShellCheck over `scripts/`, `.githooks/`, and `docker/`; actionlint; zizmor | `shell-and-workflows` | actionlint 1.7.12 with a pinned SHA-256; zizmor 1.30.1 offline over workflows and Dependabot |
 | Gitleaks, `pip-audit`, `npm audit --audit-level=high` | `security` | gitleaks 8.30.1 scans `base..head` for a PR and the full history for `main` and the schedule; `pip-audit` covers every locked group |
@@ -616,13 +616,46 @@ updates are repository settings and remain off until the owner enables them.
 
 ### GitHub Actions minute budget
 
-GitHub currently includes 2,000 Linux minutes/month on Free personal accounts
-and 3,000 on Pro. The repository is private and personally owned; the current
-API token does not expose the account plan, so the owner must confirm it in
-billing before accepting the pipeline slice. After its first runs, record every
-job's billable duration and project monthly PR, `main`, and scheduled use. At
-70 percent of the confirmed allowance, propose caching, consolidation, or
-schedule changes without removing a blocking control.
+GitHub bills each job of a private repository rounded up to a whole minute and
+includes 2,000 Linux minutes a month on Free and 3,000 on Pro. The owner
+confirmed on 2026-09-19 that the account has GitHub Student, whose Developer
+Pack includes Pro while the student status lasts: the allowance is 3,000
+minutes, and it falls to 2,000 if the benefit lapses.
+
+The first `ci` run (2026-09-18, cold caches) billed:
+
+| Job | Duration | Billed minutes |
+| --- | ---: | ---: |
+| `python-static` | 26 s | 1 |
+| `python-tests` | 50 s | 1 |
+| `postgres-integration` | 91 s | 2 |
+| `backup-drill` | 76 s | 2 |
+| `frontend` | 84 s | 2 |
+| `e2e-browser` | 179 s | 3 |
+| `compose-and-deploy` | 13 s | 1 |
+| `shell-and-workflows` | 17 s | 1 |
+| `security` | 33 s | 1 |
+| `ci-gate` | 4 s | 1 |
+| `pr-metadata` | 14 s | 1 |
+
+A PR push therefore costs about 16 minutes and a `main` push about 15. The
+projection assumes three owner slices a week with three pushes each, two
+Dependabot PRs a week with one push each, a `main` push for every merge, the
+weekly scheduled `ci` run, and at most 10 minutes for the weekly Langfuse run
+until its first run is measured:
+
+| Source | Minutes per week | Minutes per month |
+| --- | ---: | ---: |
+| Slice PR pushes (9 x 16) | 144 | 624 |
+| Dependabot PR pushes (2 x 16) | 32 | 139 |
+| `main` pushes after merges (5 x 15) | 75 | 325 |
+| Scheduled `ci` and Langfuse (15 + 10) | 25 | 108 |
+| **Total** | **276** | **1,196** |
+
+That is 40 percent of 3,000 minutes, or 60 percent of 2,000. Metadata-only
+reruns after editing a PR cost one minute each. Record new measurements when
+the job set changes. At 70 percent of the allowance, propose caching,
+consolidation, or schedule changes without removing a blocking control.
 
 ## Repeatable checks
 

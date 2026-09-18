@@ -21,6 +21,9 @@ def test_settings_load_an_exact_loopback_origin(
 ) -> None:
     """Derive the browser allowlist from the configured local port."""
 
+    # The defaults are under test, so an ambient `.env` must not supply them.
+    for name in (WEB_HOST_ENV, WEB_ALLOWED_HOSTS_ENV, WEB_ALLOWED_ORIGINS_ENV):
+        monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv(WEB_PORT_ENV, "8765")
     monkeypatch.setenv(WEB_STATIC_DIR_ENV, "/tmp/money-tracker-ui")
 

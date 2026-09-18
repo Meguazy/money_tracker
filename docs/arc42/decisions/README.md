@@ -28,6 +28,7 @@ implementation state is still `planned`.
 | [AD-019](AD-019-structured-application-logging.md) | Structured application logging | Accepted | Implemented across every entry point, adapter, application service, and persistence boundary |
 | [AD-020](AD-020-wallet-availability-and-expiry.md) | Wallet availability and expiry projection | Accepted | Domain projection, source administration, PostgreSQL locking, local API, and React control-plane surface implemented |
 | [AD-021](AD-021-full-fidelity-llm-traces.md) | Full-fidelity local LLM traces | Accepted | Implemented and owner-accepted in Step 5.5 (2026-09-18): every model-calling entry point traced, one correlated trace per Telegram update, evaluation linkage, and the retention, export, and verified deletion command; Langfuse volumes outside backup with 30-day retention; retention scheduling planned for Step 7 |
+| [AD-022](AD-022-pull-request-workflow.md) | Pull-request workflow with merge-blocking CI | Accepted | Local policy checker, Git hooks, Claude Code guardrails, PR template, and development process implemented; hosted CI and server-side protection planned |
 
 ## Maintenance rules
 

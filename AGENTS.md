@@ -174,3 +174,47 @@ These instructions apply to the entire repository.
 - Mark breaking changes with `!` in the header or a `BREAKING CHANGE:` footer.
 - Every commit must have exactly one author. Do not add `Co-authored-by`
   trailers or otherwise attribute a commit to additional authors.
+
+## 7. Branches, Pull Requests, and CI
+
+- Every vertical slice has one branch and one pull request. Start from an
+  up-to-date `main` with `git switch main && git pull --ff-only`, then create
+  the slice branch before editing. Never commit or push directly to `main`.
+- Name a roadmap branch `<type>/<step>-<topic>` in kebab-case, for example
+  `feat/step-6-receipt-extraction` or `fix/step-5-5-flush-timeout`. Name work
+  outside the roadmap `<type>/<topic>`. `<type>` is one of the Conventional
+  Commit types in section 6. `dependabot/**` branches are exempt.
+- Keep branch history linear. Rebase on `main` instead of merging `main` into
+  the branch. A merge-ready pull request contains no merge, `fixup!`, or
+  `squash!` commit.
+- Review the complete diff before every commit. Run the applicable official
+  gates in `docs/development.md` before every push and report exact passed and
+  skipped counts in the pull request.
+- Open the pull request with `gh pr create` and complete every template section.
+  Then stop, report the link and current check state, and wait for the owner to
+  merge it. Never run `gh pr merge` or use `--admin`. Do not begin a dependent
+  slice before its prerequisite pull request has been merged and local `main`
+  has been fast-forwarded.
+- Fix the cause of a red check. Do not disable or skip tests, lower thresholds,
+  or add exceptions merely to make a check pass. Any justified exception must
+  be documented in the pull request.
+- CI cannot run gates that need the promoted local model or GPU, the real
+  Telegram bot, installed systemd services, or Langfuse together with the
+  model. When a slice touches one of those boundaries, run its documented local
+  gate and report the exact result in the pull request. Never replace one with a
+  mock to obtain evidence.
+- Never use `--no-verify` or `-n` with `git commit` or `git push`. Do not change
+  `core.hooksPath` manually; `scripts/install_git_hooks.sh` is the sole approved
+  installer. Agents must not change repository settings, rulesets, or branch
+  protection unless an explicit owner-approved slice requires that change.
+- Only the owner merges pull requests. Agents must not force-push to `main` or
+  alter merge methods.
+- Closing a roadmap step is a separate pull request opened only after the owner
+  accepts the implementation. That pull request marks the step Complete,
+  records acceptance evidence in its step document, and updates the matching
+  status row in `docs/roadmap.md` so both sources remain consistent.
+
+Local hooks and Claude Code permissions are preventive guardrails, not the
+authoritative merge boundary: they can be bypassed or may fail. The protected
+`main` rules and required GitHub Actions checks provide the server-side
+guarantee once their dedicated slices are implemented.

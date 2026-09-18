@@ -195,6 +195,7 @@ Money Tracker workstation
 | --- | --- | --- | --- | --- |
 | `cli` | Parse one prompt, invoke the graph, print output, flush traces | Python entry point; graph and `tracing` | No persistent data | Host process; user terminal; traced only when the tracing switch is on |
 | `config` | Convert environment variables into immutable model settings | Process environment | Runtime configuration | Secrets are not returned or logged |
+| `development` | Enforce branch, commit, PR-range, and Claude Bash policy from one tested implementation | Git subprocess boundary, command-line entry points, versioned Git hooks, and Claude Code `PreToolUse` | No persistent data; policy constants come from `AGENTS.md` | Developer checkout only; intentional Claude blocks exit 2, internal guard errors fail open, and no command payload is logged |
 | `graph` | Define the initial one-node assistant | LangGraph and `BaseChatModel` | In-memory messages for one invocation | Stateless host process |
 | `llm` | Construct an OpenAI-compatible chat adapter | LangChain `ChatOpenAI` | No persistent data | Loopback endpoint by default |
 | `tracing` | Own the tracing port injected at entry points, the disabled tracer, the explicit switch and loopback-only settings, the stable trace names, and `open_tracer`, which can resolve model identity in the background for a long-running service | Framework-neutral port; `tracing.langfuse` only when enabled; no domain, application, or workflow dependency | No persistent data | Every entry point that executes a model boundary or a stage of a traced work unit; misconfiguration disables tracing with an `ERROR` record and never stops the process |
@@ -1369,6 +1370,13 @@ Step 4 installed and accepted the Telegram gateway, workflow worker, and
 llama.cpp units. The first Step 5 slice adds the API unit and compiled-asset
 preflight without coupling Telegram recovery to dashboard availability.
 
+The developer checkout also contains versioned Git hooks and shared Claude Code
+settings. The hooks run through the UV-managed application environment and are
+installed per clone; the Claude hook invokes the same packaged development
+boundary. Neither is deployed with the runtime services or owns application
+data. GitHub Actions and protected-branch enforcement are accepted by AD-022
+but remain planned in their dedicated delivery slices.
+
 ## 8. Cross-Cutting Concepts
 
 ### Money and time
@@ -1678,6 +1686,12 @@ tracing and from the exit-code contract AD-018 defines for supervisors.
   promoted local model. Axe enforces WCAG 2.0/2.1 A and AA rules on every route
   and on populated, advice, and hovered states. A second configuration accepts
   the installed systemd user service without replacing systemd.
+- Repository policy is executable code under `development` and is unit-tested
+  with real temporary Git repositories. Versioned hooks call that
+  implementation; planned PR metadata CI will call it again.
+- Hosted CI mirrors repeatable local checks. Model/GPU, real Telegram,
+  installed-systemd, and model-backed Langfuse evidence stays local and becomes
+  mandatory when a slice changes the corresponding boundary.
 - Agent quality experiments complement rather than replace correctness tests.
 
 ## 9. Architecture Decisions
@@ -1801,6 +1815,11 @@ codes: a supervisor still distinguishes a configuration failure from a
 dependency failure without reading logs, while the journal explains what a
 still-running process did and why.
 
+[AD-022](decisions/AD-022-pull-request-workflow.md) is partially implemented:
+the shared policy checker, local Git hooks, Claude Code guardrails, PR template,
+and development workflow exist; merge-blocking GitHub Actions and server-side
+`main` protection remain planned.
+
 ## 10. Quality Requirements
 
 | Scenario | Expected response |
@@ -1818,6 +1837,7 @@ still-running process did and why.
 | A dashboard change lowers contrast or hides a control from the keyboard | The real-browser axe gate reports the WCAG A/AA violation before release. |
 | A restore is performed on an empty installation | Database, receipt references, retained media, and required configuration recover consistently. |
 | A model or prompt candidate misses a safety gate | It is not promoted; the current accepted configuration remains active. |
+| A pull request has an invalid branch, commit, or failing required gate | Local policy reports it early and, once AD-022 is fully implemented, GitHub blocks the merge for every actor including administrators. |
 
 Quantitative evaluation gates are maintained in
 [Evaluation Matrix](../experiments/evaluation-matrix.md), not duplicated here.
@@ -1869,6 +1889,13 @@ Quantitative evaluation gates are maintained in
   `main` nests inside the shell `main`; narrow layouts, visual focus
   indicators, and hover states other than the destructive filled button are not
   browser-audited.
+- Versioned hooks and Claude Code rules can be bypassed, misconfigured, or
+  absent in another clone. Until the accepted pipeline and `main` ruleset are
+  implemented, they do not guarantee merge safety.
+- Some gates depend on the owner's model/GPU, real Telegram bot, local
+  Langfuse, or installed systemd services and therefore remain manual PR
+  evidence. Private-repository protection depends on a paid GitHub plan, and
+  the hosted job matrix must stay within the measured Actions minute budget.
 
 ### Target architecture risks
 

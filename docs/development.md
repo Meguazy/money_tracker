@@ -449,6 +449,92 @@ The event vocabulary, the meaning of each level, and the triage queries are in
 [Security and Troubleshooting](operations/security-and-troubleshooting.md#reading-the-journal).
 When adding code, follow the logging rules in `AGENTS.md`.
 
+## Pull-request development workflow
+
+Deliver every vertical slice through one branch and one pull request. Start
+with `git switch main && git pull --ff-only` and create the slice branch before
+editing. Roadmap work uses `<type>/step-<number>-<topic>`, with dotted steps
+hyphenated; other work uses `<type>/<topic>`. Names are lower-case kebab-case
+and Dependabot branches are exempt. Rebase on `main` instead of merging it,
+review the diff before each commit, and remove merge, `fixup!`, and `squash!`
+commits before review.
+
+Allowed Conventional Commit types are `feat`, `fix`, `docs`, `test`,
+`refactor`, `perf`, `build`, `ci`, and `chore`. A commit has one author and no
+`Co-authored-by` trailer. There is no numeric subject-length rule: `AGENTS.md`
+requires concise imperative subjects, but history establishes no such number.
+
+Run applicable checks before each push. Open the PR with `gh pr create`,
+complete its template, report the check state, and stop. Only the owner merges.
+Start dependent work only after that merge and a fast-forward of local `main`.
+Close a roadmap step in a later PR after owner acceptance, recording evidence
+in its step document and updating `docs/roadmap.md`.
+
+### Versioned Git hooks
+
+Install hooks once per clone with `scripts/install_git_hooks.sh`. This
+idempotent installer is the only approved way to set `core.hooksPath`.
+Pre-commit refuses commits on `main` but permits detached HEAD during rebase.
+Commit-msg invokes the packaged policy checker also intended for CI. Pre-push
+rejects every remote `refs/heads/main` update, validates branch names, and runs:
+
+    uv run ruff format --check src tests migrations
+    uv run ruff check src tests migrations
+    uv run mypy src
+    uv run pytest -q
+    uv run money-tracker-validate-docs
+    git diff --check
+
+The 2026-09-18 `main` baseline is 1,302 passed and 167 skipped in about 8
+seconds. With the policy tests in the first AD-022 slice, the parallelized
+complete hook measured 8.75 seconds with 1,341 passed and 167 skipped
+(+39 passed, no skipped delta). Record it again when the baseline changes.
+Hooks can be bypassed,
+so required checks and protected-branch rules become the authoritative boundary
+when their dedicated slices land.
+
+### Local and CI gate correspondence
+
+The next slice adds jobs mirroring the official local gates:
+
+| Local gate | Planned CI job |
+| --- | --- |
+| Ruff format/lint, mypy, build, docs validation, diff check | `python-static` |
+| Default pytest and unit branch coverage | `python-tests` |
+| PostgreSQL suite and migration round trip | `postgres-integration` |
+| Restic and PostgreSQL 17 restore drill | `backup-drill` |
+| npm typecheck, Vitest, and build | `frontend` |
+| Playwright without the tagged model case | `e2e-browser` |
+| Compose, image digests, and systemd verification | `compose-and-deploy` |
+| Shellcheck, actionlint, and zizmor | `shell-and-workflows` |
+| Gitleaks and dependency audits | `security` |
+
+The future `ci-gate` fails if any required job fails or is cancelled. For a red
+run, inspect the first causal failure, reproduce its documented command, and
+fix the cause. Never skip tests, lower thresholds, or add an exception merely
+to turn a check green; document any justified exception and its expiry.
+
+### Gates that remain local
+
+Inference, capability, advice HTTP, model-backed Langfuse, the Playwright
+`@local-model` case, `npm run test:e2e:installed`, and real-bot Telegram tests
+remain local because they require the promoted GPU model or owner-controlled
+services. A slice touching one of those boundaries must run its applicable gate
+without mocks and report the exact command and passed/skipped counts. Run local
+Playwright E2E and PostgreSQL pytest sequentially because both own
+`money_tracker_test`. Model-visible changes also require the evaluation gates;
+EVD-004 remains the baseline.
+
+### GitHub Actions minute budget
+
+GitHub currently includes 2,000 Linux minutes/month on Free personal accounts
+and 3,000 on Pro. The repository is private and personally owned; the current
+API token does not expose the account plan, so the owner must confirm it in
+billing before accepting the pipeline slice. After its first runs, record every
+job's billable duration and project monthly PR, `main`, and scheduled use. At
+70 percent of the confirmed allowance, propose caching, consolidation, or
+schedule changes without removing a blocking control.
+
 ## Repeatable checks
 
 Static checks and the service-independent suite:

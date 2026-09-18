@@ -92,7 +92,7 @@ cannot create a mount namespace while AppArmor restricts unprivileged user
 namespaces; qualifying them is Step 7 work. The worker and API also declare a
 private `CacheDirectory` for model digests and `~/.local/bin` on `PATH` for the
 trace identity of the serving llama.cpp executable.
-The llama unit deliberately retains device visibility for local GPU inference. User lingering or an equivalent boot setup is
+The llama unit deliberately retains device visibility for local GPU inference, and its launcher hands the inference key to llama.cpp through `--api-key-file` on a pipe, so the key never appears in a process listing; llama.cpp refuses to start if it cannot read it. User lingering or an equivalent boot setup is
 required if user services must start before graphical login.
 
 The `money-tracker-telegram` entry point is executable for validation, owner
@@ -126,7 +126,7 @@ The broader dependency behavior remains:
 | Application PostgreSQL unavailable | Gateway/worker/API report unhealthy and retry; no in-memory acknowledgement or finance write. |
 | Telegram network unavailable | Gateway backs off; locally committed inbox work may continue if no response transport is needed. |
 | llama.cpp unavailable | Gateway continues durable ingestion; model-dependent inbox work retries without losing order/idempotency. |
-| Langfuse unavailable | All core behavior continues; a traced process loses the affected spans and waits at most the export timeout when it flushes. Measured for the traced administrative dispatch in [LLM Tracing](tracing.md#degradation); real gateway, worker, and API processes against a stopped, slow, and refusing store behaved identically and stopped within the bound; the installed services are observed at owner acceptance. |
+| Langfuse unavailable | All core behavior continues; a traced process loses the affected spans and waits at most the export timeout when it flushes. Measured for the traced administrative dispatch in [LLM Tracing](tracing.md#degradation); real gateway, worker, and API processes against a stopped, slow, and refusing store behaved identically and stopped within the bound, and the installed services answered the owner with `langfuse-web` stopped at the 2026-09-18 acceptance. |
 | Receipt extractor unavailable | Receipt remains in review/pending; text and read workflows continue. |
 | Backup destination unavailable | Finance runtime continues, but health becomes degraded and the operator is alerted locally; snapshots are not falsely marked successful. |
 | FastAPI unavailable | Telegram ingestion/processing continues; dashboard operations wait for API recovery. |

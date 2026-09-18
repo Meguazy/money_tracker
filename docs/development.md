@@ -291,7 +291,7 @@ are recorded in [Container Versions](operations/container-versions.md).
 
 Retrieve the generated bootstrap login without printing unrelated secrets:
 
-    rg '^LANGFUSE_INIT_USER_(EMAIL|PASSWORD)=' .env
+    grep -E '^LANGFUSE_INIT_USER_(EMAIL|PASSWORD)=' .env
 
 Stop the optional stack while keeping its named volumes:
 
@@ -356,7 +356,10 @@ llama.cpp boundary: an unset `MODEL_PATH` reports the sourcing command above, a
 `MODEL_PATH` or `MMPROJ_PATH` that names no readable file reports that path, and
 an unresolvable `LLAMA_SERVER_BIN` reports the build step.
 
-The launcher binds to loopback, requires the configured local API key, offloads
+The launcher binds to loopback, requires the configured local API key, which it
+hands to llama.cpp through a pipe (`--api-key-file`) so it never appears in a
+process listing (set a long random `LLM_API_KEY`; the generated placeholder is
+too short to be redacted from traces), offloads
 model layers, enables Flash Attention, uses one inference slot, uses the
 embedded Jinja chat template, attaches the optional vision projector, and
 defaults to an 8K context with reasoning disabled. Override `LLAMA_PARALLEL` or

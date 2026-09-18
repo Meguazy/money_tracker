@@ -89,7 +89,10 @@ unprivileged user namespaces keeps the user manager from applying
 `ProtectHome`, `ProtectSystem`, and `PrivateTmp`. The exposure scores above
 describe configuration. Qualifying the sandbox by observation is Step 7 work.
 The same slice gave the worker and API templates a private `CacheDirectory` for
-trace identity digests and `~/.local/bin` on `PATH`.
+trace identity digests and `~/.local/bin` on `PATH`; they were installed and
+the services restarted at the 2026-09-18 acceptance. The llama.cpp launcher now
+passes the inference key through `--api-key-file` on a pipe instead of a
+command-line argument.
 
 ## Consequences
 

@@ -1,7 +1,7 @@
 # Operations Guide
 
-- Status: Steps 1–5 complete; Step 5 local dashboard browser-accepted on 2026-09-16;
-  Step 5.5 LLM traceability in progress
+- Status: Steps 1–5.5 complete; Step 5 local dashboard browser-accepted on
+  2026-09-16; Step 5.5 LLM traceability owner-accepted on 2026-09-18
 - Current executable operations: local inference/CLI, dedicated application
   PostgreSQL, migrations/checkpoint bootstrap, optional healthy Langfuse,
   capability evaluation, profile-scoped receipt storage, one-shot Step 3
@@ -79,8 +79,10 @@ the referenced file or entry point exists in the repository.
   exist. The earlier optional Langfuse callbacks covered only the scaffold CLI.
   Step 5.5 replaces them with an injected tracing boundary behind
   `MONEY_TRACKER_TRACING_ENABLED`, which traces `money-tracker-admin route`, the
-  scaffold, the Telegram gateway and worker, and web advice; the installed
-  services run untraced until the switch is set and they are restarted.
+  scaffold, the Telegram gateway and worker, and web advice. The switch is on
+  in `.env` since the 2026-09-18 acceptance, so the installed services trace
+  into the local store; setting it to `false` and restarting them turns
+  tracing off again.
 - The dedicated application PostgreSQL is healthy, independently persistent,
   least-privileged, and separate from the Langfuse database. It owns the
   authoritative finance schema, persistent workflow checkpoints, and the

@@ -1,8 +1,9 @@
 # LLM Tracing
 
-- Status: Step 5.5 in progress. `money-tracker-admin route`, the Telegram
-  gateway, the sequential worker, and web advice are traced; the installed
-  services have not been restarted with tracing
+- Status: implemented and owner-accepted on 2026-09-18 (Step 5.5 complete).
+  `money-tracker-admin route`, the Telegram gateway, the sequential worker, and
+  web advice are traced; the installed services trace into `development` since
+  the acceptance
 - Decision: [AD-021](../arc42/decisions/AD-021-full-fidelity-llm-traces.md)
 - Store: the optional local Langfuse in the `observability` Compose profile
 
@@ -169,7 +170,8 @@ Measured on the target workstation:
 | Gateway and worker in-process, store running | `/help` update: +0.31 ms ingest, +2.05 ms claim to commit, +0.29 ms delivery (medians of 100); model-backed query: +5.8 and +12.1 ms claim to commit in two runs of 10; flush 6.8–7.6 ms |
 | Web advice over HTTP, store running | +2.76 ms median per request against an instant endpoint (41.24 to 44.00 ms, 100 each); +7.62 ms against the promoted model (1,163.26 to 1,170.88 ms, 10 each); SIGINT exit in 0.36–0.46 s with exit code 0 |
 | Gateway, worker, and API processes against a stopped, slow, or refusing store (export timeout 1 s) | Identical answers and HTTP payloads, queue drained, no retry or dead letter; `/help` update end to end +2.1 to +2.5 ms median (+3.1 ms with the store running); flush 906–1,004 ms (10.8 ms running); SIGINT exit 0 in 0.31–1.31 s for the API and 0.16–1.21 s for the worker; journal names `tracing.export.degraded` or `tracing.flush.incomplete` without endpoint, traceback, or content |
-| Installed services with `langfuse-web` stopped | To be observed at owner acceptance |
+| Installed services, store running (acceptance) | Installed API +1.4 ms median over 20 alternating pairs with an untraced instance (1,314.6 against 1,313.2 ms), identical payloads |
+| Installed services with `langfuse-web` stopped (acceptance) | The owner's message was answered normally, 3.73 s from acceptance to send; worker and API restarts took 0.22 and 0.41 s; journals held only content-free `tracing.export.degraded`; the message's spans were dropped |
 | Misconfigured tracing | Runs untraced with `tracing.configuration.rejected` |
 
 The flush bound is enforced by the adapter, not trusted to the SDKs: a flush

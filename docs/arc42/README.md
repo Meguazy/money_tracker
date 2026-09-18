@@ -301,7 +301,7 @@ catalog is promoted; every identifier carries a `candidate-` prefix.
 | Local model gateway | Provide typed chat, schema and tool capabilities | OpenAI-compatible local endpoint | No persistent domain data | Replaceable host inference process |
 | Calendar period resolver (implemented) | Resolve strict day, ISO-week, month, year, and bounded inclusive custom selections plus their deterministic predecessors into half-open query intervals | Pure domain date values used by reporting and the web adapter; no framework or repository dependency | No persistent data | In-process domain component; Europe/Rome calendar semantics, DST-safe boundaries, and a 366-day custom-range ceiling |
 | Receipt extractor adapter | Produce a versioned structured receipt draft | Selected local OCR/VLM pipeline | No authoritative data until validated | Local-only; selection remains evaluation-gated |
-| Langfuse adapter (`tracing.langfuse`, partial) | Record full-fidelity AD-021 traces; publish aggregate capability scores through `evaluations.publication` | Local Langfuse SDK behind the tracing port | Observability copies, not source of truth; owner content with ledger sensitivity; excluded from backup and kept 30 days by owner decision | Optional Compose profile; administrative dispatch, gateway, worker, and web advice traced |
+| Langfuse adapter (`tracing.langfuse`, implemented) | Record full-fidelity AD-021 traces; publish aggregate capability scores and promotion evidence through `evaluations.publication` | Local Langfuse SDK behind the tracing port | Observability copies, not source of truth; owner content with ledger sensitivity; excluded from backup and kept 30 days by owner decision | Optional Compose profile; administrative dispatch, gateway, worker, and web advice traced |
 
 ### Step 4 messaging boundaries
 
@@ -1304,7 +1304,12 @@ reads that file, so the switch set there affects the gateway, worker, and API at
 their next start. A traced process keeps a private digest cache of model
 artifacts (mode 0700/0600) and reads llama.cpp `/props` with the inference key.
 The API opens its tracer with background identity, like the worker, and flushes
-it after uvicorn stops. The worker and API templates declare
+it after uvicorn stops. Since 2026-09-18 `.env` sets
+`MONEY_TRACKER_TRACING_ENABLED=true`, so the installed gateway, worker, and API
+trace into the `development` environment, and the re-rendered units are
+installed. The llama.cpp launcher hands the inference key to the server
+through `--api-key-file` on a pipe rather than `--api-key`, so no process
+listing shows it. The worker and API templates declare
 `CacheDirectory=money-tracker`, which is
 `~/.cache/money-tracker` for a user unit and stays writable under a read-only
 home, and put `~/.local/bin` on `PATH` so the executable digest resolves after
@@ -1770,13 +1775,6 @@ environment file.
 - [AD-017: Versioned deterministic read-selection policy](decisions/AD-017-versioned-read-selection-policy.md):
   promoted V1 policy implemented between model parsing and registry acceptance;
   V0 remains the direct configuration rollback.
-- [AD-021: Full-fidelity local LLM traces](decisions/AD-021-full-fidelity-llm-traces.md):
-  tracing port, Langfuse adapter, identity, redaction, the traced
-  administrative dispatch, one correlated trace per Telegram update across
-  gateway and worker, one trace per web advice request, evaluation linkage, and
-  the retention, export, and verified deletion command implemented; backup
-  exclusion and 30-day retention decided; retention scheduling planned for
-  Step 7.
 - [AD-018: Telegram processing transactions and ordering](decisions/AD-018-telegram-processing-transactions.md):
   reconciled Step 4 persistence, Bot API transport, authorized ingestion,
   persisted-offset runtime, outbox delivery, Italian response rendering, the
@@ -1789,6 +1787,13 @@ AD-004, AD-010, and AD-018 have persistence, gateway, pairing, worker,
 presentation, operator-command, real-bot, fault, latency, and reboot evidence.
 
 ### Implemented cross-cutting decisions
+
+[AD-021](decisions/AD-021-full-fidelity-llm-traces.md) is implemented and
+owner-accepted (2026-09-18): every model-calling entry point is traced into the
+local Langfuse behind an explicit switch, one Telegram update is one trace
+across the gateway and worker, promoted configurations link to their runs, and
+traces are kept 30 days outside the backup set with a verified deletion
+command; only scheduling that retention remains, in Step 7.
 
 AD-019 is implemented across every entry point, adapter, application service,
 and persistence boundary. It supplements rather than replaces the AD-018 exit
@@ -1833,13 +1838,16 @@ Quantitative evaluation gates are maintained in
   but automatic scheduling, off-device secret verification, and a clean-machine
   restore remain later release work.
 - The real Telegram evidence uses a private test bot, not a production bot.
-- Step 5.5 is partial: the administration command, gateway, worker, and web
-  advice are traced, but the running services have not yet been restarted with
-  tracing or measured against a stopped store. Trace retention is an operator
-  command with no timer until Step 7: if it is not run, the Langfuse volumes,
-  which hold owner content and are deliberately outside the backup set, keep
-  traces past the 30 days the owner decided. A private export holds the same
-  content outside any store and is the operator's to protect and remove.
+- Trace retention is an operator command with no timer until Step 7: if it is
+  not run, the Langfuse volumes, which hold owner content and are deliberately
+  outside the backup set, keep traces past the 30 days the owner decided. A
+  private export holds the same content outside any store and is the
+  operator's to protect and remove.
+- The environment generator still writes a short placeholder `LLM_API_KEY`.
+  Short values are below the trace redactor's twelve-character floor and read
+  like ordinary words, so a fresh installation must replace it with a random
+  key, as this workstation did on 2026-09-18; making the generator do so is
+  Step 7 hardening.
 - The host units' `ProtectHome`, `ProtectSystem`, and `PrivateTmp` directives
   are not applied by this workstation's user manager, which cannot create a
   mount namespace while AppArmor restricts unprivileged user namespaces. The

@@ -44,7 +44,12 @@ Controls:
 - redact secrets before logs, traces, exception rendering, API responses, and
   diagnostic bundles;
 - avoid secrets in command-line arguments because process listings and shell
-  history may retain them;
+  history may retain them; the llama.cpp launcher therefore passes the
+  inference key through `--api-key-file` on a pipe;
+- keep every secret long and random: the trace redactor ignores configured
+  values shorter than twelve characters, because short values also occur as
+  ordinary words, so a short placeholder `LLM_API_KEY` can neither be redacted
+  nor told apart from text in a trace;
 - rotate any secret that enters Git, an AI chat, a screenshot, a trace, or an
   untrusted artifact.
 

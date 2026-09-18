@@ -384,3 +384,50 @@ def test_llama_launcher_refuses_a_silent_cpu_fallback(tmp_path: Path) -> None:
     assert refused.returncode == 2
     assert "No usable GPU" in refused.stderr
     assert accepted.returncode == 0
+
+
+def test_llama_launcher_keeps_the_api_key_off_the_command_line(
+    tmp_path: Path,
+) -> None:
+    """Hand llama.cpp its key through a pipe, never as a visible argument.
+
+    Any process of the same user can read another's command line, so a key in
+    `--api-key` is readable by everything the owner runs.
+    """
+
+    model = tmp_path / "model.gguf"
+    model.write_text("not a real model")
+    captured = tmp_path / "captured"
+    server = tmp_path / "llama-server"
+    server.write_text(
+        "#!/usr/bin/env bash\n"
+        f"printf '%s\\n' \"$*\" > '{captured}.args'\n"
+        "while [[ $# -gt 0 ]]; do\n"
+        '  if [[ "$1" == --api-key-file ]]; then cat "$2" > '
+        f"'{captured}.key'; fi\n"
+        "  shift\n"
+        "done\n"
+    )
+    server.chmod(0o700)
+    key = "launcher-test-key-0123456789abcdef"
+
+    completed = subprocess.run(
+        ["bash", "scripts/run_llama_server.sh"],
+        check=False,
+        capture_output=True,
+        env={
+            "PATH": "/usr/bin:/bin",
+            "MODEL_PATH": str(model),
+            "LLAMA_SERVER_BIN": str(server),
+            "LLAMA_REQUIRE_GPU": "0",
+            "LLM_API_KEY": key,
+        },
+        text=True,
+        timeout=30,
+    )
+
+    assert completed.returncode == 0
+    arguments = Path(f"{captured}.args").read_text()
+    assert key not in arguments
+    assert "--api-key " not in f"{arguments} "
+    assert Path(f"{captured}.key").read_text().strip() == key

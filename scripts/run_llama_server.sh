@@ -87,10 +87,14 @@ server_args=(
   --reasoning "${reasoning}"
   --flash-attn on
   --jinja
-  --api-key "${LLM_API_KEY:-local}"
 )
 if [[ -n "${MMPROJ_PATH:-}" ]]; then
   server_args+=(--mmproj "${MMPROJ_PATH}")
 fi
 
-exec "${llama_server_bin}" "${server_args[@]}"
+# The key is handed over through a pipe rather than an argument, because any
+# process of the same user can read another's command line. The substitution
+# sits on the exec line itself: one made inside the array assignment above
+# would be closed before the server could read it.
+exec "${llama_server_bin}" "${server_args[@]}" \
+  --api-key-file <(printf '%s\n' "${LLM_API_KEY:-local}")

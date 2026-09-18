@@ -1,14 +1,14 @@
 # AD-021: Full-Fidelity Local LLM Traces
 
 - Status: accepted
-- Implementation: tracing boundary, Langfuse adapter, model-artifact identity,
-  last-line trace redaction, and tracing of `money-tracker-admin route`
-  implemented in the first Step 5.5 slice; the Telegram gateway and worker as
-  one correlated trace per update, deterministic decision metadata, and
-  background identity for services in the second; the backup and retention
-  decisions taken by the owner on 2026-09-17; one trace per web advice request
-  in the third; evaluation linkage in the fourth; the retention, export, and
-  verified deletion command in the fifth; scheduling retention remains Step 7
+- Implementation: implemented across every entry point that calls a model and
+  owner-accepted on 2026-09-18 against the private test bot with the installed
+  services traced (Step 5.5): tracing boundary, Langfuse adapter, model-artifact
+  identity, redaction, the administrative command, one correlated trace per
+  Telegram update across gateway and worker, one trace per web advice request,
+  decision metadata, evaluation linkage, and the retention, export, and verified
+  deletion command; backup exclusion and 30-day retention decided by the owner;
+  scheduling retention remains Step 7
 - Date: 2026-09-16
 - Extends: [AD-002](../README.md#ad-002-self-hosted-langfuse)
 - Refines: [AD-004](AD-004-local-first-telegram-boundary.md) and
@@ -267,3 +267,15 @@ runs the gateway and worker, the API, and the worker service entry point in
 processes of their own against a stopped, slow, and refusing store, proves
 identical behaviour, the latency budget, a bounded flush and stop, and a
 content-free journal, and corrects the flush bound the slow store exceeded.
+
+Owner acceptance on 2026-09-18, recorded in the
+[step document](../../roadmap/step-5-5-llm-traceability.md#owner-acceptance-2026-09-18),
+switched tracing on for the installed gateway, worker, and API after rotating
+the credentials a test traceback had printed. A real message from the private
+test bot and its *Annulla* callback each became one trace from ingest to
+delivery with complete calls, artifact identity, and EVD-004 linkage; with
+`langfuse-web` stopped the bot answered normally and the journals stayed
+content-free; the installed API added 1.4 ms median. The real traces held no
+credential once the five-character placeholder inference key, indistinguishable
+from ordinary words, was replaced by a random key that the llama.cpp launcher
+now hands over through a pipe instead of the command line.

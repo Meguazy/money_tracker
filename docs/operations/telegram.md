@@ -190,7 +190,10 @@ Langfuse: each accepted update, each claim with its model calls, and each
 delivery that answers it land in one trace named `telegram-update`, derived from
 the update's source reference. Traces hold the owner's words and responses, but
 never a Telegram user, chat, file, or callback identity, the raw update, or a
-pairing code. See [LLM Tracing](tracing.md).
+pairing code. The switch is on for the installed services since the
+2026-09-18 acceptance, where a real test-bot message and its callback each
+formed one such trace and the bot answered normally with the store stopped.
+See [LLM Tracing](tracing.md).
 
 ## Implemented long-polling durability
 

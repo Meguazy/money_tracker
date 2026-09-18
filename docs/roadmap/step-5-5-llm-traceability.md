@@ -2,8 +2,10 @@
 
 Part of the [delivery roadmap](../roadmap.md).
 
-Status: **In progress (started 2026-09-16).** The prerequisites were verified
-and [AD-021](../arc42/decisions/AD-021-full-fidelity-llm-traces.md) records the
+Status: **Complete (2026-09-18).** Every exit criterion has evidence, closed
+by the [owner acceptance](#owner-acceptance-2026-09-18) against the private
+test bot with the installed services traced.
+[AD-021](../arc42/decisions/AD-021-full-fidelity-llm-traces.md) records the
 trace-content decision. The
 [first slice](#first-slice-tracing-boundary-and-administrative-dispatch-2026-09-16)
 delivers the tracing boundary and traces `money-tracker-admin route`; the
@@ -17,9 +19,7 @@ implements and exercises retention, private export, and verified deletion; the
 [sixth slice](#sixth-slice-degradation-in-real-processes-2026-09-17) proves the
 product unchanged and bounded against a stopped, slow, and refusing store. The
 owner decided the backup, latency-budget, and retention questions on
-2026-09-17. Restarting the installed services with tracing and owner
-acceptance with a real test-bot message remain open, as the
-[exit-criteria status](#exit-criteria-status) lists.
+2026-09-17. Scheduling trace retention belongs to Step 7.
 
 This step is numbered 5.5 because it was inserted between two already-documented
 steps. Renumbering Steps 6 and 7 would have rewritten dated evaluation records
@@ -714,14 +714,109 @@ suite reports 1,435 passed and 33 skipped, the real Langfuse suite 25 passed in
 the runs and the asynchronous deletions, the `integration-test`, `development`,
 `evaluation`, and `measurement-degradation` environments held no observation.
 
+### Owner acceptance (2026-09-18)
+
+Credentials rotated first. The Langfuse project secret key and the
+credential-bearing test database URL printed by the pytest traceback of the
+second slice were rotated before any service was restarted, as the owner chose.
+The test URL shares the role and password of the production `money_tracker`
+database, so the role password was changed with `ALTER ROLE` by the admin role
+from a script that printed nothing; `.env` (three occurrences) and the backup's
+runtime configuration file were rewritten atomically with their modes kept,
+both database URLs connected, and the old password was refused. The owner
+created a new Langfuse API key in the UI, wrote it to `.env`, and deleted the
+old one; the new pair authenticated and a wrong secret got 401.
+
+Services switched on. `.env` gained `MONEY_TRACKER_TRACING_ENABLED=true` and
+`MONEY_TRACKER_TRACING_EXPORT_TIMEOUT_SECONDS=2`; the environment stays
+`development`. The rendered llama and gateway units were byte-identical to the
+installed ones and the worker and API differed only by the new `PATH` and
+`CacheDirectory` lines, so `scripts/install_systemd_units.sh` was run and the
+gateway, worker, and API were restarted (9.1, 0.19, and 0.67 s). Each journal
+showed `tracing.enabled` and no warning; the digest cache was already warm; the
+queues were empty with the owner paired.
+
+Latency on the installed API. Ten sequential advice requests before the restart
+took 1,278.8 ms median and ten after it 1,336.2 ms, but a run-to-run drift of
+the model explains that difference: twenty alternating pairs between the
+installed traced API and an untraced instance of the same entry point on a
+temporary loopback port, over the same database, took 1,314.6 and 1,313.2 ms
+median (+1.4 ms), with identical payloads. All 32 measurement traces were
+deleted by identifier with `money-tracker-traces delete --trace-id ...
+--confirm` and verified gone.
+
+The real message. From the private test bot the owner sent `Ho speso 4,50 euro
+per un cappuccino e una brioche`, received the draft summary, pressed
+*Annulla*, and received the confirmation. Update 659430510 became one trace of
+19 observations with three roots, `telegram-ingest`, `work-unit`, and
+`telegram-delivery`, keyed by `telegram:telegram-test:659430510`; dispatch,
+render, and commit hung under the work unit; routing chose `expense` from the
+model and the expense specialist drafted the movement; the router,
+extraction, and category-fit generations carried their complete input, output,
+parsed contract, 1,161, 919, and 1,265 input tokens, and complete artifact
+identity whose GGUF digest equals EVD-004's; the dispatch named
+`promotion_decision` EVD-004 with its six runs. The *Annulla* callback,
+update 659430511, was its own trace with the undo routed deterministically to
+the movement-change specialist, no model call, and two deliveries: the answer
+and the revocation of the summary's controls.
+
+Forbidden values on the real traces. Reading every observation back, none held
+the bot token (read from its file), the Langfuse secret key, either database
+URL, the database password, the archive root, the owner's Telegram user or chat
+identity, or `api.telegram.org`. The one value found was `LLM_API_KEY`, a
+five-character development placeholder that also occurs in the `local-model`
+alias and in instruction text, which the redactor deliberately does not rewrite
+below twelve characters, so the check could not tell a leak from a word. The
+owner chose to rotate it. `scripts/run_llama_server.sh` passed the key as
+`--api-key`, readable in any same-user process listing, so it now passes it
+through `--api-key-file` on a pipe from the `exec` line (a substitution inside
+the argument array is closed before the server reads it; a unit test drives the
+launcher with a stub server to prove the key reaches it and is absent from the
+arguments, and llama.cpp refuses to start with exit 1 if the file cannot be
+read). A 48-character random key was written to `.env`; llama.cpp was restarted
+and healthy in 7 s, then the worker and API; the new key got 200 on `/props`,
+the placeholder and no key 401, and no process listing held the key. The last
+real message, `Quanto ho speso per la spesa alimentare questo mese?`, update
+659430513, produced a complete trace (read specialist, `category_spending`
+grounded, two generations with complete identity, EVD-004) in which none of the
+forbidden values, the new inference key included, appears. The journals of the
+three services over the acceptance held no owner words, token, URL, key, or
+traceback.
+
+With the store stopped. `langfuse-web` was stopped with
+`docker compose --profile observability stop langfuse-web`. The owner sent
+`Quanto ho speso questo mese?` and received the answer normally: update
+659430512 completed on its first attempt and its answer was sent 3.73 s after
+acceptance. Restarting the worker and the API during the outage took 0.22 and
+0.41 s. The journals held eight `tracing.export.degraded` warnings naming only
+the exporter logger, and no owner words, endpoint, `/api/public`, traceback,
+token, or key. `langfuse-web` was started again and every observability service
+reported healthy; the outage message has no trace, as its spans were dropped.
+
+Afterwards. `money-tracker-traces plan` on `development` selected nothing, since
+the three acceptance traces are younger than 30 days; they stay under the
+retention the owner decided. `money-tracker-telegram latency` over the
+acceptance reported a warm p95 of 3,733 ms over two samples. Inbox and outbox
+held no dead letter.
+
+Validation. With the rotated credentials and the launcher change,
+`uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy src` (133
+source files), `uv run money-tracker-validate-docs`, and `git diff --check`
+pass. `uv run pytest -q` reports 1,302 passed and 167 skipped (one new launcher
+test), the real PostgreSQL suite 1,436 passed and 33 skipped, the real Langfuse
+suite 25 passed in 345 s, and the real advice HTTP test 1 passed. The frontend
+was not changed after the third slice, whose frontend checks and browser E2E
+passed. After the runs the `integration-test` and `evaluation` environments held
+no observation, and `development` held only the three acceptance traces.
+
 ### Exit-criteria status
 
 | Exit criterion | Status |
 | --- | --- |
-| Every promoted-workflow LLM call appears with complete input, output, and artifact identity | Met in integration: administrative dispatch, every worker specialist including the resumed category review, and web advice; to be confirmed on the running services at acceptance |
-| One owner message produces one correlated end-to-end trace | Partial: gateway, worker, and delivery correlated and proven in-process; the real private test-bot message is open |
-| Core behaviour unchanged with Langfuse stopped; added latency within a stated budget | Partial: budget confirmed by the owner; met in real gateway, worker, and API processes against a running, stopped, slow, and refusing store, with a bounded flush and stop; the installed services with `langfuse-web` stopped open until acceptance |
-| No credential, token-bearing URL, database URL, or archive path in any trace; no receipt bytes | Met for every traced entry point; the acceptance trace open |
-| Trace retention and deletion documented and exercised | Met: 30-day retention, private export, and verified deletion by age and identifier implemented, documented, and exercised against the real store; backup exclusion recorded; scheduling is Step 7 |
+| Every promoted-workflow LLM call appears with complete input, output, and artifact identity | Met: integration tests for the admin command, every worker specialist including the resumed review, and web advice; the real expense and query traces carried complete calls and identity |
+| One owner message produces one correlated end-to-end trace | Met: the real message and its callback each formed one trace from ingest through claim, dispatch, model calls, commit, and delivery |
+| Core behaviour unchanged with Langfuse stopped; added latency within a stated budget | Met: identical behaviour and bounded flush and stop in real processes against a stopped, slow, and refusing store; the installed services answered the owner with `langfuse-web` stopped; +1.4 ms median on the installed API and at most +12 ms per work unit elsewhere against the 25 ms budget |
+| No credential, token-bearing URL, database URL, or archive path in any trace; no receipt bytes | Met: real tests for every entry point and the real acceptance traces, after rotating the placeholder inference key |
+| Trace retention and deletion documented and exercised | Met: 30-day retention, private export, and verified deletion implemented, documented, and exercised; backup exclusion recorded; scheduling is Step 7 |
 | Real integration tests verify emission and a silent disabled path | Met for every traced entry point |
-| New ADR, with arc42, operations, and experiment documentation in agreement | Met for the implemented slices |
+| New ADR, with arc42, operations, and experiment documentation in agreement | Met: AD-021 and the documents updated with the closing commit |

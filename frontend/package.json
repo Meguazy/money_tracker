@@ -7,8 +7,10 @@
     "build": "tsc -b && vite build",
     "dev": "vite --host 127.0.0.1",
     "test:e2e": "NODE_PATH=./node_modules playwright test --config playwright.config.ts",
+    "test:e2e:ci": "NODE_PATH=./node_modules playwright test --config playwright.config.ts --grep-invert @local-model",
     "test:e2e:installed": "NODE_PATH=./node_modules playwright test --config playwright.installed.config.ts",
     "test": "vitest run",
+    "test:ci": "vitest run --reporter=default --reporter=junit --outputFile=test-results/vitest-junit.xml",
     "typecheck": "tsc -b --pretty false"
   },
   "dependencies": {

@@ -195,7 +195,10 @@ Money Tracker workstation
 | --- | --- | --- | --- | --- |
 | `cli` | Parse one prompt, invoke the graph, print output, flush traces | Python entry point; graph and `tracing` | No persistent data | Host process; user terminal; traced only when the tracing switch is on |
 | `config` | Convert environment variables into immutable model settings | Process environment | Runtime configuration | Secrets are not returned or logged |
-| `development` | Enforce branch, commit, PR-range, and Claude Bash policy from one tested implementation | Git subprocess boundary, command-line entry points, versioned Git hooks, and Claude Code `PreToolUse` | No persistent data; policy constants come from `AGENTS.md` | Developer checkout only; intentional Claude blocks exit 2, internal guard errors fail open, and no command payload is logged |
+| `development` | Enforce branch, commit, PR-range, PR-template, and Claude Bash policy from one tested implementation | Git subprocess boundary, command-line entry points, versioned Git hooks, Claude Code `PreToolUse`, and the `pr-metadata` workflow | No persistent data; policy constants come from `AGENTS.md` and the PR template | Developer checkout and GitHub-hosted runners; intentional Claude blocks exit 2, internal guard errors fail open, and no command payload is logged |
+| `development.ci_reporting` | Count JUnit outcomes into the job summary and fail a real-service job that executed nothing or skipped for its own missing flag | `money-tracker-ci-report`; JUnit XML from pytest, Vitest, and Playwright | No persistent data | GitHub-hosted runners; reads only reports the job produced; logs suite labels and counts, never test content |
+| `development.ci_redaction` | Remove generated credentials and token-shaped runs from failed-job evidence before upload | `money-tracker-redact-ci-log`; the disposable `.env` and one evidence file; `logging_safety` | No persistent data; writes one redacted copy | GitHub-hosted runners; never prints evidence; logs only sizes and an error type |
+| GitHub Actions workflows | Run the hosted gates, aggregate them into `ci-gate`, validate PR metadata, and run the model-free Langfuse gates on a schedule | `.github/workflows/`: `ci.yml`, `pr-metadata.yml`, `langfuse.yml`; `.github/dependabot.yml` | Seven-day failure artifacts only | GitHub-hosted Ubuntu runners; `contents: read`, SHA-pinned actions, no repository secrets, disposable credentials |
 | `graph` | Define the initial one-node assistant | LangGraph and `BaseChatModel` | In-memory messages for one invocation | Stateless host process |
 | `llm` | Construct an OpenAI-compatible chat adapter | LangChain `ChatOpenAI` | No persistent data | Loopback endpoint by default |
 | `tracing` | Own the tracing port injected at entry points, the disabled tracer, the explicit switch and loopback-only settings, the stable trace names, and `open_tracer`, which can resolve model identity in the background for a long-running service | Framework-neutral port; `tracing.langfuse` only when enabled; no domain, application, or workflow dependency | No persistent data | Every entry point that executes a model boundary or a stage of a traced work unit; misconfiguration disables tracing with an `ERROR` record and never stops the process |
@@ -1270,6 +1273,27 @@ silently included in the claim.
 4. The final answer may narrate only facts returned by tools and states its
    period and interpretation of `too much`.
 
+### Current pull-request CI run
+
+1. A pull request is opened or updated. `ci` and `pr-metadata` start on
+   GitHub-hosted runners with a read-only token; a newer run on the same PR
+   cancels the older one.
+2. `pr-metadata` checks out the PR head and runs `git_policy` over the title,
+   the branch, every commit in `base..head`, and the body's template sections.
+3. The nine `ci` jobs run in parallel. Static, unit, frontend, deployment,
+   shell and workflow, and security jobs need no service. `postgres-integration`,
+   `backup-drill`, and `e2e-browser` generate a disposable `.env`, start
+   `application-postgres` from `compose.yaml`, wait for TCP readiness, and run
+   the real suites against `money_tracker_test`.
+4. Each suite's JUnit report passes through `ci_reporting`, which appends its
+   counts to the job summary and fails a service job that executed no test or
+   skipped for its own missing flag.
+5. On failure, `ci_redaction` copies service logs and reports without generated
+   credentials, and the job uploads that evidence for seven days.
+6. `ci-gate` reads every job result and succeeds only when all nine succeeded.
+   `main` pushes and the weekly schedule rerun the workflow, with gitleaks over
+   the full history.
+
 ## 7. Deployment View
 
 ### Current deployment
@@ -1374,8 +1398,14 @@ The developer checkout also contains versioned Git hooks and shared Claude Code
 settings. The hooks run through the UV-managed application environment and are
 installed per clone; the Claude hook invokes the same packaged development
 boundary. Neither is deployed with the runtime services or owns application
-data. GitHub Actions and protected-branch enforcement are accepted by AD-022
-but remain planned in their dedicated delivery slices.
+data.
+
+GitHub-hosted Ubuntu runners execute the AD-022 workflows. Each job starts from
+a clean runner, installs the locked environments and SHA-256-pinned tools, and
+creates only disposable services and credentials; nothing reaches the
+workstation, its services, or owner data. Failed evidence stays in GitHub for
+seven days. Protected-branch enforcement remains planned in its dedicated
+slice.
 
 ## 8. Cross-Cutting Concepts
 
@@ -1687,11 +1717,14 @@ tracing and from the exit-code contract AD-018 defines for supervisors.
   and on populated, advice, and hovered states. A second configuration accepts
   the installed systemd user service without replacing systemd.
 - Repository policy is executable code under `development` and is unit-tested
-  with real temporary Git repositories. Versioned hooks call that
-  implementation; planned PR metadata CI will call it again.
-- Hosted CI mirrors repeatable local checks. Model/GPU, real Telegram,
-  installed-systemd, and model-backed Langfuse evidence stays local and becomes
-  mandatory when a slice changes the corresponding boundary.
+  with real temporary Git repositories. Versioned hooks and the `pr-metadata`
+  workflow call that implementation.
+- Hosted CI mirrors repeatable local checks, including real PostgreSQL, the
+  Restic backup and restore drill, and Playwright without the model case.
+  Service jobs fail when a suite executed nothing or skipped for its own
+  missing flag. Model/GPU, real Telegram, installed-systemd, and model-backed
+  Langfuse evidence stays local and becomes mandatory when a slice changes the
+  corresponding boundary.
 - Agent quality experiments complement rather than replace correctness tests.
 
 ## 9. Architecture Decisions
@@ -1817,8 +1850,9 @@ still-running process did and why.
 
 [AD-022](decisions/AD-022-pull-request-workflow.md) is partially implemented:
 the shared policy checker, local Git hooks, Claude Code guardrails, PR template,
-and development workflow exist; merge-blocking GitHub Actions and server-side
-`main` protection remain planned.
+development workflow, hosted CI with `ci-gate` and `pr-metadata`, the scheduled
+Langfuse workflow, and Dependabot exist; server-side `main` protection remains
+planned, so a red check is not yet merge-blocking.
 
 ## 10. Quality Requirements
 
@@ -1837,7 +1871,8 @@ and development workflow exist; merge-blocking GitHub Actions and server-side
 | A dashboard change lowers contrast or hides a control from the keyboard | The real-browser axe gate reports the WCAG A/AA violation before release. |
 | A restore is performed on an empty installation | Database, receipt references, retained media, and required configuration recover consistently. |
 | A model or prompt candidate misses a safety gate | It is not promoted; the current accepted configuration remains active. |
-| A pull request has an invalid branch, commit, or failing required gate | Local policy reports it early and, once AD-022 is fully implemented, GitHub blocks the merge for every actor including administrators. |
+| A pull request has an invalid branch, commit, or failing required gate | Local policy reports it early, `pr-metadata` or `ci-gate` turns red on the PR, and, once the AD-022 ruleset is applied, GitHub blocks the merge for every actor including administrators. |
+| A real-service CI job loses its service flag or discovers no test | `ci_reporting` fails the job instead of reporting a green, all-skipped suite. |
 
 Quantitative evaluation gates are maintained in
 [Evaluation Matrix](../experiments/evaluation-matrix.md), not duplicated here.
@@ -1890,12 +1925,23 @@ Quantitative evaluation gates are maintained in
   indicators, and hover states other than the destructive filled button are not
   browser-audited.
 - Versioned hooks and Claude Code rules can be bypassed, misconfigured, or
-  absent in another clone. Until the accepted pipeline and `main` ruleset are
-  implemented, they do not guarantee merge safety.
+  absent in another clone. The hosted `ci-gate` and `pr-metadata` checks now
+  report on every PR, but until the `main` ruleset is applied a red check does
+  not block a merge.
 - Some gates depend on the owner's model/GPU, real Telegram bot, local
   Langfuse, or installed systemd services and therefore remain manual PR
-  evidence. Private-repository protection depends on a paid GitHub plan, and
-  the hosted job matrix must stay within the measured Actions minute budget.
+  evidence. Private-repository protection depends on a paid GitHub plan.
+- Every push to a PR and to `main` runs all nine CI jobs, and GitHub bills
+  each job rounded up to a whole minute. The matrix must stay within the
+  measured allowance recorded in [Development](../development.md#github-actions-minute-budget).
+- The Langfuse workflow runs only from the default branch, so its first
+  execution, duration, and minutes are known only after the pipeline merges.
+- The backup drill cannot run on this workstation, which lacks Restic and the
+  PostgreSQL 17 client tools; its CI job is its only routine execution.
+- Some Telegram and worker CLI integration tests compare standard error exactly
+  and inherit the ambient `LOG_LEVEL`. The full PostgreSQL suite therefore runs
+  with `LOG_LEVEL=CRITICAL`, locally and in CI, until those tests pin their own
+  level.
 
 ### Target architecture risks
 

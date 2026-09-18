@@ -14,6 +14,7 @@ from money_tracker.development.git_policy import (
     validate_commit_message,
     validate_commit_range,
     validate_pre_push_updates,
+    validate_pull_request_body,
     validate_working_tree_branch,
 )
 
@@ -24,6 +25,13 @@ from money_tracker.development.git_policy import (
         "ci: add repository guardrails",
         "fix(hooks)!: reject direct pushes\n\nBREAKING CHANGE: install hooks",
         "docs(roadmap): document pull-request delivery",
+        # The shape `.github/dependabot.yml` configures, with its trailer.
+        (
+            "build(deps-dev): bump the python group with 2 updates\n\n"
+            "---\nupdated-dependencies:\n- dependency-name: ruff\n...\n\n"
+            "Signed-off-by: dependabot[bot] <support@github.com>"
+        ),
+        "ci(deps): bump the github-actions group with 3 updates",
     ),
 )
 def test_valid_conventional_commit_messages_pass(message: str) -> None:
@@ -73,6 +81,20 @@ def test_invalid_branch_names_are_rejected(branch: str) -> None:
     """Reject untyped or non-kebab-case pull-request branch names."""
 
     assert validate_branch_name(branch)
+
+
+def test_pull_request_body_requires_every_template_section() -> None:
+    """Keep metadata validation aligned with the checked-in PR template."""
+
+    repository_root = Path(__file__).resolve().parents[4]
+    body = (repository_root / ".github/pull_request_template.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert validate_pull_request_body(body) == []
+    assert validate_pull_request_body(
+        body.replace("## Validation", "### Validation")
+    ) == ["pull-request body is missing required section: Validation"]
 
 
 def test_pre_push_rejects_every_update_of_remote_main() -> None:

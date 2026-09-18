@@ -488,31 +488,92 @@ rejects every remote `refs/heads/main` update, validates branch names, and runs:
 The 2026-09-18 `main` baseline is 1,302 passed and 167 skipped in about 8
 seconds. With the policy tests in the first AD-022 slice, the parallelized
 complete hook measured 8.75 seconds with 1,341 passed and 167 skipped
-(+39 passed, no skipped delta). Record it again when the baseline changes.
-Hooks can be bypassed,
-so required checks and protected-branch rules become the authoritative boundary
-when their dedicated slices land.
+(+39 passed, no skipped delta). The CI helpers of the second slice raise the
+baseline to 1,357 passed and 167 skipped (+16 passed). Record it again when
+the baseline changes. Hooks can be bypassed; `ci-gate` and `pr-metadata` report
+on every pull request and become merge-blocking when the `main` ruleset slice
+lands.
 
 ### Local and CI gate correspondence
 
-The next slice adds jobs mirroring the official local gates:
+`.github/workflows/ci.yml` runs on every pull request, on every push to `main`,
+and weekly on Sunday at 02:17 UTC. It has no path filter, so its aggregate
+check always reports. Each job mirrors a local gate:
 
-| Local gate | Planned CI job |
-| --- | --- |
-| Ruff format/lint, mypy, build, docs validation, diff check | `python-static` |
-| Default pytest and unit branch coverage | `python-tests` |
-| PostgreSQL suite and migration round trip | `postgres-integration` |
-| Restic and PostgreSQL 17 restore drill | `backup-drill` |
-| npm typecheck, Vitest, and build | `frontend` |
-| Playwright without the tagged model case | `e2e-browser` |
-| Compose, image digests, and systemd verification | `compose-and-deploy` |
-| Shellcheck, actionlint, and zizmor | `shell-and-workflows` |
-| Gitleaks and dependency audits | `security` |
+| Local gate | CI job | CI specifics |
+| --- | --- | --- |
+| Ruff format and lint, mypy, `uv build`, docs validation, `git diff --check` | `python-static` | `uv sync --locked`; whitespace is checked over the PR or pushed range |
+| `uv run pytest -q` and unit branch coverage | `python-tests` | `--cov-fail-under=73`, the measured 73.29 percent rounded down; the floor may only rise |
+| `RUN_POSTGRES_INTEGRATION_TESTS=1 LOG_LEVEL=CRITICAL uv run --env-file .env pytest -q` | `postgres-integration` | `application-postgres` from `compose.yaml`; the suite includes the migration round trip |
+| Restic and PostgreSQL 17 backup and restore drill | `backup-drill` | Restic 0.18.1 release binary checked against a pinned SHA-256; `postgresql-client-17` from PGDG after checking the signing-key fingerprint |
+| `npm ci`, `npm run typecheck`, `npm run test:ci`, `npm run build` | `frontend` | Node from `frontend/.nvmrc`; Vitest writes JUnit |
+| `npm run test:e2e:ci` | `e2e-browser` | Playwright's bundled Chromium; only the `@local-model` case is excluded |
+| Both Compose profiles, image digests, `systemd-analyze verify` | `compose-and-deploy` | Units are rendered against the checkout, and the synced package provides every `ExecStart` executable |
+| ShellCheck over `scripts/`, `.githooks/`, and `docker/`; actionlint; zizmor | `shell-and-workflows` | actionlint 1.7.12 with a pinned SHA-256; zizmor 1.30.1 offline over workflows and Dependabot |
+| Gitleaks, `pip-audit`, `npm audit --audit-level=high` | `security` | gitleaks 8.30.1 scans `base..head` for a PR and the full history for `main` and the schedule; `pip-audit` covers every locked group |
 
-The future `ci-gate` fails if any required job fails or is cancelled. For a red
-run, inspect the first causal failure, reproduce its documented command, and
-fix the cause. Never skip tests, lower thresholds, or add an exception merely
-to turn a check green; document any justified exception and its expiry.
+The full PostgreSQL suite runs with `LOG_LEVEL=CRITICAL`, the command its
+recorded evidence has always used: some CLI tests compare standard error
+exactly and inherit the ambient level, and `uv run --env-file` does not
+override a variable that is already set. Every service job generates a
+disposable `.env`, waits until PostgreSQL accepts TCP for `money_tracker_test`,
+and fails when its JUnit report shows no executed test or a skip citing the
+flag the job sets.
+
+`ci-gate` needs all nine jobs, runs even when one fails, and succeeds only when
+every result is `success`; a failure, cancellation, or skip turns it red. It is
+the only required check of `ci`. `.github/workflows/pr-metadata.yml` is the
+second required check: it validates the PR title, the head branch, every commit
+in `base..head`, and the template's level-two sections with
+`money-tracker-validate-git-policy`, and exempts Dependabot only from the
+template sections.
+
+Workflows hold only `contents: read`, check out without persisted credentials,
+and pin every action by full commit SHA with its exact version in a comment. No
+workflow uses `pull_request_target` or a repository secret. A newer run on the
+same PR cancels the older one; runs on `main` and scheduled runs are never
+cancelled. The workflows pin uv 0.8.0, the toolchain that writes `uv.lock`;
+change both together.
+
+### CI helper commands
+
+- `money-tracker-ci-report --label NAME [--summary-file FILE] [--service]
+  [--forbid-skip-reason TEXT ...] JUNIT...` counts the passed, skipped, failed,
+  and error cases in JUnit reports, prints one line, and appends a row to the
+  job summary. It exits non-zero for an unreadable or empty report. With
+  `--service` it also fails when no test executed or when a skip reason
+  contains a forbidden fragment, such as the enabling flag the job sets.
+- `money-tracker-redact-ci-log --env-file .env --input RAW --output SAFE`
+  replaces every credential-named or generated hexadecimal value of the
+  disposable `.env`, then every token-shaped run, before failed evidence is
+  uploaded. It never prints the evidence.
+- `money-tracker-validate-git-policy pull-request-body FILE` names each
+  required section of `.github/pull_request_template.md` missing from a PR
+  body.
+
+### Reading a red run
+
+1. `gh pr checks <number> --watch` lists every job. Start from the first failed
+   job; `ci-gate` only aggregates.
+2. `gh run view <run-id> --log-failed` prints the failed steps. The run summary
+   page shows every job result and the passed, skipped, failed, and error
+   counts of each suite.
+3. A failed job uploads its evidence for seven days as
+   `<job>-<run-id>`: JUnit and coverage for `python-tests`, redacted service
+   logs and JUnit for `postgres-integration`, `backup-drill`, and
+   `langfuse-integration`, Vitest JUnit for `frontend`, and Playwright traces,
+   screenshots, video, and the redacted PostgreSQL log for `e2e-browser`.
+   Download one with `gh run download <run-id> --name <artifact>`. Evidence
+   holds only synthetic fixtures and disposable credentials, which are
+   redacted.
+4. Reproduce with the matching local command, fix the cause, and push grouped
+   corrections once; every push consumes minutes. `service suite executed zero
+   tests` or `skipped tests because ... was absent` means the job's wiring is
+   broken, not the product. Never skip tests, lower thresholds, or add an
+   exception merely to turn a check green; document any justified exception
+   and its expiry where it is configured.
+5. `pr-metadata` reruns when the title or body is edited. A commit violation
+   needs a rebase that rewrites the offending commit.
 
 ### Gates that remain local
 
@@ -523,7 +584,35 @@ services. A slice touching one of those boundaries must run its applicable gate
 without mocks and report the exact command and passed/skipped counts. Run local
 Playwright E2E and PostgreSQL pytest sequentially because both own
 `money_tracker_test`. Model-visible changes also require the evaluation gates;
-EVD-004 remains the baseline.
+EVD-004 remains the baseline. The backup drill runs in CI; a workstation without
+Restic and PostgreSQL 17 client tools cannot run it, and the CI job is then its
+evidence.
+
+### Langfuse workflow
+
+`.github/workflows/langfuse.yml` starts the whole `observability` profile with
+disposable credentials and runs the Langfuse gates that need no model,
+`tests/integration/money_tracker/tracing/test_evaluation_publication.py` and
+`test_trace_retention.py`. It is not a required check. GitHub runs a workflow
+triggered only by `workflow_dispatch` and `schedule` from the default branch, so
+it cannot run on the PR that introduces it. After merge it runs every Saturday
+at 03:43 UTC and on demand with
+`gh workflow run langfuse-integration --ref <branch>`.
+
+### Dependabot
+
+`.github/dependabot.yml` proposes grouped updates every Monday morning
+(Europe/Rome) for GitHub Actions, uv, npm in `frontend/`, and Compose images,
+each with a seven-day cooldown. Commit messages start with `ci(deps)`,
+`build(deps)`, or `build(deps-dev)`, which the Git policy accepts; Dependabot
+branches are exempt from the branch rule and its PRs from the template
+sections. A Dependabot PR is reviewed and merged by the owner like any other.
+Image proposals follow
+[Container Versions](operations/container-versions.md#dependabot-proposals).
+Dependabot does not update versions pinned inside workflow steps (uv,
+actionlint, gitleaks, zizmor, Restic) or `frontend/.nvmrc`; update those
+deliberately together with their checksums. Dependabot alerts and security
+updates are repository settings and remain off until the owner enables them.
 
 ### GitHub Actions minute budget
 
@@ -544,7 +633,8 @@ Static checks and the service-independent suite:
     uv run mypy src
     uv run money-tracker-validate-docs
     uv run pytest -q
-    uv run pytest -q tests/unit --cov=money_tracker --cov-report=term-missing
+    uv run pytest -q tests/unit --cov=money_tracker --cov-report=term-missing \
+      --cov-fail-under=73
     docker compose --env-file .env.example config --quiet
     docker compose --env-file .env.example --profile observability config --quiet
     git diff --check

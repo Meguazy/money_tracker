@@ -1,0 +1,96 @@
+name: langfuse-integration
+
+# Not a required check. Workflows triggered only by `workflow_dispatch` and
+# `schedule` run from the default branch, so this one is first exercised after
+# it reaches main. It runs the Langfuse gates that need no local model; the
+# model-backed tracing tests remain local gates.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "43 3 * * 6"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: langfuse-integration
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  langfuse-integration:
+    name: langfuse-integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up uv
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          version: "0.8.0"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Install locked environment
+        run: uv sync --locked
+      - name: Generate disposable environment
+        run: |
+          mkdir -p artifacts
+          MONEY_TRACKER_ENV_FILE="${PWD}/.env" scripts/generate_local_env.sh
+      - name: Start disposable observability profile
+        run: docker compose --env-file .env --profile observability up -d --wait
+      - name: Run Langfuse gates that do not require the local model
+        env:
+          RUN_LANGFUSE_INTEGRATION_TESTS: "1"
+          LOG_LEVEL: CRITICAL
+        run: >-
+          uv run --env-file .env pytest -q
+          tests/integration/money_tracker/tracing/test_evaluation_publication.py
+          tests/integration/money_tracker/tracing/test_trace_retention.py
+          --junitxml=artifacts/langfuse-junit.xml
+      - name: Report and verify Langfuse suite
+        if: always() && hashFiles('artifacts/langfuse-junit.xml') != ''
+        run: |
+          {
+            echo "## Test counts"
+            echo
+            echo "| Suite | Passed | Skipped | Failed | Errors |"
+            echo "| --- | ---: | ---: | ---: | ---: |"
+          } >> "${GITHUB_STEP_SUMMARY}"
+          uv run money-tracker-ci-report \
+            --label "Langfuse without local model" \
+            --summary-file "${GITHUB_STEP_SUMMARY}" \
+            --service \
+            --forbid-skip-reason "RUN_LANGFUSE_INTEGRATION_TESTS=1" \
+            artifacts/langfuse-junit.xml
+      - name: Sanitize failed Langfuse evidence
+        if: failure() && hashFiles('.env') != ''
+        run: |
+          mkdir -p "${RUNNER_TEMP}/raw-evidence" sanitized-artifacts
+          docker compose --env-file .env --profile observability logs --no-color \
+            > "${RUNNER_TEMP}/raw-evidence/docker-compose.log"
+          uv run money-tracker-redact-ci-log --env-file .env \
+            --input "${RUNNER_TEMP}/raw-evidence/docker-compose.log" \
+            --output sanitized-artifacts/docker-compose.log
+          if [[ -f artifacts/langfuse-junit.xml ]]; then
+            uv run money-tracker-redact-ci-log --env-file .env \
+              --input artifacts/langfuse-junit.xml \
+              --output sanitized-artifacts/langfuse-junit.xml
+          fi
+      - name: Upload failed Langfuse evidence
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: langfuse-integration-${{ github.run_id }}
+          path: sanitized-artifacts/
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Stop disposable observability profile
+        if: always() && hashFiles('.env') != ''
+        run: docker compose --env-file .env --profile observability down

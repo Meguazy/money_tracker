@@ -29,6 +29,18 @@ _BRANCH = re.compile(
     rf"^(?:{_TYPE_PATTERN})/(?:step-\d+(?:-\d+)*-)?"
     r"[a-z0-9]+(?:-[a-z0-9]+)*$"
 )
+REQUIRED_PR_SECTIONS = (
+    "Summary",
+    "Step and slice",
+    "Changes",
+    "Model-visible changes",
+    "Validation",
+    "Exit criteria",
+    "Documentation",
+    "Operations",
+    "Risks and follow-ups",
+    "Checklist",
+)
 
 
 def validate_commit_message(message: str) -> list[str]:
@@ -70,6 +82,27 @@ def validate_branch_name(branch: str) -> list[str]:
     if branch.startswith("dependabot/") or _BRANCH.fullmatch(branch):
         return []
     return ["branch must be <type>/<step>-<topic> or <type>/<topic> in kebab-case"]
+
+
+def validate_pull_request_body(body: str) -> list[str]:
+    """Return missing required level-two pull-request template sections.
+
+    Args:
+        body: Complete pull-request Markdown body.
+
+    Returns:
+        One stable violation for every absent required section.
+    """
+
+    headings = {
+        match.group(1).strip()
+        for match in re.finditer(r"^##[ \t]+(.+?)[ \t]*$", body, re.MULTILINE)
+    }
+    return [
+        f"pull-request body is missing required section: {section}"
+        for section in REQUIRED_PR_SECTIONS
+        if section not in headings
+    ]
 
 
 def _git(*arguments: str) -> str:
@@ -183,6 +216,10 @@ def _parser() -> argparse.ArgumentParser:
     title.add_argument("text")
     branch = subparsers.add_parser("branch", help="validate a branch name")
     branch.add_argument("name")
+    body = subparsers.add_parser(
+        "pull-request-body", help="validate required pull-request sections"
+    )
+    body.add_argument("path", type=Path)
     commit_range = subparsers.add_parser("range", help="validate base..head commits")
     commit_range.add_argument("base")
     commit_range.add_argument("head")
@@ -200,6 +237,8 @@ def _run(args: argparse.Namespace) -> list[str]:
         return validate_commit_message(args.text)
     if args.command == "branch":
         return validate_branch_name(args.name)
+    if args.command == "pull-request-body":
+        return validate_pull_request_body(args.path.read_text(encoding="utf-8"))
     if args.command == "range":
         return validate_commit_range(args.base, args.head)
     if args.command == "working-tree":

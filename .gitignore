@@ -171,6 +171,9 @@ ENV/
 env.bak/
 venv.bak/
 
+# Personal Claude Code overrides
+/.claude/settings.local.json
+
 # Spyder project settings
 .spyderproject
 .spyproject

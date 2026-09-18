@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+cd "${repo_root}"
+
+uv run money-tracker-validate-git-policy pre-push
+
+check_pids=()
+uv run ruff format --check src tests migrations &
+check_pids+=("$!")
+uv run ruff check src tests migrations &
+check_pids+=("$!")
+uv run mypy src &
+check_pids+=("$!")
+uv run pytest -q &
+check_pids+=("$!")
+uv run money-tracker-validate-docs &
+check_pids+=("$!")
+git diff --check &
+check_pids+=("$!")
+
+status=0
+for check_pid in "${check_pids[@]}"; do
+  wait "${check_pid}" || status=1
+done
+exit "${status}"

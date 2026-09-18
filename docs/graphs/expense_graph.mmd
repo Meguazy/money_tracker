@@ -1,0 +1,20 @@
+---
+config:
+  flowchart:
+    curve: linear
+---
+graph TD;
+	__start__([<p>__start__</p>]):::first
+	extract(extract)
+	classify_category(classify_category)
+	persist(persist)
+	__end__([<p>__end__</p>]):::last
+	__start__ --> extract;
+	classify_category -.-> __end__;
+	classify_category -.-> persist;
+	extract -.-> __end__;
+	extract -.-> classify_category;
+	persist --> __end__;
+	classDef default fill:#f2f0ff,line-height:1.2
+	classDef first fill-opacity:0
+	classDef last fill:#bfb6fc

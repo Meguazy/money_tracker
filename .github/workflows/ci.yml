@@ -1,0 +1,679 @@
+name: ci
+
+# AD-022: `ci-gate` is the only required check of this workflow. Keep the
+# trigger free of path filters so the required check always reports.
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  schedule:
+    # Weekly full-history secret scan and dependency audit on main.
+    - cron: "17 2 * * 0"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  # Same uv as the local toolchain that produced uv.lock.
+  UV_VERSION: "0.8.0"
+  NODE_VERSION_FILE: frontend/.nvmrc
+
+jobs:
+  python-static:
+    name: python-static
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Set up uv
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Install locked environment
+        run: uv sync --locked
+      - name: Check Python formatting
+        run: uv run ruff format --check src tests migrations
+      - name: Lint Python
+        run: uv run ruff check src tests migrations
+      - name: Type-check Python
+        run: uv run mypy src
+      - name: Build package
+        run: uv build
+      - name: Validate documentation
+        run: uv run money-tracker-validate-docs
+      - name: Check changed whitespace
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          if [[ "${EVENT_NAME}" == "pull_request" ]]; then
+            git diff --check "${BASE_SHA}...${HEAD_SHA}"
+          elif [[ "${EVENT_NAME}" == "push" && -n "${BEFORE_SHA}" &&
+                  ! "${BEFORE_SHA}" =~ ^0+$ ]]; then
+            git diff --check "${BEFORE_SHA}..${HEAD_SHA}"
+          else
+            git diff --check HEAD^ HEAD
+          fi
+      - name: Summarize static gates
+        run: |
+          {
+            echo "## Static gates"
+            echo
+            echo "Ruff format, Ruff lint, mypy, package build, documentation validation, and whitespace checks passed."
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+  python-tests:
+    name: python-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up uv
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Install locked environment
+        run: uv sync --locked
+      - name: Prepare reports
+        run: |
+          mkdir -p artifacts
+          {
+            echo "## Test counts"
+            echo
+            echo "| Suite | Passed | Skipped | Failed | Errors |"
+            echo "| --- | ---: | ---: | ---: | ---: |"
+          } >> "${GITHUB_STEP_SUMMARY}"
+      - name: Run default pytest suite
+        run: uv run pytest -q --junitxml=artifacts/default-junit.xml
+      - name: Report default pytest suite
+        if: always() && hashFiles('artifacts/default-junit.xml') != ''
+        run: >-
+          uv run money-tracker-ci-report
+          --label "default pytest"
+          --summary-file "${GITHUB_STEP_SUMMARY}"
+          artifacts/default-junit.xml
+      - name: Enforce unit branch coverage
+        # The floor is the measured unit branch coverage rounded down. It may
+        # only rise.
+        run: >-
+          uv run pytest -q tests/unit
+          --cov=money_tracker
+          --cov-report=term-missing
+          --cov-report=xml:artifacts/unit-coverage.xml
+          --cov-fail-under=73
+          --junitxml=artifacts/unit-junit.xml
+      - name: Report unit coverage suite
+        if: always() && hashFiles('artifacts/unit-junit.xml') != ''
+        run: >-
+          uv run money-tracker-ci-report
+          --label "unit coverage"
+          --summary-file "${GITHUB_STEP_SUMMARY}"
+          artifacts/unit-junit.xml
+      - name: Upload failed Python test evidence
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: python-tests-${{ github.run_id }}
+          path: artifacts/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  postgres-integration:
+    name: postgres-integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up uv
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Install locked environment
+        run: uv sync --locked
+      - name: Generate disposable environment
+        run: |
+          mkdir -p artifacts
+          MONEY_TRACKER_ENV_FILE="${PWD}/.env" scripts/generate_local_env.sh
+      - name: Start application PostgreSQL
+        run: |
+          docker compose --env-file .env up -d --wait application-postgres
+          # The health check also passes on the initialization server's socket;
+          # wait until the final server accepts TCP for the test database.
+          timeout 60 bash -c 'until docker compose --env-file .env exec -T application-postgres pg_isready --quiet --host 127.0.0.1 --username money_tracker --dbname money_tracker_test; do sleep 1; done'
+      - name: Run full PostgreSQL-enabled suite
+        env:
+          RUN_POSTGRES_INTEGRATION_TESTS: "1"
+          # The recorded evidence command. Some CLI tests compare stderr
+          # exactly and inherit the ambient level; the generated `.env` does
+          # not override a variable that is already set.
+          LOG_LEVEL: CRITICAL
+        run: >-
+          uv run --env-file .env pytest -q
+          --junitxml=artifacts/postgres-junit.xml
+      - name: Report and verify PostgreSQL suite
+        if: always() && hashFiles('artifacts/postgres-junit.xml') != ''
+        run: |
+          {
+            echo "## Test counts"
+            echo
+            echo "| Suite | Passed | Skipped | Failed | Errors |"
+            echo "| --- | ---: | ---: | ---: | ---: |"
+          } >> "${GITHUB_STEP_SUMMARY}"
+          uv run money-tracker-ci-report \
+            --label "PostgreSQL-enabled pytest" \
+            --summary-file "${GITHUB_STEP_SUMMARY}" \
+            --service \
+            --forbid-skip-reason "RUN_POSTGRES_INTEGRATION_TESTS=1" \
+            artifacts/postgres-junit.xml
+      - name: Sanitize failed PostgreSQL evidence
+        if: failure() && hashFiles('.env') != ''
+        run: |
+          mkdir -p "${RUNNER_TEMP}/raw-evidence"
+          docker compose --env-file .env logs --no-color application-postgres \
+            > "${RUNNER_TEMP}/raw-evidence/docker-compose.log"
+          for evidence in "${RUNNER_TEMP}/raw-evidence/docker-compose.log" artifacts/*.xml; do
+            [[ -f "${evidence}" ]] || continue
+            uv run money-tracker-redact-ci-log --env-file .env \
+              --input "${evidence}" \
+              --output "sanitized-artifacts/${evidence##*/}"
+          done
+      - name: Upload failed PostgreSQL evidence
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: postgres-integration-${{ github.run_id }}
+          path: sanitized-artifacts/
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Stop application PostgreSQL
+        if: always() && hashFiles('.env') != ''
+        run: docker compose --env-file .env down
+
+  backup-drill:
+    name: backup-drill
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up uv
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Install locked environment
+        run: uv sync --locked
+      - name: Install Restic and PostgreSQL 17 clients
+        env:
+          # The drill is verified against this Restic; see
+          # docs/operations/backup-and-restore.md.
+          RESTIC_VERSION: 0.18.1
+          RESTIC_SHA256: 680838f19d67151adba227e1570cdd8af12c19cf1735783ed1ba928bc41f363d
+          PGDG_KEY_FINGERPRINT: B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8
+        run: |
+          archive="restic_${RESTIC_VERSION}_linux_amd64.bz2"
+          curl --fail --location --silent --show-error \
+            "https://github.com/restic/restic/releases/download/v${RESTIC_VERSION}/${archive}" \
+            -o "${RUNNER_TEMP}/${archive}"
+          echo "${RESTIC_SHA256}  ${RUNNER_TEMP}/${archive}" | sha256sum --check --strict
+          bunzip2 --stdout "${RUNNER_TEMP}/${archive}" > "${RUNNER_TEMP}/restic"
+          sudo install -m 0755 "${RUNNER_TEMP}/restic" /usr/local/bin/restic
+          restic version
+
+          if ! grep -rqs "apt.postgresql.org" /etc/apt/sources.list /etc/apt/sources.list.d/; then
+            curl --fail --silent --show-error \
+              https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+              -o "${RUNNER_TEMP}/postgresql.asc"
+            gpg --show-keys --with-colons "${RUNNER_TEMP}/postgresql.asc" \
+              | grep --quiet --fixed-strings ":${PGDG_KEY_FINGERPRINT}:"
+            sudo install -d -m 0755 /usr/share/postgresql-common/pgdg
+            gpg --dearmor < "${RUNNER_TEMP}/postgresql.asc" \
+              | sudo tee /usr/share/postgresql-common/pgdg/apt.postgresql.org.gpg \
+              > /dev/null
+            echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.gpg] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+              | sudo tee /etc/apt/sources.list.d/pgdg.list > /dev/null
+          fi
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends postgresql-client-17
+          /usr/lib/postgresql/17/bin/pg_dump --version
+      - name: Generate disposable environment
+        run: |
+          mkdir -p artifacts
+          MONEY_TRACKER_ENV_FILE="${PWD}/.env" scripts/generate_local_env.sh
+      - name: Start application PostgreSQL
+        run: |
+          docker compose --env-file .env up -d --wait application-postgres
+          # The health check also passes on the initialization server's socket;
+          # wait until the final server accepts TCP for the test database.
+          timeout 60 bash -c 'until docker compose --env-file .env exec -T application-postgres pg_isready --quiet --host 127.0.0.1 --username money_tracker --dbname money_tracker_test; do sleep 1; done'
+      - name: Run encrypted backup and restore drill
+        env:
+          RUN_POSTGRES_INTEGRATION_TESTS: "1"
+          RUN_BACKUP_INTEGRATION_TESTS: "1"
+          MONEY_TRACKER_TEST_RESTIC_BINARY: /usr/local/bin/restic
+          MONEY_TRACKER_TEST_PG_DUMP_BINARY: /usr/lib/postgresql/17/bin/pg_dump
+          MONEY_TRACKER_TEST_PG_RESTORE_BINARY: /usr/lib/postgresql/17/bin/pg_restore
+        run: >-
+          uv run --env-file .env pytest -q
+          tests/integration/money_tracker/backup
+          --junitxml=artifacts/backup-junit.xml
+      - name: Report and verify backup drill
+        if: always() && hashFiles('artifacts/backup-junit.xml') != ''
+        run: |
+          {
+            echo "## Test counts"
+            echo
+            echo "| Suite | Passed | Skipped | Failed | Errors |"
+            echo "| --- | ---: | ---: | ---: | ---: |"
+          } >> "${GITHUB_STEP_SUMMARY}"
+          uv run money-tracker-ci-report \
+            --label "backup and restore" \
+            --summary-file "${GITHUB_STEP_SUMMARY}" \
+            --service \
+            --forbid-skip-reason "RUN_BACKUP_INTEGRATION_TESTS=1" \
+            --forbid-skip-reason "RUN_POSTGRES_INTEGRATION_TESTS=1" \
+            artifacts/backup-junit.xml
+      - name: Sanitize failed backup evidence
+        if: failure() && hashFiles('.env') != ''
+        run: |
+          mkdir -p "${RUNNER_TEMP}/raw-evidence"
+          docker compose --env-file .env logs --no-color application-postgres \
+            > "${RUNNER_TEMP}/raw-evidence/docker-compose.log"
+          for evidence in "${RUNNER_TEMP}/raw-evidence/docker-compose.log" artifacts/*.xml; do
+            [[ -f "${evidence}" ]] || continue
+            uv run money-tracker-redact-ci-log --env-file .env \
+              --input "${evidence}" \
+              --output "sanitized-artifacts/${evidence##*/}"
+          done
+      - name: Upload failed backup evidence
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: backup-drill-${{ github.run_id }}
+          path: sanitized-artifacts/
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Stop application PostgreSQL
+        if: always() && hashFiles('.env') != ''
+        run: docker compose --env-file .env down
+
+  frontend:
+    name: frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up uv
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Install CI reporter
+        working-directory: ${{ github.workspace }}
+        run: uv sync --locked
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: ${{ env.NODE_VERSION_FILE }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install locked frontend
+        run: |
+          npm ci
+          mkdir -p test-results
+      - name: Type-check frontend
+        run: npm run typecheck
+      - name: Run frontend unit tests
+        run: npm run test:ci
+      - name: Report frontend unit tests
+        if: always() && hashFiles('frontend/test-results/vitest-junit.xml') != ''
+        run: |
+          {
+            echo "## Test counts"
+            echo
+            echo "| Suite | Passed | Skipped | Failed | Errors |"
+            echo "| --- | ---: | ---: | ---: | ---: |"
+          } >> "${GITHUB_STEP_SUMMARY}"
+          ../.venv/bin/money-tracker-ci-report \
+            --label "Vitest" \
+            --summary-file "${GITHUB_STEP_SUMMARY}" \
+            test-results/vitest-junit.xml
+      - name: Build frontend
+        run: npm run build
+      - name: Upload failed frontend evidence
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: frontend-${{ github.run_id }}
+          path: frontend/test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  e2e-browser:
+    name: e2e-browser
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up uv
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: ${{ env.NODE_VERSION_FILE }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Restore Playwright browser cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('frontend/package-lock.json') }}
+      - name: Install locked environments
+        run: |
+          uv sync --locked
+          npm ci --prefix frontend
+      - name: Install Chromium and system dependencies
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+      - name: Build frontend
+        run: npm run build --prefix frontend
+      - name: Generate disposable environment
+        run: |
+          mkdir -p artifacts
+          MONEY_TRACKER_ENV_FILE="${PWD}/.env" scripts/generate_local_env.sh
+      - name: Start application PostgreSQL
+        run: |
+          docker compose --env-file .env up -d --wait application-postgres
+          # The health check also passes on the initialization server's socket;
+          # wait until the final server accepts TCP for the test database.
+          timeout 60 bash -c 'until docker compose --env-file .env exec -T application-postgres pg_isready --quiet --host 127.0.0.1 --username money_tracker --dbname money_tracker_test; do sleep 1; done'
+      - name: Run browser acceptance without the local model
+        # The `@local-model` case needs the promoted GPU model and remains a
+        # documented local gate; it is excluded, never mocked.
+        run: npm run test:e2e:ci --prefix frontend
+      - name: Report and verify browser acceptance
+        if: always() && hashFiles('frontend/test-results/playwright-junit.xml') != ''
+        run: |
+          {
+            echo "## Test counts"
+            echo
+            echo "| Suite | Passed | Skipped | Failed | Errors |"
+            echo "| --- | ---: | ---: | ---: | ---: |"
+          } >> "${GITHUB_STEP_SUMMARY}"
+          uv run money-tracker-ci-report \
+            --label "Playwright browser acceptance" \
+            --summary-file "${GITHUB_STEP_SUMMARY}" \
+            --service \
+            frontend/test-results/playwright-junit.xml
+      - name: Sanitize failed browser evidence
+        if: failure() && hashFiles('.env') != ''
+        run: |
+          mkdir -p "${RUNNER_TEMP}/raw-evidence" frontend/test-results
+          docker compose --env-file .env logs --no-color application-postgres \
+            > "${RUNNER_TEMP}/raw-evidence/docker-compose.log"
+          uv run money-tracker-redact-ci-log --env-file .env \
+            --input "${RUNNER_TEMP}/raw-evidence/docker-compose.log" \
+            --output frontend/test-results/docker-compose.log
+          if [[ -f frontend/test-results/playwright-junit.xml ]]; then
+            uv run money-tracker-redact-ci-log --env-file .env \
+              --input frontend/test-results/playwright-junit.xml \
+              --output frontend/test-results/playwright-junit.xml
+          fi
+      - name: Upload failed browser evidence
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: e2e-browser-${{ github.run_id }}
+          path: frontend/test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Stop application PostgreSQL
+        if: always() && hashFiles('.env') != ''
+        run: docker compose --env-file .env down
+
+  compose-and-deploy:
+    name: compose-and-deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up uv
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Install the real package
+        # systemd-analyze verify requires every ExecStart executable to exist.
+        run: uv sync --locked
+      - name: Validate Compose configurations
+        run: |
+          docker compose --env-file .env.example config --quiet
+          docker compose --env-file .env.example --profile observability config --quiet
+      - name: Require immutable image digests
+        run: |
+          docker compose --env-file .env.example --profile observability config --images \
+            > "${RUNNER_TEMP}/compose-images"
+          while IFS= read -r image; do
+            if [[ ! "${image}" =~ @sha256:[0-9a-f]{64}$ ]]; then
+              echo "Compose image is not pinned by digest: ${image}" >&2
+              exit 1
+            fi
+          done < "${RUNNER_TEMP}/compose-images"
+      - name: Verify rendered systemd units
+        run: |
+          rendered="${RUNNER_TEMP}/money-tracker-systemd"
+          mkdir -p "${rendered}"
+          for unit in deploy/systemd/*.service; do
+            sed "s|__MONEY_TRACKER_ROOT__|${GITHUB_WORKSPACE}|g" "${unit}" \
+              > "${rendered}/${unit##*/}"
+          done
+          systemd-analyze verify "${rendered}"/*.service
+      - name: Summarize deployment gates
+        run: |
+          {
+            echo "## Deployment gates"
+            echo
+            echo "Both Compose profiles, all image digests, and rendered real systemd units passed validation."
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+  shell-and-workflows:
+    name: shell-and-workflows
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install ShellCheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends shellcheck
+          shellcheck --version
+      - name: Install pinned actionlint
+        env:
+          ACTIONLINT_VERSION: 1.7.12
+          ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+        run: |
+          archive="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          curl --fail --location --silent --show-error \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/${archive}" \
+            -o "${RUNNER_TEMP}/${archive}"
+          echo "${ACTIONLINT_SHA256}  ${RUNNER_TEMP}/${archive}" | sha256sum --check --strict
+          tar -xzf "${RUNNER_TEMP}/${archive}" -C "${RUNNER_TEMP}" actionlint
+          sudo install -m 0755 "${RUNNER_TEMP}/actionlint" /usr/local/bin/actionlint
+      - name: Check shell scripts and hooks
+        run: |
+          mapfile -d '' files < <(
+            find .githooks scripts docker -type f \
+              \( -name '*.sh' -o -perm -u+x \) -print0
+          )
+          shellcheck "${files[@]}"
+      - name: Check workflow syntax
+        run: actionlint
+      - name: Audit workflow security
+        uses: zizmorcore/zizmor-action@cc914d7f3750a2d13d75c7f184a1060aa0e9d482 # v0.6.4
+        with:
+          version: 1.30.1
+          collect: all
+          online-audits: false
+          advanced-security: false
+          annotations: true
+      - name: Summarize shell and workflow gates
+        run: |
+          {
+            echo "## Shell and workflow gates"
+            echo
+            echo "ShellCheck, actionlint, and zizmor passed."
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+  security:
+    name: security
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out complete history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Set up uv
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: ${{ env.NODE_VERSION_FILE }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install locked audit tools
+        run: |
+          uv sync --locked
+          npm ci --prefix frontend
+      - name: Install pinned gitleaks
+        env:
+          GITLEAKS_VERSION: 8.30.1
+          GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+        run: |
+          archive="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl --fail --location --silent --show-error \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${archive}" \
+            -o "${RUNNER_TEMP}/${archive}"
+          echo "${GITLEAKS_SHA256}  ${RUNNER_TEMP}/${archive}" | sha256sum --check --strict
+          tar -xzf "${RUNNER_TEMP}/${archive}" -C "${RUNNER_TEMP}" gitleaks
+          sudo install -m 0755 "${RUNNER_TEMP}/gitleaks" /usr/local/bin/gitleaks
+      - name: Scan secrets in the required history range
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [[ "${EVENT_NAME}" == "pull_request" ]]; then
+            gitleaks git --redact --no-banner --config .gitleaks.toml \
+              --log-opts "${BASE_SHA}..${HEAD_SHA}" .
+          else
+            gitleaks git --redact --no-banner --config .gitleaks.toml \
+              --log-opts "--all" .
+          fi
+      - name: Audit locked Python dependencies
+        # PyPI advisories carry no reliable severity, so every known advisory
+        # blocks. A justified exception is a dated `--ignore-vuln` below.
+        run: |
+          uv export --locked --all-groups --no-emit-project \
+            --format requirements-txt \
+            --output-file "${RUNNER_TEMP}/requirements.txt"
+          uv run pip-audit --strict --disable-pip --progress-spinner off \
+            --requirement "${RUNNER_TEMP}/requirements.txt"
+      - name: Audit frontend dependencies
+        run: npm audit --prefix frontend --audit-level=high
+      - name: Summarize security gates
+        run: |
+          {
+            echo "## Security gates"
+            echo
+            echo "Gitleaks and Python/npm dependency audits passed. Python auditing blocks every known advisory; npm blocks high and critical advisories."
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+  ci-gate:
+    name: ci-gate
+    if: always()
+    needs:
+      - python-static
+      - python-tests
+      - postgres-integration
+      - backup-drill
+      - frontend
+      - e2e-browser
+      - compose-and-deploy
+      - shell-and-workflows
+      - security
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every CI job to succeed
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          {
+            echo "## Required CI jobs"
+            echo
+            echo "| Job | Result |"
+            echo "| --- | --- |"
+            jq -r 'to_entries[] | "| \(.key) | \(.value.result) |"' <<< "${NEEDS_JSON}"
+          } >> "${GITHUB_STEP_SUMMARY}"
+          if jq -e 'length == 9 and all(.[]; .result == "success")' <<< "${NEEDS_JSON}" > /dev/null; then
+            exit 0
+          fi
+          echo "At least one required job failed, was cancelled, or was skipped." >&2
+          exit 1

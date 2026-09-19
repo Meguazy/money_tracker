@@ -271,7 +271,7 @@ test("runs funding, settings, category, receipt, and messaging controls", async 
   ).toBeVisible();
 });
 
-test("uses the promoted local model and deterministic advice evidence", async ({ page }) => {
+test("@local-model uses the promoted local model and deterministic advice evidence", async ({ page }) => {
   // The test owns its budget so it also passes when selected on its own.
   await waitForRoute(page, "/budget", "Quanto vuoi spendere");
   await page.getByLabel("Categoria").selectOption({ label: "Veterinario" });

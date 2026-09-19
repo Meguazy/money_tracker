@@ -48,6 +48,25 @@ pre-existing Langfuse volumes.
 6. Update this table, the verification date, architecture/deployment views, and
    any changed recovery behavior in the same change.
 
+## Dependabot proposals
+
+Dependabot opens one grouped `build(deps)` pull request a week that changes
+tags and digests in `compose.yaml`. It is a candidate for the controlled
+upgrade above, not an upgrade:
+
+- CI validates both Compose profiles and the digests, and runs the PostgreSQL,
+  backup, and browser suites against a new `application-postgres` image. It
+  does not start the Langfuse images; run
+  `gh workflow run langfuse-integration --ref <dependabot-branch>` for a
+  Langfuse, ClickHouse, Redis, or MinIO change.
+- Before merge, apply steps 1 and 6 on the Dependabot branch: review the
+  release notes, then update the table above and its verification date in a
+  commit of your own. Dependabot stops rebasing a branch someone else has
+  pushed to; rebase it yourself when `main` moves.
+- Merging changes only the repository. Running containers keep their images
+  until the owner performs steps 3 to 5 on the workstation, starting with the
+  backup a stateful service requires.
+
 ## Rollback
 
 Return `compose.yaml` to the previously recorded digests only when upstream

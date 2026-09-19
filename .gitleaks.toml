@@ -1,0 +1,32 @@
+title = "Money Tracker gitleaks configuration"
+
+[extend]
+useDefault = true
+
+# Add allowlist entries only for demonstrated placeholders. Every entry must
+# explain why it cannot be a credential and state an expiry or review date.
+
+[[allowlists]]
+description = """
+Placeholder in the tracked .env.example template, introduced in ea353c0 and
+still present. It names the expected shape of the generated key and is never
+a usable value; scripts/generate_local_env.sh writes a fresh random key.
+Triaged 2026-09-19. Review by 2027-03-19.
+"""
+condition = "AND"
+targetRules = ["generic-api-key"]
+regexTarget = "secret"
+regexes = ['''^replace-with-64-hex-characters$''']
+paths = ['''^\.env\.example$''']
+
+[[allowlists]]
+description = """
+systemctl argument in the installed-service browser test, introduced in
+9ea0de6. `--property=MainPID` selects a unit property to read and carries no
+credential. Triaged 2026-09-19. Review by 2027-03-19.
+"""
+condition = "AND"
+targetRules = ["generic-api-key"]
+regexTarget = "secret"
+regexes = ['''^--property=MainPID$''']
+paths = ['''^tests/e2e/money_tracker/web/installed-service\.spec\.ts$''']

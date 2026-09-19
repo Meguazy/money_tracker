@@ -11,15 +11,26 @@ export default defineConfig({
   retries: 0,
   timeout: 60_000,
   expect: { timeout: 10_000 },
-  reporter: [["line"]],
+  outputDir: "test-results/playwright-artifacts",
+  reporter: process.env.CI
+    ? [["line"], ["junit", { outputFile: "test-results/playwright-junit.xml" }]]
+    : [["line"]],
   use: {
     baseURL: `http://127.0.0.1:${port}`,
     browserName: "chromium",
     headless: true,
+    // The loopback dashboard's browser runs on the owner's Europe/Rome
+    // workstation. Date-time inputs are still parsed in the browser's zone
+    // (see the arc42 risks), so pin that zone instead of the runner's UTC.
+    timezoneId: "Europe/Rome",
     launchOptions: {
       executablePath:
-        process.env.MONEY_TRACKER_E2E_BROWSER ?? "/usr/bin/google-chrome",
+        process.env.MONEY_TRACKER_E2E_BROWSER ??
+        (process.env.CI ? undefined : "/usr/bin/google-chrome"),
     },
+    // Video needs Playwright's ffmpeg, which CI installs with its bundled
+    // Chromium; a local run with the system browser keeps the trace only.
+    video: process.env.CI ? "retain-on-failure" : "off",
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },

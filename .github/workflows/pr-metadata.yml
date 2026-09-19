@@ -1,0 +1,77 @@
+name: pr-metadata
+
+# AD-022: a required check. It validates the pull request with the same
+# policy module the local hooks run; Dependabot is exempt only from the
+# template sections.
+
+on:
+  pull_request:
+    types:
+      - opened
+      - edited
+      - synchronize
+      - reopened
+      - ready_for_review
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-metadata-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  pr-metadata:
+    name: pr-metadata
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out pull-request head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Set up uv
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          version: "0.8.0"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Install locked environment
+        run: uv sync --locked
+      - name: Validate title, branch, commits, and template
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          uv run money-tracker-validate-git-policy title "${PR_TITLE}"
+          uv run money-tracker-validate-git-policy branch "${PR_HEAD_REF}"
+          uv run money-tracker-validate-git-policy range "${BASE_SHA}" "${HEAD_SHA}"
+          if [[ "${PR_AUTHOR}" != "dependabot[bot]" ]]; then
+            printf '%s' "${PR_BODY}" > "${RUNNER_TEMP}/pull-request-body.md"
+            uv run money-tracker-validate-git-policy pull-request-body \
+              "${RUNNER_TEMP}/pull-request-body.md"
+          fi
+      - name: Summarize metadata gate
+        env:
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: |
+          {
+            echo "## Pull-request metadata"
+            echo
+            echo "Title, branch, and commit range comply with the shared Git policy."
+            if [[ "${PR_AUTHOR}" == "dependabot[bot]" ]]; then
+              echo "The template-body requirement was exempted for Dependabot."
+            else
+              echo "Every required pull-request template section is present."
+            fi
+          } >> "${GITHUB_STEP_SUMMARY}"

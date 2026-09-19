@@ -2,8 +2,10 @@
 
 - Status: accepted
 - Implementation: partially implemented; shared policy checker, versioned Git
-  hooks, Claude Code guardrails, pull-request template, and development process
-  delivered; GitHub Actions and server-side protection remain planned
+  hooks, Claude Code guardrails, pull-request template, development process,
+  hosted GitHub Actions (`ci` with its aggregate `ci-gate`, `pr-metadata`, and
+  the non-required Langfuse workflow), and Dependabot delivered; server-side
+  `main` protection remains planned, so failing checks do not yet block a merge
 - Date: 2026-09-19
 
 ## Context
@@ -38,13 +40,13 @@ tested `PreToolUse` Bash guard. The guard exits 2 for an intentional block and
 fails open for its own errors, matching Claude Code's documented hook contract.
 Commit and pull-request attribution are disabled.
 
-The next slice adds least-privilege GitHub Actions for hosted gates and one
+The second slice adds least-privilege GitHub Actions for hosted gates and one
 aggregate required `ci-gate`, plus an independently required metadata workflow.
 Jobs use generated disposable credentials and never owner secrets. Model/GPU,
 real Telegram, installed-service, and model-backed Langfuse gates remain local
 and become mandatory when a slice touches their boundary.
 
-The final slice versions and, after explicit owner confirmation, applies a
+The third slice versions and, after explicit owner confirmation, applies a
 `main` ruleset with no bypass actors, zero required approvals, strict required
 checks, conversation resolution, and blocked force-push/deletion. Local
 guardrails are preventive only; server-side protection is the guarantee.
@@ -81,3 +83,21 @@ tests, executable hooks and their idempotent installer, the tested Claude Bash
 guard and shared settings, and the workflow/runbook material in
 `docs/development.md`. Pipeline runs, measured job minutes, the ruleset, and
 the negative merge test are intentionally deferred to their dedicated slices.
+
+The second slice adds `.github/workflows/ci.yml` with nine least-privilege jobs
+(`python-static`, `python-tests`, `postgres-integration`, `backup-drill`,
+`frontend`, `e2e-browser`, `compose-and-deploy`, `shell-and-workflows`, and
+`security`) aggregated by `ci-gate`, which fails unless every job succeeds.
+`pr-metadata.yml` runs the same `git_policy` module over the PR title, branch,
+commit range, and template sections. `langfuse.yml` runs the model-free
+Langfuse gates weekly and on demand; it can run only from the default branch.
+Actions are pinned by full commit SHA; downloaded tools are pinned by version
+and SHA-256. Service jobs generate disposable credentials, reject a JUnit report
+with no executed test or a skip caused by their own missing flag through
+`money_tracker.development.ci_reporting`, and upload failure evidence only after
+`money_tracker.development.ci_redaction` removes generated credentials.
+`.gitleaks.toml` allowlists two triaged historical placeholders, and
+`.github/dependabot.yml` groups weekly updates with a seven-day cooldown. The
+pull request records the first runs, each job's billable minutes, and the
+monthly projection; [Development](../../development.md#local-and-ci-gate-correspondence)
+maps every job to its local gate.

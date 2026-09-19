@@ -489,10 +489,82 @@ The 2026-09-18 `main` baseline is 1,302 passed and 167 skipped in about 8
 seconds. With the policy tests in the first AD-022 slice, the parallelized
 complete hook measured 8.75 seconds with 1,341 passed and 167 skipped
 (+39 passed, no skipped delta). The CI helpers of the second slice raise the
-baseline to 1,357 passed and 167 skipped (+16 passed). Record it again when
-the baseline changes. Hooks can be bypassed; `ci-gate` and `pr-metadata` report
-on every pull request and become merge-blocking when the `main` ruleset slice
-lands.
+baseline to 1,357 passed and 167 skipped (+16 passed), and the guard tests of
+the third slice to 1,432 passed and 167 skipped (+75 passed). Record it again
+when the baseline changes.
+
+Hooks also run in linked worktrees, where Git exports repository-local
+variables such as `GIT_DIR` to them. The development-policy tests remove those
+variables before building their temporary repositories; without that, a hook
+run in a worktree committed into, branched, and set `core.bare` on the real
+repository. Hooks can be bypassed; the `main` ruleset below is the
+authoritative boundary.
+
+### Claude Code guardrails
+
+`.claude/settings.json` denies, as glob patterns over each simple command,
+`gh pr merge`, `gh repo edit`, `gh repo delete`, `--no-verify` and a
+standalone `-n` for `git commit` and `git push`, pushes that name `main` as an
+argument or refspec destination, changing `core.hooksPath`, printing `.env`
+files, and `gh api` calls that carry an option on a ruleset or branch-protection
+endpoint. Its `PreToolUse` hook, `money-tracker-guard-claude-bash`, is the
+precise layer: it tokenizes the command like a shell, follows `bash -c`,
+`sh -c`, and `eval`, and treats quoted messages and heredoc bodies as data. It
+also refuses `-n` inside option clusters such as `-nm`,
+`git -c core.hooksPath=...`, a bare `git push` or `HEAD` refspec from `main`,
+`--all` and `--mirror`, and every non-GET `gh api` call on rulesets, branch
+protection, or the repository settings endpoint. Branch names that merely
+contain `main`, such as `feat/step-6-domain-model` or `ci/protect-main`, are
+not refused.
+
+Read rulesets with a plain `gh api <endpoint>` or with
+`gh api repos/Meguazy/money_tracker/rules/branches/main`; the glob layer
+refuses any option on a ruleset endpoint. A commit message containing a
+standalone ` -n ` word still matches the glob layer, so write such a message
+to a file and commit with `git commit -F <file>`. The guard's text checks for
+`gh pr merge`, `--no-verify`, `core.hooksPath`, and `.env` printing apply to
+the whole command, heredocs included, because a heredoc fed to a shell runs.
+
+### Protected `main`
+
+`.github/rulesets/main.json` is the versioned copy of the repository ruleset
+`protect-main` (id 23686462), applied on 2026-09-19 after the owner confirmed
+it. It targets the default branch and has no bypass actors, so it binds
+administrators too:
+
+- Changes reach `main` only through a pull request. Zero approvals are
+  required, every review conversation must be resolved, and merge, squash, and
+  rebase merges remain available.
+- `ci-gate` and `pr-metadata` must succeed, reported by GitHub Actions
+  (integration 15368), on a head that is up to date with `main`.
+- Force pushes to `main` and its deletion are refused.
+
+GitHub adds `require_extra_approval_for_unattributed_changes`, which only asks
+for one more approval on an unattributed Copilot pull request and has no effect
+with zero required approvals; the file declares it so that it equals the live
+ruleset. Verify the effective rules with
+`gh api repos/Meguazy/money_tracker/rules/branches/main`. Only the owner
+changes the ruleset: change the file in a pull request and, after the merge,
+apply it with
+`gh api --method PUT repos/Meguazy/money_tracker/rulesets/23686462 --input .github/rulesets/main.json`.
+
+A pull request is *behind* when `main` has moved since its head was built; the
+strict policy then blocks the merge until the head contains `main`. Rebase
+rather than merging `main` into the branch:
+
+    git fetch origin
+    git rebase origin/main
+    git push --force-with-lease origin <branch>
+
+The owner can instead choose **Update branch → Update with rebase** on the pull
+request. Either way every check runs again, so update a branch only when it is
+about to be merged. Merged head branches are deleted automatically once the
+owner enables that repository setting; otherwise delete them with
+`git push origin --delete <branch>`.
+
+If GitHub Actions cannot run, or a required job is broken by its environment,
+nothing can merge. Fix forward in a pull request; only the owner may relax
+enforcement, recording why, and must restore it afterwards.
 
 ### Local and CI gate correspondence
 

@@ -50,9 +50,13 @@ pre-existing Langfuse volumes.
 
 ## Dependabot proposals
 
-Dependabot opens one grouped `build(deps)` pull request a week that changes
-tags and digests in `compose.yaml`. It is a candidate for the controlled
-upgrade above, not an upgrade:
+Dependabot opens at most one grouped `build(deps)` pull request a week that
+changes digests and minor tags in `compose.yaml`. It never proposes a major
+tag, such as `postgres:18`: CI starts every image on an empty volume, so a green
+run cannot show that a new major opens the existing data, and a PostgreSQL
+major needs a dump and restore. Plan a major upgrade yourself with the
+controlled upgrade above. A Dependabot proposal is a candidate for that
+procedure, not an upgrade:
 
 - CI validates both Compose profiles and the digests, and runs the PostgreSQL,
   backup, and browser suites against a new `application-postgres` image. It

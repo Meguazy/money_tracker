@@ -669,13 +669,24 @@ disposable credentials and runs the Langfuse gates that need no model,
 triggered only by `workflow_dispatch` and `schedule` from the default branch, so
 it cannot run on the PR that introduces it. After merge it runs every Saturday
 at 03:43 UTC and on demand with
-`gh workflow run langfuse-integration --ref <branch>`.
+`gh workflow run langfuse-integration --ref <branch>`. Its first scheduled run
+(2026-09-19, run 35431594999) passed 2 tests with none skipped in 379 seconds:
+101 to start the profile and 254 for the tests. GitHub started it several hours
+after the scheduled time, which scheduled workflows allow.
 
 ### Dependabot
 
 `.github/dependabot.yml` proposes grouped updates every Monday morning
 (Europe/Rome) for GitHub Actions, uv, npm in `frontend/`, and Compose images,
-each with a seven-day cooldown. Commit messages start with `ci(deps)`,
+each with a seven-day cooldown. GitHub Actions share one group. For uv and npm,
+minor and patch updates form one group and major updates another, so a
+breaking major cannot hold the routine updates back; each group is at most
+one pull request a week. Compose images receive digest and minor updates only:
+CI starts them on empty volumes, so a green run cannot show that a new major,
+such as PostgreSQL 18, opens the workstation's existing data. Major image
+upgrades follow the controlled upgrade in
+[Container Versions](operations/container-versions.md#controlled-upgrade).
+Commit messages start with `ci(deps)`,
 `build(deps)`, or `build(deps-dev)`, which the Git policy accepts; Dependabot
 branches are exempt from the branch rule and its PRs from the template
 sections. A Dependabot PR is reviewed and merged by the owner like any other.
@@ -711,20 +722,21 @@ The first `ci` run (2026-09-18, cold caches) billed:
 | `pr-metadata` | 14 s | 1 |
 
 A PR push therefore costs about 16 minutes and a `main` push about 15. The
-projection assumes three owner slices a week with three pushes each, two
-Dependabot PRs a week with one push each, a `main` push for every merge, the
-weekly scheduled `ci` run, and at most 10 minutes for the weekly Langfuse run
-until its first run is measured:
+weekly Langfuse run bills 7 minutes. The jobs that create Dependabot pull
+requests do not count toward the allowance, but the CI those pull requests
+start does. The projection assumes three owner slices a week with three pushes
+each, three Dependabot PRs a week with one push each out of at most six groups,
+a `main` push for every merge, and the weekly scheduled `ci` and Langfuse runs:
 
 | Source | Minutes per week | Minutes per month |
 | --- | ---: | ---: |
 | Slice PR pushes (9 x 16) | 144 | 624 |
-| Dependabot PR pushes (2 x 16) | 32 | 139 |
-| `main` pushes after merges (5 x 15) | 75 | 325 |
-| Scheduled `ci` and Langfuse (15 + 10) | 25 | 108 |
-| **Total** | **276** | **1,196** |
+| Dependabot PR pushes (3 x 16) | 48 | 208 |
+| `main` pushes after merges (6 x 15) | 90 | 390 |
+| Scheduled `ci` and Langfuse (15 + 7) | 22 | 95 |
+| **Total** | **304** | **1,317** |
 
-That is 40 percent of 3,000 minutes, or 60 percent of 2,000. Metadata-only
+That is 44 percent of 3,000 minutes, or 66 percent of 2,000. Metadata-only
 reruns after editing a PR cost one minute each. Record new measurements when
 the job set changes. At 70 percent of the allowance, propose caching,
 consolidation, or schedule changes without removing a blocking control.

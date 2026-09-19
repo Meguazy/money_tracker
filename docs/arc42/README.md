@@ -1948,8 +1948,13 @@ Quantitative evaluation gates are maintained in
 - Every push to a PR and to `main` runs all nine CI jobs, and GitHub bills
   each job rounded up to a whole minute. The matrix must stay within the
   measured allowance recorded in [Development](../development.md#github-actions-minute-budget).
-- The Langfuse workflow runs only from the default branch, so its first
-  execution, duration, and minutes are known only after the pipeline merges.
+- The Langfuse workflow runs only from the default branch, so a change to it is
+  first exercised after its merge. Its first scheduled run (2026-09-19) passed
+  in 379 seconds; GitHub may start scheduled runs hours late.
+- Dependabot never proposes a major container tag, because CI starts images on
+  empty volumes and cannot show that a major opens existing data. The owner
+  must watch upstream support windows, such as PostgreSQL 17's, and plan each
+  major with the controlled container upgrade.
 - The backup drill cannot run on this workstation, which lacks Restic and the
   PostgreSQL 17 client tools; its CI job is its only routine execution.
 - The dashboard's date-time fields default to Europe/Rome wall time but are

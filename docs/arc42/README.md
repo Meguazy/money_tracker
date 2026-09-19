@@ -1936,6 +1936,11 @@ Quantitative evaluation gates are maintained in
   `main` nests inside the shell `main`; narrow layouts, visual focus
   indicators, and hover states other than the destructive filled button are not
   browser-audited.
+- Axe reports text drawn over the page's gradient background as incomplete
+  (`bgGradient`), not as a violation. The navigation, page headings, and other
+  text placed directly on that background are therefore outside the contrast
+  gate; only text on an opaque surface, such as a card, badge, or alert, is
+  measured.
 - Versioned hooks and Claude Code rules can be bypassed, misconfigured, or
   absent in another clone; they only catch mistakes early. The `protect-main`
   ruleset is the guarantee.

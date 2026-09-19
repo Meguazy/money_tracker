@@ -399,3 +399,10 @@ before any model call, and readiness after a real `systemctl --user restart`
 that replaces the main process. No model-visible contract changed. Commands,
 results, and the limits of this evidence are recorded in the
 [Step 5 acceptance evidence](../../roadmap/step-5-dashboard-and-advice.md#browser-accessibility-and-installed-service-acceptance-2026-09-16).
+
+Mantine 9 draws the `light` variant as solid shade 9 on shade 1 instead of
+Mantine 8's translucent tint. Axe reports text over the page's gradient
+background as incomplete rather than as a violation, so the translucent badges
+and alerts had never been contrast-gated. Once solid, the default teal, yellow,
+green, and orange pairs measured 2.69:1 to 4.33:1. The theme darkens shade 9 of
+those four palettes so each pair reaches at least 5:1.

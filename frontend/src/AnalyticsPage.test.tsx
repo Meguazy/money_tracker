@@ -116,7 +116,7 @@ async function selectGranularity(
   user: ReturnType<typeof userEvent.setup>,
   label: string,
 ) {
-  const input = screen.getByRole("textbox", {
+  const input = screen.getByRole("combobox", {
     name: "Periodo da osservare",
   });
   await user.click(input);

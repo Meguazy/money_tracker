@@ -41,3 +41,11 @@ Object.defineProperty(window, "matchMedia", {
     dispatchEvent: () => false,
   }),
 });
+
+Object.defineProperty(document, "fonts", {
+  configurable: true,
+  value: {
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+  },
+});

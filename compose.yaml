@@ -34,7 +34,7 @@ x-langfuse-environment: &langfuse-environment
 
 services:
   application-postgres:
-    image: docker.io/library/postgres:17@sha256:67f41722b7a8cbdb868a44a4995c846eddfdc2973bccb291ce937dce88ad5675
+    image: docker.io/library/postgres:18@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280
     restart: unless-stopped
     environment:
       POSTGRES_USER: money_tracker_admin
@@ -56,7 +56,7 @@ services:
       start_period: 5s
 
   langfuse-worker:
-    image: docker.langfuse.com/langfuse/langfuse-worker:4.26.0@sha256:9c4da1802500c7ae987e4af1bfb3e1a441f0bff024c2d7a2a5541fa4691155ae
+    image: docker.langfuse.com/langfuse/langfuse-worker:4.38.0@sha256:8631cf429efc4a2981d4e6ced4c005b9f6f620a4e34625baf60152301ec6d006
     profiles: ["observability"]
     restart: unless-stopped
     depends_on: &langfuse-dependencies
@@ -77,7 +77,7 @@ services:
       start_period: 30s
 
   langfuse-web:
-    image: docker.langfuse.com/langfuse/langfuse:4.26.0@sha256:7dcc1419da9062c968a428bc63a4ff0e03d4cc84113125f999754a9037912425
+    image: docker.langfuse.com/langfuse/langfuse:4.38.0@sha256:47ef2f121e2959c8458c209d118949ade25778017e3f5b75b1e45f72276811c3
     profiles: ["observability"]
     restart: unless-stopped
     depends_on: *langfuse-dependencies
@@ -104,7 +104,7 @@ services:
       start_period: 30s
 
   postgres:
-    image: docker.io/library/postgres:17@sha256:67f41722b7a8cbdb868a44a4995c846eddfdc2973bccb291ce937dce88ad5675
+    image: docker.io/library/postgres:18@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280
     profiles: ["observability"]
     restart: unless-stopped
     environment:
@@ -122,7 +122,7 @@ services:
       retries: 10
 
   clickhouse:
-    image: docker.io/clickhouse/clickhouse-server:25.12@sha256:8a790dd3468db22b1d4e7b18a176f378ff5ff6053b9c48dd4ea1fa71a24c5ba6
+    image: docker.io/clickhouse/clickhouse-server:26.5@sha256:84d05b9c205e8de9d8e471fc8fbb3aaf0c07a8bec1bd57ac3a4a4ac2399abe38
     profiles: ["observability"]
     restart: unless-stopped
     user: "101:101"
@@ -142,7 +142,7 @@ services:
       start_period: 1s
 
   redis:
-    image: docker.io/library/redis:7@sha256:71da9275c5f3fcb97d0fa0c8c5b36cc995327265420f17a04bfd544f458059f7
+    image: docker.io/library/redis:8@sha256:298e5b3bc566bade82f46ad5511777a4a07a294097ce16ada2f6a42be5239df5
     profiles: ["observability"]
     restart: unless-stopped
     environment:
@@ -161,7 +161,7 @@ services:
       retries: 10
 
   minio:
-    image: cgr.dev/chainguard/minio:latest@sha256:1e408150bcf1bff07a2e468b9ac91347d4da261258921faeaedbe2ed7f0818b4
+    image: cgr.dev/chainguard/minio:latest@sha256:e7728e37a015dcd2f2b146abc4aedc0096769ac72cb64cc9ed36b7f4183361e1
     profiles: ["observability"]
     restart: unless-stopped
     entrypoint: sh

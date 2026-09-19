@@ -170,10 +170,6 @@ jobs:
       - name: Run full PostgreSQL-enabled suite
         env:
           RUN_POSTGRES_INTEGRATION_TESTS: "1"
-          # The recorded evidence command. Some CLI tests compare stderr
-          # exactly and inherit the ambient level; the generated `.env` does
-          # not override a variable that is already set.
-          LOG_LEVEL: CRITICAL
         run: >-
           uv run --env-file .env pytest -q
           --junitxml=artifacts/postgres-junit.xml

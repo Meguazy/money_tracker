@@ -576,7 +576,7 @@ check always reports. Each job mirrors a local gate:
 | --- | --- | --- |
 | Ruff format and lint, mypy, `uv build`, docs validation, `git diff --check` | `python-static` | `uv sync --locked`; whitespace is checked over the PR or pushed range |
 | `uv run pytest -q` and unit branch coverage | `python-tests` | `--cov-fail-under=73`, the measured 73.29 percent rounded down; the floor may only rise |
-| `RUN_POSTGRES_INTEGRATION_TESTS=1 LOG_LEVEL=CRITICAL uv run --env-file .env pytest -q` | `postgres-integration` | `application-postgres` from `compose.yaml`; the suite includes the migration round trip |
+| `RUN_POSTGRES_INTEGRATION_TESTS=1 uv run --env-file .env pytest -q` | `postgres-integration` | `application-postgres` from `compose.yaml`; the suite includes the migration round trip |
 | Restic and PostgreSQL 17 backup and restore drill | `backup-drill` | Restic 0.18.1 release binary checked against a pinned SHA-256; `postgresql-client-17` from PGDG after checking the signing-key fingerprint |
 | `npm ci`, `npm run typecheck`, `npm run test:ci`, `npm run build` | `frontend` | Node from `frontend/.nvmrc`; Vitest writes JUnit |
 | `npm run test:e2e:ci` | `e2e-browser` | Playwright's bundled Chromium in the runner's UTC zone, which exercises the Europe/Rome date-time conversion; only the `@local-model` case is excluded |
@@ -584,10 +584,10 @@ check always reports. Each job mirrors a local gate:
 | ShellCheck over `scripts/`, `.githooks/`, and `docker/`; actionlint; zizmor | `shell-and-workflows` | actionlint 1.7.12 with a pinned SHA-256; zizmor 1.30.1 offline over workflows and Dependabot |
 | Gitleaks, `pip-audit`, `npm audit --audit-level=high` | `security` | gitleaks 8.30.1 scans `base..head` for a PR and the full history for `main` and the schedule; `pip-audit` covers every locked group |
 
-The full PostgreSQL suite runs with `LOG_LEVEL=CRITICAL`, the command its
-recorded evidence has always used: some CLI tests compare standard error
-exactly and inherit the ambient level, and `uv run --env-file` does not
-override a variable that is already set. Every service job generates a
+The full PostgreSQL suite runs at whatever `LOG_LEVEL` the `.env` or shell
+sets: the Telegram and worker CLI tests that compare standard error exactly pin
+their own level. Evidence recorded before 2026-09-19 used
+`LOG_LEVEL=CRITICAL` for the same reason. Every service job generates a
 disposable `.env`, waits until PostgreSQL accepts TCP for `money_tracker_test`,
 and fails when its JUnit report shows no executed test or a skip citing the
 flag the job sets.

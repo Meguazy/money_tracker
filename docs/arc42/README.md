@@ -1962,10 +1962,6 @@ Quantitative evaluation gates are maintained in
   major with the controlled container upgrade.
 - The backup drill cannot run on this workstation, which lacks Restic and the
   PostgreSQL 17 client tools; its CI job is its only routine execution.
-- Some Telegram and worker CLI integration tests compare standard error exactly
-  and inherit the ambient `LOG_LEVEL`. The full PostgreSQL suite therefore runs
-  with `LOG_LEVEL=CRITICAL`, locally and in CI, until those tests pin their own
-  level.
 
 ### Target architecture risks
 

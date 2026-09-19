@@ -27,11 +27,17 @@ _NOW = datetime(2026, 9, 10, 8, tzinfo=UTC)
 
 
 def _environment(postgres_url: str) -> dict[str, str]:
-    """Build non-secret process configuration against the isolated database."""
+    """Build non-secret process configuration against the isolated database.
+
+    These tests compare the operator-facing standard error exactly. Structured
+    log records share that stream, so the level is pinned rather than inherited
+    from whichever `.env` or shell runs the suite.
+    """
 
     environment = os.environ.copy()
     environment.update(
         {
+            "LOG_LEVEL": "CRITICAL",
             "MONEY_TRACKER_DATABASE_URL": postgres_url,
             "MONEY_TRACKER_TELEGRAM_ENVIRONMENT": "test",
             "MONEY_TRACKER_TELEGRAM_PRODUCTION_TOKEN_FILE": (

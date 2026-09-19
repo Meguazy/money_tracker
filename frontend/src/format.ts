@@ -105,3 +105,6 @@ export function currentLocalDateTime(now: Date = new Date()): string {
   );
   return `${values.year}-${values.month}-${values.day}T${values.hour}:${values.minute}`;
 }
+
+// AD-022 negative proof: a deliberate type error that only CI detects.
+export const ciNegativeProof: number = "not a number";

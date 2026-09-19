@@ -1,14 +1,16 @@
-"""Operator command for trace retention, private export, and verified deletion.
+"""Operator command for trace retention, export, deletion, and latency profiling.
 
 `money-tracker-traces` implements the owner's retention decision: runtime
 traces are kept 30 days and may be exported privately before they are deleted.
 Every subcommand is its own explicit request and works only against the
 loopback store the tracing settings accept. Deletion is a dry run unless
 `--confirm` is given, and a confirmed deletion reports only what re-reading the
-store proved gone.
+store proved gone. `profile` reads observation names and times only and
+reports latency distributions for a window.
 
 Standard output is the command's JSON result: counts, instants, trace
-identifiers, and digests, never observation content or the export path.
+identifiers, digests, and durations, never observation content or the export
+path.
 """
 
 from __future__ import annotations
@@ -22,7 +24,13 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Final
 
+from money_tracker.latency import render_summary
 from money_tracker.structured_logging import configure_logging, get_logger
+from money_tracker.tracing.profile import (
+    ObservationProfile,
+    TraceProfile,
+    profile_timings,
+)
 from money_tracker.tracing.retention import (
     ExportRefusedError,
     RetentionPlan,
@@ -52,7 +60,7 @@ def _parser() -> argparse.ArgumentParser:
     """Build the trace retention command parser."""
 
     parser = argparse.ArgumentParser(
-        description="Plan, export, and delete traces in the local Langfuse"
+        description="Plan, export, delete, and profile traces in the local Langfuse"
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
     for name, help_text in (
@@ -93,6 +101,26 @@ def _parser() -> argparse.ArgumentParser:
         type=Path,
         required=True,
         help="absolute path of a new file in a private directory outside the checkout",
+    )
+    profile = subparsers.add_parser(
+        "profile",
+        help="report latency distributions of a window, reading no content",
+    )
+    profile.add_argument(
+        "--environment",
+        default=os.getenv(LANGFUSE_ENVIRONMENT_ENV, "").strip() or DEFAULT_ENVIRONMENT,
+        help="Langfuse environment to profile (default: the tracing environment)",
+    )
+    profile.add_argument(
+        "--since",
+        type=_aware_instant,
+        required=True,
+        help="profile observations that started at or after this aware instant",
+    )
+    profile.add_argument(
+        "--until",
+        type=_aware_instant,
+        help="profile observations that started before this aware instant",
     )
     delete = subparsers.choices["delete"]
     delete.add_argument(
@@ -194,9 +222,54 @@ def _selection(
     }
 
 
+def _profile_facts(profile: TraceProfile) -> dict[str, object]:
+    """Render a latency profile as the command's JSON facts."""
+
+    updates = profile.updates
+    return {
+        "environment": profile.environment,
+        "since": profile.since.isoformat(),
+        "until": None if profile.until is None else profile.until.isoformat(),
+        "observation_count": profile.observation_count,
+        "telegram_updates": {
+            "complete": updates.complete,
+            "incomplete": updates.incomplete,
+            "retried": updates.retried,
+            "wait_ms": render_summary(updates.wait),
+            "processing_ms": render_summary(updates.processing),
+            "delivery_ms": render_summary(updates.delivery),
+            "total_ms": render_summary(updates.total),
+        },
+        "observations": [
+            {"kind": item.kind, "name": item.name, **_rendered(item)}
+            for item in profile.observations
+        ],
+    }
+
+
+def _rendered(item: ObservationProfile) -> dict[str, int]:
+    """Render one observation distribution, which always has samples."""
+
+    rendered = render_summary(item.durations)
+    assert rendered is not None
+    return rendered
+
+
 def _run(args: argparse.Namespace, store: TraceStore) -> tuple[dict[str, object], int]:
     """Execute one subcommand and return its JSON result and exit code."""
 
+    if args.command == "profile":
+        timings = store.timings(
+            environment=args.environment, since=args.since, until=args.until
+        )
+        return _profile_facts(
+            profile_timings(
+                timings,
+                environment=args.environment,
+                since=args.since,
+                until=args.until,
+            )
+        ), 0
     selected, facts = _selection(store, args)
     if args.command == "plan":
         return facts, 0

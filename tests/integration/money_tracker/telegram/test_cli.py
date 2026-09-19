@@ -294,4 +294,23 @@ def test_production_cli_reports_warm_text_delivery_p95(
         "warm_p95_ms": 2_500,
         "warm_sample_count": 1,
         "warmup_excluded": 1,
+        "breakdown": {
+            "total_ms": {"samples": 1, "p50": 2_500, "p95": 2_500, "maximum": 2_500},
+            "accepted_to_completed_ms": {
+                "samples": 1,
+                "p50": 1_000,
+                "p95": 1_000,
+                "maximum": 1_000,
+            },
+            "completed_to_sent_ms": {
+                "samples": 1,
+                "p50": 1_500,
+                "p95": 1_500,
+                "maximum": 1_500,
+            },
+            "retried_samples": 0,
+            "by_response_kind": {
+                "draft": {"samples": 1, "p50": 2_500, "p95": 2_500, "maximum": 2_500}
+            },
+        },
     }

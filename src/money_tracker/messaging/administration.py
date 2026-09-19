@@ -8,13 +8,14 @@ which is why they may read live state that a logical response never can.
 from __future__ import annotations
 
 import hashlib
-import math
 import secrets
-from dataclasses import dataclass
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Protocol
 from uuid import UUID
 
+from money_tracker.latency import LatencySummary, summarize_latencies
 from money_tracker.messaging.contracts import (
     BotEnvironment,
     DeadLetter,
@@ -22,6 +23,7 @@ from money_tracker.messaging.contracts import (
     MessagingQueue,
     OutboxDeadLetter,
     RequeuedItem,
+    TextDeliverySample,
 )
 from money_tracker.messaging.ports import MessagingRepository
 from money_tracker.structured_logging import get_logger
@@ -98,7 +100,13 @@ class PairingCode:
 
 @dataclass(frozen=True, slots=True)
 class TextLatencyReport:
-    """Content-free warm text delivery latency summary.
+    """Content-free warm text delivery latency summary and its breakdown.
+
+    The first four latency fields are the NFR-PER-001 measurement as Step 4
+    defined it. The breakdown splits the same warm samples at the worker's
+    completion commit, so a slow total can be attributed to the worker side,
+    which includes waiting while the worker or model was unavailable, or to the
+    gateway side, which includes waiting for delivery.
 
     Attributes:
         sample_count: Successful text workflows found in the selected window.
@@ -106,6 +114,13 @@ class TextLatencyReport:
         warm_sample_count: Samples used by the warm p95.
         warm_p95_ms: Nearest-rank warm p95, or None without a warm sample.
         maximum_ms: Slowest warm sample, or None without a warm sample.
+        total: Warm acceptance-to-send distribution.
+        completion: Warm acceptance-to-completion distribution.
+        delivery: Warm completion-to-send distribution.
+        retried_sample_count: Warm samples that needed more than one attempt
+            or an operator replay.
+        by_response_kind: Warm acceptance-to-send distribution per response
+            kind.
     """
 
     sample_count: int
@@ -113,6 +128,11 @@ class TextLatencyReport:
     warm_sample_count: int
     warm_p95_ms: int | None
     maximum_ms: int | None
+    total: LatencySummary | None = None
+    completion: LatencySummary | None = None
+    delivery: LatencySummary | None = None
+    retried_sample_count: int = 0
+    by_response_kind: Mapping[str, LatencySummary] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -477,30 +497,51 @@ class MessagingAdministration:
             Counts and warm latency statistics with no private content.
         """
 
-        durations = self._repository.text_delivery_latencies(
+        samples = self._repository.text_delivery_samples(
             bot_key,
             since=since,
             limit=limit,
         )
-        warmup_excluded = min(1, len(durations))
-        warm = durations[warmup_excluded:]
-        if not warm:
+        warmup_excluded = min(1, len(samples))
+        warm = samples[warmup_excluded:]
+        total = summarize_latencies(sample.total_ms for sample in warm)
+        if total is None:
             return TextLatencyReport(
-                sample_count=len(durations),
+                sample_count=len(samples),
                 warmup_excluded=warmup_excluded,
                 warm_sample_count=0,
                 warm_p95_ms=None,
                 maximum_ms=None,
             )
-        ordered = sorted(warm)
-        rank = math.ceil(0.95 * len(ordered))
         return TextLatencyReport(
-            sample_count=len(durations),
+            sample_count=len(samples),
             warmup_excluded=warmup_excluded,
             warm_sample_count=len(warm),
-            warm_p95_ms=ordered[rank - 1],
-            maximum_ms=ordered[-1],
+            warm_p95_ms=total.p95_ms,
+            maximum_ms=total.maximum_ms,
+            total=total,
+            completion=summarize_latencies(sample.completion_ms for sample in warm),
+            delivery=summarize_latencies(sample.delivery_ms for sample in warm),
+            retried_sample_count=sum(
+                1 for sample in warm if sample.attempts > 1 or sample.replayed
+            ),
+            by_response_kind=_by_response_kind(warm),
         )
+
+
+def _by_response_kind(
+    samples: Sequence[TextDeliverySample],
+) -> dict[str, LatencySummary]:
+    """Group warm totals by the stable kind of response the owner received."""
+
+    grouped: dict[str, list[int]] = {}
+    for sample in samples:
+        grouped.setdefault(sample.response_kind, []).append(sample.total_ms)
+    return {
+        kind: summary
+        for kind, values in sorted(grouped.items())
+        if (summary := summarize_latencies(values)) is not None
+    }
 
 
 def downtime_gap(health: MessagingHealth, *, now: datetime) -> timedelta | None:

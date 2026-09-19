@@ -41,6 +41,8 @@ from money_tracker.telegram.transport import (
 )
 from money_tracker.tracing import (
     DISABLED_TRACER,
+    TELEGRAM_DELIVERY_STAGE,
+    TELEGRAM_INGEST_STAGE,
     TELEGRAM_UPDATE_TRACE,
     TraceObservation,
     Tracer,
@@ -233,7 +235,7 @@ class TelegramGateway:
 
         callback = update.callback_query_id
         with self._tracer.span(
-            "telegram-ingest",
+            TELEGRAM_INGEST_STAGE,
             trace_seed=update.source_reference,
             trace_name=TELEGRAM_UPDATE_TRACE,
             input=_trace_update(update),
@@ -292,7 +294,7 @@ class TelegramGateway:
         """
 
         if claim.source_reference is None:
-            return DISABLED_TRACER.span("telegram-delivery")
+            return DISABLED_TRACER.span(TELEGRAM_DELIVERY_STAGE)
         work = claim.message
         facts: dict[str, object] = {
             "outbox_id": str(work.id),
@@ -316,7 +318,7 @@ class TelegramGateway:
                 }
             )
         return self._tracer.span(
-            "telegram-delivery",
+            TELEGRAM_DELIVERY_STAGE,
             trace_seed=claim.source_reference,
             trace_name=TELEGRAM_UPDATE_TRACE,
             input=facts,

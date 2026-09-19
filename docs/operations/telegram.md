@@ -332,6 +332,25 @@ outbox rows after 30 days, so compute and record the report within that window
 client rendering and notification delay are not observable and must be listed
 as limitations.
 
+The `breakdown` object splits the same warm samples at the worker's completion
+commit, which is where AD-018 divides the two processes:
+
+| Field | Meaning |
+| --- | --- |
+| `total_ms` | Acceptance to send, with p50 as well as the p95 above |
+| `accepted_to_completed_ms` | Worker side: queue wait, earlier failed attempts, time the worker or model was down, and processing |
+| `completed_to_sent_ms` | Gateway side: outbox wait, delivery retries, and the Bot API call |
+| `retried_samples` | Samples that needed more than one attempt or an operator replay |
+| `by_response_kind` | Totals per stable response kind, such as `movement`, `answer`, or `category_review` |
+
+Each distribution carries `samples`, `p50`, `p95`, and `maximum` in
+milliseconds and no content. A window must not include deliberate fault
+injection, a stopped worker, or a reboot check: those measure recovery, not
+warm latency, and the breakdown shows them as worker-side outliers. For the
+model calls, graph nodes, and stages inside the worker side, profile the same
+window from the traces with `money-tracker-traces profile`
+([LLM Tracing](tracing.md#latency-profile)).
+
 For the workstation restart check, send two distinguishable test messages in a
 recorded chat order, stop the worker before it claims them, confirm two pending
 items with `health`, reboot once, and confirm the services become active and

@@ -2,7 +2,7 @@
 
 Part of the [delivery roadmap](../roadmap.md).
 
-Status: **In progress — runtime retention slice implemented
+Status: **In progress — performance profiling slice implemented
 (2026-09-19).**
 
 ## Scope change (2026-09-19)
@@ -168,6 +168,77 @@ exact rolled-back plan, the deletions and retentions above, surviving control
 correlation, idempotent reruns, a content-free CLI, and a fail-closed schema
 mismatch. Installing and enabling the timer and observing its scheduled runs
 on the target workstation remain open with the other timers.
+
+## Performance profiling slice (2026-09-19)
+
+The fifth Step 7 slice profiles warm text latency on the target workstation
+and remediates the one defect the profile exposed. NFR-PER-001 is met without a
+revised quality decision.
+
+Two content-free tools make the measurement attributable:
+
+- `money-tracker-telegram latency` keeps the Step 4 measurement of record and
+  adds a breakdown of the same warm samples at the worker's completion commit:
+  worker side, gateway side, retried samples, and totals per response kind;
+- `money-tracker-traces profile` reads observation names and times only
+  (`core` and `basic` field groups) and reports, per window, the wait,
+  processing, and delivery of every traced Telegram update and the duration of
+  every model boundary, graph node, and stage.
+
+Both use the shared nearest-rank convention in `money_tracker.latency`. The
+trace stage names are now constants in `tracing.ports`, used by the gateway,
+the worker, and the administrative route.
+
+Real traffic since 2026-09-10 first reported a warm p95 of 345,588 ms over 58
+warm samples. The breakdown attributed every outlier to the worker side and to the
+Step 4 acceptance window of 2026-09-10 and 2026-09-11, whose deliberate fault
+injections, stopped worker, and reboot check measure recovery rather than warm
+latency. Normal use after acceptance, from 2026-09-12, had a warm p95 of
+5,711 ms over 11 warm samples.
+
+The controlled sample ran on 2026-09-19 from 20:14:11 UTC on the RTX 5070 Ti
+workstation with the EVD-004 configuration (Qwen3 14B Q5_K_M, router v6,
+extraction v6, category-fit v6, tool-selection v5,
+`explicit-finance-scope-v1`) and tracing on. The gateway ran `main` at
+`f09f47f`. The worker, restarted at 20:26 UTC by the failure described below,
+loaded this slice's working tree from before the checkpointer change; its
+worker-side edits only name the trace stages through constants. The owner sent
+20 text messages one at a time: expenses including a split payment, budget and
+spending questions, advice, `/help`, and `/status`, and undid each test
+expense.
+
+| Measure | Result |
+| --- | --- |
+| Samples, warm samples | 20, 19 (first excluded as warm-up) |
+| Warm p50 / p95 / maximum | 4,434 / **5,952** / 5,952 ms against 30,000 ms |
+| Worker side p50 / p95 | 3,916 / 5,338 ms |
+| Gateway side p50 / p95 | 560 / 815 ms |
+| Retried samples | 0 |
+| p95 by kind | `movement` 5,952 ms (10), `answer` 3,903 ms (7), `help` 1,359 ms, `status` 793 ms |
+| Traced updates, button presses included | 31 complete, 0 incomplete; wait p95 964 ms, processing p95 4,626 ms, delivery p95 726 ms |
+| Model calls p50 / p95 | extraction 2,034 / 2,928 ms; tool selection 1,325 / 1,521 ms; category fit 950 / 1,257 ms; routing 712 / 1,024 ms |
+| Non-model work p95 | commit 11 ms, render 15 ms |
+
+Model calls account for nearly all processing, and the slowest movement stays
+five times inside the target, so no latency remediation is warranted. The
+headroom is measured with one owner and no concurrent browser advice; the
+model already occupies about 14.5 of the GPU's 16.3 GB.
+
+The warm-up sample was the one defect. The application database container had
+restarted at 18:51 UTC while the worker kept running, which ended the single
+checkpoint connection the worker opened at start-up. The first message after
+that failed with `AdminShutdown`, the worker exited and restarted as designed,
+and the message stayed leased until its five-minute lease expired: 300,857 ms
+of wait in its trace. `open_postgres_checkpointer` now draws from a
+`psycopg_pool` pool that checks each connection before use and replaces one the
+server ended; connections carry `application_name`
+`money-tracker-checkpointer`. A real PostgreSQL test terminates the saver's
+session and proves the same thread resumes; with the check removed it fails
+with the production `AdminShutdown`.
+
+A worker that crashes in the middle of a work unit for another reason still
+leaves that unit leased for five minutes, as AD-018 designs; the fix removes
+the routine cause after every database restart.
 
 ## Exit criteria
 

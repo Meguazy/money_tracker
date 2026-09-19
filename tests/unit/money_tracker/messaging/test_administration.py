@@ -20,6 +20,7 @@ from money_tracker.messaging import (
     OutboxDeadLetter,
     OwnerBinding,
     RequeueOutcome,
+    TextDeliverySample,
     downtime_gap,
 )
 
@@ -45,6 +46,26 @@ class _Ids:
         return uuid4()
 
 
+def _sample(
+    total_ms: int,
+    *,
+    delivery_ms: int = 400,
+    attempts: int = 1,
+    replayed: bool = False,
+    response_kind: str = "movement",
+) -> TextDeliverySample:
+    """Build one answered text work unit's timings."""
+
+    return TextDeliverySample(
+        total_ms=total_ms,
+        completion_ms=total_ms - delivery_ms,
+        delivery_ms=delivery_ms,
+        attempts=attempts,
+        replayed=replayed,
+        response_kind=response_kind,
+    )
+
+
 class _Repository:
     """Records what the administration service asked persistence to store."""
 
@@ -56,7 +77,9 @@ class _Repository:
         self.replayed: list[tuple[str, UUID, int | None, datetime]] = []
         self.resent: list[tuple[str, UUID, int | None, datetime]] = []
         self.binding: OwnerBinding | None = None
-        self.latencies = (9_999, 1_000, 2_000, 3_000, 4_000)
+        self.samples = tuple(
+            _sample(total) for total in (9_999, 1_000, 2_000, 3_000, 4_000)
+        )
 
     def ensure_bot(self, bot_key: str, **values: Any) -> None:
         """Record the persistence scope the pairing code needs."""
@@ -140,12 +163,12 @@ class _Repository:
         self.resent.append((bot_key, outbox_id, expected_replay_count, now))
         return RequeueOutcome.REPLAYED
 
-    def text_delivery_latencies(
+    def text_delivery_samples(
         self, bot_key: str, *, since: datetime, limit: int
-    ) -> tuple[int, ...]:
-        """Return synthetic successful text workflow durations."""
+    ) -> tuple[TextDeliverySample, ...]:
+        """Return synthetic successful text workflow timings."""
 
-        return self.latencies[:limit]
+        return self.samples[:limit]
 
 
 def _service(repository: _Repository) -> MessagingAdministration:
@@ -334,7 +357,7 @@ def test_text_latency_does_not_report_p95_from_warmup_alone() -> None:
     """Avoid presenting one cold observation as a warm distribution."""
 
     repository = _Repository()
-    repository.latencies = (9_999,)
+    repository.samples = (_sample(9_999),)
 
     report = _service(repository).text_latency_report(
         "telegram-test",
@@ -458,3 +481,31 @@ def test_the_operations_snapshot_reports_a_bot_that_was_never_paired() -> None:
 
     assert snapshot.owner_paired is False
     assert snapshot.environment is BotEnvironment.PRODUCTION
+
+
+def test_text_latency_splits_the_warm_samples_at_the_completion_commit() -> None:
+    """Attribute a slow total to the worker or gateway side, and to its kind."""
+
+    repository = _Repository()
+    repository.samples = (
+        _sample(50_000),
+        _sample(3_000, delivery_ms=500),
+        _sample(4_000, delivery_ms=600, response_kind="answer"),
+        _sample(300_000, delivery_ms=700, attempts=3),
+        _sample(5_000, delivery_ms=800, replayed=True),
+    )
+
+    report = _service(repository).text_latency_report(
+        "telegram-test",
+        since=NOW - timedelta(minutes=1),
+    )
+
+    assert report.warm_p95_ms == 300_000
+    assert report.total is not None and report.total.p50_ms == 4_000
+    assert report.completion is not None
+    assert report.completion.maximum_ms == 299_300
+    assert report.delivery is not None and report.delivery.maximum_ms == 800
+    assert report.retried_sample_count == 2
+    assert set(report.by_response_kind) == {"answer", "movement"}
+    assert report.by_response_kind["answer"].sample_count == 1
+    assert report.by_response_kind["movement"].maximum_ms == 300_000

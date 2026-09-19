@@ -55,7 +55,12 @@ from money_tracker.runtime import (
 from money_tracker.runtime.read_graph import DEFAULT_SELECTION
 from money_tracker.runtime.trace_metadata import workflow_version_set
 from money_tracker.structured_logging import configure_logging, get_logger
-from money_tracker.tracing import ADMIN_ROUTE_TRACE, Tracer, open_tracer
+from money_tracker.tracing import (
+    ADMIN_ROUTE_TRACE,
+    WORK_UNIT_STAGE,
+    Tracer,
+    open_tracer,
+)
 from money_tracker.workflows import (
     CATEGORY_FIT,
     DEFAULT_READ_SELECTION_POLICY,
@@ -342,7 +347,7 @@ def _traced_route(
     """
 
     with tracer.span(
-        "work-unit",
+        WORK_UNIT_STAGE,
         trace_seed=message.source_reference,
         trace_name=ADMIN_ROUTE_TRACE,
         input={"source_reference": message.source_reference},

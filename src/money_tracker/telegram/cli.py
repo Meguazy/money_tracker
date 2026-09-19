@@ -17,6 +17,7 @@ from uuid import UUID
 from psycopg import Error as PsycopgError
 
 from money_tracker.application.runtime import UUID4Generator
+from money_tracker.latency import render_summary
 from money_tracker.messaging import (
     TELEGRAM_UPDATE_RETENTION,
     MessagingAdministration,
@@ -243,6 +244,16 @@ def _latency(
         "warm_p95_ms": report.warm_p95_ms,
         "warm_sample_count": report.warm_sample_count,
         "warmup_excluded": report.warmup_excluded,
+        "breakdown": {
+            "total_ms": render_summary(report.total),
+            "accepted_to_completed_ms": render_summary(report.completion),
+            "completed_to_sent_ms": render_summary(report.delivery),
+            "retried_samples": report.retried_sample_count,
+            "by_response_kind": {
+                kind: render_summary(summary)
+                for kind, summary in report.by_response_kind.items()
+            },
+        },
     }
 
 

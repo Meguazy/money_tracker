@@ -310,6 +310,18 @@ Both print safe JSON with counts only; `delete` without `--confirm` is a dry
 run. [Data Retention](operations/data-retention.md) describes what is kept, the
 daily timer, and the residual copies a deletion leaves.
 
+## Latency profiling
+
+Measure warm Telegram latency over a window and split it at the worker's
+completion commit, then profile the same window's stages and model calls from
+the traces. Both print counts and durations only:
+
+    uv run --env-file .env money-tracker-telegram latency --since START_INSTANT
+    uv run --env-file .env money-tracker-traces profile --since START_INSTANT
+
+The procedure for a controlled sample is in [Telegram](operations/telegram.md);
+the profile's fields are in [LLM Tracing](operations/tracing.md#latency-profile).
+
 ## Optional self-hosted Langfuse
 
 The observability stack is separate from the default Compose project. Start it

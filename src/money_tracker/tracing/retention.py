@@ -141,6 +141,25 @@ class ExportResult:
 
 
 @dataclass(frozen=True, slots=True)
+class ObservationTime:
+    """When one observation ran, without anything it carried.
+
+    Attributes:
+        trace_id: Trace the observation belongs to.
+        kind: Observation type the store reports, such as `SPAN`.
+        name: Stable observation name chosen by the code that opened it.
+        started_at: Start instant.
+        ended_at: End instant, or None while the store has no end.
+    """
+
+    trace_id: str
+    kind: str
+    name: str
+    started_at: datetime
+    ended_at: datetime | None
+
+
+@dataclass(frozen=True, slots=True)
 class DeletionResult:
     """The outcome of a verified deletion.
 
@@ -156,7 +175,7 @@ class DeletionResult:
 
 
 class TraceStore:
-    """Plan, export, and delete traces through the Langfuse public API."""
+    """Plan, export, delete, and time traces through the Langfuse public API."""
 
     def __init__(
         self,
@@ -257,6 +276,63 @@ class TraceStore:
                     )
                 )
         return tuple(sorted(summaries, key=lambda item: item.first_start))
+
+    def timings(
+        self,
+        *,
+        environment: str,
+        since: datetime,
+        until: datetime | None = None,
+    ) -> tuple[ObservationTime, ...]:
+        """Read when observations ran, and nothing they carried.
+
+        Only the `core` and `basic` field groups are requested, so no input,
+        output, metadata, or model payload leaves the store for this read.
+
+        Args:
+            environment: Langfuse environment to read.
+            since: Aware inclusive lower bound on an observation's start.
+            until: Optional aware exclusive upper bound on its start.
+
+        Returns:
+            Every observation in the window, in the order the store returned.
+
+        Raises:
+            TraceStoreError: If the store cannot be read or answers with an
+                observation missing its identity or start.
+            ValueError: If a bound is naive.
+        """
+
+        if since.tzinfo is None or (until is not None and until.tzinfo is None):
+            raise ValueError("timing bounds must be timezone-aware")
+        params: dict[str, Any] = {
+            "environment": environment,
+            "fromStartTime": since.isoformat(),
+            "fields": "core,basic",
+        }
+        if until is not None:
+            params["toStartTime"] = until.isoformat()
+        timings = []
+        for observation in self._observations(params):
+            trace_id = observation.get("traceId")
+            name = observation.get("name")
+            kind = observation.get("type")
+            if not all(isinstance(value, str) for value in (trace_id, name, kind)):
+                raise TraceStoreError("invalid_response", transient=True)
+            end = observation.get("endTime")
+            timings.append(
+                ObservationTime(
+                    trace_id=str(trace_id),
+                    kind=str(kind),
+                    name=str(name),
+                    started_at=_instant(observation.get("startTime")),
+                    ended_at=None if end is None else _instant(end),
+                )
+            )
+        _LOGGER.info(
+            "traces.timings.read", environment=environment, observations=len(timings)
+        )
+        return tuple(timings)
 
     def export(
         self,
@@ -491,6 +567,7 @@ __all__ = [
     "DeletionResult",
     "ExportRefusedError",
     "ExportResult",
+    "ObservationTime",
     "RetentionPlan",
     "TraceStore",
     "TraceStoreError",

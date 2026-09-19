@@ -49,6 +49,7 @@ from money_tracker.domain import (
     initial_taxonomy,
 )
 from money_tracker.persistence.database import (
+    CHECKPOINTER_APPLICATION_NAME,
     bootstrap_checkpointer,
     downgrade_database,
     open_postgres_checkpointer,
@@ -344,6 +345,39 @@ def test_checkpoint_survives_connection_recreation(postgres_url: str) -> None:
         restarted_graph = builder.compile(checkpointer=saver)
         snapshot = restarted_graph.get_state(config)
     assert snapshot.values == {"value": 2}
+
+
+@pytest.mark.postgres
+def test_checkpointer_replaces_a_session_the_server_ended(postgres_url: str) -> None:
+    """Keep resuming a thread after the database ends the saver's session.
+
+    A database restart ends every server session while the worker's saver
+    lives on. With one connection opened at start-up, the first work unit
+    afterwards failed on `AdminShutdown` and stayed leased for five minutes.
+    Terminating the session here is what the restart does to it.
+    """
+
+    upgrade_database(postgres_url)
+    builder = StateGraph(_CounterState)
+    builder.add_node("increment", _increment)
+    builder.add_edge(START, "increment")
+    builder.add_edge("increment", END)
+    config = {"configurable": {"thread_id": f"integration-{uuid4()}"}}
+
+    with open_postgres_checkpointer(postgres_url, setup=True) as saver:
+        graph = builder.compile(checkpointer=saver)
+        assert graph.invoke({"value": 1}, config) == {"value": 2}
+        with connect(postgres_url, autocommit=True) as administrator:
+            ended = administrator.execute(
+                "SELECT count(*) FILTER (WHERE pg_terminate_backend(pid, 5000)) "
+                "FROM pg_stat_activity WHERE datname = current_database() "
+                "AND application_name = %s AND pid <> pg_backend_pid()",
+                (CHECKPOINTER_APPLICATION_NAME,),
+            ).fetchone()
+        assert ended is not None and ended[0] >= 1
+
+        assert graph.invoke({"value": 5}, config) == {"value": 6}
+        assert graph.get_state(config).values == {"value": 6}
 
 
 @pytest.mark.postgres

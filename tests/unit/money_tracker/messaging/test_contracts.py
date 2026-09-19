@@ -14,6 +14,7 @@ from money_tracker.messaging import (
     NormalizedTelegramUpdate,
     OutboundButton,
     OutboxMessageDraft,
+    TextDeliverySample,
 )
 
 
@@ -109,3 +110,30 @@ def test_claim_and_outbox_validate_processing_and_callback_bounds() -> None:
             text="Risposta sintetica",
             content_hash="not-a-hash",
         )
+
+
+@pytest.mark.parametrize(
+    ("values", "message"),
+    [
+        ({"delivery_ms": -1}, "negative"),
+        ({"attempts": 0}, "attempt"),
+        ({"response_kind": " "}, "blank"),
+    ],
+)
+def test_a_delivery_sample_must_describe_committed_work(
+    values: dict[str, object], message: str
+) -> None:
+    """Reject timings no answered work unit could have produced."""
+
+    sample: dict[str, object] = {
+        "total_ms": 1_000,
+        "completion_ms": 600,
+        "delivery_ms": 400,
+        "attempts": 1,
+        "replayed": False,
+        "response_kind": "movement",
+        **values,
+    }
+
+    with pytest.raises(ValueError, match=message):
+        TextDeliverySample(**sample)  # type: ignore[arg-type]

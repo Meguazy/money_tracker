@@ -78,6 +78,7 @@ from money_tracker.structured_logging import get_logger, log_context
 from money_tracker.tracing import (
     DISABLED_TRACER,
     TELEGRAM_UPDATE_TRACE,
+    WORK_UNIT_STAGE,
     TraceObservation,
     Tracer,
 )
@@ -259,7 +260,7 @@ class SequentialWorker:
                 attempt_count=claim.attempt_count,
             ),
             self._tracer.span(
-                "work-unit",
+                WORK_UNIT_STAGE,
                 trace_seed=claim.update.source_reference,
                 trace_name=TELEGRAM_UPDATE_TRACE,
                 input={"source_reference": claim.update.source_reference},

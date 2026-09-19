@@ -814,10 +814,10 @@ def test_a_notice_that_claims_an_inbox_item_is_refused(
         )
 
 
-def test_text_delivery_latencies_use_committed_inbox_and_outbox_times(
+def test_text_delivery_samples_split_at_the_committed_completion(
     postgres_url: str,
 ) -> None:
-    """Measure successful text work without reading its content."""
+    """Measure successful text work and its parts without reading its content."""
 
     repository, bot_key = _repository(postgres_url)
     durations = (2_000, 3_500)
@@ -858,14 +858,13 @@ def test_text_delivery_latencies_use_committed_inbox_and_outbox_times(
             now=accepted_at + timedelta(milliseconds=duration_ms),
         )
 
-    assert (
-        repository.text_delivery_latencies(
-            bot_key,
-            since=_NOW,
-            limit=10,
-        )
-        == durations
-    )
+    samples = repository.text_delivery_samples(bot_key, since=_NOW, limit=10)
+
+    assert tuple(sample.total_ms for sample in samples) == durations
+    assert tuple(sample.completion_ms for sample in samples) == (1_000, 1_000)
+    assert tuple(sample.delivery_ms for sample in samples) == (1_000, 2_500)
+    assert {(sample.attempts, sample.replayed) for sample in samples} == {(1, False)}
+    assert {sample.response_kind for sample in samples} == {"draft"}
 
 
 @pytest.mark.postgres
@@ -1059,12 +1058,12 @@ def test_a_revocation_is_queued_once_and_never_measured_as_latency(
             now=_NOW + timedelta(minutes=minute, seconds=30),
         )
 
-    latencies = repository.text_delivery_latencies(
+    samples = repository.text_delivery_samples(
         bot_key,
         since=_NOW,
         limit=10,
     )
-    assert len(latencies) == 1
+    assert len(samples) == 1
 
 
 @pytest.mark.postgres

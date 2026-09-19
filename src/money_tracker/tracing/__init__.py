@@ -18,8 +18,11 @@ from money_tracker.structured_logging import get_logger
 from money_tracker.tracing.ports import (
     ADMIN_ROUTE_TRACE,
     DISABLED_TRACER,
+    TELEGRAM_DELIVERY_STAGE,
+    TELEGRAM_INGEST_STAGE,
     TELEGRAM_UPDATE_TRACE,
     WEB_ADVICE_TRACE,
+    WORK_UNIT_STAGE,
     DisabledTracer,
     EvaluationPublication,
     EvaluationPublisher,
@@ -172,7 +175,10 @@ def _prewarm_identity(identity: Callable[[], Mapping[str, object]]) -> None:
 __all__ = [
     "ADMIN_ROUTE_TRACE",
     "DISABLED_TRACER",
+    "TELEGRAM_DELIVERY_STAGE",
+    "TELEGRAM_INGEST_STAGE",
     "TELEGRAM_UPDATE_TRACE",
+    "WORK_UNIT_STAGE",
     "WEB_ADVICE_TRACE",
     "DisabledTracer",
     "EvaluationPublication",

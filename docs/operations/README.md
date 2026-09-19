@@ -21,7 +21,8 @@
   command offering private export and verified deletion, plus a profile-scoped
   portable finance export with a revisioned JSON Lines contract, private-file
   controls, counts, and a SHA-256 digest, and 30-day retention of concluded
-  Telegram messages and terminal workflow checkpoints
+  Telegram messages and terminal workflow checkpoints, and content-free latency
+  profiling from the database and the traces
 - Implemented Step 2: authoritative finance schema and transactional
   expense, wallet, budget, pending category-proposal, and versioned receipt-review
   repository operations, a safe local receipt-media adapter, and verified
@@ -61,7 +62,8 @@ the referenced file or entry point exists in the repository.
   journal, and Telegram.
 - [LLM Tracing](tracing.md): what AD-021 traces contain, one trace per
   Telegram update, decision metadata, the explicit switch, identity in
-  services, reading a trace, measured degradation, the 30-day retention with
+  services, reading a trace, the content-free latency profile, measured
+  degradation, the 30-day retention with
   private export and verified deletion, journal events, and verification.
 - [Security and Troubleshooting](security-and-troubleshooting.md): trust
   boundaries, secret handling, logging, incident response, and failure triage.

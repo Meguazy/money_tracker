@@ -55,6 +55,7 @@ class InMemoryObservationApi:
     deleted_requests: list[str] = field(default_factory=list)
     fail_reads_after: int | None = None
     reads: int = 0
+    requested_fields: list[str] = field(default_factory=list)
 
     def add(
         self,
@@ -63,6 +64,9 @@ class InMemoryObservationApi:
         *,
         environment: str = "development",
         text: str = "contenuto",
+        name: str = "span",
+        kind: str = "SPAN",
+        duration: timedelta = timedelta(seconds=1),
     ) -> None:
         """Store one observation of a trace."""
 
@@ -70,7 +74,10 @@ class InMemoryObservationApi:
             {
                 "id": f"obs-{len(self.observations)}",
                 "traceId": _trace(trace),
+                "name": name,
+                "type": kind,
                 "startTime": start.isoformat().replace("+00:00", "Z"),
+                "endTime": (start + duration).isoformat().replace("+00:00", "Z"),
                 "environment": environment,
                 "input": text,
             }
@@ -89,6 +96,7 @@ class InMemoryObservationApi:
             return httpx.Response(503, json={"message": "unavailable"})
         self._apply_due_deletions()
         params = request.url.params
+        self.requested_fields.append(params.get("fields", ""))
         matching = [
             item
             for item in self.observations
@@ -100,6 +108,10 @@ class InMemoryObservationApi:
             and (
                 not params.get("toStartTime")
                 or _parse(item["startTime"]) < _parse(params["toStartTime"])
+            )
+            and (
+                not params.get("fromStartTime")
+                or _parse(item["startTime"]) >= _parse(params["fromStartTime"])
             )
         ]
         offset = (
@@ -413,3 +425,51 @@ def test_ambiguous_or_malformed_selections_are_refused(argv: list[str]) -> None:
 
     with pytest.raises(SystemExit):
         _parser().parse_args(argv)
+
+
+def test_a_profile_reads_names_and_times_and_prints_no_content() -> None:
+    """Profile a window without requesting or printing what traces carried."""
+
+    api = InMemoryObservationApi(page_size=3)
+    start = _CUTOFF
+    api.add(1, start - timedelta(minutes=1), name="model:RouteClassification")
+    api.add(2, start, name="telegram-ingest", duration=timedelta(milliseconds=5))
+    api.add(2, start + timedelta(seconds=1), name="work-unit")
+    api.add(
+        2,
+        start + timedelta(seconds=2, milliseconds=100),
+        name="telegram-delivery",
+        duration=timedelta(milliseconds=300),
+    )
+    api.add(3, start, name="model:RouteClassification", kind="GENERATION")
+    api.add(4, start, name="work-unit", environment="evaluation")
+    args = _parser().parse_args(
+        ["profile", "--environment", "development", "--since", start.isoformat()]
+    )
+
+    facts, code = _run(args, _store(api))
+
+    assert code == 0
+    assert set(api.requested_fields) == {"core,basic"}
+    assert facts["observation_count"] == 4
+    assert facts["telegram_updates"] == {
+        "complete": 1,
+        "incomplete": 0,
+        "retried": 0,
+        "wait_ms": {"samples": 1, "p50": 995, "p95": 995, "maximum": 995},
+        "processing_ms": {"samples": 1, "p50": 1000, "p95": 1000, "maximum": 1000},
+        "delivery_ms": {"samples": 1, "p50": 400, "p95": 400, "maximum": 400},
+        "total_ms": {"samples": 1, "p50": 2400, "p95": 2400, "maximum": 2400},
+    }
+    names = [(item["kind"], item["name"]) for item in facts["observations"]]  # type: ignore[union-attr]
+    assert ("GENERATION", "model:RouteClassification") in names
+    assert "contenuto" not in json.dumps(facts)
+
+
+def test_a_profile_needs_an_aware_start() -> None:
+    """Refuse a window whose start is ambiguous."""
+
+    with pytest.raises(SystemExit):
+        _parser().parse_args(["profile"])
+    with pytest.raises(SystemExit):
+        _parser().parse_args(["profile", "--since", "2026-09-18T00:00:00"])

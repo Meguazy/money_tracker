@@ -29,13 +29,14 @@ import {
 } from "./api";
 import { AccessibleTableScrollContainer } from "./AccessibleTableScrollContainer";
 import {
-  currentLocalDateTime,
   currentRomeMonth,
   formatExactEuro,
   formatMoney,
   formatOccurredAt,
   minorUnitsToEuroInput,
   parseEuroToMinorUnits,
+  romeDateTimeInput,
+  romeDateTimeInputToInstant,
 } from "./format";
 
 type TransactionApis = {
@@ -176,10 +177,26 @@ function validateAllocations(
   };
 }
 
+// A correction that leaves the date and time untouched keeps the recorded
+// instant, including seconds and the occurrence of a repeated autumn hour that
+// the minute-precision Rome wall time cannot distinguish.
+function submittedOccurredAt(
+  value: string,
+  editing: Transaction | null,
+): Date | null {
+  if (editing !== null) {
+    const recorded = new Date(editing.occurred_at);
+    if (value === romeDateTimeInput(recorded)) {
+      return recorded;
+    }
+  }
+  return romeDateTimeInputToInstant(value);
+}
+
 function emptyEditor(): EditorState {
   return {
     amount: "",
-    occurredAt: currentLocalDateTime(),
+    occurredAt: romeDateTimeInput(),
     description: "",
     merchant: "",
     categoryAllocations: [categoryAllocationRow()],
@@ -275,8 +292,8 @@ export function TransactionsPage({
     if (minorUnits === null) {
       errors.push("Inserisci un totale non nullo con al massimo due decimali.");
     }
-    const occurredAt = new Date(editor.occurredAt);
-    if (editor.occurredAt.length === 0 || Number.isNaN(occurredAt.valueOf())) {
+    const occurredAt = submittedOccurredAt(editor.occurredAt, editing);
+    if (occurredAt === null) {
       errors.push("Inserisci una data e un'ora valide.");
     }
     if (editor.description.trim().length === 0) {
@@ -301,6 +318,7 @@ export function TransactionsPage({
     const paymentAmounts = payments.amounts;
     if (
       errors.length > 0 ||
+      occurredAt === null ||
       categoryAmounts === null ||
       paymentAmounts === null
     ) {
@@ -344,7 +362,7 @@ export function TransactionsPage({
     setEditing(transaction);
     setEditor({
       amount: minorUnitsToEuroInput(transaction.amount.minor_units),
-      occurredAt: currentLocalDateTime(new Date(transaction.occurred_at)),
+      occurredAt: romeDateTimeInput(new Date(transaction.occurred_at)),
       description: transaction.description,
       merchant: transaction.merchant ?? "",
       categoryAllocations: transaction.category_allocations.map((item) =>

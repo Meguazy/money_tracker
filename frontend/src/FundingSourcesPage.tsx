@@ -30,10 +30,11 @@ import {
 } from "./api";
 import { AccessibleTableScrollContainer } from "./AccessibleTableScrollContainer";
 import {
-  currentLocalDateTime,
   formatMoney,
   formatOccurredAt,
   parseEuroToMinorUnits,
+  romeDateTimeInput,
+  romeDateTimeInputToInstant,
 } from "./format";
 
 export type FundingSourceApis = {
@@ -94,7 +95,7 @@ function emptyWalletEditor(): WalletEditor {
     sourceId: "",
     entryType: "credit",
     amount: "",
-    occurredAt: currentLocalDateTime(),
+    occurredAt: romeDateTimeInput(),
     expiresOn: "",
   };
 }
@@ -193,11 +194,8 @@ export function FundingSourcesPage({
       setFormError("Saldo iniziale e ricarica richiedono un importo positivo.");
       return;
     }
-    const occurredAt = new Date(walletEditor.occurredAt);
-    if (
-      walletEditor.occurredAt.length === 0 ||
-      Number.isNaN(occurredAt.valueOf())
-    ) {
+    const occurredAt = romeDateTimeInputToInstant(walletEditor.occurredAt);
+    if (occurredAt === null) {
       setFormError("Inserisci una data e un'ora valide.");
       return;
     }

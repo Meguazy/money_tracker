@@ -1,6 +1,6 @@
 import { MantineProvider } from "@mantine/core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -99,6 +99,7 @@ afterEach(() => {
   cleanup();
   document.body.innerHTML = "";
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
 });
 
 describe("FundingSourcesPage", () => {
@@ -158,6 +159,29 @@ describe("FundingSourcesPage", () => {
         amount: { minor_units: 2550, currency: "EUR" },
         expires_on: "2026-10-31",
       }),
+    );
+  });
+
+  it("records the Rome wall time entered from a browser in another zone", async () => {
+    // The first UTC CI run sent this wall time as UTC, two hours in the future.
+    vi.stubEnv("TZ", "UTC");
+    const user = userEvent.setup();
+    const apis = renderPage(Promise.resolve(management));
+    await screen.findByText("Buoni pasto");
+
+    await user.click(
+      screen.getByRole("button", { name: "Registra movimento wallet" }),
+    );
+    await user.type(screen.getByRole("textbox", { name: "Importo in euro" }), "30,00");
+    fireEvent.change(screen.getByLabelText(/Data e ora/), {
+      target: { value: "2026-09-19T01:48" },
+    });
+    await user.click(screen.getByRole("button", { name: "Registra movimento" }));
+
+    await waitFor(() => expect(apis.addEntry).toHaveBeenCalledOnce());
+    expect(apis.addEntry).toHaveBeenCalledWith(
+      walletId,
+      expect.objectContaining({ occurred_at: "2026-09-18T23:48:00.000Z" }),
     );
   });
 

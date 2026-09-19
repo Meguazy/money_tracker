@@ -1,6 +1,13 @@
 import { MantineProvider } from "@mantine/core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -135,6 +142,7 @@ afterEach(() => {
   cleanup();
   document.body.innerHTML = "";
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
 });
 
 describe("TransactionsPage", () => {
@@ -152,10 +160,15 @@ describe("TransactionsPage", () => {
   });
 
   it("creates exact independently reconciled category and payment splits", async () => {
+    // A browser outside Europe/Rome must still send the Rome wall time entered.
+    vi.stubEnv("TZ", "Asia/Tokyo");
     const user = userEvent.setup();
     const apis = renderPage(Promise.resolve(register));
     await screen.findByText("Pranzo");
 
+    fireEvent.change(screen.getByLabelText(/Data e ora/), {
+      target: { value: "2026-09-19T01:48" },
+    });
     await user.type(
       screen.getByRole("textbox", { name: /Importo in euro/ }),
       "50,00",
@@ -206,6 +219,7 @@ describe("TransactionsPage", () => {
     await waitFor(() => expect(apis.create).toHaveBeenCalledOnce());
     const input = apis.create.mock.calls[0][0];
     expect(input.amount).toEqual({ minor_units: 5000, currency: "EUR" });
+    expect(input.occurred_at).toBe("2026-09-18T23:48:00.000Z");
     expect(input.description).toBe("Spesa mista");
     expect(input.category_allocations).toEqual([
       {
@@ -238,6 +252,7 @@ describe("TransactionsPage", () => {
   });
 
   it("preserves every allocation and its metadata during correction", async () => {
+    vi.stubEnv("TZ", "America/Los_Angeles");
     const user = userEvent.setup();
     const splitMovement: TransactionRegister["transactions"][number] = {
       ...movement,
@@ -298,6 +313,8 @@ describe("TransactionsPage", () => {
     const [expenseId, input] = apis.replace.mock.calls[0];
     expect(expenseId).toBe(splitMovement.id);
     expect(input.expected_version).toBe(4);
+    // Untouched, the date keeps the recorded instant in any browser zone.
+    expect(input.occurred_at).toBe("2026-09-12T08:30:00.000Z");
     expect(input.category_allocations).toEqual(
       splitMovement.category_allocations.map(
         ({ category_name: _categoryName, ...allocation }) => allocation,

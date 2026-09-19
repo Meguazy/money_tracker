@@ -579,7 +579,7 @@ check always reports. Each job mirrors a local gate:
 | `RUN_POSTGRES_INTEGRATION_TESTS=1 LOG_LEVEL=CRITICAL uv run --env-file .env pytest -q` | `postgres-integration` | `application-postgres` from `compose.yaml`; the suite includes the migration round trip |
 | Restic and PostgreSQL 17 backup and restore drill | `backup-drill` | Restic 0.18.1 release binary checked against a pinned SHA-256; `postgresql-client-17` from PGDG after checking the signing-key fingerprint |
 | `npm ci`, `npm run typecheck`, `npm run test:ci`, `npm run build` | `frontend` | Node from `frontend/.nvmrc`; Vitest writes JUnit |
-| `npm run test:e2e:ci` | `e2e-browser` | Playwright's bundled Chromium with the browser time zone pinned to Europe/Rome, as in local runs; only the `@local-model` case is excluded |
+| `npm run test:e2e:ci` | `e2e-browser` | Playwright's bundled Chromium in the runner's UTC zone, which exercises the Europe/Rome date-time conversion; only the `@local-model` case is excluded |
 | Both Compose profiles, image digests, `systemd-analyze verify` | `compose-and-deploy` | Units are rendered against the checkout, and the synced package provides every `ExecStart` executable |
 | ShellCheck over `scripts/`, `.githooks/`, and `docker/`; actionlint; zizmor | `shell-and-workflows` | actionlint 1.7.12 with a pinned SHA-256; zizmor 1.30.1 offline over workflows and Dependabot |
 | Gitleaks, `pip-audit`, `npm audit --audit-level=high` | `security` | gitleaks 8.30.1 scans `base..head` for a PR and the full history for `main` and the schedule; `pip-audit` covers every locked group |

@@ -18,6 +18,7 @@ fi
 
 if [[ ! -x "${repo_root}/.venv/bin/money-tracker-api" ]] ||
    [[ ! -x "${repo_root}/.venv/bin/money-tracker-backup" ]] ||
+   [[ ! -x "${repo_root}/.venv/bin/money-tracker-retention" ]] ||
    [[ ! -x "${repo_root}/.venv/bin/money-tracker-telegram" ]] ||
    [[ ! -x "${repo_root}/.venv/bin/money-tracker-traces" ]] ||
    [[ ! -x "${repo_root}/.venv/bin/money-tracker-worker" ]]; then
@@ -70,14 +71,19 @@ The units are installed but not started. Bootstrap them in this order:
        systemctl --user enable --now money-tracker-worker.service
        systemctl --user enable --now money-tracker-api.service
   5. After configuring, initializing, and manually verifying the Restic
-     repository, enable the operational schedules:
+     repository, and after reviewing both retention plans, enable the
+     operational schedules:
+       uv run --env-file .env money-tracker-traces plan
+       uv run --env-file .env money-tracker-retention plan
        systemctl --user enable --now money-tracker-backup.timer
        systemctl --user enable --now money-tracker-trace-retention.timer
+       systemctl --user enable --now money-tracker-runtime-retention.timer
 
-     Enabling a timer can run a missed occurrence immediately. Check both
-     services after the first run:
+     Enabling a timer can run a missed occurrence immediately. Check every
+     service after the first run:
        systemctl --user status money-tracker-backup.service
        systemctl --user status money-tracker-trace-retention.service
+       systemctl --user status money-tracker-runtime-retention.service
 
 Exit code 1 means an operator must change something, and the units stop
 instead of restarting. Exit code 2 means a dependency was unreachable and the

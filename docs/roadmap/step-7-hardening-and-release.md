@@ -2,7 +2,7 @@
 
 Part of the [delivery roadmap](../roadmap.md).
 
-Status: **In progress — restore integrity slice implemented
+Status: **In progress — runtime retention slice implemented
 (2026-09-19).**
 
 ## Scope change (2026-09-19)
@@ -123,6 +123,51 @@ manual semantic checks with an executable gate. It does not claim the
 clean-machine drill itself: target installation, off-device recovery-secret
 access, the actual restore on an empty installation, service startup with
 Langfuse absent, and recorded duration/RPO/RTO evidence remain open.
+
+## Runtime content retention slice (2026-09-19)
+
+The fourth Step 7 slice implements the data, checkpoint, and log parts of the
+retention deliverable and its secure-deletion procedures. The owner decided on
+2026-09-19 that concluded runtime content is deleted, not redacted, 30 days
+after it concludes, enforced by a daily timer the owner enables
+([AD-024](../arc42/decisions/AD-024-runtime-content-retention.md)).
+
+`money-tracker-retention` deletes, in one PostgreSQL transaction pinned to the
+supported schema revision, consumed or cancelled pending actions, sent outbox
+messages no remaining control refers to, completed inbox items nothing still
+needs, and checkpoint threads that can no longer resume. A delivered message
+whose control is still active survives, detached from its deleted inbox item,
+and keeps working through buttons, reply correlation, and control revocation.
+Paused category reviews, dead letters, undelivered responses, and threads of
+an unrecognised family are kept, and finance, audit, idempotency, offsets,
+bindings, and receipts are never touched. `plan` and an unconfirmed `delete`
+roll the same statements back. Output and journal records carry counts only,
+including what the policy kept past the cutoff.
+
+Thread identity is now an explicit contract, `money_tracker.workflows.threads`,
+used by the dispatcher that writes checkpoints and by retention that reads
+them. `money-tracker-runtime-retention.timer` runs the confirmed default daily
+at 04:45 with up to thirty minutes of jitter; the installer renders but never
+enables it.
+
+The [data-retention runbook](../operations/data-retention.md) inventories every
+data class with its retention, deletion mechanism, and residual copies: Restic
+snapshots keep deleted rows for up to about a year, PostgreSQL free space and
+WAL keep bytes until overwritten, the journal holds no owner content and needs
+no privacy retention, and Telegram keeps its own chat history. Checking the
+workstation for it found no full-disk encryption: the root filesystem and swap
+sit directly on their partitions, so deleted and live owner content remain
+readable from the disk. That is recorded as a risk for the owner to decide.
+
+Unit evidence covers the thread contract, the minimum window, clock and URL
+validation, the transient unreachable-database path, CLI parsing and
+content-free rendering, and the service, timer, and installer. The PostgreSQL
+integration suite builds state through the production messaging repository
+and real checkpoints through the production LangGraph saver, then proves an
+exact rolled-back plan, the deletions and retentions above, surviving control
+correlation, idempotent reruns, a content-free CLI, and a fail-closed schema
+mismatch. Installing and enabling the timer and observing its scheduled runs
+on the target workstation remain open with the other timers.
 
 ## Exit criteria
 

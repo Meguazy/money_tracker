@@ -143,6 +143,7 @@ def test_installer_requires_the_runtime_entrypoints_without_uv_placeholder() -> 
 
     assert ".venv/bin/money-tracker-api" in text
     assert ".venv/bin/money-tracker-backup" in text
+    assert ".venv/bin/money-tracker-retention" in text
     assert ".venv/bin/money-tracker-telegram" in text
     assert ".venv/bin/money-tracker-traces" in text
     assert ".venv/bin/money-tracker-worker" in text
@@ -166,6 +167,7 @@ def test_installer_bootstraps_gateway_before_requiring_completed_pairing(
     for entrypoint in (
         "money-tracker-api",
         "money-tracker-backup",
+        "money-tracker-retention",
         "money-tracker-telegram",
         "money-tracker-traces",
         "money-tracker-worker",
@@ -225,6 +227,11 @@ def test_installer_bootstraps_gateway_before_requiring_completed_pairing(
             "money-tracker-trace-retention.service",
             "04:15:00",
         ),
+        (
+            "money-tracker-runtime-retention.timer",
+            "money-tracker-runtime-retention.service",
+            "04:45:00",
+        ),
     ],
 )
 def test_operational_timers_are_daily_persistent_and_jittered(
@@ -251,6 +258,34 @@ def test_trace_retention_service_confirms_only_the_age_policy() -> None:
     assert "--trace-id" not in text
     assert " export " not in text
     assert "TimeoutStartSec=15m" in text
+
+
+def test_runtime_retention_service_confirms_only_the_default_window() -> None:
+    """Automate the accepted 30-day policy without a shorter override."""
+
+    text = (_UNIT_ROOT / "money-tracker-runtime-retention.service").read_text()
+
+    assert (
+        "ExecStart=__MONEY_TRACKER_ROOT__/.venv/bin/money-tracker-retention "
+        "delete --confirm\n"
+    ) in text
+    assert "--older-than-days" not in text
+    assert "TimeoutStartSec=15m" in text
+
+
+def test_installer_offers_every_schedule_only_after_its_plan() -> None:
+    """Enable nothing, and show each retention plan before its timer."""
+
+    text = Path("scripts/install_systemd_units.sh").read_text()
+
+    for timer in _TIMERS:
+        assert f"systemctl --user enable --now {timer.name}" in text
+    assert text.index("money-tracker-retention plan") < text.index(
+        "enable --now money-tracker-runtime-retention.timer"
+    )
+    assert text.index("money-tracker-traces plan") < text.index(
+        "enable --now money-tracker-trace-retention.timer"
+    )
 
 
 def _token_environment(tmp_path: Path) -> tuple[dict[str, str], Path, Path]:

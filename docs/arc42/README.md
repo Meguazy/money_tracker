@@ -219,6 +219,8 @@ Money Tracker workstation
 | `logging_safety` | Own the credential redaction contract and mute the HTTP loggers that would print a token-bearing URL | Standard library `logging` and `re` only | No state | Imported by `structured_logging` and usable by anything that logs |
 | `persistence` | Apply versioned migrations, bootstrap persistent LangGraph checkpoints, and implement finance/messaging repositories | Alembic, psycopg, PostgreSQL checkpointer | Foundation schemas, workflow checkpoints, finance aggregates, and durable messaging state | Host administration CLI and shared host library; least-privilege loopback database role |
 | `persistence.export` | Project one profile's authoritative finance state into a versioned portable archive | psycopg read-only repeatable-read transaction; explicit revision-bound projections | No new authoritative state; writes a manifest and typed JSON Lines records to an owner-selected file | Operator-only host CLI; new mode-600 file in an owner-only directory outside the checkout; excludes receipt bytes, checkpoints, messaging state, and credentials |
+| `persistence.retention` | Delete concluded runtime owner content older than the retention window: consumed controls, sent messages no control still needs, completed inbox items, and checkpoint threads that can no longer be resumed | psycopg in one transaction with a five-second lock timeout; exact supported schema revision; the `workflows.threads` identity contract; the LangGraph checkpoint tables | No state of its own; deletes messaging and workflow rows, never finance, audit, idempotency records, offsets, owner bindings, pairing codes, or receipts | Operator-invoked through `money-tracker-retention` (`retention_cli`) or confirmed from the persistent daily user timer; 30-day default by owner decision ([AD-024](decisions/AD-024-runtime-content-retention.md)); a dry run rolls the same statements back; output and journal carry counts only |
+| `workflows.threads` | Define persistent LangGraph thread identity: the graph family, the reference a thread is keyed by, and which families end with their work unit | Standard library only | No state; the namespace strings are stored in every checkpoint and must never change | Written by the dispatcher and read back by runtime retention; a family missing from the contract is never deleted |
 | `domain` | Enforce exact money, expense/refund, dual-allocation, taxonomy, wallet, budget, receipt-metadata, and audit contracts | Pure Python value objects and policies; no framework or infrastructure import | No infrastructure state | Shared host-process library; deterministic validation of untrusted inputs |
 | `application` | Coordinate idempotent expense lifecycle and receipt registration/review, audited wallet entries, versioned funding-source lifecycle, replay-safe budget planning, pending proposal submission, owner category decisions, and read-only reporting plus safe profile-settings projection through narrow ports | Finance, administration, proposal, review, reporting, and receipt-metadata repository ports plus clock and ID contracts | Command, concurrency, review-boundary, and audit semantics, not stored state | Shared by CLI, API, and worker; profile scope comes from trusted caller context; node creation is reachable only through an owner decision, and receipt deletion is not exposed |
 | `application.profile_settings` | Validate and project the owner-facing V1 profile subset for the settings surface | `ProfileSettingsRepository` reads the active profile and its funding sources; default writes remain in `FundingSourceAdministrationService` | No state; returns fixed locale/currency/timezone facts and eligible active default choices | Shared in-process application service composed into FastAPI; trusted profile scope is an argument from composition, inconsistent default pointers fail closed, and no infrastructure or credential contract exists |
@@ -298,7 +300,7 @@ catalog is promoted; every identifier carries a `candidate-` prefix.
 | Finance domain (core implemented) | Enforce money, expense/refund, allocation, budget, category and wallet invariants | Pure value objects and domain policies | No infrastructure state | Python application; no framework imports |
 | Application services (expense/wallet/budget/funding-source, proposal submission and settlement, and replay-safe receipt registration/review implemented) | Execute validated commands and queries transactionally | Narrow repository ports, clock, ID and future media ports | Command/content idempotency, versioning, review boundary, and audit semantics | Implemented FastAPI and worker host processes; profile scope injected; the receipt metadata lifecycle is control-plane reachable while the extracted-draft preview remains workflow-owned |
 | Finance repositories (expense/wallet/budget/funding-source/proposal/versioned receipt metadata implemented) | Persist authoritative domain records and analytics projections | PostgreSQL protocol through explicit repository contracts | Finance schema implemented; receipt deletion open | Dedicated application database; least-privilege credentials; optimistic versions and source locks protect concurrent mutations; no media payloads |
-| Messaging persistence (implemented) | Receive, order, lease, retry, dead-letter, replay, correlate, and complete transport work | `MessagingRepository` port, psycopg, and PostgreSQL | Minimum normalized inbox data, offsets, typed results, logical outbox, pairing, pending actions, and attempt metadata | Shared gateway/worker/admin adapter; no raw update payload, token, or token-bearing URL in rows |
+| Messaging persistence (implemented) | Receive, order, lease, retry, dead-letter, replay, correlate, and complete transport work | `MessagingRepository` port, psycopg, and PostgreSQL | Minimum normalized inbox data, offsets, typed results, logical outbox, pairing, pending actions, and attempt metadata; concluded rows are deleted 30 days after they conclude (AD-024) | Shared gateway/worker/admin adapter; no raw update payload, token, or token-bearing URL in rows |
 | Workflow runtime (dispatcher, router, and Step 3 text specialists implemented) | Route one normalized work unit and execute exactly one bounded specialist | Typed dispatcher outcome, LangGraph, model gateway, application services, checkpointer | Small per-graph versioned workflow state only; authoritative domain data stays in repositories | Administration CLI and sequential worker; no media, credentials, or service objects in checkpoints |
 | Receipt service | Validate media, invoke extractor, reconcile lines, prepare review | Implemented media-store port, planned extractor, finance service | Receipt metadata, extraction versions, review state | Private filesystem; untrusted image boundary; orchestration planned for Step 6, deferred after V1 |
 | Analytics service | Compute time, category, budget and funding summaries | Read repositories and deterministic calendar policies | No separate authoritative data | FastAPI and read-only agent tools |
@@ -1217,6 +1219,36 @@ encrypted and contains owner finance content, so the operator protects and
 deletes it explicitly. The encrypted Restic snapshot remains the recovery
 mechanism.
 
+### Current runtime content retention
+
+1. `money-tracker-retention` computes the cutoff as now minus the window, 30
+   days unless the operator names at least one whole day, and opens one
+   PostgreSQL transaction whose lock waits end after five seconds.
+2. It refuses a database whose Alembic revision is not the supported one.
+3. It deletes consumed or cancelled pending actions that concluded before the
+   cutoff, then sent outbox messages no remaining pending action refers to.
+4. It clears the inbox link of any sent message still carrying an active
+   control whose inbox item is otherwise concluded, then deletes completed
+   inbox items that no outbox message refers to any more. Dead letters and
+   items with undelivered or retrying responses stay whole.
+5. If the checkpoint tables exist, it selects threads whose newest checkpoint
+   precedes the cutoff and whose family, read through `workflows.threads`, can
+   no longer resume: a source-keyed thread whose inbox item is completed or
+   absent, or a category review whose proposal is not pending. It deletes each
+   such thread from all three LangGraph tables.
+6. It counts the rows older than the cutoff that it deliberately kept, then
+   commits, or rolls back for `plan` and an unconfirmed `delete`, so a plan
+   reports exactly what a confirmed run would delete.
+7. After a confirmed run that deleted anything it runs `VACUUM (ANALYZE)` on
+   the affected tables; a failure there is a warning, because the deletion has
+   already committed.
+
+The persistent daily user timer runs the confirmed default at 04:45 local time
+with up to thirty minutes of jitter after explicit owner enablement. Replay
+safety is unaffected: finance idempotency records and the durable offset are
+never touched. The encrypted Restic snapshots keep deleted rows until they
+age out of the backup policy.
+
 ### Current text expense turn
 
 1. A normalized channel message receives a source and command idempotency key.
@@ -1354,7 +1386,7 @@ silently included in the claim.
 ```text
 Ubuntu workstation
 ├── systemd user services: accepted API, Telegram, worker, llama.cpp units
-├── persistent backup and trace-retention timers [implemented; target acceptance open]
+├── persistent backup, trace-retention, and runtime-retention timers [implemented; target acceptance open]
 ├── money-tracker-api -> 127.0.0.1:8000  [implemented and browser-accepted]
 ├── compiled React assets served by money-tracker-api
 ├── UV-managed Python CLIs
@@ -1426,8 +1458,9 @@ External backup folder/disk
 ```
 
 `deploy/systemd/` holds checked-in user-service templates for the API, gateway,
-worker, llama.cpp, authoritative backup, and trace retention, plus persistent
-daily timers for the last two. They are rendered for a checkout by
+worker, llama.cpp, authoritative backup, trace retention, and runtime content
+retention, plus persistent daily timers for the last three. They are rendered
+for a checkout by
 `scripts/install_systemd_units.sh`. They are user services because the
 application owns no system-wide resource, and they are not ordered against
 Docker because a user unit cannot be: a database that starts late is handled by
@@ -1631,7 +1664,8 @@ on GitHub itself.
 ### Persistence and consistency
 
 - PostgreSQL owns authoritative state. Workflow checkpoints and Langfuse traces
-  are supporting records, not finance ledgers.
+  are supporting records, not finance ledgers. Concluded messaging rows and
+  terminal checkpoints are removed by age; authoritative records never are.
 - Implemented expense, wallet, and budget mutations share a transaction with
   their audit event. Future channel mutations also include their outbox record.
 - Ledger wallet appends lock the funding source and validate AD-020 available
@@ -1761,6 +1795,17 @@ tracing and from the exit-code contract AD-018 defines for supervisors.
   in it, so runtime traces are kept 30 days and may be exported to a private
   local file first with `money-tracker-traces`, which deletes by age or
   identifier and verifies each deletion; Step 7 schedules age deletion daily.
+- Concluded runtime content in application PostgreSQL, meaning Telegram inbox
+  and outbox rows, consumed controls, and terminal checkpoint threads, is
+  deleted 30 days after it concludes by `money-tracker-retention` and its daily
+  timer ([AD-024](decisions/AD-024-runtime-content-retention.md)). Active
+  controls, paused reviews, and dead letters are kept until they conclude.
+- Deletion is logical. A deleted row survives in every Restic snapshot taken
+  before it, for as long as that snapshot is retained, up to about a year
+  under the monthly policy; free database pages and WAL may hold its bytes
+  until overwritten. Only full-disk encryption protects the medium. The
+  [data-retention runbook](../operations/data-retention.md) lists every data
+  class, its retention, and its residual copies.
 
 ### Data portability
 
@@ -1865,9 +1910,10 @@ environment file.
   EVD-004 Step 3 text-role promotion implemented; later roles remain gated.
 - [AD-013: Host runtime and encrypted backup](decisions/AD-013-local-runtime-and-backup.md):
   Compose topology, encrypted Restic backup, verification, retention, and the
-  isolated restore drill, accepted Step 4 host units, and the browser-accepted
-  Step 5 API unit implemented; scheduling and the clean-machine restore remain
-  planned.
+  isolated restore drill with semantic verification, accepted Step 4 host
+  units, the browser-accepted Step 5 API unit, and the Step 7 daily backup
+  timer implemented; observed scheduled runs and the clean-machine restore
+  remain planned.
 - [AD-011: Evaluation-gated receipt extraction](decisions/AD-011-receipt-extraction.md):
   private original-media boundary and the owner-facing metadata lifecycle
   implemented; extractor evaluation and the extracted-draft preview workflow
@@ -1915,7 +1961,8 @@ owner-accepted (2026-09-18): every model-calling entry point is traced into the
 local Langfuse behind an explicit switch, one Telegram update is one trace
 across the gateway and worker, promoted configurations link to their runs, and
 traces are kept 30 days outside the backup set with a verified deletion
-command; only scheduling that retention remains, in Step 7.
+command, which a Step 7 daily timer now schedules; its target-workstation
+acceptance remains open.
 
 AD-019 is implemented across every entry point, adapter, application service,
 and persistence boundary. It supplements rather than replaces the AD-018 exit
@@ -1935,6 +1982,13 @@ operator-only CLI exports one profile's authoritative finance records from a
 consistent snapshot into a versioned, private JSON Lines artifact with a
 digest and without receipt bytes or runtime state.
 
+[AD-024](decisions/AD-024-runtime-content-retention.md) is implemented: the
+operator CLI and its daily timer delete concluded Telegram messages, consumed
+controls, and terminal checkpoint threads 30 days after they conclude, in one
+transaction whose dry run rolls back, while active controls, paused reviews,
+and dead letters remain; target-workstation acceptance of the timer remains
+open.
+
 ## 10. Quality Requirements
 
 | Scenario | Expected response |
@@ -1951,6 +2005,7 @@ digest and without receipt bytes or runtime state.
 | A browser uses a non-loopback route or disallowed origin | The API refuses access or mutation. |
 | A dashboard change lowers contrast or hides a control from the keyboard | The real-browser axe gate reports the WCAG A/AA violation before release. |
 | A restore is performed on an empty installation | Database, receipt references, retained media, and required configuration recover consistently. |
+| Concluded Telegram and workflow content turns 30 days old | The daily retention run deletes it in one transaction, keeps every active control, paused review, and dead letter usable, and reports only counts. |
 | Finance records are exported while another transaction commits | The artifact contains one internally consistent repeatable-read snapshot, is a new mode-600 file, and reports a digest for transfer verification. |
 | A model or prompt candidate misses a safety gate | It is not promoted; the current accepted configuration remains active. |
 | A pull request has an invalid branch, commit, or failing required gate | Local policy reports it early, `pr-metadata` or `ci-gate` turns red on the PR, and the `protect-main` ruleset blocks the merge for every actor including administrators, as the negative-proof PR #7 showed. |
@@ -1975,6 +2030,20 @@ Quantitative evaluation gates are maintained in
   daily timer are implemented, but target installation, evidence from scheduled
   retention runs, off-device secret verification, and a clean-machine
   restore remain later release work.
+- Runtime content retention has a persistent daily timer, but until the owner
+  installs and enables it the messaging tables and checkpoints keep owner
+  text indefinitely. After it runs, a deleted row still survives in older
+  Restic snapshots for up to about a year, and a delivered summary whose
+  control stays active keeps its text until the control is used. Thread
+  selection reads the LangGraph checkpoint schema, so a checkpointer upgrade
+  must re-run the retention integration test.
+- The workstation has no full-disk encryption: on 2026-09-19 the root ext4
+  filesystem, holding the home directory, the application and Langfuse Docker
+  volumes, the receipt archive, and every export, and the swap partition sat
+  directly on their partitions with no `crypt` device. Anyone who reads the
+  disk recovers live and deleted owner content, so logical deletion bounds
+  what the application exposes but not what the medium keeps. Encrypting the
+  disk is an owner decision outside the application.
 - Portable finance exports are deliberately unencrypted and contain owner
   content. A copied artifact is outside application retention controls, so the
   operator must protect it in transit and remove every copy when no longer

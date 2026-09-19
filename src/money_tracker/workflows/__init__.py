@@ -132,6 +132,11 @@ from money_tracker.workflows.state import (
     routing_decision_from_state,
     routing_update,
 )
+from money_tracker.workflows.threads import (
+    SOURCE_KEYED_NAMESPACES,
+    ThreadNamespace,
+    workflow_thread_id,
+)
 from money_tracker.workflows.tools import (
     ADVICE_TOOLS,
     DEFAULT_READ_SELECTION_POLICY,
@@ -228,6 +233,8 @@ __all__ = [
     "StructuredOutputModel",
     "SupportedCommand",
     "UnresolvedExtractionError",
+    "SOURCE_KEYED_NAMESPACES",
+    "ThreadNamespace",
     "WORKFLOW_STATE_VERSION",
     "WorkflowIntent",
     "accept_classification",
@@ -247,6 +254,7 @@ __all__ = [
     "movement_change_message_from_state",
     "movement_command_key",
     "posting_command_key",
+    "workflow_thread_id",
     "prepare_expense_correction",
     "posting_request_hash",
     "undo_request_hash",

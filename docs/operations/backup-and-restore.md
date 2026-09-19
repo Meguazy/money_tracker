@@ -102,7 +102,10 @@ Each snapshot contains:
 
 Messaging inbox/outbox tables and required derivatives are part of the set as
 soon as the steps that create them land; the dump already covers whatever the
-`messaging` schema contains.
+`messaging` schema contains. Runtime retention deletes concluded messaging rows
+and terminal checkpoints after 30 days, but every snapshot taken earlier keeps
+them until that snapshot is forgotten; see
+[Data Retention](data-retention.md#secure-deletion-and-residual-copies).
 
 The GGUF model is not backed up. It is recorded outside this set by filename and
 hash and reacquired from its original source; the manifest deliberately carries

@@ -180,6 +180,13 @@ Lines export of authoritative finance records. The artifact carries record
 counts and a SHA-256 digest, excludes receipt bytes and runtime state, and must
 be kept as private owner content. Historical import remains outside V1.
 
+Runtime owner content is not kept longer than it is useful. By owner decision
+(2026-09-19), concluded Telegram messages, their used controls, and workflow
+checkpoints that can no longer resume are deleted 30 days after they
+conclude, the same window as runtime traces. Authoritative finance records,
+audit history, and retained receipts are never subject to it, and an active
+control or a pending category review stays usable until the owner acts.
+
 ## Non-functional requirements
 
 - **NFR-COR-001:** Duplicate delivery, retry, graph resume, and process restart

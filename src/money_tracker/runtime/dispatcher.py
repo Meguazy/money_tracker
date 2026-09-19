@@ -71,6 +71,7 @@ from money_tracker.workflows import (
     RouterState,
     RoutingDecision,
     StructuredOutputModel,
+    ThreadNamespace,
     WorkflowIntent,
     initial_expense_state,
     initial_movement_change_state,
@@ -80,6 +81,7 @@ from money_tracker.workflows import (
     outcome_facts,
     review_decision_from_message,
     routing_decision_from_state,
+    workflow_thread_id,
 )
 from money_tracker.workflows.candidates import CategoryFitCandidate, ExtractionCandidate
 
@@ -217,7 +219,9 @@ class WorkflowDispatcher:
                 RouterState,
                 self.router.invoke(
                     initial_router_state(message, context=context.routing),
-                    self._graph_config("router", message.source_reference, record),
+                    self._graph_config(
+                        ThreadNamespace.ROUTER, message.source_reference, record
+                    ),
                 ),
             )
             decision = routing_decision_from_state(routed_state)
@@ -329,7 +333,9 @@ class WorkflowDispatcher:
                     profile_id=profile_id,
                     routed_intent=decision.intent,
                 ),
-                self._graph_config("expense", message.source_reference, record),
+                self._graph_config(
+                    ThreadNamespace.EXPENSE, message.source_reference, record
+                ),
             ),
         )
 
@@ -375,7 +381,9 @@ class WorkflowDispatcher:
                     expense_id=expense_id,
                     source_reference=message.source_reference,
                 ),
-                self._graph_config("category-review", str(proposal_id), record),
+                self._graph_config(
+                    ThreadNamespace.CATEGORY_REVIEW, str(proposal_id), record
+                ),
             )
         _LOGGER.info(
             "workflow.expense.settled",
@@ -436,7 +444,9 @@ class WorkflowDispatcher:
                     profile_id=profile_id,
                     routed_intent=decision.intent,
                 ),
-                self._graph_config("read", message.source_reference, record),
+                self._graph_config(
+                    ThreadNamespace.READ, message.source_reference, record
+                ),
             ),
         )
 
@@ -510,7 +520,9 @@ class WorkflowDispatcher:
                     routed_intent=decision.intent,
                     target_movement_id=target,
                 ),
-                self._graph_config("movement-change", message.source_reference, record),
+                self._graph_config(
+                    ThreadNamespace.MOVEMENT_CHANGE, message.source_reference, record
+                ),
             ),
         )
         record.facts["movement_target_id"] = str(target)
@@ -577,7 +589,9 @@ class WorkflowDispatcher:
             ReviewWorkflowState,
             self.review.invoke(
                 Command(resume=review_decision),
-                self._graph_config("category-review", str(proposal_id), record),
+                self._graph_config(
+                    ThreadNamespace.CATEGORY_REVIEW, str(proposal_id), record
+                ),
             ),
         )
         record.facts["review_resumed"] = True
@@ -613,12 +627,13 @@ class WorkflowDispatcher:
         )
 
     def _graph_config(
-        self, namespace: str, reference: str, record: _DispatchRecord
+        self, namespace: ThreadNamespace, reference: str, record: _DispatchRecord
     ) -> dict[str, Any]:
         """Build one graph invocation's configuration.
 
         Args:
-            namespace: Stable graph namespace.
+            namespace: Graph family, which runtime retention also reads back
+                from the thread identifier to decide whether it is terminal.
             reference: Durable reference the thread is keyed by.
             record: Collector that remembers the thread for the trace.
 
@@ -627,9 +642,12 @@ class WorkflowDispatcher:
             tracer contributes, which is nothing when tracing is disabled.
         """
 
-        config = _thread_config(namespace, reference)
-        record.thread_ids.append(config["configurable"]["thread_id"])
-        return {**config, **self.tracer.graph_config(graph=namespace)}
+        thread_id = workflow_thread_id(namespace, reference)
+        record.thread_ids.append(thread_id)
+        return {
+            "configurable": {"thread_id": thread_id},
+            **self.tracer.graph_config(graph=namespace.value),
+        }
 
 
 @dataclass(slots=True)
@@ -908,12 +926,6 @@ def _optional_text(value: UUID | None) -> str | None:
     """Render an optional identifier as text."""
 
     return None if value is None else str(value)
-
-
-def _thread_config(namespace: str, reference: str) -> dict[str, dict[str, str]]:
-    """Build a collision-free stable LangGraph thread identifier."""
-
-    return {"configurable": {"thread_id": f"{namespace}:{reference}"}}
 
 
 def _required(value: str | None, field: str) -> str:

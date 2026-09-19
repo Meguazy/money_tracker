@@ -21,6 +21,7 @@ from money_tracker.messaging.contracts import (
     PendingActionDraft,
     PendingActionTarget,
     RequeueOutcome,
+    TextDeliverySample,
     WorkflowResult,
 )
 
@@ -228,11 +229,11 @@ class MessagingRepository(Protocol):
     def health(self, bot_key: str) -> MessagingHealth:
         """Return content-free queue, offset, action, and dead-letter state."""
 
-    def text_delivery_latencies(
+    def text_delivery_samples(
         self,
         bot_key: str,
         *,
         since: datetime,
         limit: int,
-    ) -> tuple[int, ...]:
-        """Return successful text input-to-send durations in acceptance order."""
+    ) -> tuple[TextDeliverySample, ...]:
+        """Return successful text work timings in acceptance order."""

@@ -12,8 +12,9 @@ from alembic import command
 from alembic.config import Config
 from langgraph.checkpoint.postgres import PostgresSaver
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
-from psycopg import Connection, connect, sql
+from psycopg import Connection, sql
 from psycopg.rows import DictRow, dict_row
+from psycopg_pool import ConnectionPool
 
 from money_tracker.structured_logging import get_logger
 
@@ -23,6 +24,11 @@ DATABASE_URL_ENV = "MONEY_TRACKER_DATABASE_URL"
 TEST_DATABASE_URL_ENV = "MONEY_TRACKER_TEST_DATABASE_URL"
 WORKFLOW_SCHEMA = "workflow"
 STRICT_MSGPACK_ENV = "LANGGRAPH_STRICT_MSGPACK"
+CHECKPOINTER_APPLICATION_NAME = "money-tracker-checkpointer"
+"""PostgreSQL `application_name` of every checkpoint connection."""
+
+CHECKPOINTER_CONNECT_TIMEOUT_SECONDS = 10.0
+"""Bound on opening the first checkpoint connection before giving up."""
 
 
 CHECKPOINT_ALLOWED_TYPES: tuple[tuple[str, str], ...] = (
@@ -177,6 +183,14 @@ def downgrade_database(database_url: str, revision: str) -> None:
         command.downgrade(_alembic_config(database_url), revision)
 
 
+def _scope_to_workflow_schema(connection: Connection[DictRow]) -> None:
+    """Point a new checkpoint connection at the workflow schema."""
+
+    connection.execute(
+        sql.SQL("SET search_path TO {}").format(sql.Identifier(WORKFLOW_SCHEMA))
+    )
+
+
 @contextmanager
 def open_postgres_checkpointer(
     database_url: str,
@@ -185,29 +199,55 @@ def open_postgres_checkpointer(
 ) -> Generator[PostgresSaver]:
     """Open a LangGraph saver scoped to the workflow schema.
 
+    The saver lives as long as the worker, far longer than any one PostgreSQL
+    connection may: a database restart ends every server session, and a single
+    connection opened at start-up then fails the first work unit after it,
+    which leaves that unit leased until the lease expires. The saver therefore
+    draws from a small pool that checks each connection before handing it out
+    and replaces one the server has closed.
+
     Args:
         database_url: Runtime-only PostgreSQL URL.
         setup: Create or upgrade checkpoint tables before yielding when true.
 
     Yields:
-        A saver whose connection uses autocommit and dictionary rows as required
-        by the LangGraph PostgreSQL implementation.
+        A saver whose connections use autocommit, dictionary rows, and no
+        prepared statements, as the LangGraph PostgreSQL implementation
+        requires of a pool.
+
+    Raises:
+        psycopg_pool.PoolTimeout: If no connection can be opened within
+            `CHECKPOINTER_CONNECT_TIMEOUT_SECONDS`; it is an
+            `OperationalError`, so entry points report the database as
+            unavailable.
     """
 
-    connection: Connection[DictRow]
-    with connect(database_url, autocommit=True, row_factory=dict_row) as connection:
-        connection.execute(
-            sql.SQL("SET search_path TO {}").format(sql.Identifier(WORKFLOW_SCHEMA))
-        )
-        saver = PostgresSaver(
-            connection,
-            serde=_checkpoint_serializer_from_env(),
-        )
+    pool: ConnectionPool[Connection[DictRow]] = ConnectionPool(
+        database_url,
+        connection_class=Connection[DictRow],
+        kwargs={
+            "autocommit": True,
+            "row_factory": dict_row,
+            "prepare_threshold": 0,
+            "application_name": CHECKPOINTER_APPLICATION_NAME,
+        },
+        min_size=1,
+        max_size=2,
+        configure=_scope_to_workflow_schema,
+        check=ConnectionPool.check_connection,
+        name=CHECKPOINTER_APPLICATION_NAME,
+        open=False,
+    )
+    pool.open(wait=True, timeout=CHECKPOINTER_CONNECT_TIMEOUT_SECONDS)
+    try:
+        saver = PostgresSaver(pool, serde=_checkpoint_serializer_from_env())
         if setup:
             _LOGGER.info("checkpointer.setup.started", schema=WORKFLOW_SCHEMA)
             saver.setup()
         _LOGGER.debug("checkpointer.opened", schema=WORKFLOW_SCHEMA)
         yield saver
+    finally:
+        pool.close()
 
 
 def bootstrap_checkpointer(database_url: str) -> None:

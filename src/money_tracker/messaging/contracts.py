@@ -564,5 +564,42 @@ class MessagingHealth:
                 require_aware(value, field=name)
 
 
+@dataclass(frozen=True, slots=True)
+class TextDeliverySample:
+    """Content-free timing of one successfully answered text work unit.
+
+    The durable commits split the owner-visible latency at the boundary AD-018
+    draws between the two processes: the worker owns acceptance to completion,
+    and the gateway owns completion to the Bot API send.
+
+    Attributes:
+        total_ms: Inbox acceptance to the committed Bot API send.
+        completion_ms: Acceptance to the worker's completion commit, including
+            queue wait, retries, and processing.
+        delivery_ms: Completion commit to the committed send, including outbox
+            queue wait, delivery retries, and the Bot API call.
+        attempts: Processing attempts the inbox item needed.
+        replayed: Whether an operator returned the item to the queue.
+        response_kind: Stable kind of the delivered response.
+    """
+
+    total_ms: int
+    completion_ms: int
+    delivery_ms: int
+    attempts: int
+    replayed: bool
+    response_kind: str
+
+    def __post_init__(self) -> None:
+        """Reject a sample whose parts cannot describe committed work."""
+
+        if min(self.total_ms, self.completion_ms, self.delivery_ms) < 0:
+            raise ValueError("delivery timings cannot be negative")
+        if self.attempts < 1:
+            raise ValueError("answered work needs at least one attempt")
+        if not self.response_kind.strip():
+            raise ValueError("response kind cannot be blank")
+
+
 WorkflowResult = Mapping[str, object]
 """JSON-compatible typed workflow result persisted before inbox completion."""

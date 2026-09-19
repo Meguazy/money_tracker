@@ -153,6 +153,32 @@ unavailable; read observations through the public v2 API with the project keys:
 Load the keys into the shell without printing them, and do not paste the output
 anywhere outside the workstation: it contains owner content.
 
+## Latency profile
+
+`money-tracker-traces profile` answers where time went in a window without
+reading what any observation carried. It requests only the `core` and `basic`
+field groups (identifiers, names, types, and start and end times), so no
+prompt, message, completion, or metadata leaves the store:
+
+    uv run --env-file .env money-tracker-traces profile \
+      --since 2026-09-19T20:14:11+00:00 [--until INSTANT] [--environment NAME]
+
+It prints one JSON object:
+
+| Field | Meaning |
+| --- | --- |
+| `telegram_updates` | Traced updates with an ingest, a finished attempt, and a delivery, split into `wait_ms` (ingest end to the last `work-unit` start: queueing, earlier failed attempts, and any time the worker or model was down), `processing_ms` (the last attempt), `delivery_ms` (attempt end to the end of the first delivery after it), and `total_ms`; plus `incomplete` and `retried` counts |
+| `observations` | For every observation `kind` and `name`, the sample count, p50, p95, and maximum duration in milliseconds, including each model boundary (`model:RouteClassification`, `model:WireExpenseExtraction`, ...), graph node, and stage |
+
+Percentiles use the same nearest-rank convention as
+`money-tracker-telegram latency`. A control revocation's delivery carries its
+operation only in its input, which the profile never reads, so when a
+revocation is delivered before the answer it accompanies, that answer's
+delivery is under-measured by at most one Bot API call. The profile covers only
+traced work: with tracing off, or for traces older than the 30-day retention,
+use the database report in [Telegram](telegram.md) instead, which is the
+NFR-PER-001 measurement of record.
+
 ## Degradation
 
 Core behaviour never depends on the store. The owner-confirmed budget is at

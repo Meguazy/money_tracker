@@ -21,6 +21,15 @@ from typing import Any, Final, Protocol
 TELEGRAM_UPDATE_TRACE: Final = "telegram-update"
 """Trace name shared by the gateway and worker stages of one Telegram update."""
 
+TELEGRAM_INGEST_STAGE: Final = "telegram-ingest"
+"""Span the gateway opens once an update's batch has committed."""
+
+WORK_UNIT_STAGE: Final = "work-unit"
+"""Span the worker opens for each attempt at one claimed update."""
+
+TELEGRAM_DELIVERY_STAGE: Final = "telegram-delivery"
+"""Span the gateway opens for each delivery that answers an update."""
+
 ADMIN_ROUTE_TRACE: Final = "admin-route"
 """Trace name of one `money-tracker-admin route` work unit."""
 
@@ -344,7 +353,10 @@ __all__ = [
     "ModelCallRequest",
     "TraceMessage",
     "TraceObservation",
+    "TELEGRAM_DELIVERY_STAGE",
+    "TELEGRAM_INGEST_STAGE",
     "TELEGRAM_UPDATE_TRACE",
     "Tracer",
     "WEB_ADVICE_TRACE",
+    "WORK_UNIT_STAGE",
 ]

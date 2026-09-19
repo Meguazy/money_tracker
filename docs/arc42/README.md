@@ -14,10 +14,11 @@ Read the [product baseline](../product/README.md), this document, the
 ### Product goal
 
 Money Tracker will be a personal, local-first expense assistant. The owner will
-primarily send Italian natural-language messages and receipt images through a
-private Telegram bot. The system will extract, categorize, persist, and analyze
-expenses and refunds. A local web dashboard will provide review, corrections,
-budgets, wallet balances, charts, and operational controls.
+primarily send Italian natural-language messages, and after the personal V1
+release receipt images, through a private Telegram bot. The system will
+extract, categorize, persist, and analyze expenses and refunds. A local web
+dashboard will provide review, corrections, budgets, wallet balances, charts,
+and operational controls.
 
 The approved V1 scope is defined in
 [Vision and Requirements](../product/vision-and-requirements.md). Steps 0–4 are
@@ -35,11 +36,14 @@ metadata, browser inspection and pinned requeue of the durable messaging queues,
 compiled React shell, browser security policy, host unit, and the promoted
 read-only advice surface. On 2026-09-16 real-browser E2E against the production
 API, PostgreSQL, and the promoted local model, automated WCAG 2.0/2.1 A/AA
-checks, and acceptance of the installed user service passed. Step 5.5 is in
-progress: [AD-021](decisions/AD-021-full-fidelity-llm-traces.md) makes runtime
-traces full fidelity, and the tracing boundary now traces the administrative
-dispatch command, while the worker, gateway, and web advice remain untraced.
-Receipt extraction remains assigned to Step 6.
+checks, and acceptance of the installed user service passed. Step 5.5 is
+complete (2026-09-18): [AD-021](decisions/AD-021-full-fidelity-llm-traces.md)
+makes runtime traces full fidelity, and every model-calling entry point is
+traced. Step 7, release hardening and the personal V1 release, is next. On
+2026-09-19 the owner deferred receipt extraction, Step 6, after the personal V1
+release: V1 keeps the implemented private archive and its metadata review, and
+every component below marked as part of the receipt workflow is planned for
+that later step rather than for V1.
 
 ### Quality goals
 
@@ -142,6 +146,9 @@ boundary is not end-to-end encrypted and must not be described as local storage.
 - Cloud LLM, OCR, vision, trace, or finance storage.
 - A cloud relay for Telegram updates older than 24 hours.
 - Automatic posting of extracted receipts.
+- Receipt image download, extraction, preview, line editing, and media
+  deletion: deferred on 2026-09-19 to Step 6, after the personal V1 release.
+  V1 keeps the private archive, its backup, and its metadata review.
 
 ## 4. Solution Strategy
 
@@ -160,7 +167,8 @@ boundary is not end-to-end encrypted and must not be described as local storage.
 - Ingest Telegram updates before acknowledging them and process the durable
   inbox sequentially.
 - Select receipt extraction through a local, versioned OCR/VLM experiment and
-  require owner preview for every V1 receipt.
+  require owner preview for every receipt. The workflow is deferred after the
+  personal V1 release.
 - Serve a React dashboard through same-origin FastAPI on localhost.
 - Run host application processes under systemd, keep core PostgreSQL in Docker,
   and start Langfuse only for development and evaluation.
@@ -290,7 +298,7 @@ catalog is promoted; every identifier carries a `candidate-` prefix.
 | Finance repositories (expense/wallet/budget/funding-source/proposal/versioned receipt metadata implemented) | Persist authoritative domain records and analytics projections | PostgreSQL protocol through explicit repository contracts | Finance schema implemented; receipt deletion open | Dedicated application database; least-privilege credentials; optimistic versions and source locks protect concurrent mutations; no media payloads |
 | Messaging persistence (implemented) | Receive, order, lease, retry, dead-letter, replay, correlate, and complete transport work | `MessagingRepository` port, psycopg, and PostgreSQL | Minimum normalized inbox data, offsets, typed results, logical outbox, pairing, pending actions, and attempt metadata | Shared gateway/worker/admin adapter; no raw update payload, token, or token-bearing URL in rows |
 | Workflow runtime (dispatcher, router, and Step 3 text specialists implemented) | Route one normalized work unit and execute exactly one bounded specialist | Typed dispatcher outcome, LangGraph, model gateway, application services, checkpointer | Small per-graph versioned workflow state only; authoritative domain data stays in repositories | Administration CLI and sequential worker; no media, credentials, or service objects in checkpoints |
-| Receipt service | Validate media, invoke extractor, reconcile lines, prepare review | Implemented media-store port, planned extractor, finance service | Receipt metadata, extraction versions, review state | Private filesystem; untrusted image boundary; orchestration planned |
+| Receipt service | Validate media, invoke extractor, reconcile lines, prepare review | Implemented media-store port, planned extractor, finance service | Receipt metadata, extraction versions, review state | Private filesystem; untrusted image boundary; orchestration planned for Step 6, deferred after V1 |
 | Analytics service | Compute time, category, budget and funding summaries | Read repositories and deterministic calendar policies | No separate authoritative data | FastAPI and read-only agent tools |
 | Backup service (implemented, unscheduled) | Create consistent encrypted backups and verify restores | `pg_dump`, Restic, receipt/configuration paths | Backup snapshots in owner repository | Owner-invoked today; systemd timer and clean-machine qualification planned; recovery secret stored off-device |
 
@@ -305,7 +313,7 @@ catalog is promoted; every identifier carries a `candidate-` prefix.
 | React dashboard (partial) | Display the monthly overview, calendar analytics with merchant and period comparison, transaction register, budget planner, categories, funding sources with tracked-wallet balances/history, retained receipt metadata, durable messaging state, fixed profile facts, and promoted tool-grounded advice; edit the multi-allocation manual lifecycle, monthly budgets, deterministic category and source lifecycle, manual wallet entries, the mandatory receipt review, and both queue requeues; choose the active default funding source while locale, currency, and timezone remain read-only | Same-origin REST API | Browser session/UI state only | Route-split compiled static assets with the chart engine isolated from its renderer; no secrets, infrastructure configuration, receipt images, prompts, completions, or original message reflection; accessible loading, empty, insufficient, clarification, error/retry, lifecycle history, responsive navigation, chart/table alternatives, and named keyboard-focusable table scroll regions; real-browser WCAG A/AA acceptance |
 | Local model gateway | Provide typed chat, schema and tool capabilities | OpenAI-compatible local endpoint | No persistent domain data | Replaceable host inference process |
 | Calendar period resolver (implemented) | Resolve strict day, ISO-week, month, year, and bounded inclusive custom selections plus their deterministic predecessors into half-open query intervals | Pure domain date values used by reporting and the web adapter; no framework or repository dependency | No persistent data | In-process domain component; Europe/Rome calendar semantics, DST-safe boundaries, and a 366-day custom-range ceiling |
-| Receipt extractor adapter | Produce a versioned structured receipt draft | Selected local OCR/VLM pipeline | No authoritative data until validated | Local-only; selection remains evaluation-gated |
+| Receipt extractor adapter | Produce a versioned structured receipt draft | Selected local OCR/VLM pipeline | No authoritative data until validated | Local-only; selection remains evaluation-gated; planned for Step 6, deferred after V1 |
 | Langfuse adapter (`tracing.langfuse`, implemented) | Record full-fidelity AD-021 traces; publish aggregate capability scores and promotion evidence through `evaluations.publication` | Local Langfuse SDK behind the tracing port | Observability copies, not source of truth; owner content with ledger sensitivity; excluded from backup and kept 30 days by owner decision | Optional Compose profile; administrative dispatch, gateway, worker, and web advice traced |
 
 ### Step 4 messaging boundaries
@@ -1204,6 +1212,11 @@ manual acceptance check.
 
 ### Planned receipt review
 
+This sequence belongs to Step 6, which the owner deferred after the personal V1
+release on 2026-09-19. The V1 runtime stops before step 2: an image is routed
+deterministically to the `receipt` intent, which answers in Italian that
+photographed receipts are not handled yet, and nothing is downloaded.
+
 1. Telegram media metadata is durably ingested before processing.
 2. The worker downloads and validates the image, hashes it, and stores it outside
    the web root.
@@ -1808,7 +1821,7 @@ environment file.
 - [AD-011: Evaluation-gated receipt extraction](decisions/AD-011-receipt-extraction.md):
   private original-media boundary and the owner-facing metadata lifecycle
   implemented; extractor evaluation and the extracted-draft preview workflow
-  planned.
+  planned for Step 6, deferred after the personal V1 release.
 - [AD-009: Local FastAPI and React web application](decisions/AD-009-local-web-application.md):
   strict version-one finance wire contracts, monthly overview, calendar
   analytics including merchant and prior-period comparison, manual lifecycle,
@@ -1825,7 +1838,8 @@ environment file.
   safe local adapter, replay-safe versioned review state, and real
   filesystem/PostgreSQL integration implemented; administration CLI wiring,
   encrypted archive backup/restore, and browser metadata review implemented;
-  API/worker media wiring and deletion planned.
+  API/worker media wiring and deletion planned for Step 6, deferred after the
+  personal V1 release.
 - [AD-016: Explicit workflow dispatcher](decisions/AD-016-explicit-workflow-dispatcher.md):
   transport-neutral typed outcome, explicit router-to-specialist composition,
   trusted action correlation, administration CLI wiring, durable worker, and
@@ -1876,7 +1890,7 @@ the merge.
 | A model emits malformed structured output | One corrective retry occurs, then the workflow asks for clarification without writing. |
 | An expense has mixed categories and payment sources | Both independent allocation sums reconcile exactly before posting. |
 | A category does not fit | The workflow interrupts and creates nothing without explicit approval. |
-| A receipt total and extracted lines differ | The receipt remains in review with the unexplained difference visible. |
+| A receipt total and extracted lines differ (Step 6, after V1) | The receipt remains in review with the unexplained difference visible. |
 | Langfuse is stopped | Core ingestion, finance, Telegram, API, and dashboard behavior continues without traces. |
 | A user outside the paired owner contacts the bot | The gateway rejects the update without exposing finance state. |
 | A browser uses a non-loopback route or disallowed origin | The API refuses access or mutation. |
@@ -1975,7 +1989,11 @@ Quantitative evaluation gates are maintained in
 - Local models may not meet Italian routing, schema, tool, or receipt quality
   gates within 16 GB VRAM.
 - OCR/VLM receipt extraction may require extensive private annotation and manual
-  correction.
+  correction. Deferring it after the personal V1 release moves this risk out of
+  the release rather than removing it.
+- V1 ships without receipt deletion: an original imported through
+  `money-tracker-admin receipt-store` stays in the archive and in every backup
+  until Step 6 delivers media deletion.
 - The localhost dashboard now enforces browser-origin and DNS-rebinding
   controls. Same-user local processes remain trusted in V1; remote access would
   require authentication, TLS, and a new threat model.

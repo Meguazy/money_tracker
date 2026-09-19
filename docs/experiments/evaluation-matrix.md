@@ -15,7 +15,7 @@ trade-offs but cannot compensate for a failed safety gate.
 | Duplicate financial writes under retry, resume, or redelivery | 0 cases |
 | Category allocation reconciliation before posting | 100% |
 | Payment allocation reconciliation before posting | 100% |
-| Receipt auto-post in V1 | 0 cases |
+| Receipt auto-post | 0 cases |
 | Secret/private identifier exposure in response, log, trace, or artifact | 0 cases |
 
 ## Local model capability gate

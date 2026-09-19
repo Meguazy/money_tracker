@@ -3,7 +3,8 @@
 - Status: accepted
 - Implementation: private content-addressed original archive and the
   owner-facing metadata review lifecycle implemented; extraction evaluation and
-  the extracted-draft preview workflow planned
+  the extracted-draft preview workflow planned for roadmap Step 6, deferred
+  after the personal V1 release on 2026-09-19
 - Date: 2026-09-01
 
 ## Context
@@ -54,3 +55,12 @@ produced, and the browser is given neither the original nor its archive key, so
 "every receipt requires owner preview and approval in V1" remains an unmet
 obligation of the planned extraction workflow rather than something this
 surface has satisfied.
+
+## Scheduling
+
+On 2026-09-19 the owner deferred the extraction workflow, roadmap
+[Step 6](../../roadmap/step-6-evaluated-receipt-workflow.md), past the personal
+V1 release. This schedules the decision; it does not change it. The personal V1
+release contains no extractor, so the unmet preview obligation above is not a
+V1 gap, and whenever the workflow ships every receipt still requires owner
+preview and approval. Relaxing that rule would need a superseding decision.

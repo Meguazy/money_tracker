@@ -7,7 +7,8 @@
 ## Vision
 
 Money Tracker is a private personal-finance assistant that turns short Italian
-messages and receipt photos into reliable, reviewable expense records. It helps
+messages, and after the personal V1 release receipt photos, into reliable,
+reviewable expense records. It helps
 the owner understand spending by purpose, funding source, time period, and
 monthly budget without sending finance data to cloud AI services.
 
@@ -18,8 +19,8 @@ statistics, failures, and settings.
 ## Intended outcomes
 
 - Recording an ordinary expense takes one natural-language message.
-- Mixed supermarket receipts reveal the purpose of individual items without
-  double-counting the purchase total.
+- After the personal V1 release, mixed supermarket receipts reveal the purpose
+  of individual items without double-counting the purchase total.
 - Meal vouchers, welfare, cards, and cash remain analytically distinct.
 - Category growth improves decisions without making reports unreadable.
 - Questions about spending and budgets use stored facts and deterministic
@@ -89,6 +90,12 @@ possible, but V1 implements neither multiple profiles nor sharing.
 
 ### Receipts
 
+These requirements are accepted but, except where noted, deferred after the
+personal V1 release; see
+[Deferred after the personal V1 release](#deferred-after-the-personal-v1-release).
+V1 includes only the retention and backup part of FR-RCP-006 for the originals
+the private archive already holds.
+
 - **FR-RCP-001 — Image ingestion:** Accept receipt images from Telegram and the
   local dashboard within validated type and size limits.
 - **FR-RCP-002 — Structured extraction:** Extract merchant, purchase date,
@@ -99,7 +106,7 @@ possible, but V1 implements neither multiple profiles nor sharing.
 - **FR-RCP-004 — Total reconciliation:** Reconcile line/category/payment sums,
   expose unexplained differences, and keep inconsistent results in review.
 - **FR-RCP-005 — Mandatory preview:** Require explicit owner approval before
-  posting every V1 receipt.
+  posting every receipt.
 - **FR-RCP-006 — Retention:** Keep the original image locally until manual
   deletion and include retained media in authoritative backups.
 
@@ -189,7 +196,8 @@ possible, but V1 implements neither multiple profiles nor sharing.
 - **NFR-EVL-001:** No model, prompt, threshold, tool contract, or receipt pipeline
   is promoted without the applicable documented evaluation gates.
 - **NFR-PER-001:** Initial warm targets are p95 at most 30 seconds for a text
-  response and 90 seconds for a receipt preview on the target workstation.
+  response and, once the receipt workflow ships, 90 seconds for a receipt
+  preview on the target workstation.
 - **NFR-OPS-001:** Planned core services tolerate delayed network, database, and
   inference readiness and expose actionable failure state.
 - **NFR-MNT-001:** A behavior or architecture change updates documentation,
@@ -205,21 +213,47 @@ possible, but V1 implements neither multiple profiles nor sharing.
 | `Usa una delle categorie esistenti` during review | No category creation; the best adequate existing category is used and audited. |
 | `Usa la categoria X` | Stable category/alias resolution or a disambiguation question; never a model-invented ID. |
 | `Proponine un'altra` | Current candidate is excluded and a different valid candidate is proposed. |
-| Mixed supermarket receipt | One purchase total with purpose-based line allocations and mandatory preview. |
+| A photo sent to the bot | No download and no movement; an Italian reply says photographed receipts are not handled yet and asks for the expense in words. |
 | `Quanto budget mi rimane per X?` | Deterministic monthly limit, posted spend, remaining amount, period, and personal/benefit split. |
 | `Per cosa sto spendendo troppo questa settimana?` | Budget risks first, then comparable history; all figures trace to read tools. |
 
 ## V1 success criteria
 
-- The Telegram text-expense, correction, category-review, budget-query, advice,
-  and receipt-review journeys pass real end-to-end tests.
-- The evaluation matrix passes for the promoted local text model and receipt
-  pipeline.
+- The Telegram text-expense, correction, category-review, budget-query, and
+  advice journeys pass real end-to-end tests.
+- The evaluation matrix passes for the promoted local text model.
 - Retry and restart tests demonstrate zero duplicate financial writes.
 - The dashboard exposes all planned V1 control-plane views on localhost.
 - A fresh-install restore drill reconstructs authoritative data and media.
 - arc42, ADR status, roadmap evidence, experiment decision log, and operations
   guides match the released behavior.
+
+## Deferred after the personal V1 release
+
+On 2026-09-19 the owner deferred the receipt workflow past the personal V1
+release in favour of a working text-first V1. It remains accepted product
+scope and is planned as roadmap
+[Step 6](../roadmap/step-6-evaluated-receipt-workflow.md), listed under future
+developments. Until it ships, these parts of this baseline do not apply to V1:
+
+- FR-RCP-001 to FR-RCP-005, and the manual deletion in FR-RCP-006;
+- the receipt-preview target in NFR-PER-001;
+- journey [J6](user-journeys.md#j6-receipt-ingestion-and-review);
+- the mixed-receipt acceptance example, which V1 does not have to meet:
+
+  | Input or action | Required observable result |
+  | --- | --- |
+  | Mixed supermarket receipt | One purchase total with purpose-based line allocations and mandatory preview. |
+
+- the success criteria that the receipt-review journey passes a real
+  end-to-end test and that the evaluation matrix passes for a promoted receipt
+  pipeline.
+
+What V1 already provides stays: the private original archive, its backup and
+restore, and the dashboard's mandatory metadata review. The rule that every
+receipt draft requires preview and explicit approval is unchanged and binds
+the workflow whenever it ships. Bringing receipts into a release updates this
+section, the roadmap, and the affected documents in the same change.
 
 ## Deferred evolution
 

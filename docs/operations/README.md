@@ -18,7 +18,9 @@
   opt-in full-fidelity tracing of `money-tracker-admin route`, of the Telegram
   gateway and worker, one trace per update, and of web advice into the local
   Langfuse, with evaluation-promotion publication and a 30-day trace retention
-  command offering private export and verified deletion
+  command offering private export and verified deletion, plus a profile-scoped
+  portable finance export with a revisioned JSON Lines contract, private-file
+  controls, counts, and a SHA-256 digest
 - Implemented Step 2: authoritative finance schema and transactional
   expense, wallet, budget, pending category-proposal, and versioned receipt-review
   repository operations, a safe local receipt-media adapter, and verified
@@ -49,6 +51,9 @@ the referenced file or entry point exists in the repository.
 - [Backup and Restore](backup-and-restore.md): host prerequisites, backup
   configuration, the implemented `money-tracker-backup` sequence, retention,
   the isolated restore drill, and recovery acceptance.
+- [Data Portability](data-portability.md): the implemented finance-export
+  contract, private destination controls, contents, verification, and failure
+  handling.
 - [LLM Tracing](tracing.md): what AD-021 traces contain, one trace per
   Telegram update, decision metadata, the explicit switch, identity in
   services, reading a trace, measured degradation, the 30-day retention with

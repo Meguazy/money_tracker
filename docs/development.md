@@ -274,6 +274,21 @@ into an explicitly named empty database and empty receipt directory. Full
 configuration, guardrails, and the drill procedure are in
 [Backup and Restore](operations/backup-and-restore.md).
 
+## Portable finance export
+
+Create an owner-only destination directory outside the checkout, then export
+one profile's authoritative finance records:
+
+    install -d -m 700 /absolute/private/export-directory
+    uv run --env-file .env money-tracker-export \
+      --profile-id PROFILE_UUID \
+      --output /absolute/private/export-directory/finance.jsonl
+
+The destination must not already exist. The command prints safe JSON containing
+counts and a SHA-256 digest; the file itself contains owner finance content and
+is not encrypted. See [Data Portability](operations/data-portability.md) for
+the format, custody rules, and verification procedure.
+
 ## Optional self-hosted Langfuse
 
 The observability stack is separate from the default Compose project. Start it

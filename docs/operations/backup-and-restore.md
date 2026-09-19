@@ -245,17 +245,52 @@ Its enforced sequence is:
 7. import the dump with `pg_restore --exit-on-error` into the empty target;
 8. copy receipts to the target as mode-600 files in mode-700 shards and verify
    every referenced content hash again at the destination;
-9. print safe JSON with the snapshot ID, receipt count, and database name.
+9. verify the restored data semantically in one read-only repeatable-read
+   transaction, as `verify-restore` below does on its own;
+10. print safe JSON with the snapshot ID, receipt count, and database name.
 
 The command therefore cannot restore into a live database, cannot overwrite a
-populated receipt directory, and cannot silently accept a snapshot written by a
-different application version. Note that step 5 makes a drill fail after an
+populated receipt directory, cannot silently accept a snapshot written by a
+different application version, and cannot report success for a byte-perfect
+restore whose business records contradict each other. Note that step 5 makes a drill fail after an
 application version bump: restore with the matching pinned version, as the
 sequence below requires.
 
 Real integration coverage lives in
 [`tests/integration/money_tracker/backup`](../../tests/integration/money_tracker/backup);
 [Development](../development.md) records how to run it.
+
+## Implemented restored-data verification
+
+The semantic gate that closes the drill is also an operator command. It needs
+neither Restic nor the PostgreSQL client binaries, so it can be repeated on a
+restored target at any time:
+
+    MONEY_TRACKER_RESTORE_DATABASE_URL=postgresql://money_tracker:PASSWORD@127.0.0.1:5433/money_tracker_drill \
+    MONEY_TRACKER_RESTORE_EXPECTED_DATABASE=money_tracker_drill \
+    MONEY_TRACKER_RESTORE_RECEIPT_ROOT=/absolute/empty/drill/receipts \
+      uv run --env-file .env money-tracker-backup verify-restore
+
+It reads the named database in a single read-only repeatable-read transaction
+and refuses to continue unless the URL names exactly the expected database, the
+connected database agrees, and the Alembic revision equals the one the running
+application supports. It then checks, failing closed on the first violation:
+
+- profile and default-funding-source consistency in both directions;
+- posted and voided expense reconciliation against category and payment
+  allocations, including allocation polarity and profile scope;
+- wallet-entry and monthly-budget scope, including ledger balance mode;
+- every idempotency record resolving to an aggregate in the same profile;
+- Telegram offsets ahead of every retained inbox update, outbox/pending-action
+  bot-key agreement, owner bindings on active profiles, and pending-action
+  targets that still exist in the same profile;
+- every non-deleted receipt reference resolving to a regular mode-600 file
+  beneath an owner-only archive root whose content hash still matches.
+
+Output and journal records carry only the database name, the schema revision,
+stable reason codes, and counts. A failure names a reason code such as
+`expense_reconciliation_invalid` or `receipt_checksum_mismatch` and never a
+path, an amount, or a category name.
 
 ## Planned clean-machine restore sequence
 
@@ -267,7 +302,8 @@ semantic sequence around the implemented command is:
    Telegram ingress or workers;
 3. run the implemented restore drill against that target;
 4. apply only the documented compatible migration path;
-5. run domain/database integrity checks and count comparisons;
+5. run `money-tracker-backup verify-restore` against that target and compare
+   its counts with the expected fixture;
 6. start API in isolated/read-only verification mode where available;
 7. start workers/gateway only after idempotency, pending actions, offsets, and
    owner pairing have been inspected;
@@ -279,21 +315,32 @@ test a snapshot.
 ## Restore acceptance checks
 
 - Database migration/version matches the application. The manifest records the
-  Alembic revision and the command rejects a foreign application version.
-- Every posted expense satisfies category and payment reconciliation.
-- Categories, budgets, funding sources, wallet balances, and audit counts match
-  the manifest/expected fixture.
+  Alembic revision, the command rejects a foreign application version, and
+  `verify-restore` pins the restored revision to the running application's.
+- Every posted or voided expense satisfies category and payment reconciliation.
+  Verified by `verify-restore`.
+- Budgets, funding sources, and wallet entries stay inside their profile.
+  Verified by `verify-restore`; count comparison against the expected fixture
+  stays with the operator, who reads the printed counts.
 - Every retained receipt reference resolves to the expected hash; no unexpected
-  media path is web-accessible. The command verifies this in staging and again
-  at the destination.
-- Inbox/outbox uniqueness and idempotency constraints remain intact.
+  media path is web-accessible. The command verifies this in staging, again at
+  the destination, and once more semantically with file mode and archive
+  privacy.
+- Idempotency records resolve to a surviving aggregate, and Telegram offsets,
+  queue scope, owner bindings, and pending-action targets stay correlated.
+  Verified by `verify-restore`.
 - Pending workflows either resume under a compatible graph or are explicitly
-  drained/migrated before service start.
+  drained/migrated before service start. Still manual: workflow checkpoints are
+  versioned per graph and carry no cross-record invariant to assert.
 - Owner identity and default funding source are present without exposing tokens.
-- Core operation starts and passes health checks with Langfuse absent.
+  Verified by `verify-restore`.
+- Core operation starts and passes health checks with Langfuse absent. Still
+  manual: it requires a running installation, not a restored data set.
 
-The checks that read restored finance aggregates are still manual: the drill
-verifies identity, integrity, and media, not business reconciliation.
+Business reconciliation of restored aggregates is therefore executable. What
+remains manual is the clean-machine drill around it: target installation,
+off-device recovery-secret access, service startup, workflow-checkpoint
+disposition, and recorded duration/RPO/RTO evidence.
 
 ## Destructive-operation guardrails
 

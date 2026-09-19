@@ -9,6 +9,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from money_tracker.backup import AuthoritativeBackupService, BackupSettings
+from money_tracker.recovery import RestoredDataVerifier, RestoreIntegritySettings
 from money_tracker.structured_logging import (
     configure_logging,
     get_logger,
@@ -33,6 +34,10 @@ def _parser() -> argparse.ArgumentParser:
         help="restore a snapshot into explicitly isolated empty targets",
     )
     restore.add_argument("--snapshot-id", required=True)
+    subparsers.add_parser(
+        "verify-restore",
+        help="verify semantic integrity of explicitly isolated restored targets",
+    )
     return parser
 
 
@@ -56,6 +61,27 @@ def main(argv: Sequence[str] | None = None) -> None:
     args = _parser().parse_args(argv)
     with log_context(command=args.command):
         _LOGGER.info("backup.command.started")
+        if args.command == "verify-restore":
+            result = RestoredDataVerifier(RestoreIntegritySettings.from_env()).verify()
+            print(
+                json.dumps(
+                    {
+                        "active_profile_count": result.active_profile_count,
+                        "alembic_revision": result.alembic_revision,
+                        "database_name": result.database_name,
+                        "default_source_count": result.default_source_count,
+                        "expense_count": result.expense_count,
+                        "idempotency_record_count": result.idempotency_record_count,
+                        "inbox_count": result.inbox_count,
+                        "outbox_count": result.outbox_count,
+                        "pending_action_count": result.pending_action_count,
+                        "receipt_count": result.receipt_count,
+                        "status": "restore-integrity-verified",
+                    },
+                    sort_keys=True,
+                )
+            )
+            return
         service = AuthoritativeBackupService(BackupSettings.from_env())
         _run(args, service)
 

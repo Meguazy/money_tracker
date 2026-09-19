@@ -2,7 +2,7 @@
 
 Part of the [delivery roadmap](../roadmap.md).
 
-Status: **In progress — finance export slice implemented
+Status: **In progress — restore integrity slice implemented
 (2026-09-19).**
 
 ## Scope change (2026-09-19)
@@ -93,6 +93,36 @@ record fidelity, exclusions, digest, file mode, and content-free diagnostics.
 The portability contract and operating procedure are recorded in
 [AD-023](../arc42/decisions/AD-023-portable-finance-export.md) and the
 [data-portability runbook](../operations/data-portability.md).
+
+## Restore integrity slice (2026-09-19)
+
+The third Step 7 slice adds a read-only semantic verifier for an isolated
+restored target. The existing `restore-drill` now runs it after database and
+media reconstruction, and the operator can repeat it independently with
+`money-tracker-backup verify-restore` without Restic or PostgreSQL client
+binaries.
+
+The verifier pins the recovered database to the running application's Alembic
+revision and reads it in one repeatable-read transaction. It checks profile and
+default-source consistency; posted/voided dual-allocation reconciliation,
+polarity, and profile scope; wallet and budget scope; finance idempotency
+targets; Telegram offsets, queue scope, owner bindings, and pending-action
+targets. It then verifies every non-deleted receipt reference against a regular
+mode-`0600` content-addressed file beneath a real owner-only archive directory.
+Output and journal records contain only schema identity, stable reason codes,
+and counts.
+
+Unit evidence covers explicit isolated-target configuration and command
+selection. A real PostgreSQL/filesystem integration test exercises both the
+service and production CLI, then proves that a missing original and a
+profile/default-source mismatch fail closed. The real Restic backup job remains
+responsible for exercising the strengthened end-to-end restore path.
+
+This slice advances the clean-machine restore deliverable by replacing its
+manual semantic checks with an executable gate. It does not claim the
+clean-machine drill itself: target installation, off-device recovery-secret
+access, the actual restore on an empty installation, service startup with
+Langfuse absent, and recorded duration/RPO/RTO evidence remain open.
 
 ## Exit criteria
 

@@ -13,6 +13,7 @@ def test_parser_exposes_only_explicit_backup_operations() -> None:
     assert _parser().parse_args(["init"]).command == "init"
     assert _parser().parse_args(["create"]).command == "create"
     assert _parser().parse_args(["status"]).command == "status"
+    assert _parser().parse_args(["verify-restore"]).command == "verify-restore"
     restore = _parser().parse_args(["restore-drill", "--snapshot-id", "abc123"])
     assert restore.command == "restore-drill"
     assert restore.snapshot_id == "abc123"

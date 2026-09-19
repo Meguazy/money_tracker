@@ -270,9 +270,17 @@ up the authoritative database, receipt archive, and runtime configuration:
 Every path setting must be absolute. The `create` command verifies database
 identity and receipt hashes first, verifies the snapshot before applying
 retention, and prints only safe JSON. `restore-drill` reconstructs a snapshot
-into an explicitly named empty database and empty receipt directory. Full
-configuration, guardrails, and the drill procedure are in
-[Backup and Restore](operations/backup-and-restore.md).
+into an explicitly named empty database and empty receipt directory, then
+verifies the recovered records semantically. `verify-restore` repeats only that
+last gate against an already restored target:
+
+    MONEY_TRACKER_RESTORE_DATABASE_URL=postgresql://money_tracker:PASSWORD@127.0.0.1:5433/money_tracker_drill \
+    MONEY_TRACKER_RESTORE_EXPECTED_DATABASE=money_tracker_drill \
+    MONEY_TRACKER_RESTORE_RECEIPT_ROOT=/absolute/empty/drill/receipts \
+      uv run --env-file .env money-tracker-backup verify-restore
+
+Full configuration, guardrails, the drill procedure, and the verified
+invariants are in [Backup and Restore](operations/backup-and-restore.md).
 
 ## Portable finance export
 

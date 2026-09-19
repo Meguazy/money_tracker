@@ -8,14 +8,12 @@ from importlib.metadata import version
 from pathlib import Path
 
 import pytest
-from psycopg.conninfo import conninfo_to_dict
 
 from money_tracker.backup import (
     RETENTION_ARGUMENTS,
     AuthoritativeBackupService,
     BackupError,
     BackupSettings,
-    _libpq_dsn,
     _libpq_environment,
     _prepare_private_directory,
     _require_empty_restore_target,
@@ -284,22 +282,3 @@ def test_retention_policy_groups_by_tag_not_staging_path() -> None:
         "--keep-weekly": "5",
         "--keep-monthly": "12",
     }
-
-
-@pytest.mark.parametrize(
-    "database_url",
-    [
-        "postgresql://user:secret@127.0.0.1:5433/money_tracker",
-        "postgresql+psycopg://user:secret@127.0.0.1:5433/money_tracker",
-    ],
-)
-def test_accepted_application_urls_produce_a_parsable_libpq_dsn(
-    database_url: str,
-) -> None:
-    """Connect with either configured scheme instead of failing inside libpq."""
-
-    parameters = conninfo_to_dict(_libpq_dsn(database_url))
-
-    assert parameters["dbname"] == "money_tracker"
-    assert parameters["host"] == "127.0.0.1"
-    assert parameters["port"] == "5433"

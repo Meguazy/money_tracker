@@ -3,7 +3,8 @@
 - Status: accepted
 - Implementation: Compose topology, encrypted Restic backup/restore, accepted
   Telegram/worker/llama.cpp units, and the browser-accepted FastAPI service unit
-  implemented; the persistent daily backup timer is implemented but its first
+  implemented; post-restore semantic verification and the persistent daily
+  backup timer are implemented but the timer's first
   target-workstation scheduled runs remain to be accepted
 - Date: 2026-09-01
 
@@ -100,6 +101,17 @@ verified backup command. Its oneshot service keeps the same owner-selected
 filesystem authority as the manual CLI because the repository, staging, lock,
 archive, and password-file paths cannot be enumerated in a static template.
 Installation and observed scheduled retention on the target remain open.
+
+The third Step 7 slice adds a separate read-only restored-data verifier and
+runs it at the end of every `restore-drill`. It requires the exact isolated
+database identity, application schema revision, and private receipt root; checks
+finance reconciliation and profile scope, replay-protection targets, Telegram
+offset/queue/action correlations, and retained-media modes and hashes; and emits
+only safe counts and stable reason codes. Operators can repeat the same gate
+with `money-tracker-backup verify-restore` without Restic tooling. Real
+PostgreSQL and filesystem integration evidence covers success plus missing-media
+and profile/default-source drift. A clean-machine restore and subsequent core
+startup with Langfuse absent remain release acceptance work.
 
 ## Consequences
 

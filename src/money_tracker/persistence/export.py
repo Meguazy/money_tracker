@@ -27,6 +27,7 @@ from uuid import UUID
 from psycopg import connect
 from psycopg.rows import dict_row
 
+from money_tracker.persistence.schema import APPLICATION_SCHEMA_REVISION
 from money_tracker.structured_logging import get_logger
 
 _LOGGER = get_logger(__name__)
@@ -37,7 +38,7 @@ FORMAT_NAME: Final = "money-tracker.finance"
 FORMAT_VERSION: Final = 1
 """Current portable finance format version."""
 
-SUPPORTED_DATABASE_REVISION: Final = "20260910_0007"
+SUPPORTED_DATABASE_REVISION: Final = APPLICATION_SCHEMA_REVISION
 """Exact schema revision whose projections define format version one."""
 
 

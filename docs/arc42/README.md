@@ -230,6 +230,7 @@ Money Tracker workstation
 | `web` | Compose versioned HTTP reads and writes, static UI serving, health, and browser policy | FastAPI, narrow application ports, typed settings, strict wire contracts, and `web.mutations` | No authoritative data; injects the sole trusted profile and bot scope and owns only HTTP semantics | Host user service on IPv4 loopback; exact Host/Origin, closed CORS, CSRF, CSP, bounded problems, no Bot API credential, and no secret endpoint |
 | `web.mutations` | Translate strict browser movement, budget, funding-source/wallet, category-review, receipt-review, and messaging-requeue commands into existing audited use cases | Narrow writer protocols, request contracts, ID port, canonical command hashes, and the trusted messaging scope | No state; owns trusted web actor/source construction, not persistence or lifecycle policy | In-process API adapter; profile, bot scope, and command key are injected, and responses omit all three |
 | `backup` | Create verified encrypted authoritative snapshots, report their freshness, and restore only into explicitly empty isolated targets | Restic and PostgreSQL client executables, psycopg identity/receipt queries, private archive and configuration paths | Snapshot contents and the versioned integrity manifest in the owner repository; no finance state of its own | Host CLI under an exclusive lock; absolute-path and owner-only input checks, recovery secret passed only by file path, failures name no argument or environment |
+| `recovery` | Verify semantic integrity of an isolated restored database and receipt archive before runtime startup | psycopg read-only repeatable-read transaction, canonical schema revision, and content-addressed receipt files | No state; returns only schema identity and aggregate counts | Host operator command and final stage of `restore-drill`; exact database scope, owner-only media root, content-free failures and journal fields |
 | `administration` | Expose bounded local profile bootstrap, funding-source configuration, receipt storage/registration, and one-shot dispatch of every Step 3 text route | Database URL, absolute archive setting, application services, the workflow dispatcher, local model adapter, and `open_tracer` | No independent state; emits safe identifiers, grounded facts, and reason codes only | Host CLI; active-profile preflight for specialists, explicit trusted correlations, no private paths or message content in JSON; the first traced entry point, one trace per work unit |
 | `persistence.finance` | Bootstrap profile/taxonomy, persist versioned funding-source lifecycle plus complete expense and budget aggregates, append expiry-aware balance-safe wallet movements, validate/store pending proposals, and register/transition receipt metadata transactionally | psycopg and narrow application repository contracts | Finance tables, allocations, budgets/overrides, wallet ledger, proposals, versioned receipt metadata, audit, and idempotency records | Dedicated application PostgreSQL; no receipt bytes or paths; optimistic versions protect mutable aggregates |
 | `media.local` | Decode, validate, atomically retain, and integrity-check private receipt originals | Receipt-media port, Pillow, private filesystem | Original bytes under sharded SHA-256 keys; no database state | Host library outside web roots; `0700` directories, `0600` files, no-follow verified reads; root wired explicitly by admin CLI, API/worker planned |
@@ -301,7 +302,7 @@ catalog is promoted; every identifier carries a `candidate-` prefix.
 | Workflow runtime (dispatcher, router, and Step 3 text specialists implemented) | Route one normalized work unit and execute exactly one bounded specialist | Typed dispatcher outcome, LangGraph, model gateway, application services, checkpointer | Small per-graph versioned workflow state only; authoritative domain data stays in repositories | Administration CLI and sequential worker; no media, credentials, or service objects in checkpoints |
 | Receipt service | Validate media, invoke extractor, reconcile lines, prepare review | Implemented media-store port, planned extractor, finance service | Receipt metadata, extraction versions, review state | Private filesystem; untrusted image boundary; orchestration planned for Step 6, deferred after V1 |
 | Analytics service | Compute time, category, budget and funding summaries | Read repositories and deterministic calendar policies | No separate authoritative data | FastAPI and read-only agent tools |
-| Backup service and scheduler (implemented) | Create consistent encrypted backups, enforce retention, and verify restores | `pg_dump`, Restic, receipt/configuration paths, persistent systemd user timer | Backup snapshots in owner repository; no application state | Manual command or daily oneshot on the host; arbitrary owner-selected backup paths prevent a static read-only home sandbox; timer enablement, scheduled-run evidence, and clean-machine qualification remain open |
+| Backup, recovery verifier, and scheduler (implemented) | Create consistent encrypted backups, enforce retention, restore isolated targets, and verify recovered business/runtime integrity | `pg_dump`, Restic, psycopg read-only verification, receipt/configuration paths, persistent systemd user timer | Backup snapshots in owner repository; no application state | Manual command or daily oneshot on the host; arbitrary owner-selected backup paths prevent a static read-only home sandbox; timer enablement, scheduled-run evidence, and clean-machine qualification remain open |
 
 ### Current and planned adapters and presentation blocks
 
@@ -1177,13 +1178,19 @@ This read model is a real security and application boundary, not a second owner 
    directory. It verifies manifest compatibility and every checksum in staging,
    refuses symlinked restored paths, imports the dump, then re-verifies each
    receipt hash at the destination.
+8. The restore then runs the same read-only semantic gate exposed independently
+   as `money-tracker-backup verify-restore`: schema identity, finance
+   reconciliation/scope, replay targets, Telegram offset/queue/action
+   correlations, and every non-deleted receipt's mode and content hash must all
+   pass before success is reported.
 
 Credentials reach subprocesses only through libpq environment variables and the
 Restic password-file path. Failures name the failing executable alone. A
 persistent daily user timer invokes the same command at 03:15 local time with
 up to thirty minutes of jitter after explicit owner enablement. Scheduled-run
-acceptance remains open, and business reconciliation of restored aggregates remains a
-manual acceptance check.
+acceptance remains open. Business reconciliation of restored aggregates is now
+a repeatable executable check, while the clean-machine environment, off-device
+secret, service startup, and measured recovery acceptance remain open.
 
 ### Current portable finance export
 

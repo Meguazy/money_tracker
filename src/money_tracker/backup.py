@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import fcntl
-import hashlib
 import json
 import os
 import shutil
@@ -22,6 +21,8 @@ from urllib.parse import unquote, urlparse
 from psycopg import connect
 
 from money_tracker.domain.receipts import SHA256_PATTERN
+from money_tracker.local_integrity import LocalIntegrityError, libpq_dsn, sha256_file
+from money_tracker.recovery import RestoredDataVerifier, RestoreIntegritySettings
 from money_tracker.structured_logging import get_logger
 
 AUTHORITATIVE_TAG = "money-tracker-authoritative"
@@ -192,16 +193,12 @@ def _optional_absolute_env_path(name: str, default: str) -> Path:
 
 
 def _sha256_file(path: Path) -> str:
-    """Hash a regular file without following a final symlink."""
+    """Hash a regular file, reporting failure in the backup error contract."""
 
-    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
     try:
-        descriptor = os.open(path, flags)
-        with os.fdopen(descriptor, "rb") as handle:
-            digest = hashlib.file_digest(handle, "sha256").hexdigest()
-    except OSError as error:
-        raise BackupError(f"cannot safely read required file: {path.name}") from error
-    return digest
+        return sha256_file(path)
+    except LocalIntegrityError as error:
+        raise BackupError(str(error)) from error
 
 
 def _require_private_file(path: Path, label: str) -> None:
@@ -269,22 +266,6 @@ def _libpq_environment(database_url: str) -> tuple[dict[str, str], str]:
     if parsed.password is not None:
         environment["PGPASSWORD"] = unquote(parsed.password)
     return environment, database_name
-
-
-def _libpq_dsn(database_url: str) -> str:
-    """Remove the SQLAlchemy driver marker that libpq cannot parse.
-
-    Args:
-        database_url: Configured URL in either accepted application form.
-
-    Returns:
-        A connection string psycopg can pass directly to libpq.
-    """
-
-    prefix = "postgresql+psycopg://"
-    if database_url.startswith(prefix):
-        return "postgresql://" + database_url[len(prefix) :]
-    return database_url
 
 
 class AuthoritativeBackupService:
@@ -472,6 +453,13 @@ class AuthoritativeBackupService:
                 )
                 self._copy_receipts(restored_receipts, target_receipt_root)
                 self._verify_receipt_tree(target_receipt_root, manifest.receipt_hashes)
+                RestoredDataVerifier(
+                    RestoreIntegritySettings(
+                        database_url=target_database_url,
+                        expected_database=target_database_name,
+                        receipt_root=target_receipt_root,
+                    )
+                ).verify()
         _LOGGER.info(
             "backup.restore.verified",
             snapshot_id=snapshot_id,
@@ -523,7 +511,7 @@ class AuthoritativeBackupService:
         _, database_name = _libpq_environment(self._settings.database_url)
         if database_name != self._settings.expected_database:
             raise BackupError("configured database name is outside backup scope")
-        with connect(_libpq_dsn(self._settings.database_url)) as connection:
+        with connect(libpq_dsn(self._settings.database_url)) as connection:
             identity = connection.execute("SELECT current_database()").fetchone()
             revision = connection.execute(
                 "SELECT version_num FROM public.alembic_version"
@@ -608,7 +596,7 @@ class AuthoritativeBackupService:
         _, parsed_name = _libpq_environment(database_url)
         if parsed_name != expected_name:
             raise BackupError("restore database name is outside requested scope")
-        with connect(_libpq_dsn(database_url)) as connection:
+        with connect(libpq_dsn(database_url)) as connection:
             identity = connection.execute("SELECT current_database()").fetchone()
             schemas = connection.execute(
                 "SELECT schema_name FROM information_schema.schemata "

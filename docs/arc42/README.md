@@ -195,9 +195,10 @@ Money Tracker workstation
 | --- | --- | --- | --- | --- |
 | `cli` | Parse one prompt, invoke the graph, print output, flush traces | Python entry point; graph and `tracing` | No persistent data | Host process; user terminal; traced only when the tracing switch is on |
 | `config` | Convert environment variables into immutable model settings | Process environment | Runtime configuration | Secrets are not returned or logged |
-| `development` | Enforce branch, commit, PR-range, PR-template, and Claude Bash policy from one tested implementation | Git subprocess boundary, command-line entry points, versioned Git hooks, Claude Code `PreToolUse`, and the `pr-metadata` workflow | No persistent data; policy constants come from `AGENTS.md` and the PR template | Developer checkout and GitHub-hosted runners; intentional Claude blocks exit 2, internal guard errors fail open, and no command payload is logged |
+| `development` | Enforce branch, commit, PR-range, PR-template, and Claude Bash policy from one tested implementation | Git subprocess boundary, command-line entry points, versioned Git hooks, Claude Code `PreToolUse`, and the `pr-metadata` workflow | No persistent data; policy constants come from `AGENTS.md` and the PR template | Developer checkout and GitHub-hosted runners; the Claude guard parses commands like a shell and refuses hook bypasses, pushes to `main`, and agent writes to rulesets, branch protection, or repository settings; intentional blocks exit 2, internal guard errors fail open, and no command payload is logged |
 | `development.ci_reporting` | Count JUnit outcomes into the job summary and fail a real-service job that executed nothing or skipped for its own missing flag | `money-tracker-ci-report`; JUnit XML from pytest, Vitest, and Playwright | No persistent data | GitHub-hosted runners; reads only reports the job produced; logs suite labels and counts, never test content |
 | `development.ci_redaction` | Remove generated credentials and token-shaped runs from failed-job evidence before upload | `money-tracker-redact-ci-log`; the disposable `.env` and one evidence file; `logging_safety` | No persistent data; writes one redacted copy | GitHub-hosted runners; never prints evidence; logs only sizes and an error type |
+| `main` ruleset | Admit a change to `main` only through a pull request whose `ci-gate` and `pr-metadata` succeeded on a head up to date with `main` and whose conversations are resolved; refuse force pushes and deletion | `.github/rulesets/main.json`, applied by the owner through the REST rulesets API | Repository ruleset `protect-main` (id 23686462) | GitHub; no bypass actors, so it binds administrators; agents are denied writes to it |
 | GitHub Actions workflows | Run the hosted gates, aggregate them into `ci-gate`, validate PR metadata, and run the model-free Langfuse gates on a schedule | `.github/workflows/`: `ci.yml`, `pr-metadata.yml`, `langfuse.yml`; `.github/dependabot.yml` | Seven-day failure artifacts only | GitHub-hosted Ubuntu runners; `contents: read`, SHA-pinned actions, no repository secrets, disposable credentials |
 | `graph` | Define the initial one-node assistant | LangGraph and `BaseChatModel` | In-memory messages for one invocation | Stateless host process |
 | `llm` | Construct an OpenAI-compatible chat adapter | LangChain `ChatOpenAI` | No persistent data | Loopback endpoint by default |
@@ -1293,6 +1294,10 @@ silently included in the claim.
 6. `ci-gate` reads every job result and succeeds only when all nine succeeded.
    `main` pushes and the weekly schedule rerun the workflow, with gitleaks over
    the full history.
+7. The `protect-main` ruleset lets the owner merge only when `ci-gate` and
+   `pr-metadata` succeeded on a head that contains the current `main` and every
+   conversation is resolved; otherwise GitHub reports the pull request as
+   blocked.
 
 ## 7. Deployment View
 
@@ -1404,8 +1409,8 @@ GitHub-hosted Ubuntu runners execute the AD-022 workflows. Each job starts from
 a clean runner, installs the locked environments and SHA-256-pinned tools, and
 creates only disposable services and credentials; nothing reaches the
 workstation, its services, or owner data. Failed evidence stays in GitHub for
-seven days. Protected-branch enforcement remains planned in its dedicated
-slice.
+seven days. The `protect-main` repository ruleset enforces the merge boundary
+on GitHub itself.
 
 ## 8. Cross-Cutting Concepts
 
@@ -1849,11 +1854,12 @@ codes: a supervisor still distinguishes a configuration failure from a
 dependency failure without reading logs, while the journal explains what a
 still-running process did and why.
 
-[AD-022](decisions/AD-022-pull-request-workflow.md) is partially implemented:
-the shared policy checker, local Git hooks, Claude Code guardrails, PR template,
+[AD-022](decisions/AD-022-pull-request-workflow.md) is implemented: the shared
+policy checker, local Git hooks, Claude Code guardrails, PR template,
 development workflow, hosted CI with `ci-gate` and `pr-metadata`, the scheduled
-Langfuse workflow, and Dependabot exist; server-side `main` protection remains
-planned, so a red check is not yet merge-blocking.
+Langfuse workflow, Dependabot, and the `protect-main` ruleset, active since
+2026-09-19. A throwaway pull request proved that failing required checks block
+the merge.
 
 ## 10. Quality Requirements
 
@@ -1872,7 +1878,7 @@ planned, so a red check is not yet merge-blocking.
 | A dashboard change lowers contrast or hides a control from the keyboard | The real-browser axe gate reports the WCAG A/AA violation before release. |
 | A restore is performed on an empty installation | Database, receipt references, retained media, and required configuration recover consistently. |
 | A model or prompt candidate misses a safety gate | It is not promoted; the current accepted configuration remains active. |
-| A pull request has an invalid branch, commit, or failing required gate | Local policy reports it early, `pr-metadata` or `ci-gate` turns red on the PR, and, once the AD-022 ruleset is applied, GitHub blocks the merge for every actor including administrators. |
+| A pull request has an invalid branch, commit, or failing required gate | Local policy reports it early, `pr-metadata` or `ci-gate` turns red on the PR, and the `protect-main` ruleset blocks the merge for every actor including administrators, as the negative-proof PR #7 showed. |
 | A real-service CI job loses its service flag or discovers no test | `ci_reporting` fails the job instead of reporting a green, all-skipped suite. |
 
 Quantitative evaluation gates are maintained in
@@ -1926,12 +1932,19 @@ Quantitative evaluation gates are maintained in
   indicators, and hover states other than the destructive filled button are not
   browser-audited.
 - Versioned hooks and Claude Code rules can be bypassed, misconfigured, or
-  absent in another clone. The hosted `ci-gate` and `pr-metadata` checks now
-  report on every PR, but until the `main` ruleset is applied a red check does
-  not block a merge.
+  absent in another clone; they only catch mistakes early. The `protect-main`
+  ruleset is the guarantee.
 - Some gates depend on the owner's model/GPU, real Telegram bot, local
   Langfuse, or installed systemd services and therefore remain manual PR
-  evidence. Private-repository protection depends on a paid GitHub plan.
+  evidence.
+- This private repository's ruleset is enforced through GitHub Pro from the
+  owner's GitHub Student benefit. If the benefit lapses, GitHub stops enforcing
+  the ruleset and the Actions allowance falls from 3,000 to 2,000 minutes.
+- The ruleset has no bypass actors: a GitHub Actions outage or a required job
+  broken by its environment blocks every merge until it is fixed, and only the
+  owner may relax enforcement meanwhile.
+- The strict check policy re-runs the whole pipeline whenever a pull request
+  that fell behind `main` is rebased, which the minute budget must absorb.
 - Every push to a PR and to `main` runs all nine CI jobs, and GitHub bills
   each job rounded up to a whole minute. The matrix must stay within the
   measured allowance recorded in [Development](../development.md#github-actions-minute-budget).

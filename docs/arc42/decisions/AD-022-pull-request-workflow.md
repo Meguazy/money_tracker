@@ -1,11 +1,11 @@
 # AD-022: Pull-Request Workflow with Merge-Blocking CI
 
 - Status: accepted
-- Implementation: partially implemented; shared policy checker, versioned Git
-  hooks, Claude Code guardrails, pull-request template, development process,
-  hosted GitHub Actions (`ci` with its aggregate `ci-gate`, `pr-metadata`, and
-  the non-required Langfuse workflow), and Dependabot delivered; server-side
-  `main` protection remains planned, so failing checks do not yet block a merge
+- Implementation: implemented; shared policy checker, versioned Git hooks,
+  Claude Code guardrails, pull-request template, development process, hosted
+  GitHub Actions (`ci` with its aggregate `ci-gate`, `pr-metadata`, and the
+  non-required Langfuse workflow), Dependabot, and the `protect-main` ruleset,
+  active since 2026-09-19 and proven to block a failing merge
 - Date: 2026-09-19
 
 ## Context
@@ -75,6 +75,10 @@ guardrails are preventive only; server-side protection is the guarantee.
   Telegram, Langfuse, or installed services would invalidate the gate.
 - The workflow cannot become merge-blocking until the Actions and protection
   slices land, and private-repository protection depends on GitHub Pro or Team.
+  This account has Pro through GitHub Student; if that lapses, GitHub stops
+  enforcing the ruleset.
+- With no bypass actors, a GitHub Actions outage or a required job broken by
+  its environment blocks every merge until it is fixed.
 
 ## Implementation evidence
 
@@ -101,3 +105,22 @@ with no executed test or a skip caused by their own missing flag through
 pull request records the first runs, each job's billable minutes, and the
 monthly projection; [Development](../../development.md#local-and-ci-gate-correspondence)
 maps every job to its local gate.
+
+The third slice versions the ruleset in `.github/rulesets/main.json` and, after
+the owner confirmed it, applied it on 2026-09-19 as `protect-main` (id
+23686462): default branch, active, no bypass actors, pull requests with zero
+approvals and required conversation resolution, strict `ci-gate` and
+`pr-metadata` checks from GitHub Actions, and blocked force pushes and
+deletion. The file equals the live ruleset, including the
+`require_extra_approval_for_unattributed_changes` default, which has no effect
+with zero approvals. A throwaway pull request (#7) with a conforming commit
+that broke the frontend type check and a non-conforming title turned
+`frontend`, `e2e-browser`, `ci-gate`, and `pr-metadata` red, and GitHub
+reported `mergeStateStatus: BLOCKED`; it was closed unmerged and its branch
+deleted. The same slice narrows the Claude Code deny patterns and rewrites the
+Bash guard to parse commands, so branch names containing `main` and messages
+containing `-n` pass, while `-n` clusters, pushes to `main` in every refspec
+form, and agent writes to rulesets, branch protection, or repository settings
+are refused. The development-policy tests now isolate themselves from the Git
+environment a hook exports, after a hook run in a linked worktree had written
+into the real repository during the negative proof.

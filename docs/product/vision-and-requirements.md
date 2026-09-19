@@ -175,6 +175,11 @@ the private archive already holds.
 - **FR-OPS-005 — Observability independence:** Continue core operation while
   Langfuse is stopped or unconfigured.
 
+FR-OPS-004 is implemented by an operator-only, profile-scoped, versioned JSON
+Lines export of authoritative finance records. The artifact carries record
+counts and a SHA-256 digest, excludes receipt bytes and runtime state, and must
+be kept as private owner content. Historical import remains outside V1.
+
 ## Non-functional requirements
 
 - **NFR-COR-001:** Duplicate delivery, retry, graph resume, and process restart

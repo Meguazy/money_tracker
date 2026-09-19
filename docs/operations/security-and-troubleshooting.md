@@ -173,6 +173,12 @@ identities. It is local, loopback-only, and off unless
   in an owner-only directory outside the checkout and delete it when no longer
   needed.
 
+The output of `money-tracker-export` contains authoritative owner finance
+content even though its stdout result and journal events do not. Keep every
+export in an owner-only directory outside the checkout, protect it during
+transfer, never attach it to a support report, and delete every copy when it is
+no longer needed. The export is private but not encrypted.
+
 Real-service tests hold credential-bearing URLs and key pairs in their
 fixtures, and pytest's long traceback prints a failing test's arguments. The
 project runs pytest with `--tb=short`; do not override it with `--tb=long` or

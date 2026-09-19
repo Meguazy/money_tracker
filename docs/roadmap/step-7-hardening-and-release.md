@@ -2,7 +2,7 @@
 
 Part of the [delivery roadmap](../roadmap.md).
 
-Status: **In progress — operations scheduling slice implemented
+Status: **In progress — finance export slice implemented
 (2026-09-19).**
 
 ## Scope change (2026-09-19)
@@ -67,6 +67,32 @@ contract. The rendered service and timer set passes `systemd-analyze verify`.
 Target-workstation installation, the first observed scheduled runs, retention
 evidence across runs, the off-device recovery-secret check, and the
 clean-machine restore remain open.
+
+## Finance export slice (2026-09-19)
+
+The second Step 7 slice implements FR-OPS-004 through
+`money-tracker-export`. The operator selects one profile and a new private file
+outside the checkout. A read-only repeatable-read transaction writes a
+version-one JSON Lines manifest plus explicit, revision-bound projections of
+the profile, taxonomy, funding sources, receipt metadata, expenses and both
+allocation dimensions, wallet history, budgets and overrides, pending category
+proposals, and audit history.
+
+The artifact preserves UUIDs, integer minor units, ISO dates and aware
+timestamps. It excludes receipt bytes and archive paths, checkpoints, messaging
+queues, and transport idempotency records. The command returns safe counts,
+byte size, and SHA-256 digest; it never logs owner content or the destination
+path. The export is not encrypted and is not a substitute for the authoritative
+Restic backup. Historical import remains outside V1.
+
+Unit evidence covers path confinement, private parent and exclusive-file
+requirements, deterministic scalar conversion, clock validation, and CLI
+parsing. The PostgreSQL integration test builds finance state through production
+repositories, exports through both adapter and CLI, and verifies the manifest,
+record fidelity, exclusions, digest, file mode, and content-free diagnostics.
+The portability contract and operating procedure are recorded in
+[AD-023](../arc42/decisions/AD-023-portable-finance-export.md) and the
+[data-portability runbook](../operations/data-portability.md).
 
 ## Exit criteria
 

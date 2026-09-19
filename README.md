@@ -1,6 +1,6 @@
 # Money Tracker
 
-Money Tracker is a local-first personal-finance assistant built with Python,
+Money Tracker, is a local-first personal-finance assistant built with Python,
 LangChain, LangGraph, llama.cpp, PostgreSQL, and self-hosted observability.
 Steps 0–4 are complete: the repository contains the deterministic finance
 domain, PostgreSQL persistence, evaluated text workflows, durable private-owner

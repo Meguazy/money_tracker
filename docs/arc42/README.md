@@ -127,7 +127,7 @@ boundary is not end-to-end encrypted and must not be described as local storage.
 | Boundary | Protocol | Data | Status |
 | --- | --- | --- | --- |
 | Owner to CLI | Process arguments/stdin/stdout | One prompt and response | Implemented scaffold |
-| Owner to administration CLI | Process arguments/stdout plus private input file | Profile-scoped receipt import with safe JSON result | Implemented Step 2 receipt-store command |
+| Owner to administration CLI | Process arguments/stdout plus private input or output file | Profile-scoped receipt import and portable finance export with safe JSON results | Implemented receipt-store and Step 7 finance-export commands |
 | Application to inference | OpenAI-compatible HTTP | Messages, schemas, tool calls, model settings | Implemented basic chat |
 | Application to Langfuse | SDK over loopback HTTP/OTLP | Full-fidelity dispatch, graph, node, and model-call observations under AD-021, minus credentials, forbidden URLs, archive paths, and bytes; aggregate capability scores | Tracing boundary implemented behind an explicit switch; `money-tracker-admin route` traced, services not yet |
 | Telegram gateway to Bot API | HTTPS long polling and send methods | Updates, callback queries, messages, and bounded file metadata; no Step 4 file download | Implemented and owner-accepted against the real private test bot |
@@ -218,6 +218,7 @@ Money Tracker workstation
 | `structured_logging` | Configure process logging once, render each record as one JSON object of event name plus named fields, bind per-operation correlation identifiers, and route uncaught exceptions on any thread through logging | Standard library `logging` and `contextvars`; the redaction primitives in `logging_safety`; no domain, repository, or transport import | No persistent data; the journal is diagnostic and is neither authoritative nor backed up | Every host process and CLI; writes to standard error so machine-readable command output on standard out stays usable; credentials are filtered from messages, fields, and tracebacks, and owner content never enters a field |
 | `logging_safety` | Own the credential redaction contract and mute the HTTP loggers that would print a token-bearing URL | Standard library `logging` and `re` only | No state | Imported by `structured_logging` and usable by anything that logs |
 | `persistence` | Apply versioned migrations, bootstrap persistent LangGraph checkpoints, and implement finance/messaging repositories | Alembic, psycopg, PostgreSQL checkpointer | Foundation schemas, workflow checkpoints, finance aggregates, and durable messaging state | Host administration CLI and shared host library; least-privilege loopback database role |
+| `persistence.export` | Project one profile's authoritative finance state into a versioned portable archive | psycopg read-only repeatable-read transaction; explicit revision-bound projections | No new authoritative state; writes a manifest and typed JSON Lines records to an owner-selected file | Operator-only host CLI; new mode-600 file in an owner-only directory outside the checkout; excludes receipt bytes, checkpoints, messaging state, and credentials |
 | `domain` | Enforce exact money, expense/refund, dual-allocation, taxonomy, wallet, budget, receipt-metadata, and audit contracts | Pure Python value objects and policies; no framework or infrastructure import | No infrastructure state | Shared host-process library; deterministic validation of untrusted inputs |
 | `application` | Coordinate idempotent expense lifecycle and receipt registration/review, audited wallet entries, versioned funding-source lifecycle, replay-safe budget planning, pending proposal submission, owner category decisions, and read-only reporting plus safe profile-settings projection through narrow ports | Finance, administration, proposal, review, reporting, and receipt-metadata repository ports plus clock and ID contracts | Command, concurrency, review-boundary, and audit semantics, not stored state | Shared by CLI, API, and worker; profile scope comes from trusted caller context; node creation is reachable only through an owner decision, and receipt deletion is not exposed |
 | `application.profile_settings` | Validate and project the owner-facing V1 profile subset for the settings surface | `ProfileSettingsRepository` reads the active profile and its funding sources; default writes remain in `FundingSourceAdministrationService` | No state; returns fixed locale/currency/timezone facts and eligible active default choices | Shared in-process application service composed into FastAPI; trusted profile scope is an argument from composition, inconsistent default pointers fail closed, and no infrastructure or credential contract exists |
@@ -1184,6 +1185,31 @@ up to thirty minutes of jitter after explicit owner enablement. Scheduled-run
 acceptance remains open, and business reconciliation of restored aggregates remains a
 manual acceptance check.
 
+### Current portable finance export
+
+1. `money-tracker-export` requires one explicit profile UUID and a new absolute
+   destination outside the checkout whose parent is owned by the invoking user
+   and has no group or other permissions.
+2. The adapter opens a read-only repeatable-read PostgreSQL transaction, checks
+   the exact supported Alembic revision, and selects every field through
+   explicit, deterministically ordered projections rather than `SELECT *`.
+3. It writes a version-one JSON Lines manifest followed by typed profile,
+   taxonomy, funding-source, receipt-metadata, movement, allocation, wallet,
+   budget, proposal, and audit records. UUIDs, dates, timestamps, integer minor
+   units, booleans, and nulls keep portable JSON representations.
+4. Receipt bytes and archive paths, workflow checkpoints, messaging state, and
+   transport idempotency records stay outside the export. Historical import is
+   outside V1.
+5. The file is created exclusively with mode 600, synchronized before success,
+   and removed if writing fails. Standard output contains only safe counts,
+   format version, profile identifier, byte count, and SHA-256 digest; neither
+   owner content nor the output path enters the journal.
+
+The export is a portability artifact, not a recovery backup. It is not
+encrypted and contains owner finance content, so the operator protects and
+deletes it explicitly. The encrypted Restic snapshot remains the recovery
+mechanism.
+
 ### Current text expense turn
 
 1. A normalized channel message receives a source and command idempotency key.
@@ -1729,6 +1755,19 @@ tracing and from the exit-code contract AD-018 defines for supervisors.
   local file first with `money-tracker-traces`, which deletes by age or
   identifier and verifies each deletion; Step 7 schedules age deletion daily.
 
+### Data portability
+
+- The implemented profile-scoped export is the stable machine-readable
+  portability boundary defined by
+  [AD-023](decisions/AD-023-portable-finance-export.md), not a PostgreSQL dump.
+- A manifest pins the format and database revision; additive or breaking
+  contract evolution requires an explicit exporter version and documentation.
+- Export files contain owner finance content and are intentionally outside the
+  journal, checkout, and automatic backup set. They are private but not
+  encrypted; custody and deletion belong to the operator.
+- Import is outside V1. A future importer must validate the manifest and all
+  domain invariants rather than replaying rows directly into tables.
+
 ### Testing
 
 - Unit tests exercise production domain behavior and replace only genuine
@@ -1884,6 +1923,11 @@ Langfuse workflow, Dependabot, and the `protect-main` ruleset, active since
 2026-09-19. A throwaway pull request proved that failing required checks block
 the merge.
 
+[AD-023](decisions/AD-023-portable-finance-export.md) is implemented: the
+operator-only CLI exports one profile's authoritative finance records from a
+consistent snapshot into a versioned, private JSON Lines artifact with a
+digest and without receipt bytes or runtime state.
+
 ## 10. Quality Requirements
 
 | Scenario | Expected response |
@@ -1900,6 +1944,7 @@ the merge.
 | A browser uses a non-loopback route or disallowed origin | The API refuses access or mutation. |
 | A dashboard change lowers contrast or hides a control from the keyboard | The real-browser axe gate reports the WCAG A/AA violation before release. |
 | A restore is performed on an empty installation | Database, receipt references, retained media, and required configuration recover consistently. |
+| Finance records are exported while another transaction commits | The artifact contains one internally consistent repeatable-read snapshot, is a new mode-600 file, and reports a digest for transfer verification. |
 | A model or prompt candidate misses a safety gate | It is not promoted; the current accepted configuration remains active. |
 | A pull request has an invalid branch, commit, or failing required gate | Local policy reports it early, `pr-metadata` or `ci-gate` turns red on the PR, and the `protect-main` ruleset blocks the merge for every actor including administrators, as the negative-proof PR #7 showed. |
 | A real-service CI job loses its service flag or discovers no test | `ci_reporting` fails the job instead of reporting a green, all-skipped suite. |
@@ -1923,6 +1968,10 @@ Quantitative evaluation gates are maintained in
   daily timer are implemented, but target installation, evidence from scheduled
   retention runs, off-device secret verification, and a clean-machine
   restore remain later release work.
+- Portable finance exports are deliberately unencrypted and contain owner
+  content. A copied artifact is outside application retention controls, so the
+  operator must protect it in transit and remove every copy when no longer
+  needed.
 - The real Telegram evidence uses a private test bot, not a production bot.
 - Trace retention has a persistent daily timer, but until the owner installs
   and enables it the Langfuse volumes, which hold owner content and are

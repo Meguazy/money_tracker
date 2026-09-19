@@ -20,6 +20,7 @@ random_hex() {
 
 app_postgres_password="$(random_hex 24)"
 app_postgres_admin_password="$(random_hex 24)"
+llm_api_key="$(random_hex 24)"
 receipt_archive_root="${XDG_DATA_HOME:-${HOME}/.local/share}/money-tracker/receipts"
 model_root="${XDG_DATA_HOME:-${HOME}/.local/share}/money-tracker/models"
 backup_password_file="${XDG_CONFIG_HOME:-${HOME}/.config}/money-tracker/restic-password"
@@ -34,7 +35,7 @@ cat >"${env_file}" <<EOF
 # Generated local development configuration. Do not commit this file.
 
 LLM_BASE_URL=http://localhost:8080/v1
-LLM_API_KEY=local
+LLM_API_KEY=${llm_api_key}
 LLM_MODEL=local-model
 LLM_TEMPERATURE=0.1
 LLM_TIMEOUT_SECONDS=120

@@ -8,7 +8,8 @@
   Telegram update across gateway and worker, one trace per web advice request,
   decision metadata, evaluation linkage, and the retention, export, and verified
   deletion command; backup exclusion and 30-day retention decided by the owner;
-  scheduling retention remains Step 7
+  a persistent daily retention timer is implemented in Step 7 and awaits
+  target-workstation acceptance
 - Date: 2026-09-16
 - Extends: [AD-002](../README.md#ad-002-self-hosted-langfuse)
 - Refines: [AD-004](AD-004-local-first-telegram-boundary.md) and
@@ -133,8 +134,10 @@ it plans by age within one environment, keeping a trace whole until its most
 recent observation passes the cutoff; exports the selected traces, content
 included, to a new owner-only file outside the checkout; and deletes by age or
 identifier only with `--confirm`, verifying each asynchronous deletion by
-re-reading. It uses the same loopback-only settings as tracing, is run by hand,
-and gains a timer only in Step 7. The Langfuse volumes stay outside the
+re-reading. It uses the same loopback-only settings as tracing. Step 7 adds a
+persistent daily user timer that confirms age-based deletion without exporting
+owner content; the owner must still enable and observe it on the target.
+The Langfuse volumes stay outside the
 encrypted backup set.
 
 ### Non-interference and degradation

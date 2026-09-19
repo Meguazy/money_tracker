@@ -48,13 +48,14 @@ Controls:
   inference key through `--api-key-file` on a pipe;
 - keep every secret long and random: the trace redactor ignores configured
   values shorter than twelve characters, because short values also occur as
-  ordinary words, so a short placeholder `LLM_API_KEY` can neither be redacted
-  nor told apart from text in a trace;
+  ordinary words; the environment generator creates a 48-character
+  `LLM_API_KEY`, but an older short placeholder must be rotated explicitly;
 - rotate any secret that enters Git, an AI chat, a screenshot, a trace, or an
   untrusted artifact.
 
-The current `.env` generator refuses overwrite and creates a mode-600 file. New
-secret-generation behavior must preserve those properties.
+The current `.env` generator refuses overwrite, creates a mode-600 file, and
+generates every credential without printing it. New secret-generation behavior
+must preserve those properties.
 
 ## Telegram authorization
 

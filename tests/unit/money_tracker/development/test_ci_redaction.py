@@ -89,7 +89,13 @@ def test_command_redacts_the_generator_output_into_a_new_file(tmp_path: Path) ->
     secrets = [
         line.split("=", 1)[1]
         for line in dotenv.splitlines()
-        if line.startswith(("MONEY_TRACKER_POSTGRES_PASSWORD=", "LANGFUSE_SECRET_KEY="))
+        if line.startswith(
+            (
+                "LLM_API_KEY=",
+                "MONEY_TRACKER_POSTGRES_PASSWORD=",
+                "LANGFUSE_SECRET_KEY=",
+            )
+        )
     ]
     evidence = tmp_path / "raw" / "compose.log"
     evidence.parent.mkdir()
@@ -101,7 +107,11 @@ def test_command_redacts_the_generator_output_into_a_new_file(tmp_path: Path) ->
     )
 
     retained = output.read_text(encoding="utf-8")
-    assert len(secrets) == 2
+    assert len(secrets) == 3
+    llm_key = next(
+        line for line in dotenv.splitlines() if line.startswith("LLM_API_KEY=")
+    ).split("=", 1)[1]
+    assert len(llm_key) >= 12
     assert all(secret not in retained for secret in secrets)
     assert "MONEY_TRACKER_BACKUP_EXPECTED_DATABASE=money_tracker\n" in retained
 

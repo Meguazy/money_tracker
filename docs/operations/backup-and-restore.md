@@ -1,16 +1,17 @@
 # Backup and Restore
 
 - Status: accepted policy; encrypted backup, verification, retention, and an
-  isolated restore drill implemented in Roadmap Step 2; scheduling and final
-  clean-machine qualification remain Step 7
+  isolated restore drill implemented in Roadmap Step 2; daily timer implemented
+  in Step 7; scheduled-run acceptance and final clean-machine qualification
+  remain Step 7
 - Current finance backup: `money-tracker-backup` creates verified encrypted
   Restic snapshots of the authoritative database, receipt archive, and runtime
   configuration, and restores them into explicitly isolated targets
 
 Backup is part of the active authoritative finance-data step, not an optional
 post-release enhancement. Run the restore drill below before storing
-irreplaceable personal data; the daily timer and clean-machine qualification are
-still open.
+irreplaceable personal data; target timer acceptance and clean-machine
+qualification are still open.
 
 ## Recovery objectives
 
@@ -26,8 +27,10 @@ Initial policy targets:
 - a Restic recovery secret copied outside the workstation;
 - restore on an empty local installation as a release gate.
 
-Retention is enforced by the implemented command. Scheduling is not: no timer
-exists yet, so snapshots are currently created when the owner runs the command.
+Retention is enforced by the implemented command. A persistent user timer now
+schedules it daily; the owner must explicitly install, enable, and observe the
+first runs after manually verifying the repository.
+
 No recovery-point or recovery-time claim should be added until measured by the
 scheduled backup and a clean-machine drill.
 
@@ -170,6 +173,37 @@ Report freshness for local health checks:
 
 It prints the newest authoritative snapshot ID, its creation time, and its age
 in hours, or `no-snapshot` for an initialized but empty repository.
+
+## Scheduled backup
+
+`money-tracker-backup.timer` runs the production `create` command every day at
+03:15 in the workstation's local timezone, with up to thirty minutes of jitter.
+`Persistent=true` catches up a missed occurrence after the workstation next
+starts. The oneshot has a two-hour bound and the command's existing host lock
+prevents overlap with a manual backup or restore.
+
+The installer renders the service and timer but deliberately leaves both
+disabled. Configure the external repository and recovery-secret file,
+initialize the repository, and complete one manual `create` plus `status`
+before enabling the schedule:
+
+    ./scripts/install_systemd_units.sh
+    systemctl --user enable --now money-tracker-backup.timer
+    systemctl --user list-timers money-tracker-backup.timer
+
+Enabling a persistent timer can immediately trigger an occurrence missed since
+its last recorded run. Inspect the first result without exposing command
+arguments or environment values:
+
+    systemctl --user status money-tracker-backup.service
+    journalctl --user -u money-tracker-backup.service --since today
+    uv run --env-file .env money-tracker-backup status
+
+The static unit cannot enumerate an owner-selected repository, staging parent,
+lock, receipt archive, and password-file location, so it preserves the manual
+CLI's owner filesystem authority while using an immutable operating-system
+view. A failed scheduled run never reports a snapshot as verified; investigate
+and rerun the bounded service after correcting its dependency or configuration.
 
 ## Recovery-secret rules
 

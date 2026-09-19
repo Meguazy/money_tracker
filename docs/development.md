@@ -358,8 +358,8 @@ an unresolvable `LLAMA_SERVER_BIN` reports the build step.
 
 The launcher binds to loopback, requires the configured local API key, which it
 hands to llama.cpp through a pipe (`--api-key-file`) so it never appears in a
-process listing (set a long random `LLM_API_KEY`; the generated placeholder is
-too short to be redacted from traces), offloads
+process listing (fresh environments receive a random `LLM_API_KEY` long enough
+for trace redaction; rotate an older short placeholder explicitly), offloads
 model layers, enables Flash Attention, uses one inference slot, uses the
 embedded Jinja chat template, attaches the optional vision projector, and
 defaults to an 8K context with reasoning disabled. Override `LLAMA_PARALLEL` or

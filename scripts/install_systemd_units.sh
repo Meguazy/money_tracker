@@ -17,7 +17,9 @@ if ! command -v systemctl >/dev/null 2>&1; then
 fi
 
 if [[ ! -x "${repo_root}/.venv/bin/money-tracker-api" ]] ||
+   [[ ! -x "${repo_root}/.venv/bin/money-tracker-backup" ]] ||
    [[ ! -x "${repo_root}/.venv/bin/money-tracker-telegram" ]] ||
+   [[ ! -x "${repo_root}/.venv/bin/money-tracker-traces" ]] ||
    [[ ! -x "${repo_root}/.venv/bin/money-tracker-worker" ]]; then
   echo "The locked virtual environment is missing production entry points." >&2
   echo "Run: uv sync --locked --all-groups" >&2
@@ -39,7 +41,7 @@ fi
 
 mkdir -p "${unit_target}"
 installed=()
-for template in "${unit_source}"/*.service; do
+for template in "${unit_source}"/*.service "${unit_source}"/*.timer; do
   unit_name="$(basename "${template}")"
   sed \
     -e "s|__MONEY_TRACKER_ROOT__|${repo_root}|g" \
@@ -67,6 +69,15 @@ The units are installed but not started. Bootstrap them in this order:
        systemctl --user enable --now money-tracker-telegram.service
        systemctl --user enable --now money-tracker-worker.service
        systemctl --user enable --now money-tracker-api.service
+  5. After configuring, initializing, and manually verifying the Restic
+     repository, enable the operational schedules:
+       systemctl --user enable --now money-tracker-backup.timer
+       systemctl --user enable --now money-tracker-trace-retention.timer
+
+     Enabling a timer can run a missed occurrence immediately. Check both
+     services after the first run:
+       systemctl --user status money-tracker-backup.service
+       systemctl --user status money-tracker-trace-retention.service
 
 Exit code 1 means an operator must change something, and the units stop
 instead of restarting. Exit code 2 means a dependency was unreachable and the

@@ -25,17 +25,36 @@ the step document, which is the only place any of them is written down.
 | [4](roadmap/step-4-durable-telegram-mvp.md) | Durable Telegram MVP | Complete (2026-09-11) |
 | [5](roadmap/step-5-dashboard-and-advice.md) | Local dashboard, budgets, analytics, and advice | Complete (2026-09-16) |
 | [5.5](roadmap/step-5-5-llm-traceability.md) | Full LLM call traceability in Langfuse | Complete (2026-09-18) |
-| [6](roadmap/step-6-evaluated-receipt-workflow.md) | Evaluated receipt workflow | Planned |
-| [7](roadmap/step-7-hardening-and-release.md) | Operational hardening and personal V1 release | Planned |
+| [7](roadmap/step-7-hardening-and-release.md) | Operational hardening and personal V1 release | Planned — next active step |
 
-Each row mirrors the status line of the step document it links to, and the two
-are updated in the same change. Status changes require evidence links in the
-step document, which is where the evidence itself lives. A step is complete only
-when all exit criteria pass; merged code alone is insufficient.
+## Future developments
 
-Step 5.5 was inserted between existing steps rather than renumbering the ones
-after it, because dated evaluation records name Steps 6 and 7 and those records
-are evidence rather than plans. Read the numbers as an order, not as a count.
+Steps in this table are accepted plans outside the personal V1 release. None
+of them is active, and no agent may start one until the owner schedules it and
+this page moves it back into the status summary.
+
+| Step | Outcome | Status |
+| --- | --- | --- |
+| [6](roadmap/step-6-evaluated-receipt-workflow.md) | Evaluated receipt workflow | Deferred after V1 (2026-09-19) |
+
+Each row in both tables mirrors the status line of the step document it links
+to, and the two are updated in the same change. Status changes require evidence
+links in the step document, which is where the evidence itself lives. A step is
+complete only when all exit criteria pass; merged code alone is insufficient.
+
+Step numbers are stable identifiers, not a count, and the order of the status
+summary is the delivery order. Step 5.5 was inserted between existing steps
+rather than renumbering the ones after it, because dated evaluation records name
+Steps 6 and 7 and those records are evidence rather than plans. For the same
+reason Step 7 keeps its number although it now follows Step 5.5 directly.
+
+On 2026-09-19 the owner deferred the receipt workflow past the personal V1
+release in favour of shipping a working text-first V1 sooner. The personal V1
+release is therefore Step 7 without receipt extraction; the
+[product baseline](product/vision-and-requirements.md#deferred-after-the-personal-v1-release)
+records the resulting scope, and the
+[Step 6 document](roadmap/step-6-evaluated-receipt-workflow.md#deferral-2026-09-19)
+records what already exists and what resuming it requires.
 
 ## Rules that apply to every step
 

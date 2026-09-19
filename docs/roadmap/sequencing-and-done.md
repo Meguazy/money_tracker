@@ -14,6 +14,11 @@ any of them.
   final afterthought.
 - Telegram follows validated text workflows; receipts follow the media/domain,
   dashboard review, and extractor experiment foundations.
+- The personal V1 release does not wait for receipts. Since 2026-09-19 the
+  receipt workflow is a future development that follows the released V1, and
+  release hardening must not depend on it.
+- A step listed under the roadmap's future developments is not active; an agent
+  may not start it, or ship any of its behavior, until the owner schedules it.
 - A requested scope change that invalidates ordering requires roadmap and ADR
   updates before implementation.
 

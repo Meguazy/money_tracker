@@ -15,7 +15,8 @@ features already exist.
 - [Vision and Requirements](vision-and-requirements.md) defines goals, scope,
   requirements, constraints, and V1 success criteria.
 - [User Journeys](user-journeys.md) defines the expected behavior of Telegram,
-  receipt, review, correction, insight, and offline-recovery workflows.
+  receipt, review, correction, insight, and offline-recovery workflows; the
+  receipt journey is deferred after V1.
 - [Domain and Taxonomy](domain-and-taxonomy.md) defines finance concepts,
   invariants, the initial category hierarchy, budgets, and funding sources.
 - [Glossary](glossary.md) is the canonical vocabulary for code, API contracts,
@@ -34,7 +35,9 @@ Architecture and delivery detail live in the
   are supported from the first usable release.
 - Categories have at most two levels and never grow without owner approval.
 - Clear text expenses may post automatically and always offer modify/undo.
-- Receipt drafts always require preview and explicit approval.
+- Receipt drafts always require preview and explicit approval. The receipt
+  workflow itself is deferred after the personal V1 release (2026-09-19); V1
+  keeps only the private original archive and its metadata review.
 - Monthly category budgets have no rollover. They include benefit-funded
   spending while reporting personal-fund and benefit portions separately.
 - Advice is read-only, on demand, and grounded in deterministic tool results.

@@ -107,6 +107,13 @@ decision; the V1 router may direct the owner to the dashboard.
 
 ## J6: Receipt ingestion and review
 
+**Status:** deferred after the personal V1 release by owner decision on
+2026-09-19 and planned as roadmap
+[Step 6](../roadmap/step-6-evaluated-receipt-workflow.md). In V1 a photo sent to
+the bot is not downloaded and creates no movement; the bot answers in Italian
+that photographed receipts are not handled yet and asks for the expense in
+words. The journey below is the accepted behavior for when the workflow ships.
+
 **Input:** a Telegram image containing a mixed supermarket receipt, optionally
 captioned with its funding source.
 
@@ -126,7 +133,7 @@ captioned with its funding source.
 detail. The original image remains until manual deletion.
 
 **Alternatives:** unexplained totals, low-confidence lines, or missing funding
-stay in review. No receipt auto-posts in V1.
+stay in review. No receipt auto-posts.
 
 ## J7: Ask for spending or remaining budget
 
@@ -197,8 +204,9 @@ owner manually forwards or resends them.
 2. Overview shows current-month spend, budget progress, top purposes, and
    personal-fund/benefit split.
 3. The owner filters daily, weekly, monthly, annual, or custom ranges.
-4. Transactions and receipts support review and correction; category, budget,
-   and funding-source pages support their approved V1 management operations.
+4. Transactions support review and correction, and receipts their metadata
+   review until the receipt workflow ships; category, budget, and
+   funding-source pages support their approved V1 management operations.
 5. Inbox and health views expose actionable failures without exposing secrets.
 
 The dashboard remains unavailable over LAN or Internet in V1.

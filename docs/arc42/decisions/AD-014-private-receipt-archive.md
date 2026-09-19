@@ -4,7 +4,8 @@
 - Implementation: local adapter, administration CLI, filesystem/PostgreSQL
   integration, encrypted archive backup/restore, replay-safe versioned
   receipt-review transitions, and browser metadata review implemented;
-  API/worker media wiring and deletion planned
+  API/worker media wiring and deletion planned for roadmap Step 6, deferred
+  after the personal V1 release on 2026-09-19
 - Date: 2026-09-02
 
 ## Context

@@ -179,6 +179,12 @@ export in an owner-only directory outside the checkout, protect it during
 transfer, never attach it to a support report, and delete every copy when it is
 no longer needed. The export is private but not encrypted.
 
+Messaging rows and workflow checkpoints also hold owner text. Runtime retention
+deletes the concluded ones after 30 days, and
+[Data Retention](data-retention.md) lists every data class, what deletes it,
+and the copies a deletion leaves behind, including the absence of full-disk
+encryption on this workstation.
+
 Real-service tests hold credential-bearing URLs and key pairs in their
 fixtures, and pytest's long traceback prints a failing test's arguments. The
 project runs pytest with `--tb=short`; do not override it with `--tb=long` or
@@ -231,6 +237,7 @@ Useful starting queries:
 | Is the model endpoint up? | `inference.endpoint.unavailable`, `model_boundary.exhausted` |
 | Did a browser request get blocked? | `web.request.blocked`, with its `reason_code` |
 | Is backup still running? | `backup.create.completed`, `backup.snapshot.absent` |
+| Did runtime retention run? | `runtime_retention.run.completed`, `runtime_retention.refused` |
 
 Raise detail only while diagnosing, then put it back:
 

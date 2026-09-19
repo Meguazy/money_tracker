@@ -325,9 +325,12 @@ The report measures each successful non-media text input from durable
 `sendMessage`. It excludes failure notices and the first successful workflow
 as warm-up, then computes nearest-rank p95. Record the workstation, commit,
 Qwen profile/GGUF, prompts, policy, sample count, warm sample count, p95,
-maximum, and any retries. The requirement remains p95 at most 30,000 ms. Bot
-API acceptance is the repeatable owner-visible proxy; actual client rendering
-and notification delay are not observable and must be listed as limitations.
+maximum, and any retries. Runtime retention deletes concluded inbox and
+outbox rows after 30 days, so compute and record the report within that window
+([Data Retention](data-retention.md)). The requirement remains p95 at most
+30,000 ms. Bot API acceptance is the repeatable owner-visible proxy; actual
+client rendering and notification delay are not observable and must be listed
+as limitations.
 
 For the workstation restart check, send two distinguishable test messages in a
 recorded chat order, stop the worker before it claims them, confirm two pending

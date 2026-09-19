@@ -20,13 +20,14 @@
   Langfuse, with evaluation-promotion publication and a 30-day trace retention
   command offering private export and verified deletion, plus a profile-scoped
   portable finance export with a revisioned JSON Lines contract, private-file
-  controls, counts, and a SHA-256 digest
+  controls, counts, and a SHA-256 digest, and 30-day retention of concluded
+  Telegram messages and terminal workflow checkpoints
 - Implemented Step 2: authoritative finance schema and transactional
   expense, wallet, budget, pending category-proposal, and versioned receipt-review
   repository operations, a safe local receipt-media adapter, and verified
   encrypted backup with an isolated restore drill
-- Planned operations: target acceptance of backup and trace-retention timers,
-  clean-machine restore,
+- Planned operations: target acceptance of the backup, trace-retention, and
+  runtime-retention timers, clean-machine restore,
   workflow-worker receipt wiring, receipt extraction, and media deletion
 
 These guides describe accepted operational behavior and the controls future
@@ -54,6 +55,10 @@ the referenced file or entry point exists in the repository.
 - [Data Portability](data-portability.md): the implemented finance-export
   contract, private destination controls, contents, verification, and failure
   handling.
+- [Data Retention](data-retention.md): how long every data class is kept,
+  the implemented runtime content retention command and daily timer, and the
+  residual copies a deletion leaves in PostgreSQL, backups, files, the
+  journal, and Telegram.
 - [LLM Tracing](tracing.md): what AD-021 traces contain, one trace per
   Telegram update, decision metadata, the explicit switch, identity in
   services, reading a trace, measured degradation, the 30-day retention with
@@ -66,6 +71,8 @@ the referenced file or entry point exists in the repository.
 
 - Never run a destructive volume, database, media, or backup command merely to
   clear an error. Identify the exact owner and take a recoverable backup first.
+  Scheduled retention is not such a command: it deletes only the concluded,
+  non-authoritative content its policy names.
 - Application finance data and Langfuse data have different ownership and
   recovery priority.
 - Core finance and Telegram behavior must not depend on Langfuse availability.

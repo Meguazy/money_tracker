@@ -297,6 +297,19 @@ counts and a SHA-256 digest; the file itself contains owner finance content and
 is not encrypted. See [Data Portability](operations/data-portability.md) for
 the format, custody rules, and verification procedure.
 
+## Runtime content retention
+
+Concluded Telegram messages, consumed controls, and terminal workflow
+checkpoints are deleted 30 days after they conclude. See what a run would
+delete, changing nothing, then delete:
+
+    uv run --env-file .env money-tracker-retention plan
+    uv run --env-file .env money-tracker-retention delete --confirm
+
+Both print safe JSON with counts only; `delete` without `--confirm` is a dry
+run. [Data Retention](operations/data-retention.md) describes what is kept, the
+daily timer, and the residual copies a deletion leaves.
+
 ## Optional self-hosted Langfuse
 
 The observability stack is separate from the default Compose project. Start it

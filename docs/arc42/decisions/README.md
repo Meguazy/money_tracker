@@ -20,7 +20,6 @@ implementation state is still `planned`.
 | [AD-012](AD-012-evaluation-driven-promotion.md) | Evaluation-driven model and prompt promotion | Accepted | Evaluation foundation and EVD-004 Step 3 text promotion implemented; the promotion is code-owned and traceable from runtime traces to its runs since Step 5.5 |
 | [AD-013](AD-013-local-runtime-and-backup.md) | Host runtime and encrypted backup | Accepted | Compose topology, encrypted backup/restore with semantic integrity verification, accepted Step 4 units, browser-accepted Step 5 API unit, and Step 7 daily backup timer implemented; scheduled-run and clean-machine acceptance planned |
 | [AD-014](AD-014-private-receipt-archive.md) | Private content-addressed receipt archive | Accepted | Local adapter, admin CLI, replay-safe versioned review state, browser metadata review, filesystem/PostgreSQL integration, and encrypted archive backup/restore implemented; API/worker media wiring and deletion planned for Step 6, deferred after the personal V1 release (2026-09-19) |
-
 | [AD-015](AD-015-two-stage-category-fit.md) | Two-stage category fit | Rejected | Implemented, measured at 0.7712 against the single call's 0.8693, and rejected; kept behind an evaluation flag so the result stays reproducible |
 | [AD-016](AD-016-explicit-workflow-dispatcher.md) | Explicit workflow dispatcher | Accepted | Implemented for all Step 3 text specialists and Step 4 channel presentation |
 | [AD-017](AD-017-versioned-read-selection-policy.md) | Versioned deterministic read-selection policy | Accepted | V1 promoted by EVD-004; V0 retained as direct rollback |
@@ -30,6 +29,7 @@ implementation state is still `planned`.
 | [AD-021](AD-021-full-fidelity-llm-traces.md) | Full-fidelity local LLM traces | Accepted | Implemented and owner-accepted in Step 5.5 (2026-09-18): every model-calling entry point traced, one correlated trace per Telegram update, evaluation linkage, and the retention, export, and verified deletion command; Step 7 daily scheduling implemented and awaiting target-workstation acceptance |
 | [AD-022](AD-022-pull-request-workflow.md) | Pull-request workflow with merge-blocking CI | Accepted | Implemented: local policy checker, Git hooks, Claude Code guardrails, PR template, development process, hosted CI (`ci-gate`, `pr-metadata`), the scheduled Langfuse workflow, Dependabot, and the `protect-main` ruleset, active since 2026-09-19 and proven to block a failing merge |
 | [AD-023](AD-023-portable-finance-export.md) | Portable authoritative finance export | Accepted | Implemented in Step 7 through the versioned profile-scoped JSON Lines exporter and operator CLI |
+| [AD-024](AD-024-runtime-content-retention.md) | Age-based retention of concluded runtime content | Accepted | Implemented in Step 7 through the transactional retention command and a daily timer; target-workstation acceptance of the timer planned |
 
 ## Maintenance rules
 

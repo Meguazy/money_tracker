@@ -38,7 +38,7 @@ money-tracker-worker = "money_tracker.worker.cli:main"
 
 [dependency-groups]
 dev = [
-    "mypy>=1.18,<2.0",
+    "mypy>=1.18,<3.0",
     "pip-audit>=2.10,<3.0",
     "pytest>=9.0,<10.0",
     "pytest-cov>=7.0,<8.0",

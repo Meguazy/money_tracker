@@ -1,0 +1,13 @@
+[Unit]
+Description=Run the Money Tracker authoritative backup daily
+Documentation=file://__MONEY_TRACKER_ROOT__/docs/operations/backup-and-restore.md
+
+[Timer]
+OnCalendar=*-*-* 03:15:00
+Persistent=true
+RandomizedDelaySec=30m
+AccuracySec=1m
+Unit=money-tracker-backup.service
+
+[Install]
+WantedBy=timers.target

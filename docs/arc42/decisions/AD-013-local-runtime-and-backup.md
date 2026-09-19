@@ -3,7 +3,8 @@
 - Status: accepted
 - Implementation: Compose topology, encrypted Restic backup/restore, accepted
   Telegram/worker/llama.cpp units, and the browser-accepted FastAPI service unit
-  implemented; the backup timer and its scheduling planned
+  implemented; the persistent daily backup timer is implemented but its first
+  target-workstation scheduled runs remain to be accepted
 - Date: 2026-09-01
 
 ## Context
@@ -93,6 +94,12 @@ trace identity digests and `~/.local/bin` on `PATH`; they were installed and
 the services restarted at the 2026-09-18 acceptance. The llama.cpp launcher now
 passes the inference key through `--api-key-file` on a pipe instead of a
 command-line argument.
+
+The first Step 7 slice adds a persistent daily user timer over the existing
+verified backup command. Its oneshot service keeps the same owner-selected
+filesystem authority as the manual CLI because the repository, staging, lock,
+archive, and password-file paths cannot be enumerated in a static template.
+Installation and observed scheduled retention on the target remain open.
 
 ## Consequences
 

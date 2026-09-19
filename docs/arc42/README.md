@@ -134,7 +134,7 @@ boundary is not end-to-end encrypted and must not be described as local storage.
 | Browser to application API | Same-origin HTTP JSON | Monthly overview, calendar analytics, transaction register, manual lifecycle, budget planning, category management/review, funding-source/wallet administration, receipt metadata review, messaging operations, safe profile settings, promoted read-only advice, CSRF, and health implemented; receipt extraction remains planned. No route returns receipt bytes or its archive key | Step 5 slices implemented |
 | Application to PostgreSQL | PostgreSQL protocol | Checkpoints, authoritative finance aggregates, normalized messaging offsets/inbox/outbox, pairing, actions, retries, and dead letters | Implemented foundation, finance repositories, and Step 4 messaging persistence |
 | Application to receipt archive | Private host filesystem | Fully decoded original JPEG/PNG/WebP keyed and verified by content hash; no derivatives | Local adapter/admin CLI and encrypted backup/restore implemented; API/worker media wiring and deletion planned. The control plane reads metadata only and never opens this boundary |
-| Backup process to repository | Restic repository protocol | Database dump, receipts and recovery configuration | Implemented and restore-tested; scheduling planned |
+| Backup process to repository | Restic repository protocol | Database dump, receipts and recovery configuration | Implemented and restore-tested; persistent daily timer checked in, target enablement and observation open |
 
 ### Out of scope for V1
 
@@ -191,7 +191,7 @@ Money Tracker workstation
 ├── Private host data
 │   ├── Receipt archive adapter                         [implemented, admin CLI wired]
 │   ├── Evaluation data and artifacts                   [implemented foundation]
-│   └── Restic staging/configuration                    [implemented, unscheduled]
+│   └── Restic staging/configuration and daily timer    [implemented; target acceptance open]
 └── Docker Compose
     ├── Application PostgreSQL                          [implemented finance and messaging core]
     └── Langfuse, PostgreSQL, ClickHouse, Redis, MinIO  [implemented optional]
@@ -213,7 +213,7 @@ Money Tracker workstation
 | `tracing` | Own the tracing port injected at entry points, the disabled tracer, the explicit switch and loopback-only settings, the stable trace names, and `open_tracer`, which can resolve model identity in the background for a long-running service | Framework-neutral port; `tracing.langfuse` only when enabled; no domain, application, or workflow dependency | No persistent data | Every entry point that executes a model boundary or a stage of a traced work unit; misconfiguration disables tracing with an `ERROR` record and never stops the process |
 | `tracing.langfuse` | Record seeded, named stage spans, dispatch spans, graph and node runs, and one generation per model request in the local Langfuse; publish evaluation evidence | Langfuse SDK and its attribute propagation, its LangChain callback with model runs ignored, and a process-owned OpenTelemetry provider without an exit handler | Spans buffered until the background export or the bounded flush | Only module importing the SDK; loaded lazily; no exception text reaches an SDK context manager; export runs on the SDK's background thread; every flush runs on a helper thread waited for at most the export timeout, and the SDK's unbounded exit handler is released at shutdown |
 | `tracing.identity` | Name the serving model artifact with the capability report's fields | llama.cpp `/props` over loopback, reused for 60 s; `evaluations.metadata` assembly | Private revision-keyed digest cache in the unit's `CacheDirectory` or `$XDG_CACHE_HOME/money-tracker` | Digests measured once per file revision, inline for a command and on a background thread for a service, whose calls during a measurement carry `digest_pending`; no path enters a trace |
-| `tracing.retention` | Plan, privately export, and delete traces of one environment by age or identifier, keeping a trace whole until its most recent observation passes the cutoff, and verify each deletion by re-reading | Langfuse public observations and trace-deletion API over loopback with `for_command` settings; no SDK | No state; export files are new owner-only files outside the checkout that the operator owns | Operator-invoked through `money-tracker-traces` (`tracing.cli`), dry run unless confirmed, 30-day default by owner decision; no timer until Step 7; failures are reason codes without URL, key, or content |
+| `tracing.retention` | Plan, privately export, and delete traces of one environment by age or identifier, keeping a trace whole until its most recent observation passes the cutoff, and verify each deletion by re-reading | Langfuse public observations and trace-deletion API over loopback with `for_command` settings; no SDK | No state; export files are new owner-only files outside the checkout that the operator owns | Operator-invoked through `money-tracker-traces` (`tracing.cli`) or confirmed age deletion from the persistent daily user timer; 30-day default by owner decision; no automatic export; failures are reason codes without URL, key, or content |
 | `tracing.redaction` | Remove credentials, database and credential-bearing URLs, Telegram URLs, token shapes, archive paths, and bytes from every observation value | Configured secret literals and private roots from the environment; `logging_safety` token patterns | No state | Last line of defence applied by the SDK; components keep forbidden values out by construction |
 | `structured_logging` | Configure process logging once, render each record as one JSON object of event name plus named fields, bind per-operation correlation identifiers, and route uncaught exceptions on any thread through logging | Standard library `logging` and `contextvars`; the redaction primitives in `logging_safety`; no domain, repository, or transport import | No persistent data; the journal is diagnostic and is neither authoritative nor backed up | Every host process and CLI; writes to standard error so machine-readable command output on standard out stays usable; credentials are filtered from messages, fields, and tracebacks, and owner content never enters a field |
 | `logging_safety` | Own the credential redaction contract and mute the HTTP loggers that would print a token-bearing URL | Standard library `logging` and `re` only | No state | Imported by `structured_logging` and usable by anything that logs |
@@ -300,7 +300,7 @@ catalog is promoted; every identifier carries a `candidate-` prefix.
 | Workflow runtime (dispatcher, router, and Step 3 text specialists implemented) | Route one normalized work unit and execute exactly one bounded specialist | Typed dispatcher outcome, LangGraph, model gateway, application services, checkpointer | Small per-graph versioned workflow state only; authoritative domain data stays in repositories | Administration CLI and sequential worker; no media, credentials, or service objects in checkpoints |
 | Receipt service | Validate media, invoke extractor, reconcile lines, prepare review | Implemented media-store port, planned extractor, finance service | Receipt metadata, extraction versions, review state | Private filesystem; untrusted image boundary; orchestration planned for Step 6, deferred after V1 |
 | Analytics service | Compute time, category, budget and funding summaries | Read repositories and deterministic calendar policies | No separate authoritative data | FastAPI and read-only agent tools |
-| Backup service (implemented, unscheduled) | Create consistent encrypted backups and verify restores | `pg_dump`, Restic, receipt/configuration paths | Backup snapshots in owner repository | Owner-invoked today; systemd timer and clean-machine qualification planned; recovery secret stored off-device |
+| Backup service and scheduler (implemented) | Create consistent encrypted backups, enforce retention, and verify restores | `pg_dump`, Restic, receipt/configuration paths, persistent systemd user timer | Backup snapshots in owner repository; no application state | Manual command or daily oneshot on the host; arbitrary owner-selected backup paths prevent a static read-only home sandbox; timer enablement, scheduled-run evidence, and clean-machine qualification remain open |
 
 ### Current and planned adapters and presentation blocks
 
@@ -1178,8 +1178,10 @@ This read model is a real security and application boundary, not a second owner 
    receipt hash at the destination.
 
 Credentials reach subprocesses only through libpq environment variables and the
-Restic password-file path. Failures name the failing executable alone. No timer
-schedules this yet, and business reconciliation of restored aggregates remains a
+Restic password-file path. Failures name the failing executable alone. A
+persistent daily user timer invokes the same command at 03:15 local time with
+up to thirty minutes of jitter after explicit owner enablement. Scheduled-run
+acceptance remains open, and business reconciliation of restored aggregates remains a
 manual acceptance check.
 
 ### Current text expense turn
@@ -1318,13 +1320,14 @@ silently included in the claim.
 
 ```text
 Ubuntu workstation
-├── systemd user services: accepted Telegram, worker, llama.cpp units
-├── money-tracker-api -> 127.0.0.1:8000  [implemented; install acceptance open]
+├── systemd user services: accepted API, Telegram, worker, llama.cpp units
+├── persistent backup and trace-retention timers [implemented; target acceptance open]
+├── money-tracker-api -> 127.0.0.1:8000  [implemented and browser-accepted]
 ├── compiled React assets served by money-tracker-api
 ├── UV-managed Python CLIs
 ├── optional llama-server on 127.0.0.1:8080  [not installed/configured here]
 ├── private receipt archive and Restic staging  [owner-configured absolute paths]
-├── external Restic repository                  [owner-selected, unscheduled]
+├── external Restic repository                  [owner-selected; daily timer checked in]
 └── Docker Compose
     ├── application-postgres on 127.0.0.1:5433  [default, healthy]
     └── observability profile                    [optional, healthy; AD-021 trace store]
@@ -1390,7 +1393,8 @@ External backup folder/disk
 ```
 
 `deploy/systemd/` holds checked-in user-service templates for the API, gateway,
-worker, and llama.cpp, rendered for a checkout by
+worker, llama.cpp, authoritative backup, and trace retention, plus persistent
+daily timers for the last two. They are rendered for a checkout by
 `scripts/install_systemd_units.sh`. They are user services because the
 application owns no system-wide resource, and they are not ordered against
 Docker because a user unit cannot be: a database that starts late is handled by
@@ -1723,7 +1727,7 @@ tracing and from the exit-code contract AD-018 defines for supervisors.
   copy whose loss loses traces, never finance data. AD-021 puts owner content
   in it, so runtime traces are kept 30 days and may be exported to a private
   local file first with `money-tracker-traces`, which deletes by age or
-  identifier and verifies each deletion; scheduling it is Step 7.
+  identifier and verifies each deletion; Step 7 schedules age deletion daily.
 
 ### Testing
 
@@ -1915,20 +1919,20 @@ Quantitative evaluation gates are maintained in
 - EVD-004 promotes the Qwen3 14B text configuration, but no automatic-post
   subset qualifies. Ordinary existing-category movements remain drafts until a
   later explicit owner or dashboard action posts them.
-- The encrypted authoritative backup and isolated restore drill are implemented,
-  but automatic scheduling, off-device secret verification, and a clean-machine
+- The encrypted authoritative backup, isolated restore drill, and persistent
+  daily timer are implemented, but target installation, evidence from scheduled
+  retention runs, off-device secret verification, and a clean-machine
   restore remain later release work.
 - The real Telegram evidence uses a private test bot, not a production bot.
-- Trace retention is an operator command with no timer until Step 7: if it is
-  not run, the Langfuse volumes, which hold owner content and are deliberately
-  outside the backup set, keep traces past the 30 days the owner decided. A
+- Trace retention has a persistent daily timer, but until the owner installs
+  and enables it the Langfuse volumes, which hold owner content and are
+  deliberately outside the backup set, keep traces past 30 days. A
   private export holds the same content outside any store and is the
   operator's to protect and remove.
-- The environment generator still writes a short placeholder `LLM_API_KEY`.
-  Short values are below the trace redactor's twelve-character floor and read
-  like ordinary words, so a fresh installation must replace it with a random
-  key, as this workstation did on 2026-09-18; making the generator do so is
-  Step 7 hardening.
+- Fresh environments receive a random 48-character `LLM_API_KEY`, above the
+  trace redactor's twelve-character floor. The upgrade script deliberately
+  never rotates existing credentials, so an older installation that still has
+  a short placeholder must replace it explicitly.
 - The host units' `ProtectHome`, `ProtectSystem`, and `PrivateTmp` directives
   are not applied by this workstation's user manager, which cannot create a
   mount namespace while AppArmor restricts unprivileged user namespaces. The

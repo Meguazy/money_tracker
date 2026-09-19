@@ -1,0 +1,28 @@
+[Unit]
+Description=Money Tracker authoritative backup
+Documentation=file://__MONEY_TRACKER_ROOT__/docs/operations/backup-and-restore.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=__MONEY_TRACKER_ROOT__
+EnvironmentFile=__MONEY_TRACKER_ROOT__/.env
+ExecStart=__MONEY_TRACKER_ROOT__/.venv/bin/money-tracker-backup create
+TimeoutStartSec=2h
+# The backup repository, staging area, lock, receipt archive, and password file
+# are owner-selected absolute paths. A static template cannot safely enumerate
+# their writable parents, so this unit retains the same filesystem authority as
+# the owner-invoked CLI while making the operating system immutable.
+NoNewPrivileges=true
+UMask=0077
+LockPersonality=true
+PrivateTmp=true
+ProtectControlGroups=true
+ProtectKernelTunables=true
+ProtectSystem=full
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+SystemCallArchitectures=native

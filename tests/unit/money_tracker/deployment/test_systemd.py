@@ -11,15 +11,14 @@ import pytest
 
 _UNIT_ROOT = Path("deploy/systemd")
 _SERVICES = tuple(sorted(_UNIT_ROOT.glob("*.service")))
+_TIMERS = tuple(sorted(_UNIT_ROOT.glob("*.timer")))
 _COMMON_HARDENING = (
     "NoNewPrivileges=true",
     "UMask=0077",
     "LockPersonality=true",
     "PrivateTmp=true",
     "ProtectControlGroups=true",
-    "ProtectHome=read-only",
     "ProtectKernelTunables=true",
-    "ProtectSystem=strict",
     "RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6",
     "RestrictNamespaces=true",
     "RestrictRealtime=true",
@@ -47,6 +46,37 @@ def test_every_service_has_checkout_safe_docs_and_hardening(unit: Path) -> None:
     assert "ReadWritePaths=__MONEY_TRACKER_ROOT__" not in text
     for setting in _COMMON_HARDENING:
         assert setting in text
+
+
+@pytest.mark.parametrize(
+    "unit",
+    [
+        service
+        for service in _SERVICES
+        if service.name != "money-tracker-backup.service"
+    ],
+    ids=lambda path: path.stem,
+)
+def test_non_backup_services_have_read_only_filesystem_views(unit: Path) -> None:
+    """Keep services that own no arbitrary output path under strict views."""
+
+    text = unit.read_text()
+
+    assert "ProtectHome=read-only" in text
+    assert "ProtectSystem=strict" in text
+
+
+def test_backup_service_preserves_configured_external_path_access() -> None:
+    """Let the scheduled command write its owner-selected backup locations."""
+
+    text = (_UNIT_ROOT / "money-tracker-backup.service").read_text()
+
+    assert "ProtectHome=" not in text
+    assert "ProtectSystem=full" in text
+    assert (
+        "ExecStart=__MONEY_TRACKER_ROOT__/.venv/bin/money-tracker-backup create" in text
+    )
+    assert "TimeoutStartSec=2h" in text
 
 
 @pytest.mark.parametrize("unit", _SERVICES, ids=lambda path: path.stem)
@@ -112,7 +142,9 @@ def test_installer_requires_the_runtime_entrypoints_without_uv_placeholder() -> 
     text = Path("scripts/install_systemd_units.sh").read_text()
 
     assert ".venv/bin/money-tracker-api" in text
+    assert ".venv/bin/money-tracker-backup" in text
     assert ".venv/bin/money-tracker-telegram" in text
+    assert ".venv/bin/money-tracker-traces" in text
     assert ".venv/bin/money-tracker-worker" in text
     assert "UV_BINARY" not in text
 
@@ -133,7 +165,9 @@ def test_installer_bootstraps_gateway_before_requiring_completed_pairing(
     (checkout / "frontend" / "dist" / "index.html").write_text("dashboard")
     for entrypoint in (
         "money-tracker-api",
+        "money-tracker-backup",
         "money-tracker-telegram",
+        "money-tracker-traces",
         "money-tracker-worker",
     ):
         path = checkout / ".venv" / "bin" / entrypoint
@@ -176,6 +210,47 @@ def test_installer_bootstraps_gateway_before_requiring_completed_pairing(
     ).read_text()
     assert str(checkout) in rendered
     assert "__MONEY_TRACKER_ROOT__" not in rendered
+    for timer in _TIMERS:
+        rendered_timer = tmp_path / "config" / "systemd" / "user" / timer.name
+        assert rendered_timer.is_file()
+        assert str(checkout) in rendered_timer.read_text()
+
+
+@pytest.mark.parametrize(
+    ("name", "service", "hour"),
+    [
+        ("money-tracker-backup.timer", "money-tracker-backup.service", "03:15:00"),
+        (
+            "money-tracker-trace-retention.timer",
+            "money-tracker-trace-retention.service",
+            "04:15:00",
+        ),
+    ],
+)
+def test_operational_timers_are_daily_persistent_and_jittered(
+    name: str, service: str, hour: str
+) -> None:
+    """Catch up missed daily work without synchronizing every installation."""
+
+    text = (_UNIT_ROOT / name).read_text()
+
+    assert f"OnCalendar=*-*-* {hour}" in text
+    assert "Persistent=true" in text
+    assert "RandomizedDelaySec=30m" in text
+    assert "AccuracySec=1m" in text
+    assert f"Unit={service}" in text
+    assert "WantedBy=timers.target" in text
+
+
+def test_trace_retention_service_confirms_only_the_age_policy() -> None:
+    """Automate the accepted 30-day policy without exporting owner content."""
+
+    text = (_UNIT_ROOT / "money-tracker-trace-retention.service").read_text()
+
+    assert "money-tracker-traces delete --confirm" in text
+    assert "--trace-id" not in text
+    assert " export " not in text
+    assert "TimeoutStartSec=15m" in text
 
 
 def _token_environment(tmp_path: Path) -> tuple[dict[str, str], Path, Path]:

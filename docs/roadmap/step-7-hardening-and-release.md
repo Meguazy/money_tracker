@@ -2,8 +2,8 @@
 
 Part of the [delivery roadmap](../roadmap.md).
 
-Status: **Planned — next active step (2026-09-19).** Implementation has not
-started.
+Status: **In progress — operations scheduling slice implemented
+(2026-09-19).**
 
 ## Scope change (2026-09-19)
 
@@ -45,6 +45,28 @@ may introduce them. The released V1 scope is the one in the
   warm p95 targets or an explicit revised quality decision.
 - Final threat model, upgrade/rollback runbook, operations checklist, and current
   versus planned documentation audit.
+
+## Operations scheduling slice (2026-09-19)
+
+The first Step 7 slice adds checked-in user units for the authoritative backup
+and 30-day runtime-trace retention commands. Persistent daily timers schedule
+backup at 03:15 and trace retention at 04:15 local time, each with up to thirty
+minutes of jitter. The installer renders both service/timer pairs but never
+enables them: the owner first initializes and manually verifies the configured
+Restic repository, then explicitly enables the timers. Trace retention deletes
+only the default runtime environment's age-selected traces, confirms deletion,
+and never creates an automatic full-content export.
+
+Fresh environment generation now writes a random 48-character hexadecimal
+`LLM_API_KEY`, above the trace redactor's twelve-character threshold. It does
+not rotate an existing installation's key.
+
+Unit tests cover the schedules, persistence, bounded commands, installer
+rendering, filesystem-authority distinction, and generated-key/redaction
+contract. The rendered service and timer set passes `systemd-analyze verify`.
+Target-workstation installation, the first observed scheduled runs, retention
+evidence across runs, the off-device recovery-secret check, and the
+clean-machine restore remain open.
 
 ## Exit criteria
 

@@ -1,0 +1,25 @@
+[Unit]
+Description=Money Tracker runtime trace retention
+Documentation=file://__MONEY_TRACKER_ROOT__/docs/operations/tracing.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=__MONEY_TRACKER_ROOT__
+EnvironmentFile=__MONEY_TRACKER_ROOT__/.env
+ExecStart=__MONEY_TRACKER_ROOT__/.venv/bin/money-tracker-traces delete --confirm
+TimeoutStartSec=15m
+NoNewPrivileges=true
+UMask=0077
+LockPersonality=true
+PrivateTmp=true
+ProtectControlGroups=true
+ProtectHome=read-only
+ProtectKernelTunables=true
+ProtectSystem=strict
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+SystemCallArchitectures=native

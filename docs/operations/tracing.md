@@ -239,7 +239,8 @@ Decided by the owner on 2026-09-17:
   and losing the volumes loses traces only;
 - runtime traces are kept 30 days and may be exported to a private local file
   before they are deleted;
-- the deletion is run by hand until Step 7 schedules it; no timer exists.
+- a persistent Step 7 user timer confirms age-based deletion daily; target
+  installation and observed execution remain open.
 
 Langfuse 4.26.0 OSS offers no project retention setting: the `data-retention`
 entitlement belongs to the self-hosted Enterprise plan, and
@@ -247,8 +248,9 @@ entitlement belongs to the self-hosted Enterprise plan, and
 implements the policy over the public API instead. Each run needs the project
 keys and a loopback `LANGFUSE_BASE_URL`; the runtime switch is not consulted.
 
-Run it monthly, and before removing a model artifact you may still want to
-investigate. First see what would go, changing nothing:
+The timer runs the confirmed default age policy daily at 04:15 local time, with
+up to thirty minutes of jitter and catch-up after shutdown. Before enabling it,
+or before removing a model artifact, see what would go, changing nothing:
 
     uv run --env-file .env money-tracker-traces plan
 
@@ -289,7 +291,27 @@ failed; 2 means the store was unreachable. Published evaluation evidence lives
 in the `evaluation` environment and is reconstructible from Git with
 `publish-promotion`, so the default runs never touch it.
 
+The installer renders but does not enable the timer. After reviewing the plan,
+enable and inspect it explicitly:
+
+    ./scripts/install_systemd_units.sh
+    systemctl --user enable --now money-tracker-trace-retention.timer
+    systemctl --user list-timers money-tracker-trace-retention.timer
+    systemctl --user status money-tracker-trace-retention.service
+
+The scheduled service runs `money-tracker-traces delete --confirm` with the
+default 30-day cutoff and tracing environment. It never exports traces:
+automatic full-content export would create another sensitive retention surface.
+The same loopback-only configuration and verified asynchronous deletion apply.
+If Langfuse is stopped or verification fails, the oneshot fails visibly and the
+next daily occurrence retries the policy; finance and messaging remain
+unaffected.
+
+Disable future runs without deleting any trace:
+
+    systemctl --user disable --now money-tracker-trace-retention.timer
 ## Verification
+
 
     RUN_POSTGRES_INTEGRATION_TESTS=1 RUN_LANGFUSE_INTEGRATION_TESTS=1 \
       LOG_LEVEL=CRITICAL uv run --env-file .env pytest -q \

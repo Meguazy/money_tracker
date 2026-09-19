@@ -23,8 +23,8 @@
   expense, wallet, budget, pending category-proposal, and versioned receipt-review
   repository operations, a safe local receipt-media adapter, and verified
   encrypted backup with an isolated restore drill
-- Planned operations: backup and trace-retention scheduling and clean-machine
-  restore,
+- Planned operations: target acceptance of backup and trace-retention timers,
+  clean-machine restore,
   workflow-worker receipt wiring, receipt extraction, and media deletion
 
 These guides describe accepted operational behavior and the controls future
@@ -126,7 +126,8 @@ the referenced file or entry point exists in the repository.
   snapshot age, and restores only into explicitly empty isolated targets. It
   requires Restic and PostgreSQL 17 client tools on the host and points at an
   owner-selected external repository that the environment generator leaves as a
-  deliberate placeholder. No scheduling timer, off-device secret check, or
+  deliberate placeholder. Persistent daily scheduling is checked in but not
+  yet installed and observed on the target; no off-device secret check or
   clean-machine drill exists yet.
 - The private test bot passed real owner workflows, unauthorized-user checks,
   five fault injections, p95 latency, and an unattended reboot with all Step 4

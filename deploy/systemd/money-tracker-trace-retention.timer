@@ -1,0 +1,13 @@
+[Unit]
+Description=Enforce Money Tracker runtime trace retention daily
+Documentation=file://__MONEY_TRACKER_ROOT__/docs/operations/tracing.md
+
+[Timer]
+OnCalendar=*-*-* 04:15:00
+Persistent=true
+RandomizedDelaySec=30m
+AccuracySec=1m
+Unit=money-tracker-trace-retention.service
+
+[Install]
+WantedBy=timers.target

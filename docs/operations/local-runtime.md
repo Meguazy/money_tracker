@@ -16,9 +16,11 @@ commands for:
 - deterministic local evaluation reports and real model capability probes;
 - one-turn CLI inference and opt-in real-service tests.
 
-The environment generator refuses to overwrite an existing `.env`; the upgrade
-script appends only missing values, including distinct non-secret Telegram token
-file paths, an explicit test environment, and the loopback web boundary. Do not source or print the file during
+The environment generator refuses to overwrite an existing `.env` and writes a
+random 48-character inference key that the trace redactor recognizes; the
+upgrade script appends only missing values and never rotates an existing key.
+It also adds distinct non-secret Telegram token file paths, an explicit test
+environment, and the loopback web boundary. Do not source or print the file during
 troubleshooting except for explicitly safe, non-secret keys.
 
 The Langfuse non-cluster ClickHouse repair is implemented. Existing named
@@ -62,7 +64,7 @@ in this table:
 | Receipt extractor dependencies | Host process/adapter | Local OCR/VLM selected by evaluation | Yes after Step 6 |
 | Receipt archive adapter | Host library/private filesystem | Implemented decoded-image validation and content-addressed original retention; admin CLI wired, API/worker planned | Yes once receipt ingestion is exposed |
 | Langfuse stack | Optional Compose profile | AD-021 full-fidelity trace store (administrative dispatch, gateway, and worker traced when switched on) and aggregate experiment scores; outside the backup set, 30-day retention | No |
-| Restic backup | Host CLI today, systemd timer planned | Implemented encrypted authoritative backup, verification, retention, and isolated restore drill; scheduling planned | Yes once finance data exists |
+| Restic backup | Host CLI and persistent systemd user timer | Implemented encrypted authoritative backup, verification, retention, isolated restore drill, and daily scheduling; target enablement and observed runs open | Yes once finance data exists |
 
 Python and llama.cpp stay on the host to keep GPU/model paths and loopback
 networking explicit. Application PostgreSQL runs separately from the Langfuse

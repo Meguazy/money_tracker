@@ -2,8 +2,8 @@
 
 Part of the [delivery roadmap](../roadmap.md).
 
-Status: **In progress — performance profiling slice implemented
-(2026-09-19).**
+Status: **In progress — backup target installation slice implemented
+(2026-09-20).**
 
 ## Scope change (2026-09-19)
 
@@ -239,6 +239,36 @@ with the production `AdminShutdown`.
 A worker that crashes in the middle of a work unit for another reason still
 leaves that unit leased for five minutes, as AD-018 designs; the fix removes
 the routine cause after every database restart.
+
+## Backup target installation slice (2026-09-20)
+
+The sixth Step 7 slice installs the pinned Restic 0.18.1 release and PostgreSQL
+17 client tools on the target workstation, after verifying the release digest
+and PGDG signing-key fingerprint used by CI. The owner selected the separate
+4 TB NVMe shared with Windows as the encrypted repository device. Its data
+partition is mounted through `fstab` at a stable host path with an on-demand
+`ntfs3` automount, owner-only masks, and `nofail`; the application configuration
+points only at a repository directory beneath that mount.
+
+The repository was initialized with a generated owner-only password file. One
+manual CLI run and two runs through the installed production systemd service
+created and verified authoritative snapshots. The final run used the persistent
+mount, exited zero, and `status` reported the new snapshot. The backup timer is
+installed, enabled, active, and scheduled for its first automatic occurrence
+on 2026-09-21 at 03:24 CEST.
+
+Operational refusal handling now maps configuration and integrity failures to
+exit 1 and transient PostgreSQL unavailability to exit 2, without an unhandled
+critical record. Handled refusals no longer attach tracebacks that could reveal
+a credential-file path. Unit evidence covers missing tooling, missing private
+inputs, missing restore settings, dependency classification, content-free
+diagnostics, and the absence of critical records.
+
+The first automatic run, retention across later scheduled runs, an off-workstation
+copy and access check of the recovery secret, and the clean-machine restore
+remain open. Because the repository device stays inside the workstation, it
+improves recovery from failure of the primary NVMe but not from theft, fire, or
+loss of the whole machine.
 
 ## Exit criteria
 

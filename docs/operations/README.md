@@ -139,10 +139,12 @@ the referenced file or entry point exists in the repository.
   authoritative database, receipt archive, and runtime configuration, reports
   snapshot age, and restores only into explicitly empty isolated targets. It
   requires Restic and PostgreSQL 17 client tools on the host and points at an
-  owner-selected external repository that the environment generator leaves as a
-  deliberate placeholder. Persistent daily scheduling is checked in but not
-  yet installed and observed on the target; no off-device secret check or
-  clean-machine drill exists yet.
+  owner-selected repository that the environment generator leaves as a
+  deliberate placeholder. On the target, a separate 4 TB NVMe now holds the
+  initialized encrypted repository through a persistent owner-masked NTFS
+  automount. The production service created verified snapshots, and the daily
+  timer is installed, enabled, and active. Its first automatic run, the
+  off-workstation secret check, and the clean-machine drill remain open.
 - The private test bot passed real owner workflows, unauthorized-user checks,
   five fault injections, p95 latency, and an unattended reboot with all Step 4
   host services. No production bot exists. Media deletion and receipt

@@ -134,7 +134,7 @@ boundary is not end-to-end encrypted and must not be described as local storage.
 | Browser to application API | Same-origin HTTP JSON | Monthly overview, calendar analytics, transaction register, manual lifecycle, budget planning, category management/review, funding-source/wallet administration, receipt metadata review, messaging operations, safe profile settings, promoted read-only advice, CSRF, and health implemented; receipt extraction remains planned. No route returns receipt bytes or its archive key | Step 5 slices implemented |
 | Application to PostgreSQL | PostgreSQL protocol | Checkpoints, authoritative finance aggregates, normalized messaging offsets/inbox/outbox, pairing, actions, retries, and dead letters | Implemented foundation, finance repositories, and Step 4 messaging persistence |
 | Application to receipt archive | Private host filesystem | Fully decoded original JPEG/PNG/WebP keyed and verified by content hash; no derivatives | Local adapter/admin CLI and encrypted backup/restore implemented; API/worker media wiring and deletion planned. The control plane reads metadata only and never opens this boundary |
-| Backup process to repository | Restic repository protocol | Database dump, receipts and recovery configuration | Implemented and restore-tested; persistent daily timer checked in, target enablement and observation open |
+| Backup process to repository | Restic repository protocol | Database dump, receipts and recovery configuration | Implemented and restore-tested; target repository and persistent daily timer installed and enabled; scheduled-run observation open |
 
 ### Out of scope for V1
 
@@ -191,7 +191,7 @@ Money Tracker workstation
 ├── Private host data
 │   ├── Receipt archive adapter                         [implemented, admin CLI wired]
 │   ├── Evaluation data and artifacts                   [implemented foundation]
-│   └── Restic staging/configuration and daily timer    [implemented; target acceptance open]
+│   └── Restic staging/configuration and daily timer    [implemented; installed/enabled, scheduled acceptance open]
 └── Docker Compose
     ├── Application PostgreSQL                          [implemented finance and messaging core]
     └── Langfuse, PostgreSQL, ClickHouse, Redis, MinIO  [implemented optional]
@@ -306,7 +306,7 @@ catalog is promoted; every identifier carries a `candidate-` prefix.
 | Workflow runtime (dispatcher, router, and Step 3 text specialists implemented) | Route one normalized work unit and execute exactly one bounded specialist | Typed dispatcher outcome, LangGraph, model gateway, application services, checkpointer | Small per-graph versioned workflow state only; authoritative domain data stays in repositories | Administration CLI and sequential worker; no media, credentials, or service objects in checkpoints |
 | Receipt service | Validate media, invoke extractor, reconcile lines, prepare review | Implemented media-store port, planned extractor, finance service | Receipt metadata, extraction versions, review state | Private filesystem; untrusted image boundary; orchestration planned for Step 6, deferred after V1 |
 | Analytics service | Compute time, category, budget and funding summaries | Read repositories and deterministic calendar policies | No separate authoritative data | FastAPI and read-only agent tools |
-| Backup, recovery verifier, and scheduler (implemented) | Create consistent encrypted backups, enforce retention, restore isolated targets, and verify recovered business/runtime integrity | `pg_dump`, Restic, psycopg read-only verification, receipt/configuration paths, persistent systemd user timer | Backup snapshots in owner repository; no application state | Manual command or daily oneshot on the host; arbitrary owner-selected backup paths prevent a static read-only home sandbox; timer enablement, scheduled-run evidence, and clean-machine qualification remain open |
+| Backup, recovery verifier, and scheduler (implemented) | Create consistent encrypted backups, enforce retention, restore isolated targets, and verify recovered business/runtime integrity | `pg_dump`, Restic, psycopg read-only verification, receipt/configuration paths, persistent systemd user timer | Backup snapshots in owner repository; no application state | Manual command or daily oneshot on the host; target timer installed and enabled against a separate internal NVMe; scheduled-run evidence and clean-machine qualification remain open |
 
 ### Current and planned adapters and presentation blocks
 
@@ -1191,8 +1191,9 @@ This read model is a real security and application boundary, not a second owner 
 Credentials reach subprocesses only through libpq environment variables and the
 Restic password-file path. Failures name the failing executable alone. A
 persistent daily user timer invokes the same command at 03:15 local time with
-up to thirty minutes of jitter after explicit owner enablement. Scheduled-run
-acceptance remains open. Business reconciliation of restored aggregates is now
+up to thirty minutes of jitter after explicit owner enablement. The target
+timer is installed, enabled, and active after successful production-service
+runs; scheduled-run acceptance remains open. Business reconciliation is now
 a repeatable executable check, while the clean-machine environment, off-device
 secret, service startup, and measured recovery acceptance remain open.
 
@@ -1397,7 +1398,8 @@ Both use the nearest-rank convention in `money_tracker.latency`.
 ```text
 Ubuntu workstation
 ├── systemd user services: accepted API, Telegram, worker, llama.cpp units
-├── persistent backup, trace-retention, and runtime-retention timers [implemented; target acceptance open]
+├── persistent backup timer [implemented; target enabled, scheduled acceptance open]
+├── persistent trace/runtime-retention timers [implemented; target acceptance open]
 ├── money-tracker-api -> 127.0.0.1:8000  [implemented and browser-accepted]
 ├── compiled React assets served by money-tracker-api
 ├── UV-managed Python CLIs
@@ -2044,9 +2046,11 @@ Quantitative evaluation gates are maintained in
   subset qualifies. Ordinary existing-category movements remain drafts until a
   later explicit owner or dashboard action posts them.
 - The encrypted authoritative backup, isolated restore drill, and persistent
-  daily timer are implemented, but target installation, evidence from scheduled
-  retention runs, off-device secret verification, and a clean-machine
-  restore remain later release work.
+  daily timer are implemented. The target repository, service, and timer are
+  installed and manually verified, but evidence from scheduled retention runs,
+  off-workstation secret verification, and a clean-machine restore remain
+  release work. The repository is on a separate internal NVMe, so primary-disk
+  failure is separated while theft, fire, and whole-machine loss remain risks.
 - Runtime content retention has a persistent daily timer, but until the owner
   installs and enables it the messaging tables and checkpoints keep owner
   text indefinitely. After it runs, a deleted row still survives in older
@@ -2125,8 +2129,9 @@ Quantitative evaluation gates are maintained in
   empty volumes and cannot show that a major opens existing data. The owner
   must watch upstream support windows, such as PostgreSQL 17's, and plan each
   major with the controlled container upgrade.
-- The backup drill cannot run on this workstation, which lacks Restic and the
-  PostgreSQL 17 client tools; its CI job is its only routine execution.
+- Restic 0.18.1 and PostgreSQL 17.11 client tools are installed on the target.
+  The real repository and production service create verified snapshots, while
+  a clean-machine restore drill remains open.
 
 ### Target architecture risks
 

@@ -5,11 +5,23 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from money_tracker.backup import AuthoritativeBackupService, BackupSettings
-from money_tracker.recovery import RestoredDataVerifier, RestoreIntegritySettings
+from psycopg import Error as PsycopgError
+
+from money_tracker.backup import (
+    AuthoritativeBackupService,
+    BackupError,
+    BackupSettings,
+)
+from money_tracker.process_exit import ExitCode, exit_code_for, failure_reason
+from money_tracker.recovery import (
+    RestoredDataVerifier,
+    RestoreIntegrityError,
+    RestoreIntegritySettings,
+)
 from money_tracker.structured_logging import (
     configure_logging,
     get_logger,
@@ -53,37 +65,83 @@ def _required_environment(name: str) -> str:
 def main(argv: Sequence[str] | None = None) -> None:
     """Run one backup operation and print only safe result metadata.
 
+    A refused or failed operation ends the process with a supervisor-readable
+    exit code and an actionable journal record, instead of escaping as an
+    unhandled exception that the process hook would report as critical. The
+    scheduled unit depends on this: a missing executable or an unmounted
+    repository is something the owner fixes, not a crash.
+
     Args:
         argv: Optional arguments used instead of process arguments.
+
+    Raises:
+        SystemExit: With 1 when a safety or integrity check refuses the
+            operation or its configuration, and 2 when PostgreSQL is
+            unreachable.
     """
 
     configure_logging()
     args = _parser().parse_args(argv)
     with log_context(command=args.command):
         _LOGGER.info("backup.command.started")
-        if args.command == "verify-restore":
-            result = RestoredDataVerifier(RestoreIntegritySettings.from_env()).verify()
-            print(
-                json.dumps(
-                    {
-                        "active_profile_count": result.active_profile_count,
-                        "alembic_revision": result.alembic_revision,
-                        "database_name": result.database_name,
-                        "default_source_count": result.default_source_count,
-                        "expense_count": result.expense_count,
-                        "idempotency_record_count": result.idempotency_record_count,
-                        "inbox_count": result.inbox_count,
-                        "outbox_count": result.outbox_count,
-                        "pending_action_count": result.pending_action_count,
-                        "receipt_count": result.receipt_count,
-                        "status": "restore-integrity-verified",
-                    },
-                    sort_keys=True,
+        try:
+            _dispatch(args)
+        except BackupError as error:
+            # The messages name a setting, a check, or at most a file name,
+            # never a path or owner content, so the operator sees them as is.
+            _LOGGER.error("backup.command.refused", reason="backup_refused")
+            print(f"Backup command refused: {error}", file=sys.stderr)
+            raise SystemExit(int(ExitCode.CONFIGURATION)) from None
+        except RestoreIntegrityError as error:
+            if error.reason_code == "database_unavailable":
+                _LOGGER.error(
+                    "backup.command.failed",
+                    reason=error.reason_code,
                 )
+                print(
+                    f"Backup command failed: {error.reason_code}",
+                    file=sys.stderr,
+                )
+                raise SystemExit(int(ExitCode.DEPENDENCY)) from None
+            _LOGGER.error("backup.command.refused", reason=error.reason_code)
+            print(f"Backup command refused: {error}", file=sys.stderr)
+            raise SystemExit(int(ExitCode.CONFIGURATION)) from None
+        except PsycopgError as error:
+            _LOGGER.exception("backup.command.failed", reason=failure_reason(error))
+            print(f"Backup command failed: {failure_reason(error)}", file=sys.stderr)
+            raise SystemExit(int(exit_code_for(error))) from None
+
+
+def _dispatch(args: argparse.Namespace) -> None:
+    """Run the parsed command, letting its failures reach the caller.
+
+    Args:
+        args: Parsed command arguments.
+    """
+
+    if args.command == "verify-restore":
+        result = RestoredDataVerifier(RestoreIntegritySettings.from_env()).verify()
+        print(
+            json.dumps(
+                {
+                    "active_profile_count": result.active_profile_count,
+                    "alembic_revision": result.alembic_revision,
+                    "database_name": result.database_name,
+                    "default_source_count": result.default_source_count,
+                    "expense_count": result.expense_count,
+                    "idempotency_record_count": result.idempotency_record_count,
+                    "inbox_count": result.inbox_count,
+                    "outbox_count": result.outbox_count,
+                    "pending_action_count": result.pending_action_count,
+                    "receipt_count": result.receipt_count,
+                    "status": "restore-integrity-verified",
+                },
+                sort_keys=True,
             )
-            return
-        service = AuthoritativeBackupService(BackupSettings.from_env())
-        _run(args, service)
+        )
+        return
+    service = AuthoritativeBackupService(BackupSettings.from_env())
+    _run(args, service)
 
 
 def _run(args: argparse.Namespace, service: AuthoritativeBackupService) -> None:

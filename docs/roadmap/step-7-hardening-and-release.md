@@ -2,7 +2,7 @@
 
 Part of the [delivery roadmap](../roadmap.md).
 
-Status: **In progress — backup target installation slice implemented
+Status: **In progress — recovery-secret acceptance slice implemented
 (2026-09-20).**
 
 ## Scope change (2026-09-19)
@@ -264,11 +264,24 @@ a credential-file path. Unit evidence covers missing tooling, missing private
 inputs, missing restore settings, dependency classification, content-free
 diagnostics, and the absence of critical records.
 
-The first automatic run, retention across later scheduled runs, an off-workstation
-copy and access check of the recovery secret, and the clean-machine restore
-remain open. Because the repository device stays inside the workstation, it
-improves recovery from failure of the primary NVMe but not from theft, fire, or
-loss of the whole machine.
+The first automatic run, retention across later scheduled runs, and the
+clean-machine restore remain open. Because the repository device stays inside
+the workstation, it improves recovery from failure of the primary NVMe but not
+from theft, fire, or loss of the whole machine.
+
+## Recovery-secret acceptance slice (2026-09-20)
+
+The seventh Step 7 slice closes the off-workstation recovery-secret check. The
+owner saved the generated Restic secret in the authenticated Google Password
+Manager account used by the Android phone, then opened the synchronized entry
+on that phone. The value was transferred only through the workstation's local
+clipboard, never printed or sent through the conversation, and the clipboard
+was cleared and verified empty immediately afterwards.
+
+This proves that the copy is accessible independently of the workstation's
+local filesystem. It does not replace the clean-machine restore, which must use
+the recovered value to unlock the real repository and reconstruct the
+authoritative set.
 
 ## Exit criteria
 

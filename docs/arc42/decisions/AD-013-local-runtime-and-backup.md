@@ -110,6 +110,12 @@ active. Its first automatic run and observed retention across scheduled runs
 remain open. Keeping the repository in the same workstation accepts exposure
 to whole-machine loss while separating it from failure of the primary NVMe.
 
+The off-workstation secret check passed on 2026-09-20. The owner stored the
+Restic secret in the authenticated password-manager account used by the Android
+phone and opened the synchronized entry there. The local transfer used only a
+temporary clipboard, which was cleared and verified empty. The clean-machine
+restore must still prove that this recovered value unlocks the repository.
+
 The third Step 7 slice adds a separate read-only restored-data verifier and
 runs it at the end of every `restore-drill`. It requires the exact isolated
 database identity, application schema revision, and private receipt root; checks

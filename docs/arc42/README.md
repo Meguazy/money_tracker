@@ -1194,8 +1194,10 @@ persistent daily user timer invokes the same command at 03:15 local time with
 up to thirty minutes of jitter after explicit owner enablement. The target
 timer is installed, enabled, and active after successful production-service
 runs; scheduled-run acceptance remains open. Business reconciliation is now
-a repeatable executable check, while the clean-machine environment, off-device
-secret, service startup, and measured recovery acceptance remain open.
+a repeatable executable check. Off-workstation access to the recovery secret
+passed from the owner's authenticated Android password manager; the
+clean-machine environment, service startup, and measured recovery acceptance
+remain open.
 
 ### Current portable finance export
 
@@ -2048,8 +2050,9 @@ Quantitative evaluation gates are maintained in
 - The encrypted authoritative backup, isolated restore drill, and persistent
   daily timer are implemented. The target repository, service, and timer are
   installed and manually verified, but evidence from scheduled retention runs,
-  off-workstation secret verification, and a clean-machine restore remain
-  release work. The repository is on a separate internal NVMe, so primary-disk
+  and a clean-machine restore remain release work. Off-workstation access to
+  the recovery secret passed through the owner's authenticated Android password
+  manager. The repository is on a separate internal NVMe, so primary-disk
   failure is separated while theft, fire, and whole-machine loss remain risks.
 - Runtime content retention has a persistent daily timer, but until the owner
   installs and enables it the messaging tables and checkpoints keep owner

@@ -247,8 +247,14 @@ The initialized repository accepted and verified one direct CLI snapshot and
 two snapshots through `money-tracker-backup.service`; the last service run used
 the persistent mount and exited zero. `money-tracker-backup.timer` is enabled
 and active, with its first automatic run scheduled for 2026-09-21 at 03:24
-CEST. That run, later retention evidence, the off-workstation recovery-secret
-check, and the clean-machine restore remain acceptance work.
+CEST. That run, later retention evidence, and the clean-machine restore remain
+acceptance work.
+
+On 2026-09-20 the owner copied the generated recovery secret into the
+authenticated password-manager account used by the Android phone and opened
+the synchronized entry on that phone. The value crossed only the local
+clipboard, which was then cleared and verified empty. Off-workstation access is
+therefore accepted; using that copy in the clean-machine restore remains open.
 
 ## Recovery-secret rules
 
@@ -383,9 +389,9 @@ test a snapshot.
   manual: it requires a running installation, not a restored data set.
 
 Business reconciliation of restored aggregates is therefore executable. What
-remains manual is the clean-machine drill around it: target installation,
-off-device recovery-secret access, service startup, workflow-checkpoint
-disposition, and recorded duration/RPO/RTO evidence.
+remains manual is the clean-machine drill around it: using the accepted
+off-workstation secret, service startup, workflow-checkpoint disposition, and
+recorded duration/RPO/RTO evidence.
 
 ## Destructive-operation guardrails
 

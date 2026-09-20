@@ -4,8 +4,9 @@
 - Implementation: Compose topology, encrypted Restic backup/restore, accepted
   Telegram/worker/llama.cpp units, and the browser-accepted FastAPI service unit
   implemented; post-restore semantic verification and the persistent daily
-  backup timer are implemented but the timer's first
-  target-workstation scheduled runs remain to be accepted
+  backup timer are implemented; the target repository, service, and timer are
+  installed and enabled, but the timer's first scheduled runs remain to be
+  accepted
 - Date: 2026-09-01
 
 ## Context
@@ -100,7 +101,14 @@ The first Step 7 slice adds a persistent daily user timer over the existing
 verified backup command. Its oneshot service keeps the same owner-selected
 filesystem authority as the manual CLI because the repository, staging, lock,
 archive, and password-file paths cannot be enumerated in a static template.
-Installation and observed scheduled retention on the target remain open.
+On 2026-09-20 the owner selected a separate internal 4 TB NVMe shared with
+Windows for the target repository. Its NTFS data partition has a stable
+owner-masked `fstab` automount. Restic 0.18.1 and PostgreSQL 17.11 clients were
+installed, the repository was initialized, and one CLI run plus two production
+service runs created verified snapshots. The timer is installed, enabled, and
+active. Its first automatic run and observed retention across scheduled runs
+remain open. Keeping the repository in the same workstation accepts exposure
+to whole-machine loss while separating it from failure of the primary NVMe.
 
 The third Step 7 slice adds a separate read-only restored-data verifier and
 runs it at the end of every `restore-drill`. It requires the exact isolated

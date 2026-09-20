@@ -1,9 +1,9 @@
 # Backup and Restore
 
 - Status: accepted policy; encrypted backup, verification, retention, and an
-  isolated restore drill implemented in Roadmap Step 2; daily timer implemented
-  in Step 7; scheduled-run acceptance and final clean-machine qualification
-  remain Step 7
+  isolated restore drill implemented in Roadmap Step 2; daily timer installed,
+  enabled, and manually exercised on the target in Step 7; first scheduled-run
+  acceptance and final clean-machine qualification remain Step 7
 - Current finance backup: `money-tracker-backup` creates verified encrypted
   Restic snapshots of the authoritative database, receipt archive, and runtime
   configuration, and restores them into explicitly isolated targets
@@ -39,13 +39,39 @@ scheduled backup and a clean-machine drill.
 The backup command runs two external executables and refuses to guess their
 location. Both settings must name an absolute executable path.
 
-- Restic. Verified against 0.18.1. Install it from the distribution
-  (`sudo apt install restic`) or from an upstream release binary.
+- Restic. Verified against 0.18.1, the release the CI drill pins. Ubuntu
+  24.04 packages 0.16, so install the upstream binary after checking its
+  SHA-256, and point `MONEY_TRACKER_RESTIC_BINARY` at it:
+
+      cd /tmp
+      curl -fLO https://github.com/restic/restic/releases/download/v0.18.1/restic_0.18.1_linux_amd64.bz2
+      echo "680838f19d67151adba227e1570cdd8af12c19cf1735783ed1ba928bc41f363d  restic_0.18.1_linux_amd64.bz2" \
+        | sha256sum --check --strict
+      bunzip2 restic_0.18.1_linux_amd64.bz2
+      sudo install -m 0755 restic_0.18.1_linux_amd64 /usr/local/bin/restic
+
 - `pg_dump` and `pg_restore` from the **same major version as the application
   PostgreSQL server** pinned in [Container Versions](container-versions.md),
   currently 17. An older client refuses to dump a newer server, so the Ubuntu
-  24.04 default PostgreSQL 16 client is not sufficient; install the PGDG
-  `postgresql-client-17` package.
+  24.04 default PostgreSQL 16 client is not sufficient. Install
+  `postgresql-client-17` from PGDG after checking the signing key's
+  fingerprint, as the CI job does:
+
+      curl -fsS https://www.postgresql.org/media/keys/ACCC4CF8.asc -o /tmp/pgdg.asc
+      gpg --show-keys --with-colons /tmp/pgdg.asc \
+        | grep -F ':B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8:'
+      sudo install -d -m 0755 /usr/share/postgresql-common/pgdg
+      gpg --dearmor < /tmp/pgdg.asc \
+        | sudo tee /usr/share/postgresql-common/pgdg/apt.postgresql.org.gpg > /dev/null
+      printf '%s%s%s\n' \
+        'deb [signed-by=/usr/share/postgresql-common/pgdg/' \
+        'apt.postgresql.org.gpg] https://apt.postgresql.org/' \
+        'pub/repos/apt noble-pgdg main' \
+        | sudo tee /etc/apt/sources.list.d/pgdg.list
+      sudo apt-get update
+      sudo apt-get install --yes --no-install-recommends postgresql-client-17
+
+  Stop if the `grep` prints nothing: the key is not the one PGDG publishes.
 
 Verify both before the first backup:
 
@@ -207,6 +233,22 @@ lock, receipt archive, and password-file location, so it preserves the manual
 CLI's owner filesystem authority while using an immutable operating-system
 view. A failed scheduled run never reports a snapshot as verified; investigate
 and rerun the bounded service after correcting its dependency or configuration.
+
+### Target installation evidence (2026-09-20)
+
+The target workstation uses Restic 0.18.1 and PostgreSQL 17.11 client tools.
+The owner selected the separate 4 TB NVMe shared with Windows. Its NTFS data
+partition is mounted at a stable path through `fstab` with `ntfs3`, `nofail`,
+an on-demand systemd automount, and owner-only file and directory masks. The
+repository remains encrypted, but its location inside the workstation does not
+protect against theft, fire, or loss of the whole machine.
+
+The initialized repository accepted and verified one direct CLI snapshot and
+two snapshots through `money-tracker-backup.service`; the last service run used
+the persistent mount and exited zero. `money-tracker-backup.timer` is enabled
+and active, with its first automatic run scheduled for 2026-09-21 at 03:24
+CEST. That run, later retention evidence, the off-workstation recovery-secret
+check, and the clean-machine restore remain acceptance work.
 
 ## Recovery-secret rules
 

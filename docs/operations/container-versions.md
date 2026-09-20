@@ -32,6 +32,10 @@ pre-existing Langfuse volumes.
 
 ## Controlled upgrade
 
+Follow the repository-wide writer-freeze, backup, acceptance, and recovery
+sequence in [Upgrade and Rollback](upgrade-and-rollback.md) around these
+container-specific steps.
+
 1. Review upstream release notes, schema compatibility, security notices, and
    rollback limitations for the exact candidate versions.
 2. Pull the explicit candidate tags, record their resolved content digests, and
@@ -78,4 +82,6 @@ schema compatibility permits it. Container rollback never implies database
 rollback. If a migration is incompatible, follow the service's supported
 recovery procedure and restore a verified backup into an isolated target before
 changing the active volumes. Preserve the current volumes until the restored
-state has been verified.
+state has been verified. Production storage replacement remains a separate
+owner-authorized cutover under the
+[upgrade runbook](upgrade-and-rollback.md#failure-after-an-incompatible-migration-or-stateful-upgrade).

@@ -2,7 +2,7 @@
 
 Part of the [delivery roadmap](../roadmap.md).
 
-Status: **In progress — retention timer acceptance slice implemented
+Status: **In progress — upgrade/rollback runbook slice implemented
 (2026-09-20).**
 
 ## Scope change (2026-09-19)
@@ -323,6 +323,32 @@ their checked-in persistent daily calendars, 04:15 for traces and 04:45 for
 runtime content, and up to thirty minutes of jitter. First naturally scheduled
 runs remain observable operational evidence, but target installation and the
 timer-to-service paths are accepted.
+
+## Upgrade and rollback runbook slice (2026-09-20)
+
+The tenth Step 7 slice implements the release
+[upgrade and rollback runbook](../operations/upgrade-and-rollback.md). It
+consolidates the previously distributed application, migration, systemd,
+container, model, backup, and incident constraints into one ordered procedure:
+classify compatibility, validate the reviewed release, freeze every writer,
+create a fresh verified authoritative snapshot, migrate forward, install and
+accept the candidate, then reopen Telegram ingress and the schedules.
+
+Rollback is deliberately conditional. A prior application commit or container
+digest may return only when compatibility with the current schema and storage
+was explicitly proved. Destructive database downgrade remains prohibited. An
+incompatible failure preserves the failed state and restores the pre-upgrade
+snapshot only into an isolated target for semantic verification; replacing
+production storage is a separate owner-authorized cutover because it can lose
+every write after the snapshot. Compromised credentials rotate forward, and a
+model-visible rollback restores the complete previously promoted
+configuration.
+
+The runbook adds no migration, command, or automation and does not claim a real
+upgrade drill. Its commands compose already implemented production interfaces,
+and its validation is documentation and repository-policy evidence. A future
+slice that changes a stateful boundary must add its exact compatibility and
+acceptance evidence to the implementing pull request.
 
 ## Exit criteria
 

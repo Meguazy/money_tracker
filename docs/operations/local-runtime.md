@@ -157,6 +157,10 @@ example without putting user choices into source constants.
 
 ## Shutdown and upgrade principles
 
+The complete executable sequence and rollback decision tree are in
+[Upgrade and Rollback](upgrade-and-rollback.md). The principles below remain
+the constraints every component-specific change must refine:
+
 - Stop ingress or place it in drain mode before a migration that cannot accept
   new writes.
 - Let the sequential worker finish or checkpoint the active item.
@@ -174,4 +178,6 @@ example without putting user choices into source constants.
   changes.
 
 Step-specific upgrade commands must be added only after the corresponding
-packaging and migrations exist.
+packaging and migrations exist. An implementing pull request must also state
+whether the previous release can operate on the candidate schema and storage;
+unknown compatibility is treated as incompatible.

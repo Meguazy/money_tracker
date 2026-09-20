@@ -1499,6 +1499,15 @@ Step 4 installed and accepted the Telegram gateway, workflow worker, and
 llama.cpp units. The first Step 5 slice adds the API unit and compiled-asset
 preflight without coupling Telegram recovery to dashboard availability.
 
+Step 7's [upgrade and rollback runbook](../operations/upgrade-and-rollback.md)
+coordinates these deployment owners without adding an orchestrator. It freezes
+gateway, API, worker, and operational timers; creates a verified authoritative
+snapshot; migrates forward; installs the reviewed units; accepts readiness;
+and reopens ingress last. Returning to prior code or image digests requires
+explicit schema/storage compatibility. An incompatible rollback restores only
+to an isolated target until the owner authorizes a separately reviewed
+production cutover.
+
 The developer checkout also contains versioned Git hooks and shared Claude Code
 settings. The hooks run through the UV-managed application environment and are
 installed per clone; the Claude hook invokes the same packaged development

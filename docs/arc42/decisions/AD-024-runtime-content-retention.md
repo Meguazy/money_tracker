@@ -1,8 +1,8 @@
 # AD-024: Age-based retention of concluded runtime content
 
 - Status: accepted
-- Implementation: implemented in the fourth Step 7 slice; the daily timer
-  awaits target-workstation installation and observed runs
+- Implementation: implemented in the fourth Step 7 slice; the daily timer was
+  installed, enabled, and timer-trigger accepted on the target on 2026-09-20
 - Date: 2026-09-19
 
 ## Context
@@ -84,6 +84,12 @@ many rows older than the cutoff the policy kept.
 `money-tracker-runtime-retention.timer` runs `delete --confirm` with the
 default window daily at 04:45 local time, with up to thirty minutes of jitter
 and catch-up after shutdown. The installer renders it and never enables it.
+
+Target acceptance on 2026-09-20 reviewed a zero-item plan, enabled the timer,
+and used a temporary runtime-only two-minute schedule to trigger the unchanged
+service. Its confirmed run selected no eligible rows or threads, emitted only
+counts, and exited zero. The override was removed immediately; the enabled,
+active timer again uses the checked-in persistent 04:45 calendar and jitter.
 
 ## Alternatives considered
 

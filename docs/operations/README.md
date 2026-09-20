@@ -27,8 +27,7 @@
   expense, wallet, budget, pending category-proposal, and versioned receipt-review
   repository operations, a safe local receipt-media adapter, and verified
   encrypted backup with an isolated restore drill
-- Planned operations: target acceptance of the backup, trace-retention, and
-  runtime-retention timers, clean-machine restore,
+- Planned operations: multi-run backup-retention evidence, clean-machine restore,
   workflow-worker receipt wiring, receipt extraction, and media deletion
 
 These guides describe accepted operational behavior and the controls future
@@ -148,6 +147,12 @@ the referenced file or entry point exists in the repository.
   production timer triggered a successful verified snapshot under a temporary
   two-minute acceptance schedule, after which the daily calendar was restored.
   Multi-run retention evidence and the clean-machine drill remain open.
+- The trace-retention and runtime-content-retention timers are installed,
+  enabled, and active. On 2026-09-20 temporary runtime-only two-minute
+  schedules triggered both unchanged production services; each applied the
+  confirmed 30-day policy, selected zero eligible items, and exited zero. The
+  overrides were removed and the persistent daily 04:15 and 04:45 calendars
+  with jitter were restored.
 - The private test bot passed real owner workflows, unauthorized-user checks,
   five fault injections, p95 latency, and an unattended reboot with all Step 4
   host services. No production bot exists. Media deletion and receipt

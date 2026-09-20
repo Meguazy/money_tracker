@@ -265,8 +265,8 @@ Decided by the owner on 2026-09-17:
   and losing the volumes loses traces only;
 - runtime traces are kept 30 days and may be exported to a private local file
   before they are deleted;
-- a persistent Step 7 user timer confirms age-based deletion daily; target
-  installation and observed execution remain open.
+- a persistent Step 7 user timer confirms age-based deletion daily; it is
+  installed, enabled, and timer-trigger accepted on the target.
 
 Langfuse 4.26.0 OSS offers no project retention setting: the `data-retention`
 entitlement belongs to the self-hosted Enterprise plan, and
@@ -336,6 +336,14 @@ unaffected.
 Disable future runs without deleting any trace:
 
     systemctl --user disable --now money-tracker-trace-retention.timer
+
+Target acceptance on 2026-09-20 first reviewed a plan selecting no trace older
+than 30 days. A temporary runtime-only two-minute schedule then triggered the
+unchanged production service; the confirmed run selected zero traces, verified
+the empty deletion set, emitted only counts, and exited zero. The override was
+deleted immediately. The timer remains enabled and active on its checked-in
+persistent 04:15 schedule with up to thirty minutes of jitter.
+
 ## Verification
 
 

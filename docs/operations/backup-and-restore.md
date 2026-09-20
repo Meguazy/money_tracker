@@ -2,8 +2,8 @@
 
 - Status: accepted policy; encrypted backup, verification, retention, and an
   isolated restore drill implemented in Roadmap Step 2; daily timer installed,
-  enabled, and manually exercised on the target in Step 7; first scheduled-run
-  acceptance and final clean-machine qualification remain Step 7
+  enabled, and accepted through a timer-triggered production run in Step 7;
+  multi-run retention and final clean-machine qualification remain Step 7
 - Current finance backup: `money-tracker-backup` creates verified encrypted
   Restic snapshots of the authoritative database, receipt archive, and runtime
   configuration, and restores them into explicitly isolated targets
@@ -246,9 +246,19 @@ protect against theft, fire, or loss of the whole machine.
 The initialized repository accepted and verified one direct CLI snapshot and
 two snapshots through `money-tracker-backup.service`; the last service run used
 the persistent mount and exited zero. `money-tracker-backup.timer` is enabled
-and active, with its first automatic run scheduled for 2026-09-21 at 03:24
-CEST. That run, later retention evidence, and the clean-machine restore remain
-acceptance work.
+and active. At installation its first daily-calendar occurrence resolved to
+2026-09-21 at 03:24 CEST; the timer-triggered acceptance below superseded the
+wait for that occurrence. Multi-run retention evidence and the clean-machine
+restore remain acceptance work.
+
+At 21:55:09 CEST on 2026-09-20, the installed production timer triggered the
+unchanged production service under a temporary two-minute monotonic schedule
+with no jitter. The service created and verified a snapshot in about three
+seconds and exited zero. The temporary drop-in was then removed; daemon reload
+and timer restart restored and confirmed the checked-in daily 03:15 calendar,
+`Persistent=true`, and up-to-thirty-minute jitter. A following `status` read
+the new snapshot. The timer-to-service path is accepted; retention enforcement
+across multiple scheduled runs remains open.
 
 On 2026-09-20 the owner copied the generated recovery secret into the
 authenticated password-manager account used by the Android phone and opened

@@ -134,7 +134,7 @@ boundary is not end-to-end encrypted and must not be described as local storage.
 | Browser to application API | Same-origin HTTP JSON | Monthly overview, calendar analytics, transaction register, manual lifecycle, budget planning, category management/review, funding-source/wallet administration, receipt metadata review, messaging operations, safe profile settings, promoted read-only advice, CSRF, and health implemented; receipt extraction remains planned. No route returns receipt bytes or its archive key | Step 5 slices implemented |
 | Application to PostgreSQL | PostgreSQL protocol | Checkpoints, authoritative finance aggregates, normalized messaging offsets/inbox/outbox, pairing, actions, retries, and dead letters | Implemented foundation, finance repositories, and Step 4 messaging persistence |
 | Application to receipt archive | Private host filesystem | Fully decoded original JPEG/PNG/WebP keyed and verified by content hash; no derivatives | Local adapter/admin CLI and encrypted backup/restore implemented; API/worker media wiring and deletion planned. The control plane reads metadata only and never opens this boundary |
-| Backup process to repository | Restic repository protocol | Database dump, receipts and recovery configuration | Implemented and restore-tested; target repository and persistent daily timer installed and enabled; scheduled-run observation open |
+| Backup process to repository | Restic repository protocol | Database dump, receipts and recovery configuration | Implemented and restore-tested; target repository and persistent daily timer installed, enabled, and timer-trigger accepted; multi-run retention observation open |
 
 ### Out of scope for V1
 
@@ -306,7 +306,7 @@ catalog is promoted; every identifier carries a `candidate-` prefix.
 | Workflow runtime (dispatcher, router, and Step 3 text specialists implemented) | Route one normalized work unit and execute exactly one bounded specialist | Typed dispatcher outcome, LangGraph, model gateway, application services, checkpointer | Small per-graph versioned workflow state only; authoritative domain data stays in repositories | Administration CLI and sequential worker; no media, credentials, or service objects in checkpoints |
 | Receipt service | Validate media, invoke extractor, reconcile lines, prepare review | Implemented media-store port, planned extractor, finance service | Receipt metadata, extraction versions, review state | Private filesystem; untrusted image boundary; orchestration planned for Step 6, deferred after V1 |
 | Analytics service | Compute time, category, budget and funding summaries | Read repositories and deterministic calendar policies | No separate authoritative data | FastAPI and read-only agent tools |
-| Backup, recovery verifier, and scheduler (implemented) | Create consistent encrypted backups, enforce retention, restore isolated targets, and verify recovered business/runtime integrity | `pg_dump`, Restic, psycopg read-only verification, receipt/configuration paths, persistent systemd user timer | Backup snapshots in owner repository; no application state | Manual command or daily oneshot on the host; target timer installed and enabled against a separate internal NVMe; scheduled-run evidence and clean-machine qualification remain open |
+| Backup, recovery verifier, and scheduler (implemented) | Create consistent encrypted backups, enforce retention, restore isolated targets, and verify recovered business/runtime integrity | `pg_dump`, Restic, psycopg read-only verification, receipt/configuration paths, persistent systemd user timer | Backup snapshots in owner repository; no application state | Manual command or daily oneshot on the host; target timer-trigger accepted against a separate internal NVMe; multi-run retention evidence and clean-machine qualification remain open |
 
 ### Current and planned adapters and presentation blocks
 
@@ -1193,7 +1193,9 @@ Restic password-file path. Failures name the failing executable alone. A
 persistent daily user timer invokes the same command at 03:15 local time with
 up to thirty minutes of jitter after explicit owner enablement. The target
 timer is installed, enabled, and active after successful production-service
-runs; scheduled-run acceptance remains open. Business reconciliation is now
+runs. A temporary two-minute override proved the timer-to-service path, then
+was removed and the daily calendar restored; multi-run retention evidence
+remains open. Business reconciliation is now
 a repeatable executable check. Off-workstation access to the recovery secret
 passed from the owner's authenticated Android password manager; the
 clean-machine environment, service startup, and measured recovery acceptance
@@ -1931,8 +1933,8 @@ environment file.
   Compose topology, encrypted Restic backup, verification, retention, and the
   isolated restore drill with semantic verification, accepted Step 4 host
   units, the browser-accepted Step 5 API unit, and the Step 7 daily backup
-  timer implemented; observed scheduled runs and the clean-machine restore
-  remain planned.
+  timer implemented and timer-trigger accepted; multi-run retention evidence
+  and the clean-machine restore remain planned.
 - [AD-011: Evaluation-gated receipt extraction](decisions/AD-011-receipt-extraction.md):
   private original-media boundary and the owner-facing metadata lifecycle
   implemented; extractor evaluation and the extracted-draft preview workflow
@@ -2049,8 +2051,8 @@ Quantitative evaluation gates are maintained in
   later explicit owner or dashboard action posts them.
 - The encrypted authoritative backup, isolated restore drill, and persistent
   daily timer are implemented. The target repository, service, and timer are
-  installed and manually verified, but evidence from scheduled retention runs,
-  and a clean-machine restore remain release work. Off-workstation access to
+  installed and timer-trigger verified, but multi-run retention evidence and a
+  clean-machine restore remain release work. Off-workstation access to
   the recovery secret passed through the owner's authenticated Android password
   manager. The repository is on a separate internal NVMe, so primary-disk
   failure is separated while theft, fire, and whole-machine loss remain risks.

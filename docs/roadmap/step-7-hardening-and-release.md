@@ -2,7 +2,7 @@
 
 Part of the [delivery roadmap](../roadmap.md).
 
-Status: **In progress — recovery-secret acceptance slice implemented
+Status: **In progress — backup timer acceptance slice implemented
 (2026-09-20).**
 
 ## Scope change (2026-09-19)
@@ -264,10 +264,10 @@ a credential-file path. Unit evidence covers missing tooling, missing private
 inputs, missing restore settings, dependency classification, content-free
 diagnostics, and the absence of critical records.
 
-The first automatic run, retention across later scheduled runs, and the
-clean-machine restore remain open. Because the repository device stays inside
-the workstation, it improves recovery from failure of the primary NVMe but not
-from theft, fire, or loss of the whole machine.
+At installation, timer-triggered acceptance, retention across later scheduled
+runs, and the clean-machine restore remained open. Because the repository
+device stays inside the workstation, it improves recovery from failure of the
+primary NVMe but not from theft, fire, or loss of the whole machine.
 
 ## Recovery-secret acceptance slice (2026-09-20)
 
@@ -282,6 +282,22 @@ This proves that the copy is accessible independently of the workstation's
 local filesystem. It does not replace the clean-machine restore, which must use
 the recovered value to unlock the real repository and reconstruct the
 authoritative set.
+
+## Backup timer acceptance slice (2026-09-20)
+
+The eighth Step 7 slice observes the installed production backup timer trigger
+the installed production service. For bounded acceptance, a temporary drop-in
+replaced the calendar with a two-minute `OnActiveSec`, disabled the jitter, and
+left the activated service unchanged. At 21:55:09 CEST the timer started
+`money-tracker-backup.service`; the command completed in about three seconds,
+verified the new authoritative snapshot, and exited zero.
+
+The temporary drop-in was then deleted. After daemon reload and timer restart,
+the checked-in daily 03:15 calendar, persistence, and up-to-thirty-minute
+jitter were again active; the next occurrence resolved to 03:30:54 CEST. A
+fresh `status` reported the timer-created snapshot. This accepts the target
+timer-to-service path. Retention enforcement across multiple scheduled runs
+and the clean-machine restore remain open.
 
 ## Exit criteria
 

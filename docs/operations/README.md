@@ -145,7 +145,9 @@ the referenced file or entry point exists in the repository.
   automount. The production service created verified snapshots, and the daily
   timer is installed, enabled, and active. The off-workstation secret is
   accessible from the owner's authenticated Android password manager. The
-  first automatic run and the clean-machine drill remain open.
+  production timer triggered a successful verified snapshot under a temporary
+  two-minute acceptance schedule, after which the daily calendar was restored.
+  Multi-run retention evidence and the clean-machine drill remain open.
 - The private test bot passed real owner workflows, unauthorized-user checks,
   five fault injections, p95 latency, and an unattended reboot with all Step 4
   host services. No production bot exists. Media deletion and receipt

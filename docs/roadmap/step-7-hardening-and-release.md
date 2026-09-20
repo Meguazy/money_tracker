@@ -2,7 +2,7 @@
 
 Part of the [delivery roadmap](../roadmap.md).
 
-Status: **In progress — backup timer acceptance slice implemented
+Status: **In progress — retention timer acceptance slice implemented
 (2026-09-20).**
 
 ## Scope change (2026-09-19)
@@ -298,6 +298,31 @@ jitter were again active; the next occurrence resolved to 03:30:54 CEST. A
 fresh `status` reported the timer-created snapshot. This accepts the target
 timer-to-service path. Retention enforcement across multiple scheduled runs
 and the clean-machine restore remain open.
+
+## Retention timer acceptance slice (2026-09-20)
+
+The ninth Step 7 slice installs, enables, and accepts both production retention
+timers on the target workstation. Before enablement, the trace plan found no
+runtime trace older than 30 days and the transactional runtime-content plan
+found no concluded row or terminal checkpoint older than 30 days. Both plans
+therefore selected zero items and changed nothing.
+
+For bounded acceptance, temporary runtime-only drop-ins replaced each calendar
+with a two-minute `OnActiveSec`, disabled jitter, and left both activated
+services unchanged. At 22:14:11 CEST the trace timer started
+`money-tracker-trace-retention.service` and the runtime timer started
+`money-tracker-runtime-retention.service`. Both confirmed the 30-day policy,
+selected zero eligible items, emitted only content-free counts, and exited
+zero. A zero deletion count is expected because the installation has no
+eligible content yet; the evidence accepts scheduling and command execution,
+not a claim that aged records were deleted.
+
+The runtime drop-ins and their temporary editor files were then deleted. After
+daemon reload and timer restart, both units remained enabled and active with
+their checked-in persistent daily calendars, 04:15 for traces and 04:45 for
+runtime content, and up to thirty minutes of jitter. First naturally scheduled
+runs remain observable operational evidence, but target installation and the
+timer-to-service paths are accepted.
 
 ## Exit criteria
 

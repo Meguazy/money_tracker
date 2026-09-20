@@ -1403,7 +1403,7 @@ Both use the nearest-rank convention in `money_tracker.latency`.
 Ubuntu workstation
 ├── systemd user services: accepted API, Telegram, worker, llama.cpp units
 ├── persistent backup timer [implemented; target enabled, scheduled acceptance open]
-├── persistent trace/runtime-retention timers [implemented; target acceptance open]
+├── persistent trace/runtime-retention timers [implemented; target enabled and timer-trigger accepted]
 ├── money-tracker-api -> 127.0.0.1:8000  [implemented and browser-accepted]
 ├── compiled React assets served by money-tracker-api
 ├── UV-managed Python CLIs
@@ -1982,8 +1982,8 @@ owner-accepted (2026-09-18): every model-calling entry point is traced into the
 local Langfuse behind an explicit switch, one Telegram update is one trace
 across the gateway and worker, promoted configurations link to their runs, and
 traces are kept 30 days outside the backup set with a verified deletion
-command, which a Step 7 daily timer now schedules; its target-workstation
-acceptance remains open.
+command, which an installed and enabled Step 7 daily timer now schedules; its
+timer-to-service path was accepted on the target workstation on 2026-09-20.
 
 AD-019 is implemented across every entry point, adapter, application service,
 and persistence boundary. It supplements rather than replaces the AD-018 exit
@@ -2007,8 +2007,8 @@ digest and without receipt bytes or runtime state.
 operator CLI and its daily timer delete concluded Telegram messages, consumed
 controls, and terminal checkpoint threads 30 days after they conclude, in one
 transaction whose dry run rolls back, while active controls, paused reviews,
-and dead letters remain; target-workstation acceptance of the timer remains
-open.
+and dead letters remain; the installed target timer's timer-to-service path was
+accepted on 2026-09-20.
 
 ## 10. Quality Requirements
 

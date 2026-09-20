@@ -1,8 +1,8 @@
 # Data Retention and Secure Deletion
 
 - Status: runtime content retention implemented in Step 7 (2026-09-19); its
-  daily timer is checked in and awaits target-workstation installation and
-  observed runs
+  daily timer was installed, enabled, and timer-trigger accepted on the target
+  on 2026-09-20
 - Decision: [AD-024](../arc42/decisions/AD-024-runtime-content-retention.md)
 
 This runbook says how long each kind of Money Tracker data is kept, what
@@ -126,6 +126,13 @@ failed run leaves the oneshot failed and visible; the next daily occurrence
 retries the policy. Disable future runs without deleting anything:
 
     systemctl --user disable --now money-tracker-runtime-retention.timer
+
+Target acceptance on 2026-09-20 first reviewed a zero-item plan. A temporary
+runtime-only two-minute schedule then triggered the unchanged production
+service; the confirmed run selected zero eligible rows and threads, emitted
+only counts, and exited zero. The override was deleted immediately. The timer
+remains enabled and active on its checked-in persistent 04:45 schedule with up
+to thirty minutes of jitter.
 
 ### Consequences for other procedures
 

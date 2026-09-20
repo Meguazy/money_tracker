@@ -5,8 +5,8 @@
   Telegram/worker/llama.cpp units, and the browser-accepted FastAPI service unit
   implemented; post-restore semantic verification and the persistent daily
   backup timer are implemented; the target repository, service, and timer are
-  installed and enabled, but the timer's first scheduled runs remain to be
-  accepted
+  installed, enabled, and accepted through a timer-triggered production run;
+  multi-run retention and the clean-machine restore remain open
 - Date: 2026-09-01
 
 ## Context
@@ -105,10 +105,17 @@ On 2026-09-20 the owner selected a separate internal 4 TB NVMe shared with
 Windows for the target repository. Its NTFS data partition has a stable
 owner-masked `fstab` automount. Restic 0.18.1 and PostgreSQL 17.11 clients were
 installed, the repository was initialized, and one CLI run plus two production
-service runs created verified snapshots. The timer is installed, enabled, and
-active. Its first automatic run and observed retention across scheduled runs
-remain open. Keeping the repository in the same workstation accepts exposure
+service runs created verified snapshots. The timer was installed, enabled, and
+active; timer-triggered acceptance and multi-run retention evidence were the
+next checks. Keeping the repository in the same workstation accepts exposure
 to whole-machine loss while separating it from failure of the primary NVMe.
+
+Timer activation passed on 2026-09-20. A temporary two-minute monotonic
+override on the installed production timer triggered the unchanged production
+service, which created and verified a snapshot and exited zero. The override
+was deleted immediately afterwards, and the checked-in daily calendar,
+persistence, and jitter were reloaded and confirmed active. Retention evidence
+across multiple timer runs remains open.
 
 The off-workstation secret check passed on 2026-09-20. The owner stored the
 Restic secret in the authenticated password-manager account used by the Android

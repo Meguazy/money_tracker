@@ -1,8 +1,8 @@
 # Operations Guide
 
 - Status: Steps 1–5.5 complete; Step 7 operational hardening in progress;
-  retention timers accepted and the upgrade/rollback procedure implemented on
-  2026-09-20
+  retention timers accepted, upgrade/rollback procedure implemented, and
+  release-readiness audit recorded on 2026-09-23
 - Current executable operations: local inference/CLI, dedicated application
   PostgreSQL, migrations/checkpoint bootstrap, optional healthy Langfuse,
   capability evaluation, profile-scoped receipt storage, one-shot Step 3
@@ -54,6 +54,8 @@ the referenced file or entry point exists in the repository.
 - [Upgrade and Rollback](upgrade-and-rollback.md): release classification,
   writer freeze, verified rollback point, forward migration, acceptance, and
   compatibility-dependent recovery.
+- [Personal V1 Release Readiness](release-readiness.md): threat model,
+  evidence checklist, residual risks, and current-versus-planned audit.
 - [Backup and Restore](backup-and-restore.md): host prerequisites, backup
   configuration, the implemented `money-tracker-backup` sequence, retention,
   the isolated restore drill, and recovery acceptance.

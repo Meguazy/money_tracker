@@ -39,7 +39,7 @@ API, PostgreSQL, and the promoted local model, automated WCAG 2.0/2.1 A/AA
 checks, and acceptance of the installed user service passed. Step 5.5 is
 complete (2026-09-18): [AD-021](decisions/AD-021-full-fidelity-llm-traces.md)
 makes runtime traces full fidelity, and every model-calling entry point is
-traced. Step 7, release hardening and the personal V1 release, is next. On
+traced. Step 7, release hardening and the personal V1 release, is in progress. On
 2026-09-19 the owner deferred receipt extraction, Step 6, after the personal V1
 release: V1 keeps the implemented private archive and its metadata review, and
 every component below marked as part of the receipt workflow is planned for
@@ -191,7 +191,7 @@ Money Tracker workstation
 ├── Private host data
 │   ├── Receipt archive adapter                         [implemented, admin CLI wired]
 │   ├── Evaluation data and artifacts                   [implemented foundation]
-│   └── Restic staging/configuration and daily timer    [implemented; installed/enabled, scheduled acceptance open]
+│   └── Restic staging/configuration and daily timer    [implemented; installed/enabled, timer-trigger accepted]
 └── Docker Compose
     ├── Application PostgreSQL                          [implemented finance and messaging core]
     └── Langfuse, PostgreSQL, ClickHouse, Redis, MinIO  [implemented optional]
@@ -1402,7 +1402,7 @@ Both use the nearest-rank convention in `money_tracker.latency`.
 ```text
 Ubuntu workstation
 ├── systemd user services: accepted API, Telegram, worker, llama.cpp units
-├── persistent backup timer [implemented; target enabled, scheduled acceptance open]
+├── persistent backup timer [implemented; target enabled, timer-trigger accepted]
 ├── persistent trace/runtime-retention timers [implemented; target enabled and timer-trigger accepted]
 ├── money-tracker-api -> 127.0.0.1:8000  [implemented and browser-accepted]
 ├── compiled React assets served by money-tracker-api
@@ -1807,7 +1807,8 @@ tracing and from the exit-code contract AD-018 defines for supervisors.
 
 - Encrypted Restic backups include a consistent application database dump,
   retained receipt files, and required recovery configuration. The command is
-  implemented and verified; daily scheduling is not.
+  implemented and verified; the daily timer is installed and timer-trigger
+  accepted, with multi-run retention evidence still open.
 - Snapshot retention is seven daily, five weekly, and twelve monthly, grouped by
   host and tag rather than by per-run staging paths.
 - Every snapshot carries a versioned manifest of application version, migration
@@ -2065,11 +2066,10 @@ Quantitative evaluation gates are maintained in
   the recovery secret passed through the owner's authenticated Android password
   manager. The repository is on a separate internal NVMe, so primary-disk
   failure is separated while theft, fire, and whole-machine loss remain risks.
-- Runtime content retention has a persistent daily timer, but until the owner
-  installs and enables it the messaging tables and checkpoints keep owner
-  text indefinitely. After it runs, a deleted row still survives in older
-  Restic snapshots for up to about a year, and a delivered summary whose
-  control stays active keeps its text until the control is used. Thread
+- Runtime content retention has an installed, enabled daily timer whose
+  timer-to-service path passed acceptance on 2026-09-20. A deleted row still
+  survives in older Restic snapshots for up to about a year, and a delivered
+  summary whose control stays active keeps its text until the control is used. Thread
   selection reads the LangGraph checkpoint schema, so a checkpointer upgrade
   must re-run the retention integration test.
 - The workstation has no full-disk encryption: on 2026-09-19 the root ext4
@@ -2084,9 +2084,9 @@ Quantitative evaluation gates are maintained in
   operator must protect it in transit and remove every copy when no longer
   needed.
 - The real Telegram evidence uses a private test bot, not a production bot.
-- Trace retention has a persistent daily timer, but until the owner installs
-  and enables it the Langfuse volumes, which hold owner content and are
-  deliberately outside the backup set, keep traces past 30 days. A
+- Trace retention has an installed, enabled daily timer whose
+  timer-to-service path passed acceptance on 2026-09-20. Langfuse volumes hold
+  owner content and remain outside the backup set. A
   private export holds the same content outside any store and is the
   operator's to protect and remove.
 - Fresh environments receive a random 48-character `LLM_API_KEY`, above the

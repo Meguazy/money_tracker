@@ -134,6 +134,16 @@ PostgreSQL and filesystem integration evidence covers success plus missing-media
 and profile/default-source drift. A clean-machine restore and subsequent core
 startup with Langfuse absent remain release acceptance work.
 
+A later Step 7 real-snapshot drill exposed a legacy profile/default-source
+pointer mismatch that earlier source checks did not catch. The backup command
+now runs the same semantic verifier before the dump and before Restic retention,
+so a source already known to be unrestorable is refused without pruning. The
+`20260923_0008` migration reconciles the one unambiguous old pointer, and a
+real PostgreSQL/Restic test proves refusal leaves the prior snapshot present.
+The existing production snapshot was recovered in an isolated database by
+applying that migration before semantic verification; production deployment,
+new-snapshot acceptance, and the clean-machine drill remain open.
+
 The tenth Step 7 slice adds the repository-wide
 [upgrade and rollback runbook](../../operations/upgrade-and-rollback.md). It
 uses the accepted host-process ownership and authoritative backup boundary to

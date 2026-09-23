@@ -2,7 +2,7 @@
 
 Part of the [delivery roadmap](../roadmap.md).
 
-Status: **In progress — release-readiness audit slice implemented
+Status: **In progress — default-source integrity slice implemented
 (2026-09-23).**
 
 ## Scope change (2026-09-19)
@@ -19,10 +19,9 @@ may introduce them. The released V1 scope is the one in the
 ## Prerequisites
 
 - Steps 0–5.5 are complete.
-- Restic and PostgreSQL 17 client tools are installed on the target
-  workstation. Their absence today is why the backup drill runs only in CI
-  ([risks](../arc42/README.md#11-risks-and-technical-debt)); the daily timer
-  and the clean-machine restore need them locally.
+- Restic and PostgreSQL 17 client tools are installed on the target workstation.
+  The daily timer uses them; the clean-machine restore still needs them on its
+  empty target.
 
 ## Deliverables
 
@@ -366,6 +365,37 @@ retention, and runtime-content retention services all exited zero that day.
 This is one natural calendar run, not proof of multi-run Restic retention.
 The clean-machine restore, effective service sandbox, complete fault matrix,
 and final owner acceptance remain open.
+
+## Default-source integrity slice (2026-09-23)
+
+The twelfth Step 7 slice responds to a real isolated restore of the latest
+production snapshot. `restore-drill` refused it with
+`profile_default_source_invalid`: the profile pointer was null while exactly
+one active source was flagged as default. Read-only inspection of the live
+database found the same mismatch. Both rows originated on 2026-09-02, before
+the current source-creation path updated the profile pointer atomically. No
+production data was changed during diagnosis.
+
+Migration `20260923_0008` fills only a missing pointer from the unique active
+flagged source and refuses any remaining mismatch transactionally. The backup
+command now runs the restored-data semantic verifier on its live source before
+dumping or entering Restic retention; an already inconsistent source cannot
+produce a new supposedly recoverable snapshot or prune an older one. Real
+PostgreSQL tests cover the legacy repair and ambiguous-state refusal. A real
+Restic/PostgreSQL test preserves the prior good snapshot when source preflight
+rejects drift.
+
+The existing production snapshot was separately restored into a generated
+empty database and private temporary archive. Its expected old-revision
+refusal was followed by the candidate migration and read-only verification:
+revision `20260923_0008`, one active profile, one default source, 43 expenses,
+74 idempotency records, 107 inbox rows, 137 outbox rows, 55 pending actions,
+and zero referenced receipt originals passed in under one second. Only the
+generated database and temporary archive were removed. This proves a recovery
+path for that snapshot; the installed production schema remains at
+`20260910_0007`, the current daily timer still uses the old command, and the
+clean-machine restore with the off-workstation secret remains open. A new
+post-migration snapshot and its isolated drill are required after deployment.
 
 ## Exit criteria
 

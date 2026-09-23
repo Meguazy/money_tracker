@@ -174,8 +174,9 @@ The command performs the fixed sequence:
    presence, then acquire the exclusive host lock without waiting behind
    another operation;
 2. verify that the configured and connected database name is exactly the
-   expected one, read the Alembic revision, and verify the on-disk SHA-256 of
-   every receipt the database references;
+   expected one, read the Alembic revision, verify the on-disk SHA-256 of every
+   receipt the database references, and run the restored-data semantic checks
+   against the live source in a read-only transaction;
 3. create the `pg_dump` as a mode-600 file in a mode-700 private staging
    directory;
 4. build the manifest described above and write it mode-600;
@@ -195,6 +196,12 @@ A failed step raises before the next one and never reports success. Staging is
 removed only after verification; the previous good snapshot is never deleted by
 a failed run. Errors name only the failing executable, never a command line,
 environment, or secret.
+
+The semantic source check was added after a real production snapshot failed
+the restore verifier. It refuses a known mismatch before the command reaches
+Restic's `forget --prune` stage. It does not pin the later `pg_dump` to the same
+read transaction, so deployment acceptance still requires an isolated drill of
+the new snapshot.
 
 Report freshness for local health checks:
 
@@ -261,12 +268,45 @@ the new snapshot. The timer-to-service path is accepted; retention enforcement
 across multiple scheduled runs remains open.
 
 After workstation downtime from 2026-09-21 to 2026-09-23, `Persistent=true`
-triggered the production daily calendar on 2026-09-23 at 14:00 CEST. The unchanged service created and
-verified snapshot `8d52b52cd5d2d54a730f1fc63ccaf22449e41063a51d7c8028c6dcef2a0eec90`
+triggered the production daily calendar on 2026-09-23 at 14:00 CEST. The
+unchanged service created and verified snapshot
+`8d52b52cd5d2d54a730f1fc63ccaf22449e41063a51d7c8028c6dcef2a0eec90`
 and exited zero. The same day's trace and runtime-content retention services
 also exited zero. This establishes a real calendar catch-up, but only one
 post-acceptance daily backup run has been observed; multi-run repository
 retention remains open.
+
+### Legacy default-source recovery (2026-09-23)
+
+An isolated drill of production snapshot
+`8d52b52cd5d2d54a730f1fc63ccaf22449e41063a51d7c8028c6dcef2a0eec90`
+found `profile_default_source_invalid`. The source database has one null
+profile pointer and one active default-flagged source, both dating to the
+original 2026-09-02 bootstrap. The current source-creation path updates both
+fields, but it cannot retroactively change those rows.
+
+Candidate migration `20260923_0008` fills only that unique missing pointer and
+refuses all other drift in one transaction. On 2026-09-23 the real snapshot was
+restored into a generated empty database and private temporary archive. The
+candidate verifier first reported the expected old schema revision; after
+applying the candidate migration to that isolated target, semantic verification
+passed with one active profile, one default source, 43 expenses, 74 finance
+idempotency records, 107 inbox rows, 137 outbox rows, 55 pending actions, and
+zero referenced receipt originals. The temporary database and archive were
+removed. This proves recovery of the selected snapshot using the candidate
+version; it is not a clean-machine drill and did not use the off-workstation
+copy of the secret.
+
+For deployment, keep the [upgrade/rollback runbook](upgrade-and-rollback.md)
+writer freeze and pre-upgrade snapshot. Verify that fresh snapshot through the
+same isolated restore, candidate migration, and semantic check before changing
+the live schema. The old release's normal `restore-drill` reports the known
+pointer mismatch; a candidate `restore-drill` reports the old revision before
+the migration. Neither refusal authorizes replacing production storage. After
+the live migration, create a new snapshot with semantic source preflight and
+run its ordinary isolated `restore-drill`. The old release's exact schema
+checks do not accept revision `20260923_0008`, so rollback to the old code is
+not an in-place option.
 
 On 2026-09-20 the owner copied the generated recovery secret into the
 authenticated password-manager account used by the Android phone and opened

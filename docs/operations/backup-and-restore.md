@@ -8,10 +8,10 @@
   Restic snapshots of the authoritative database, receipt archive, and runtime
   configuration, and restores them into explicitly isolated targets
 
-Backup is part of the active authoritative finance-data step, not an optional
+Backup is part of the authoritative finance-data system, not an optional
 post-release enhancement. Run the restore drill below before storing
-irreplaceable personal data; target timer acceptance and clean-machine
-qualification are still open.
+irreplaceable personal data; timer-to-service acceptance has passed, while
+multi-run retention evidence and clean-machine qualification are still open.
 
 ## Recovery objectives
 
@@ -259,6 +259,14 @@ and timer restart restored and confirmed the checked-in daily 03:15 calendar,
 `Persistent=true`, and up-to-thirty-minute jitter. A following `status` read
 the new snapshot. The timer-to-service path is accepted; retention enforcement
 across multiple scheduled runs remains open.
+
+After workstation downtime from 2026-09-21 to 2026-09-23, `Persistent=true`
+triggered the production daily calendar on 2026-09-23 at 14:00 CEST. The unchanged service created and
+verified snapshot `8d52b52cd5d2d54a730f1fc63ccaf22449e41063a51d7c8028c6dcef2a0eec90`
+and exited zero. The same day's trace and runtime-content retention services
+also exited zero. This establishes a real calendar catch-up, but only one
+post-acceptance daily backup run has been observed; multi-run repository
+retention remains open.
 
 On 2026-09-20 the owner copied the generated recovery secret into the
 authenticated password-manager account used by the Android phone and opened

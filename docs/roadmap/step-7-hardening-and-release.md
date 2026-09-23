@@ -2,8 +2,8 @@
 
 Part of the [delivery roadmap](../roadmap.md).
 
-Status: **In progress — upgrade/rollback runbook slice implemented
-(2026-09-20).**
+Status: **In progress — release-readiness audit slice implemented
+(2026-09-23).**
 
 ## Scope change (2026-09-19)
 
@@ -349,6 +349,23 @@ upgrade drill. Its commands compose already implemented production interfaces,
 and its validation is documentation and repository-policy evidence. A future
 slice that changes a stateful boundary must add its exact compatibility and
 acceptance evidence to the implementing pull request.
+
+## Release-readiness audit slice (2026-09-23)
+
+The eleventh Step 7 slice adds the
+[release-readiness checklist and threat model](../operations/release-readiness.md).
+It names assets, untrusted boundaries, implemented controls, residual physical
+and local-process exposure, and the evidence still needed for each release
+gate. It audits implemented versus planned claims and corrects stale statements
+that daily scheduling is absent or that retention timers still need
+installation. No new runtime control or release acceptance is claimed.
+
+The production daily backup timer made a verified catch-up snapshot on
+2026-09-23 at 14:00 CEST after workstation downtime. The backup, trace
+retention, and runtime-content retention services all exited zero that day.
+This is one natural calendar run, not proof of multi-run Restic retention.
+The clean-machine restore, effective service sandbox, complete fault matrix,
+and final owner acceptance remain open.
 
 ## Exit criteria
 

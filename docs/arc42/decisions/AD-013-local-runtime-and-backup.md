@@ -134,6 +134,16 @@ PostgreSQL and filesystem integration evidence covers success plus missing-media
 and profile/default-source drift. A clean-machine restore and subsequent core
 startup with Langfuse absent remain release acceptance work.
 
+The tenth Step 7 slice adds the repository-wide
+[upgrade and rollback runbook](../../operations/upgrade-and-rollback.md). It
+uses the accepted host-process ownership and authoritative backup boundary to
+freeze every application writer, create a verified rollback point, migrate
+forward, install reviewed units, and reopen ingress only after acceptance.
+Prior code or image digests are a rollback only when compatibility is explicit;
+otherwise the current state is preserved and the snapshot is restored into an
+isolated target before any owner-authorized production cutover. The procedure
+adds no new runtime component or automated destructive operation.
+
 ## Consequences
 
 - Setup requires systemd unit installation and user lingering or equivalent

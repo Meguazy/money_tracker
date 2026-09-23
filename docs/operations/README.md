@@ -1,7 +1,8 @@
 # Operations Guide
 
-- Status: Steps 1–5.5 complete; Step 5 local dashboard browser-accepted on
-  2026-09-16; Step 5.5 LLM traceability owner-accepted on 2026-09-18
+- Status: Steps 1–5.5 complete; Step 7 operational hardening in progress;
+  retention timers accepted and the upgrade/rollback procedure implemented on
+  2026-09-20
 - Current executable operations: local inference/CLI, dedicated application
   PostgreSQL, migrations/checkpoint bootstrap, optional healthy Langfuse,
   capability evaluation, profile-scoped receipt storage, one-shot Step 3
@@ -22,7 +23,8 @@
   portable finance export with a revisioned JSON Lines contract, private-file
   controls, counts, and a SHA-256 digest, and 30-day retention of concluded
   Telegram messages and terminal workflow checkpoints, and content-free latency
-  profiling from the database and the traces
+  profiling from the database and the traces, plus the controlled application,
+  schema, unit, container, and model upgrade/rollback procedure
 - Implemented Step 2: authoritative finance schema and transactional
   expense, wallet, budget, pending category-proposal, and versioned receipt-review
   repository operations, a safe local receipt-media adapter, and verified
@@ -49,6 +51,9 @@ the referenced file or entry point exists in the repository.
   topology, startup/recovery, health, and deployment ownership.
 - [Container Versions](container-versions.md): immutable image baseline,
   verification evidence, controlled upgrades, and rollback constraints.
+- [Upgrade and Rollback](upgrade-and-rollback.md): release classification,
+  writer freeze, verified rollback point, forward migration, acceptance, and
+  compatibility-dependent recovery.
 - [Backup and Restore](backup-and-restore.md): host prerequisites, backup
   configuration, the implemented `money-tracker-backup` sequence, retention,
   the isolated restore drill, and recovery acceptance.

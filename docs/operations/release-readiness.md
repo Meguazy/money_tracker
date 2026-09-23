@@ -25,7 +25,7 @@ local-only V1; LAN access and the deferred receipt workflow need new review.
 | Credential or owner content leaks through diagnostics or traces | Private secret files, content-free structured journal, trace redaction, local Langfuse with 30-day retention; [security](security-and-troubleshooting.md) and [tracing](tracing.md) runbooks | Full-fidelity traces and unencrypted finance exports contain owner content. Export copies remain outside automatic retention. |
 | Loss, corruption, or rollback of authoritative data | Encrypted verified Restic snapshots include PostgreSQL, originals, and recovery configuration; isolated restore checks hashes and business invariants; [backup runbook](backup-and-restore.md) | Clean-machine restore with the off-workstation secret and Langfuse-off startup remain gates. The repository is on another disk inside the same workstation, so whole-machine loss remains possible. |
 | Local process or physical access reads live or deleted content | Owner-only filesystem modes and service isolation directives; [data-retention runbook](data-retention.md) records residual copies | Mount protections have not taken effect on this workstation. Root and swap are unencrypted. Qualify effective service restrictions and obtain an explicit owner decision on physical-data risk. |
-| Failed upgrade leaves incompatible code or storage | Writer freeze, verified snapshot, forward migration, compatibility classification, isolated restore path in the [upgrade runbook](upgrade-and-rollback.md) | A real stateful upgrade needs its own compatibility evidence. Incompatible production cutover requires a separate owner decision. |
+| Failed upgrade leaves incompatible code or storage | Writer freeze, verified snapshot, forward migration, compatibility classification, isolated restore path in the [upgrade runbook](upgrade-and-rollback.md); the 2026-09-23 `0008` deployment passed the fresh-snapshot recovery proof and post-migration drill | Keep the tagged pre-upgrade recovery point through the accepted observation window. Incompatible production cutover requires a separate owner decision. |
 
 No row grants an exception to the Step 7 rule against unresolved critical or
 high correctness, data-loss, authorization, or secret-exposure findings. Such a
@@ -38,7 +38,7 @@ finding needs an owner-visible decision and evidence before release.
 | Scope and promoted text configuration | Step 6 is deferred; EVD-004 promotes the text configuration, and Step 4/5/5.5 owner workflows passed | Re-run affected evaluations only if a promoted boundary changes; record the final V1 version set. |
 | Service startup and recovery | Step 4 unattended reboot and five fault injections, and Step 5 installed API acceptance passed | Complete the Step 7 fault matrix across Docker, PostgreSQL, host services, Telegram, inference, archive, Langfuse-off, backup, and restore. |
 | Scheduled backup and retention | Timer-to-service paths passed on 2026-09-20. After downtime, the persistent backup timer made a verified snapshot on 2026-09-23 at 14:00 CEST; all three scheduled services exited zero that day | Observe further daily runs and verify seven-daily/five-weekly/twelve-monthly repository retention. One catch-up run is not multi-run evidence. |
-| Recovery secret and empty-installation restore | Off-workstation access passed on 2026-09-20. A real 2026-09-23 snapshot exposed legacy default-pointer drift; the candidate migration recovered it in an isolated database and passed semantic verification | Deploy the repair, create and drill a new snapshot, then unlock the real repository on an empty installation with the recovered secret and start core services with Langfuse absent. Record RPO/RTO without private content. |
+| Recovery secret and empty-installation restore | Off-workstation access passed on 2026-09-20. The legacy pointer was repaired in production on 2026-09-23 after a fresh isolated recovery proof; the new snapshot passed its ordinary isolated drill | Unlock the real repository on an empty installation with the recovered secret and start core services with Langfuse absent. Record RPO/RTO without private content. |
 | Effective service confinement | Units start, but the 2026-09-17 probe found mount protections ineffective under this user manager | Observe effective restrictions of each relevant started unit, remediate where feasible, and document residual authority. An exposure score alone is insufficient. |
 | Security and documentation | This threat model and audit identify open boundaries | Resolve or explicitly accept release-significant findings; align roadmap, arc42, ADRs, experiments, and runbooks with the tested release. |
 
@@ -57,7 +57,7 @@ catch-up without claiming multi-run retention.
 
 Still planned for Step 7: multi-run repository retention evidence, clean-machine
 restore and Langfuse-off startup, effective host sandbox qualification, complete
-fault matrix, production deployment of the default-pointer repair and a new
-snapshot drill, and final release acceptance. Receipt extraction and media
-deletion remain deferred Step 6 work. No production bot is documented as
-accepted.
+fault matrix, and final release acceptance. The default-pointer repair is
+deployed, and its new snapshot passed an isolated drill. Receipt extraction
+and media deletion remain deferred Step 6 work. No production bot is
+documented as accepted.

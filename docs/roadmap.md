@@ -25,7 +25,7 @@ the step document, which is the only place any of them is written down.
 | [4](roadmap/step-4-durable-telegram-mvp.md) | Durable Telegram MVP | Complete (2026-09-11) |
 | [5](roadmap/step-5-dashboard-and-advice.md) | Local dashboard, budgets, analytics, and advice | Complete (2026-09-16) |
 | [5.5](roadmap/step-5-5-llm-traceability.md) | Full LLM call traceability in Langfuse | Complete (2026-09-18) |
-| [7](roadmap/step-7-hardening-and-release.md) | Operational hardening and personal V1 release | In progress — default-source integrity slice implemented (2026-09-23) |
+| [7](roadmap/step-7-hardening-and-release.md) | Operational hardening and personal V1 release | In progress — production integrity repair deployed (2026-09-23) |
 
 ## Future developments
 

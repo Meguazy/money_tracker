@@ -285,7 +285,7 @@ profile pointer and one active default-flagged source, both dating to the
 original 2026-09-02 bootstrap. The current source-creation path updates both
 fields, but it cannot retroactively change those rows.
 
-Candidate migration `20260923_0008` fills only that unique missing pointer and
+Migration `20260923_0008` fills only that unique missing pointer and
 refuses all other drift in one transaction. On 2026-09-23 the real snapshot was
 restored into a generated empty database and private temporary archive. The
 candidate verifier first reported the expected old schema revision; after
@@ -297,16 +297,27 @@ removed. This proves recovery of the selected snapshot using the candidate
 version; it is not a clean-machine drill and did not use the off-workstation
 copy of the secret.
 
-For deployment, keep the [upgrade/rollback runbook](upgrade-and-rollback.md)
-writer freeze and pre-upgrade snapshot. Verify that fresh snapshot through the
-same isolated restore, candidate migration, and semantic check before changing
-the live schema. The old release's normal `restore-drill` reports the known
-pointer mismatch; a candidate `restore-drill` reports the old revision before
-the migration. Neither refusal authorizes replacing production storage. After
-the live migration, create a new snapshot with semantic source preflight and
-run its ordinary isolated `restore-drill`. The old release's exact schema
-checks do not accept revision `20260923_0008`, so rollback to the old code is
-not an in-place option.
+The [upgrade/rollback runbook](upgrade-and-rollback.md) was exercised on
+2026-09-23. Writers and timers stopped with no pending or retrying messages or
+dead letters. The previous reviewed commit created fresh snapshot
+`21f4db2fe7e150ebb3b0651bf9016763f75b4825badded7c32d74325549cc0a7`.
+Its isolated restore reproduced the known pointer mismatch; applying
+`20260923_0008` only to that target made semantic verification pass with the
+same counts above. The snapshot was retagged to
+`7ee53ceed3c9d3d842cd3548f38b6f9311792405bde3a2102b92676124d3394f`
+with `step7-preupgrade-hold`, and `restic check` passed. The extra tag keeps
+this pre-upgrade recovery point in a separate retention group through the
+observation window; remove it only after an explicit owner decision.
+
+Production then migrated to `20260923_0008`. Source-semantic preflight and
+verified snapshot
+`77dbf970886319b4fd596c57ccb9d77d43840a6cbbedc1e3338b572c2a1e8c8b`
+passed; that snapshot's ordinary isolated `restore-drill` passed with the same
+counts. Both temporary databases and archives were removed. Core services and
+the three prior timers resumed. This same-workstation evidence is not the
+clean-machine restore or a multi-run retention observation. The old release's
+exact schema checks do not accept revision `20260923_0008`, so rollback to old
+code is still not an in-place option.
 
 On 2026-09-20 the owner copied the generated recovery secret into the
 authenticated password-manager account used by the Android phone and opened

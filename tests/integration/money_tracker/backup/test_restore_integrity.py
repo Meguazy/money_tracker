@@ -88,7 +88,7 @@ def test_restore_integrity_verifies_real_database_media_and_cli(
     result = RestoredDataVerifier(settings).verify()
 
     assert result.database_name == "money_tracker_test"
-    assert result.alembic_revision == "20260910_0007"
+    assert result.alembic_revision == "20260923_0008"
     assert result.active_profile_count == 1
     assert result.default_source_count == 0
     assert result.expense_count == 0

@@ -56,6 +56,7 @@ from money_tracker.persistence.database import (
     upgrade_database,
 )
 from money_tracker.persistence.finance import PostgresFinanceRepository
+from money_tracker.persistence.schema import APPLICATION_SCHEMA_REVISION
 
 
 class _CounterState(TypedDict):
@@ -410,8 +411,12 @@ def test_finance_migration_creates_authoritative_tables(postgres_url: str) -> No
         "audit_events",
         "idempotency_records",
     } == tables
-    with pytest.raises(RuntimeError, match="destructive"):
+    with pytest.raises(RuntimeError, match="cannot be reversed safely"):
         downgrade_database(postgres_url, "20260901_0001")
+    with connect(postgres_url) as connection:
+        assert connection.execute(
+            "SELECT version_num FROM public.alembic_version"
+        ).fetchone() == (APPLICATION_SCHEMA_REVISION,)
 
 
 @pytest.mark.postgres

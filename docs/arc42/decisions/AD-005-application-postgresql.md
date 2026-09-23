@@ -87,6 +87,11 @@ rollback, restart persistence, identical retry, stale versions, and concurrent
 expense and wallet writers, including concurrent receipt review transitions, a
 replayed review command that writes one audit row and one claim, and a rolled
 back audit that leaves no claim behind.
+Step 7 migration `20260923_0008` repairs a legacy missing profile default-source
+pointer only when one active source is already flagged as default. It refuses
+other mismatches and has no reverse migration; a real PostgreSQL regression
+proves both outcomes. This is a metadata reconciliation of the original
+source-selection intent, not a new owner command or financial movement.
 Receipt extraction/deletion and remaining transport adapters are still open.
 
 ## Consequences

@@ -38,7 +38,7 @@ finding needs an owner-visible decision and evidence before release.
 | Scope and promoted text configuration | Step 6 is deferred; EVD-004 promotes the text configuration, and Step 4/5/5.5 owner workflows passed | Re-run affected evaluations only if a promoted boundary changes; record the final V1 version set. |
 | Service startup and recovery | Step 4 unattended reboot and five fault injections, and Step 5 installed API acceptance passed | Complete the Step 7 fault matrix across Docker, PostgreSQL, host services, Telegram, inference, archive, Langfuse-off, backup, and restore. |
 | Scheduled backup and retention | Timer-to-service paths passed on 2026-09-20. After downtime, the persistent backup timer made a verified snapshot on 2026-09-23 at 14:00 CEST; all three scheduled services exited zero that day | Observe further daily runs and verify seven-daily/five-weekly/twelve-monthly repository retention. One catch-up run is not multi-run evidence. |
-| Recovery secret and empty-installation restore | Off-workstation access passed on 2026-09-20; isolated restore and semantic verification have real PostgreSQL/Restic tests | On an empty isolated installation, unlock the real repository with the recovered secret, restore data/media/configuration, verify counts and hashes, then start core services with Langfuse absent. Record RPO/RTO without private content. |
+| Recovery secret and empty-installation restore | Off-workstation access passed on 2026-09-20. A real 2026-09-23 snapshot exposed legacy default-pointer drift; the candidate migration recovered it in an isolated database and passed semantic verification | Deploy the repair, create and drill a new snapshot, then unlock the real repository on an empty installation with the recovered secret and start core services with Langfuse absent. Record RPO/RTO without private content. |
 | Effective service confinement | Units start, but the 2026-09-17 probe found mount protections ineffective under this user manager | Observe effective restrictions of each relevant started unit, remediate where feasible, and document residual authority. An exposure score alone is insufficient. |
 | Security and documentation | This threat model and audit identify open boundaries | Resolve or explicitly accept release-significant findings; align roadmap, arc42, ADRs, experiments, and runbooks with the tested release. |
 
@@ -57,6 +57,7 @@ catch-up without claiming multi-run retention.
 
 Still planned for Step 7: multi-run repository retention evidence, clean-machine
 restore and Langfuse-off startup, effective host sandbox qualification, complete
-fault matrix, and final release acceptance. Receipt extraction and media
+fault matrix, production deployment of the default-pointer repair and a new
+snapshot drill, and final release acceptance. Receipt extraction and media
 deletion remain deferred Step 6 work. No production bot is documented as
 accepted.

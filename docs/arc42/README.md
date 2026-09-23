@@ -134,7 +134,7 @@ boundary is not end-to-end encrypted and must not be described as local storage.
 | Browser to application API | Same-origin HTTP JSON | Monthly overview, calendar analytics, transaction register, manual lifecycle, budget planning, category management/review, funding-source/wallet administration, receipt metadata review, messaging operations, safe profile settings, promoted read-only advice, CSRF, and health implemented; receipt extraction remains planned. No route returns receipt bytes or its archive key | Step 5 slices implemented |
 | Application to PostgreSQL | PostgreSQL protocol | Checkpoints, authoritative finance aggregates, normalized messaging offsets/inbox/outbox, pairing, actions, retries, and dead letters | Implemented foundation, finance repositories, and Step 4 messaging persistence |
 | Application to receipt archive | Private host filesystem | Fully decoded original JPEG/PNG/WebP keyed and verified by content hash; no derivatives | Local adapter/admin CLI and encrypted backup/restore implemented; API/worker media wiring and deletion planned. The control plane reads metadata only and never opens this boundary |
-| Backup process to repository | Restic repository protocol | Database dump, receipts and recovery configuration | Implemented and restore-tested; target repository and persistent daily timer installed, enabled, and timer-trigger accepted; multi-run retention observation open |
+| Backup process to repository | Restic repository protocol | Database dump, receipts and recovery configuration | Implemented with source semantic preflight and isolated restore verification; target repository and persistent daily timer installed, enabled, and timer-trigger accepted; candidate repair of legacy source drift awaits deployment, and multi-run retention observation remains open |
 
 ### Out of scope for V1
 
@@ -233,7 +233,7 @@ Money Tracker workstation
 | `api.contracts` | Define strict, versioned finance request/response, mutation-header, and problem wire shapes | Pydantic and domain response values; no web framework | No state; stable JSON field semantics only | Shared by the FastAPI adapter; no credentials or private media fields |
 | `web` | Compose versioned HTTP reads and writes, static UI serving, health, and browser policy | FastAPI, narrow application ports, typed settings, strict wire contracts, and `web.mutations` | No authoritative data; injects the sole trusted profile and bot scope and owns only HTTP semantics | Host user service on IPv4 loopback; exact Host/Origin, closed CORS, CSRF, CSP, bounded problems, no Bot API credential, and no secret endpoint |
 | `web.mutations` | Translate strict browser movement, budget, funding-source/wallet, category-review, receipt-review, and messaging-requeue commands into existing audited use cases | Narrow writer protocols, request contracts, ID port, canonical command hashes, and the trusted messaging scope | No state; owns trusted web actor/source construction, not persistence or lifecycle policy | In-process API adapter; profile, bot scope, and command key are injected, and responses omit all three |
-| `backup` | Create verified encrypted authoritative snapshots, report their freshness, and restore only into explicitly empty isolated targets | Restic and PostgreSQL client executables, psycopg identity/receipt queries, private archive and configuration paths | Snapshot contents and the versioned integrity manifest in the owner repository; no finance state of its own | Host CLI under an exclusive lock; absolute-path and owner-only input checks, recovery secret passed only by file path, failures name no argument or environment |
+| `backup` | Create verified encrypted authoritative snapshots, report their freshness, and restore only into explicitly empty isolated targets | Restic and PostgreSQL client executables, read-only restored-data verifier, private archive and configuration paths | Snapshot contents and the versioned integrity manifest in the owner repository; no finance state of its own | Host CLI under an exclusive lock; source semantic preflight runs before dump and retention, absolute-path and owner-only input checks apply, recovery secret is passed only by file path, and failures name no argument or environment |
 | `recovery` | Verify semantic integrity of an isolated restored database and receipt archive before runtime startup | psycopg read-only repeatable-read transaction, canonical schema revision, and content-addressed receipt files | No state; returns only schema identity and aggregate counts | Host operator command and final stage of `restore-drill`; exact database scope, owner-only media root, content-free failures and journal fields |
 | `administration` | Expose bounded local profile bootstrap, funding-source configuration, receipt storage/registration, and one-shot dispatch of every Step 3 text route | Database URL, absolute archive setting, application services, the workflow dispatcher, local model adapter, and `open_tracer` | No independent state; emits safe identifiers, grounded facts, and reason codes only | Host CLI; active-profile preflight for specialists, explicit trusted correlations, no private paths or message content in JSON; the first traced entry point, one trace per work unit |
 | `persistence.finance` | Bootstrap profile/taxonomy, persist versioned funding-source lifecycle plus complete expense and budget aggregates, append expiry-aware balance-safe wallet movements, validate/store pending proposals, and register/transition receipt metadata transactionally | psycopg and narrow application repository contracts | Finance tables, allocations, budgets/overrides, wallet ledger, proposals, versioned receipt metadata, audit, and idempotency records | Dedicated application PostgreSQL; no receipt bytes or paths; optimistic versions protect mutable aggregates |
@@ -1808,7 +1808,10 @@ tracing and from the exit-code contract AD-018 defines for supervisors.
 - Encrypted Restic backups include a consistent application database dump,
   retained receipt files, and required recovery configuration. The command is
   implemented and verified; the daily timer is installed and timer-trigger
-  accepted, with multi-run retention evidence still open.
+  accepted, with multi-run retention evidence still open. Step 7 source
+  semantic preflight now refuses known inconsistent finance or messaging state
+  before snapshot creation or pruning; the production installation still needs
+  the candidate `20260923_0008` legacy-pointer migration and a new drill.
 - Snapshot retention is seven daily, five weekly, and twelve monthly, grouped by
   host and tag rather than by per-run staging paths.
 - Every snapshot carries a versioned manifest of application version, migration
@@ -2062,7 +2065,11 @@ Quantitative evaluation gates are maintained in
 - The encrypted authoritative backup, isolated restore drill, and persistent
   daily timer are implemented. The target repository, service, and timer are
   installed and timer-trigger verified, but multi-run retention evidence and a
-  clean-machine restore remain release work. Off-workstation access to
+  clean-machine restore remain release work. A real 2026-09-23 snapshot failed
+  the semantic restore gate on a legacy default-source pointer. The candidate
+  migration recovered it in an isolated target, but production is not repaired
+  until that migration is deployed and a new snapshot passes its drill.
+  Off-workstation access to
   the recovery secret passed through the owner's authenticated Android password
   manager. The repository is on a separate internal NVMe, so primary-disk
   failure is separated while theft, fire, and whole-machine loss remain risks.

@@ -30,6 +30,7 @@ from money_tracker.domain import Profile, ReceiptMetadata, initial_taxonomy
 from money_tracker.media import LocalReceiptMediaStore
 from money_tracker.persistence.database import upgrade_database
 from money_tracker.persistence.finance import PostgresFinanceRepository
+from money_tracker.recovery import RestoreIntegrityError
 
 
 @dataclass(frozen=True, slots=True)
@@ -233,6 +234,56 @@ def test_encrypted_snapshot_restores_database_and_receipt_media(
             target_database_name="money_tracker_test",
             target_receipt_root=tmp_path / "second-empty-target",
         )
+
+
+@pytest.mark.postgres
+def test_backup_refuses_invalid_source_before_retention(
+    postgres_url: str,
+    tmp_path: Path,
+) -> None:
+    """Keep the last valid snapshot when live finance state cannot restore."""
+
+    fixture = _authoritative_fixture(postgres_url, tmp_path)
+    service = AuthoritativeBackupService(
+        BackupSettings(
+            database_url=postgres_url,
+            expected_database="money_tracker_test",
+            receipt_archive_root=fixture.archive_root,
+            config_file=fixture.config_file,
+            restic_repository=tmp_path / "restic-repository",
+            restic_password_file=fixture.password_file,
+            lock_file=tmp_path / "backup.lock",
+            staging_parent=tmp_path / "staging",
+            restic_binary=fixture.restic_binary,
+            pg_dump_binary=fixture.pg_dump_binary,
+            pg_restore_binary=fixture.pg_restore_binary,
+        )
+    )
+    service.initialize_repository()
+    valid = service.create_backup()
+    when = datetime.now(UTC)
+    with connect(postgres_url) as database:
+        database.execute(
+            "UPDATE finance.profiles SET default_funding_source_id = NULL "
+            "WHERE id = %s",
+            (fixture.profile.id,),
+        )
+        database.execute(
+            "INSERT INTO finance.funding_sources "
+            "(id, profile_id, name, normalized_name, funding_class, "
+            "balance_mode, status, is_default, version, created_at, updated_at) "
+            "VALUES (%s, %s, 'Legacy card', 'legacy card', 'personal_funds', "
+            "'untracked', 'active', true, 1, %s, %s)",
+            (uuid4(), fixture.profile.id, when, when),
+        )
+
+    with pytest.raises(RestoreIntegrityError) as refusal:
+        service.create_backup()
+    assert refusal.value.reason_code == "profile_default_source_invalid"
+    snapshots = json.loads(
+        service._run_restic("snapshots", "--json", "--tag", AUTHORITATIVE_TAG)
+    )
+    assert [item["id"] for item in snapshots] == [valid.snapshot_id]
 
 
 @pytest.mark.postgres

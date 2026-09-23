@@ -506,7 +506,11 @@ class AuthoritativeBackupService:
             yield
 
     def _preflight_source(self) -> tuple[str, str, tuple[str, ...]]:
-        """Verify database identity and every registered receipt hash."""
+        """Verify source identity, business invariants, and receipt hashes.
+
+        A snapshot that cannot pass restore verification must not reach the
+        retention stage, where it could displace an older recoverable copy.
+        """
 
         _, database_name = _libpq_environment(self._settings.database_url)
         if database_name != self._settings.expected_database:
@@ -523,6 +527,13 @@ class AuthoritativeBackupService:
             raise BackupError("database identity or migration state is invalid")
         receipt_hashes = tuple(row[0] for row in rows)
         self._verify_receipt_tree(self._settings.receipt_archive_root, receipt_hashes)
+        RestoredDataVerifier(
+            RestoreIntegritySettings(
+                database_url=self._settings.database_url,
+                expected_database=self._settings.expected_database,
+                receipt_root=self._settings.receipt_archive_root,
+            )
+        ).verify()
         return database_name, revision[0], receipt_hashes
 
     def _verify_receipt_tree(self, root: Path, hashes: tuple[str, ...]) -> None:

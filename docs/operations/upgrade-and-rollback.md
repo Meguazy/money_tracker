@@ -43,6 +43,15 @@ replace production storage, or rotate a credential.
 An implementing pull request must state its class. If compatibility is unknown,
 treat the change as incompatible.
 
+The Step 7 `20260923_0008` default-source reconciliation is an incompatible
+revision for the previous release's exact schema checks even though it changes
+only metadata. Its production deployment needs the isolated recovery proof of
+the fresh pre-upgrade snapshot described in
+[Backup and Restore](backup-and-restore.md#legacy-default-source-recovery-2026-09-23).
+After migration, take and drill a new snapshot. Do not return to the previous
+code in place; use a reviewed forward fix or an isolated restore and separately
+authorized cutover if the candidate fails.
+
 ## Prepare the release record
 
 Record only safe identifiers in a private operator note:

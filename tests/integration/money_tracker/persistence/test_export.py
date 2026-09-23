@@ -128,7 +128,7 @@ def test_export_is_private_complete_versioned_and_cli_reachable(
         "type": "manifest",
         "format": FORMAT_NAME,
         "format_version": FORMAT_VERSION,
-        "database_revision": "20260910_0007",
+        "database_revision": "20260923_0008",
         "exported_at": exported_at.isoformat(),
         "profile_id": str(profile.id),
         "record_counts": result.record_counts,

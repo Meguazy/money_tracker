@@ -141,8 +141,11 @@ so a source already known to be unrestorable is refused without pruning. The
 `20260923_0008` migration reconciles the one unambiguous old pointer, and a
 real PostgreSQL/Restic test proves refusal leaves the prior snapshot present.
 The existing production snapshot was recovered in an isolated database by
-applying that migration before semantic verification; production deployment,
-new-snapshot acceptance, and the clean-machine drill remain open.
+applying that migration before semantic verification. On 2026-09-23 the
+production deployment repeated that recovery proof on a fresh snapshot while
+writers were frozen, migrated the live database, and passed a new isolated
+restore drill. The old snapshot is tagged for temporary observation-window
+retention. Multi-run retention and the clean-machine drill remain open.
 
 The tenth Step 7 slice adds the repository-wide
 [upgrade and rollback runbook](../../operations/upgrade-and-rollback.md). It

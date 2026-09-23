@@ -2,7 +2,7 @@
 
 Part of the [delivery roadmap](../roadmap.md).
 
-Status: **In progress — default-source integrity slice implemented
+Status: **In progress — production integrity repair deployed
 (2026-09-23).**
 
 ## Scope change (2026-09-19)
@@ -391,11 +391,42 @@ refusal was followed by the candidate migration and read-only verification:
 revision `20260923_0008`, one active profile, one default source, 43 expenses,
 74 idempotency records, 107 inbox rows, 137 outbox rows, 55 pending actions,
 and zero referenced receipt originals passed in under one second. Only the
-generated database and temporary archive were removed. This proves a recovery
-path for that snapshot; the installed production schema remains at
-`20260910_0007`, the current daily timer still uses the old command, and the
-clean-machine restore with the off-workstation secret remains open. A new
-post-migration snapshot and its isolated drill are required after deployment.
+generated database and temporary archive were removed. This proved a recovery
+path for that snapshot before production deployment.
+
+## Production integrity repair acceptance (2026-09-23)
+
+The owner authorized the maintenance window after PR #30 merged and all its
+required checks passed. API and Telegram ingress, worker, and all three
+operational timers were stopped; inbox and outbox had no pending or retrying
+work and no dead letters. With writers frozen, the previous reviewed commit
+created verified pre-upgrade snapshot
+`21f4db2fe7e150ebb3b0651bf9016763f75b4825badded7c32d74325549cc0a7`.
+An isolated restore of that exact snapshot reproduced the known
+`profile_default_source_invalid` legacy state; candidate migration
+`20260923_0008` on the isolated target then passed semantic verification with
+the same counts recorded above. No production schema changed before that proof.
+
+The pre-upgrade snapshot was retagged with `step7-preupgrade-hold` to prevent
+same-day retention from displacing it; its current Restic ID is
+`7ee53ceed3c9d3d842cd3548f38b6f9311792405bde3a2102b92676124d3394f`.
+`restic check` passed after the tag change. Production then migrated from
+`20260910_0007` to `20260923_0008`. The new source-semantic preflight passed,
+and verified snapshot
+`77dbf970886319b4fd596c57ccb9d77d43840a6cbbedc1e3338b572c2a1e8c8b`
+passed the ordinary isolated `restore-drill` with one active profile, one
+default source, 43 expenses, 74 idempotency records, 107 inbox rows, 137
+outbox rows, 55 pending actions, and zero referenced receipt originals.
+Both temporary databases and archives were removed. API live and ready checks
+passed; API, inference, worker, Telegram, and the three previously enabled
+timers were active again, with no pending or retrying messages or dead letters.
+The pre-upgrade hold remains until the owner accepts an observation window;
+do not remove it as a routine cleanup step.
+
+This is a same-workstation deployment and isolated restore, not the required
+clean-machine restore with the off-workstation secret. Multi-run retention,
+effective service confinement, the complete fault matrix, and final owner
+release acceptance remain open.
 
 ## Exit criteria
 

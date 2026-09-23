@@ -1810,8 +1810,9 @@ tracing and from the exit-code contract AD-018 defines for supervisors.
   implemented and verified; the daily timer is installed and timer-trigger
   accepted, with multi-run retention evidence still open. Step 7 source
   semantic preflight now refuses known inconsistent finance or messaging state
-  before snapshot creation or pruning; the production installation still needs
-  the candidate `20260923_0008` legacy-pointer migration and a new drill.
+  before snapshot creation or pruning. Production migrated to `20260923_0008`
+  on 2026-09-23; its new snapshot passed an isolated drill. The pre-upgrade
+  snapshot is held separately until the observation window is accepted.
 - Snapshot retention is seven daily, five weekly, and twelve monthly, grouped by
   host and tag rather than by per-run staging paths.
 - Every snapshot carries a versioned manifest of application version, migration
@@ -2066,9 +2067,10 @@ Quantitative evaluation gates are maintained in
   daily timer are implemented. The target repository, service, and timer are
   installed and timer-trigger verified, but multi-run retention evidence and a
   clean-machine restore remain release work. A real 2026-09-23 snapshot failed
-  the semantic restore gate on a legacy default-source pointer. The candidate
-  migration recovered it in an isolated target, but production is not repaired
-  until that migration is deployed and a new snapshot passes its drill.
+  the semantic restore gate on a legacy default-source pointer. The migration
+  recovered it in an isolated target and was deployed to production on
+  2026-09-23 after a fresh pre-upgrade recovery proof. A new snapshot passed
+  its ordinary isolated drill. This does not replace the clean-machine gate.
   Off-workstation access to
   the recovery secret passed through the owner's authenticated Android password
   manager. The repository is on a separate internal NVMe, so primary-disk

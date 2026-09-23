@@ -92,6 +92,10 @@ pointer only when one active source is already flagged as default. It refuses
 other mismatches and has no reverse migration; a real PostgreSQL regression
 proves both outcomes. This is a metadata reconciliation of the original
 source-selection intent, not a new owner command or financial movement.
+Production deployment on 2026-09-23 followed a fresh pre-upgrade snapshot,
+isolated restore and candidate migration, then applied `20260923_0008` with
+all application writers frozen. A new source-verified snapshot passed an
+isolated restore drill before ingress reopened.
 Receipt extraction/deletion and remaining transport adapters are still open.
 
 ## Consequences

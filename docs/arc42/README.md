@@ -2109,7 +2109,8 @@ Quantitative evaluation gates are maintained in
   mount namespace while AppArmor restricts unprivileged user namespaces. The
   services can write anywhere their user can. Earlier exposure scores measured
   configuration, not effect; qualifying the sandbox is post-V1 work. The
-  owner must accept this local-process exposure before a one-owner personal release.
+  owner accepted this local-process exposure on 2026-09-24 for a one-owner
+  personal release.
 - Keeping the exit flush bounded relies on one private detail of the Langfuse
   SDK: the adapter unregisters the exit handler of the client's resource
   manager. An SDK upgrade must re-run the degradation tests, which fail if the

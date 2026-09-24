@@ -92,7 +92,8 @@ host's mount namespace inside a private user namespace, and a write under a
 unprivileged user namespaces keeps the user manager from applying
 `ProtectHome`, `ProtectSystem`, and `PrivateTmp`. The exposure scores above
 describe configuration. Qualifying the sandbox by observation is post-V1 work;
-the owner must accept the current local-process exposure for personal V1 only.
+the owner accepted the current local-process exposure on 2026-09-24 for
+personal V1 only.
 The same slice gave the worker and API templates a private `CacheDirectory` for
 trace identity digests and `~/.local/bin` on `PATH`; they were installed and
 the services restarted at the 2026-09-18 acceptance. The llama.cpp launcher now

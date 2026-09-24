@@ -1,7 +1,7 @@
 # Operations Guide
 
-- Status: Steps 1–5.5 complete; Step 7 personal release in progress under the
-  owner's 2026-09-24 bounded-risk decision;
+- Status: Steps 1–5.5 and 7 complete for the one-owner text-first personal V1
+  under the owner's 2026-09-24 bounded-risk decision;
   retention timers accepted, upgrade/rollback procedure implemented, and
   release-readiness audit recorded on 2026-09-23
 - Current executable operations: local inference/CLI, dedicated application

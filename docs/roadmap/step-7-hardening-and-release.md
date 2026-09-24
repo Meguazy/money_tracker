@@ -2,7 +2,7 @@
 
 Part of the [delivery roadmap](../roadmap.md).
 
-Status: **In progress — personal V1 exit scope narrowed (2026-09-24).**
+Status: **Complete — personal text-first V1 accepted (2026-09-24).**
 
 ## Scope change (2026-09-19)
 
@@ -32,9 +32,10 @@ restore and measured RPO/RTO, and effective filesystem confinement of the
 user services move to post-V1 follow-up. They are not passed release gates.
 This workstation's internal second disk does not protect against whole-machine
 loss; its root and swap are unencrypted; and the user services can access
-files as the owner despite declared mount restrictions. These specific residual
-risks are proposed for owner acceptance for a one-owner local V1, not for wider
-deployment; final acceptance remains pending.
+files as the owner despite declared mount restrictions. On 2026-09-24 the owner
+explicitly accepted these specific residual risks for a one-owner local V1,
+not for wider deployment. The owner merged scope PR #32 and accepted the
+personal release on 2026-09-24.
 No global AppArmor relaxation or system-service migration is part of this
 release. The [release-readiness checklist](../operations/release-readiness.md)
 tracks the accepted boundary and remaining evidence.
@@ -56,8 +57,9 @@ and zero referenced receipt originals. The generated targets were removed.
 The pre-upgrade held snapshot remained present after retention; this is not a
 seven-daily/five-weekly/twelve-monthly qualification. Bot API validation,
 model health, API live/ready, unit state, and zero pending/retrying/dead-letter
-queues passed. The phone-secret comparison and final owner acceptance are
-still pending.
+queues passed. The owner reported `MATCH` from a local hidden-input comparison
+of the phone-held recovery secret with the configured local secret on
+2026-09-24; no secret value was shared. The owner then merged scope PR #32.
 
 ## Prerequisites
 
@@ -461,10 +463,10 @@ timers were active again, with no pending or retrying messages or dead letters.
 The pre-upgrade hold remains until the owner accepts an observation window;
 do not remove it as a routine cleanup step.
 
-This is a same-workstation deployment and isolated restore, not the required
-clean-machine restore with the off-workstation secret. Multi-run retention,
-effective service confinement, the complete fault matrix, and final owner
-release acceptance remain open.
+This is a same-workstation deployment and isolated restore, not a clean-machine
+restore with the off-workstation secret. Multi-run retention, effective service
+confinement, and the complete fault matrix remain post-V1 work under the
+2026-09-24 personal-release decision.
 
 ## Exit criteria
 
@@ -475,8 +477,23 @@ release acceptance remain open.
 - Core startup, API readiness, Telegram queue health, and the already accepted
   Langfuse-off behavior remain valid for the released configuration.
 - No unaccepted critical/high correctness, data-loss, authorization, or
-  secret-exposure finding remains. The owner must explicitly accept the
-  specific host-access and whole-machine-loss risks above for this personal
-  release; they remain open follow-ups.
+  secret-exposure finding remains. The owner explicitly accepted the specific
+  host-access and whole-machine-loss risks above for this personal release;
+  they remain open follow-ups.
 - Roadmap, product docs, arc42, ADR implementation status, experiment decision
   log, and operations guides all describe the released system accurately.
+
+## Owner acceptance and closure (2026-09-24)
+
+The owner chose the bounded personal V1 threshold in PR #32, which merged as
+`30836ab24e8e8df7bae8e9dcb746b7451a4ae4dc` with all required checks
+green. The owner explicitly accepted the documented same-workstation-loss and
+local-access risks and reported `MATCH` from the hidden-input comparison of
+the phone-held recovery secret with the configured local secret. No secret was
+shared. The final content-free core-health and latest-backup checks above
+passed for the unchanged text-first configuration, with schema revision
+`20260923_0008` and EVD-004 as the promoted model/prompt baseline. The owner
+merged the scope PR after that acceptance. These facts satisfy the narrowed
+exit criteria for a one-owner, local-only V1; this separate closure PR records
+the Step 7 Complete status. Receipt extraction and the explicit post-V1
+hardening follow-ups remain outside this release.

@@ -255,11 +255,12 @@ retention observation, a complete cross-dependency fault matrix, and effective
 filesystem confinement of the host user services. The repository remains on a
 second disk inside the same workstation, the root filesystem and swap are not
 encrypted, and the user services retain the owner's filesystem authority.
-The owner must explicitly accept those residual whole-machine-loss and
-local-access risks before this personal release; they must be revisited before a wider deployment or
-claim of disaster recovery. Daily encrypted backup, an isolated restore drill,
-financial correctness, authorization, and the local-only boundary remain V1
-requirements. The [release-readiness record](../operations/release-readiness.md)
+The owner explicitly accepted those residual whole-machine-loss and
+local-access risks on 2026-09-24 for this personal release; they must be
+revisited before a wider deployment or claim of disaster recovery. Daily
+encrypted backup, an isolated restore drill, financial correctness,
+authorization, and the local-only boundary remain V1 requirements. The
+[release-readiness record](../operations/release-readiness.md)
 tracks the evidence and follow-up.
 
 On 2026-09-19 the owner deferred the receipt workflow past the personal V1

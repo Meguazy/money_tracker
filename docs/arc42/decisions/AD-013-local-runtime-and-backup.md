@@ -6,7 +6,8 @@
   implemented; post-restore semantic verification and the persistent daily
   backup timer are implemented; the target repository, service, and timer are
   installed, enabled, and accepted through a timer-triggered production run;
-  multi-run retention and the clean-machine restore remain open
+  multi-run retention and the clean-machine restore remain post-V1 work under
+  the owner's 2026-09-24 personal-release decision
 - Date: 2026-09-01
 
 ## Context
@@ -90,7 +91,8 @@ host's mount namespace inside a private user namespace, and a write under a
 `ProtectHome=read-only` home succeeded, because AppArmor's restriction of
 unprivileged user namespaces keeps the user manager from applying
 `ProtectHome`, `ProtectSystem`, and `PrivateTmp`. The exposure scores above
-describe configuration. Qualifying the sandbox by observation is Step 7 work.
+describe configuration. Qualifying the sandbox by observation is post-V1 work;
+the owner must accept the current local-process exposure for personal V1 only.
 The same slice gave the worker and API templates a private `CacheDirectory` for
 trace identity digests and `~/.local/bin` on `PATH`; they were installed and
 the services restarted at the 2026-09-18 acceptance. The llama.cpp launcher now
@@ -132,7 +134,9 @@ only safe counts and stable reason codes. Operators can repeat the same gate
 with `money-tracker-backup verify-restore` without Restic tooling. Real
 PostgreSQL and filesystem integration evidence covers success plus missing-media
 and profile/default-source drift. A clean-machine restore and subsequent core
-startup with Langfuse absent remain release acceptance work.
+startup with Langfuse absent remain post-V1 recovery qualification. Earlier
+Langfuse-off operation of the installed core services is accepted evidence for
+the unchanged personal V1 configuration.
 
 A later Step 7 real-snapshot drill exposed a legacy profile/default-source
 pointer mismatch that earlier source checks did not catch. The backup command
@@ -145,7 +149,7 @@ applying that migration before semantic verification. On 2026-09-23 the
 production deployment repeated that recovery proof on a fresh snapshot while
 writers were frozen, migrated the live database, and passed a new isolated
 restore drill. The old snapshot is tagged for temporary observation-window
-retention. Multi-run retention and the clean-machine drill remain open.
+retention. Multi-run retention and the clean-machine drill remain open post-V1.
 
 The tenth Step 7 slice adds the repository-wide
 [upgrade and rollback runbook](../../operations/upgrade-and-rollback.md). It

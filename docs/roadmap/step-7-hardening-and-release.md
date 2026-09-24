@@ -2,8 +2,7 @@
 
 Part of the [delivery roadmap](../roadmap.md).
 
-Status: **In progress — production integrity repair deployed
-(2026-09-23).**
+Status: **In progress — personal V1 exit scope narrowed (2026-09-24).**
 
 ## Scope change (2026-09-19)
 
@@ -16,27 +15,66 @@ editing, and media deletion are not part of this step, and no deliverable below
 may introduce them. The released V1 scope is the one in the
 [product baseline](../product/vision-and-requirements.md).
 
+## Personal V1 release threshold (2026-09-24)
+
+After reviewing the remaining work, the owner chose a shorter, explicitly
+bounded personal release rather than delaying V1 for host-level hardening.
+The release still requires the promoted text gates, accepted owner workflows,
+financial correctness, authorization, healthy core services, a current
+verified encrypted snapshot, and its semantic restore into empty isolated
+targets. The off-workstation recovery-secret copy must be accessible and
+locally compared with the configured secret without entering it in a chat or
+repository. A final content-free service, queue, API, and backup check precedes
+owner acceptance.
+
+The complete fault matrix, multi-run retention qualification, clean-machine
+restore and measured RPO/RTO, and effective filesystem confinement of the
+user services move to post-V1 follow-up. They are not passed release gates.
+This workstation's internal second disk does not protect against whole-machine
+loss; its root and swap are unencrypted; and the user services can access
+files as the owner despite declared mount restrictions. These specific residual
+risks are proposed for owner acceptance for a one-owner local V1, not for wider
+deployment; final acceptance remains pending.
+No global AppArmor relaxation or system-service migration is part of this
+release. The [release-readiness checklist](../operations/release-readiness.md)
+tracks the accepted boundary and remaining evidence.
+
+Post-V1 follow-up retains the complete fault matrix, observed retention over
+multiple scheduled runs, an empty-installation restore using the phone-held
+secret with measured RPO/RTO, and effective service filesystem confinement.
+The owner must separately schedule that work; closing this step will not mark
+those checks as passed. Whole-machine-loss protection and disk encryption also
+remain owner decisions before making stronger durability or privacy claims.
+
+The second calendar-triggered backup ran on 2026-09-24 at 11:53 CEST after
+workstation startup and exited zero. Its verified snapshot
+`3681bda7833b2e95148c41bb595b39bec5adc5a9658cf6e7e0f53c847450c32e`
+passed an ordinary restore drill into a new empty database and archive:
+revision `20260923_0008`, one profile/default source, 43 expenses, 74 finance
+idempotency records, 107 inbox rows, 137 outbox rows, 55 pending actions,
+and zero referenced receipt originals. The generated targets were removed.
+The pre-upgrade held snapshot remained present after retention; this is not a
+seven-daily/five-weekly/twelve-monthly qualification. Bot API validation,
+model health, API live/ready, unit state, and zero pending/retrying/dead-letter
+queues passed. The phone-secret comparison and final owner acceptance are
+still pending.
+
 ## Prerequisites
 
 - Steps 0–5.5 are complete.
 - Restic and PostgreSQL 17 client tools are installed on the target workstation.
-  The daily timer uses them; the clean-machine restore still needs them on its
-  empty target.
+  The daily timer uses them; a post-V1 clean-machine restore will need them on
+  its empty target.
 
 ## Deliverables
 
-- End-to-end fault matrix across Docker, PostgreSQL, host services, Telegram,
-  inference, the receipt archive, Langfuse-off operation, backup, and restore.
-- Daily Restic timer over the Step 2 backup command, observed retention
-  enforcement across scheduled runs, off-device recovery-secret check, and a
-  clean-machine restore drill.
+- Daily Restic timer over the Step 2 backup command, a verified current
+  snapshot, isolated semantic restore, and an accessible off-device recovery
+  secret copy checked locally against the configured secret.
 - Export of authoritative finance records and documented portability contract.
 - Data/checkpoint/log/trace retention and secure deletion procedures, including
   a schedule for the trace retention command that Step 5.5 left operator-run
   ([AD-021](../arc42/decisions/AD-021-full-fidelity-llm-traces.md)).
-- Host-unit sandbox qualified by observing a started unit rather than by its
-  exposure score, closing the gap Step 4 measured and Step 5.5 found not in
-  effect ([AD-013](../arc42/decisions/AD-013-local-runtime-and-backup.md)).
 - Environment generation that writes a random `LLM_API_KEY` long enough for the
   trace redactor, instead of the short placeholder recorded in the
   [risks](../arc42/README.md#11-risks-and-technical-debt).
@@ -431,10 +469,14 @@ release acceptance remain open.
 ## Exit criteria
 
 - Product V1 success criteria and every applicable evaluation gate pass.
-- Restore on an empty installation reconstructs database, receipt references,
-  retained media, configuration, and integrity evidence.
-- Core startup and Telegram recovery succeed without Langfuse.
-- No critical/high unresolved correctness, data-loss, authorization, or secret
-  exposure finding remains.
+- A current encrypted snapshot restores into empty isolated database and
+  archive targets with matching semantic counts; the off-workstation secret
+  copy matches the configured secret in a hidden-input local check.
+- Core startup, API readiness, Telegram queue health, and the already accepted
+  Langfuse-off behavior remain valid for the released configuration.
+- No unaccepted critical/high correctness, data-loss, authorization, or
+  secret-exposure finding remains. The owner must explicitly accept the
+  specific host-access and whole-machine-loss risks above for this personal
+  release; they remain open follow-ups.
 - Roadmap, product docs, arc42, ADR implementation status, experiment decision
   log, and operations guides all describe the released system accurately.

@@ -91,7 +91,8 @@ owner-only umasks, restricted namespaces and address families, declared
 read-only home/system views, and the locked virtualenv entry points. The
 read-only views are not in effect under this workstation's user manager, which
 cannot create a mount namespace while AppArmor restricts unprivileged user
-namespaces; qualifying them is Step 7 work. The worker and API also declare a
+namespaces; qualifying them is post-V1 work under the owner's bounded-risk
+personal release decision. The worker and API also declare a
 private `CacheDirectory` for model digests and `~/.local/bin` on `PATH` for the
 trace identity of the serving llama.cpp executable.
 The llama unit deliberately retains device visibility for local GPU inference, and its launcher hands the inference key to llama.cpp through `--api-key-file` on a pipe, so the key never appears in a process listing; llama.cpp refuses to start if it cannot read it. User lingering or an equivalent boot setup is

@@ -217,8 +217,14 @@ The dashboard remains unavailable over LAN or Internet in V1.
 2. Restic encrypts the dump, retained receipts, and required recovery
    configuration into the configured external repository.
 3. Retention keeps seven daily, five weekly, and twelve monthly snapshots.
-4. A restore drill initializes an empty installation, restores files and data,
-   verifies receipt references, and runs integrity checks.
+4. For personal V1, a restore drill uses an empty isolated database and receipt
+   archive, restores data and any retained originals, verifies references, and
+   runs semantic integrity checks.
+5. After V1, a clean-install drill must rebuild the application with the
+   off-workstation secret and verify service startup before claiming disaster
+   recovery.
 
 The recovery secret is stored outside the workstation. Langfuse data is not
-required to restore authoritative finance behavior.
+required to restore authoritative finance behavior. The V1 backup repository
+is on a second disk inside the same workstation and does not survive loss of
+the entire machine.

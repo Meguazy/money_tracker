@@ -168,8 +168,11 @@ the private archive already holds.
   stack.
 - **FR-OPS-002 — Encrypted backup:** Create daily encrypted backups of a
   consistent database dump, retained receipts, and recovery configuration.
-- **FR-OPS-003 — Restore:** Document and test restoration onto an empty local
-  installation before the personal release is considered ready.
+- **FR-OPS-003 — Restore:** Before the personal V1 release, restore a verified
+  authoritative snapshot into an empty isolated database and receipt archive
+  and pass the semantic integrity checks. Test rebuilding an empty installation
+  with the off-workstation recovery secret after V1; the personal release does
+  not claim whole-machine recoverability.
 - **FR-OPS-004 — Export:** Provide portable finance export before claiming data
   portability complete; historical import remains outside V1.
 - **FR-OPS-005 — Observability independence:** Continue core operation while
@@ -236,11 +239,28 @@ control or a pending category review stays usable until the owner acts.
 - The evaluation matrix passes for the promoted local text model.
 - Retry and restart tests demonstrate zero duplicate financial writes.
 - The dashboard exposes all planned V1 control-plane views on localhost.
-- A fresh-install restore drill reconstructs authoritative data and media.
+- An isolated restore drill reconstructs authoritative data and retained media
+  from a current encrypted snapshot into empty targets and passes semantic
+  verification. Fresh-install recovery remains a documented post-V1 risk.
 - arc42, ADR status, roadmap evidence, experiment decision log, and operations
   guides match the released behavior.
 
 ## Deferred after the personal V1 release
+
+On 2026-09-24 the owner chose a shorter single-workstation personal V1 release
+threshold after the production migration and isolated snapshot drill passed.
+The following operational qualifications are deferred, not represented as
+passed: clean-machine restore using the off-workstation secret, multi-run
+retention observation, a complete cross-dependency fault matrix, and effective
+filesystem confinement of the host user services. The repository remains on a
+second disk inside the same workstation, the root filesystem and swap are not
+encrypted, and the user services retain the owner's filesystem authority.
+The owner must explicitly accept those residual whole-machine-loss and
+local-access risks before this personal release; they must be revisited before a wider deployment or
+claim of disaster recovery. Daily encrypted backup, an isolated restore drill,
+financial correctness, authorization, and the local-only boundary remain V1
+requirements. The [release-readiness record](../operations/release-readiness.md)
+tracks the evidence and follow-up.
 
 On 2026-09-19 the owner deferred the receipt workflow past the personal V1
 release in favour of a working text-first V1. It remains accepted product

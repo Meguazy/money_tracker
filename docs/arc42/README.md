@@ -134,7 +134,7 @@ boundary is not end-to-end encrypted and must not be described as local storage.
 | Browser to application API | Same-origin HTTP JSON | Monthly overview, calendar analytics, transaction register, manual lifecycle, budget planning, category management/review, funding-source/wallet administration, receipt metadata review, messaging operations, safe profile settings, promoted read-only advice, CSRF, and health implemented; receipt extraction remains planned. No route returns receipt bytes or its archive key | Step 5 slices implemented |
 | Application to PostgreSQL | PostgreSQL protocol | Checkpoints, authoritative finance aggregates, normalized messaging offsets/inbox/outbox, pairing, actions, retries, and dead letters | Implemented foundation, finance repositories, and Step 4 messaging persistence |
 | Application to receipt archive | Private host filesystem | Fully decoded original JPEG/PNG/WebP keyed and verified by content hash; no derivatives | Local adapter/admin CLI and encrypted backup/restore implemented; API/worker media wiring and deletion planned. The control plane reads metadata only and never opens this boundary |
-| Backup process to repository | Restic repository protocol | Database dump, receipts and recovery configuration | Implemented with source semantic preflight and isolated restore verification; target repository and persistent daily timer installed, enabled, and timer-trigger accepted; candidate repair of legacy source drift awaits deployment, and multi-run retention observation remains open |
+| Backup process to repository | Restic repository protocol | Database dump, receipts and recovery configuration | Implemented with source semantic preflight and isolated restore verification; target repository and persistent daily timer installed, enabled, and timer-trigger accepted; legacy source drift repaired in production; multi-run retention observation remains post-V1 work |
 
 ### Out of scope for V1
 
@@ -306,7 +306,7 @@ catalog is promoted; every identifier carries a `candidate-` prefix.
 | Workflow runtime (dispatcher, router, and Step 3 text specialists implemented) | Route one normalized work unit and execute exactly one bounded specialist | Typed dispatcher outcome, LangGraph, model gateway, application services, checkpointer | Small per-graph versioned workflow state only; authoritative domain data stays in repositories | Administration CLI and sequential worker; no media, credentials, or service objects in checkpoints |
 | Receipt service | Validate media, invoke extractor, reconcile lines, prepare review | Implemented media-store port, planned extractor, finance service | Receipt metadata, extraction versions, review state | Private filesystem; untrusted image boundary; orchestration planned for Step 6, deferred after V1 |
 | Analytics service | Compute time, category, budget and funding summaries | Read repositories and deterministic calendar policies | No separate authoritative data | FastAPI and read-only agent tools |
-| Backup, recovery verifier, and scheduler (implemented) | Create consistent encrypted backups, enforce retention, restore isolated targets, and verify recovered business/runtime integrity | `pg_dump`, Restic, psycopg read-only verification, receipt/configuration paths, persistent systemd user timer | Backup snapshots in owner repository; no application state | Manual command or daily oneshot on the host; target timer-trigger accepted against a separate internal NVMe; multi-run retention evidence and clean-machine qualification remain open |
+| Backup, recovery verifier, and scheduler (implemented) | Create consistent encrypted backups, enforce retention, restore isolated targets, and verify recovered business/runtime integrity | `pg_dump`, Restic, psycopg read-only verification, receipt/configuration paths, persistent systemd user timer | Backup snapshots in owner repository; no application state | Manual command or daily oneshot on the host; target timer-trigger accepted against a separate internal NVMe; multi-run retention evidence and clean-machine qualification remain post-V1 work |
 
 ### Current and planned adapters and presentation blocks
 
@@ -1199,7 +1199,7 @@ remains open. Business reconciliation is now
 a repeatable executable check. Off-workstation access to the recovery secret
 passed from the owner's authenticated Android password manager; the
 clean-machine environment, service startup, and measured recovery acceptance
-remain open.
+remain open as post-V1 work.
 
 ### Current portable finance export
 
@@ -1452,7 +1452,8 @@ manager starts each service in its own user namespace but the host's mount
 namespace, so `ProtectHome=read-only`, `ProtectSystem=strict`, and
 `PrivateTmp=true` do not restrict it. This was observed on 2026-09-17 by
 comparing namespaces and writing under a protected home from a transient unit;
-qualifying the sandbox is Step 7 work.
+qualifying the sandbox is post-V1 work under the owner's 2026-09-24 personal
+release decision; the existing controls must not be described as effective.
 
 ### Target deployment
 
@@ -1822,8 +1823,8 @@ tracing and from the exit-code contract AD-018 defines for supervisors.
 - Restore refuses a populated database or receipt directory and a snapshot from
   a different application version, so a drill cannot damage live data.
 - The recovery secret has an off-workstation copy and is passed to Restic only
-  as a file path. A tested restore is a release gate; the isolated drill passes
-  and the clean-machine drill remains open.
+  as a file path. A tested restore into empty isolated targets is the personal
+  V1 gate; the clean-machine drill remains a post-V1 recovery qualification.
 - Langfuse is not authoritative and stays outside the encrypted backup set by
   owner decision (2026-09-17): its volumes are a reconstructible observability
   copy whose loss loses traces, never finance data. AD-021 puts owner content
@@ -1948,7 +1949,7 @@ environment file.
   isolated restore drill with semantic verification, accepted Step 4 host
   units, the browser-accepted Step 5 API unit, and the Step 7 daily backup
   timer implemented and timer-trigger accepted; multi-run retention evidence
-  and the clean-machine restore remain planned.
+  and the clean-machine restore remain planned after personal V1.
 - [AD-011: Evaluation-gated receipt extraction](decisions/AD-011-receipt-extraction.md):
   private original-media boundary and the owner-facing metadata lifecycle
   implemented; extractor evaluation and the extracted-draft preview workflow
@@ -2039,7 +2040,7 @@ accepted on 2026-09-20.
 | A user outside the paired owner contacts the bot | The gateway rejects the update without exposing finance state. |
 | A browser uses a non-loopback route or disallowed origin | The API refuses access or mutation. |
 | A dashboard change lowers contrast or hides a control from the keyboard | The real-browser axe gate reports the WCAG A/AA violation before release. |
-| A restore is performed on an empty installation | Database, receipt references, retained media, and required configuration recover consistently. |
+| A restore is performed into empty isolated V1 targets | Database, receipt references, retained media, and required configuration recover consistently; a fresh installation remains a post-V1 qualification. |
 | The application database restarts while the worker waits for work | The next update's checkpoint session is replaced on first use and the update is answered without waiting for a lease. |
 | The owner sends ordinary text messages to a warm system | Warm p95 from durable acceptance to Bot API send stays at most 30 s; the 2026-09-19 controlled sample measured 5,952 ms over 19 warm samples. |
 | Concluded Telegram and workflow content turns 30 days old | The daily retention run deletes it in one transaction, keeps every active control, paused review, and dead letter usable, and reports only counts. |
@@ -2066,11 +2067,12 @@ Quantitative evaluation gates are maintained in
 - The encrypted authoritative backup, isolated restore drill, and persistent
   daily timer are implemented. The target repository, service, and timer are
   installed and timer-trigger verified, but multi-run retention evidence and a
-  clean-machine restore remain release work. A real 2026-09-23 snapshot failed
+  clean-machine restore remain post-V1 work by the owner's 2026-09-24 decision.
+  A real 2026-09-23 snapshot failed
   the semantic restore gate on a legacy default-source pointer. The migration
   recovered it in an isolated target and was deployed to production on
   2026-09-23 after a fresh pre-upgrade recovery proof. A new snapshot passed
-  its ordinary isolated drill. This does not replace the clean-machine gate.
+  its ordinary isolated drill. It does not prove clean-machine recovery.
   Off-workstation access to
   the recovery secret passed through the owner's authenticated Android password
   manager. The repository is on a separate internal NVMe, so primary-disk
@@ -2106,7 +2108,8 @@ Quantitative evaluation gates are maintained in
   are not applied by this workstation's user manager, which cannot create a
   mount namespace while AppArmor restricts unprivileged user namespaces. The
   services can write anywhere their user can. Earlier exposure scores measured
-  configuration, not effect; Step 7 must qualify the sandbox by observing it.
+  configuration, not effect; qualifying the sandbox is post-V1 work. The
+  owner must accept this local-process exposure before a one-owner personal release.
 - Keeping the exit flush bounded relies on one private detail of the Langfuse
   SDK: the adapter unregisters the exit handler of the client's resource
   manager. An SDK upgrade must re-run the degradation tests, which fail if the
@@ -2154,7 +2157,7 @@ Quantitative evaluation gates are maintained in
   major with the controlled container upgrade.
 - Restic 0.18.1 and PostgreSQL 17.11 client tools are installed on the target.
   The real repository and production service create verified snapshots, while
-  a clean-machine restore drill remains open.
+  a clean-machine restore drill remains open post-V1.
 
 ### Target architecture risks
 

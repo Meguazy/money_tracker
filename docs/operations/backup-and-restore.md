@@ -3,7 +3,7 @@
 - Status: accepted policy; encrypted backup, verification, retention, and an
   isolated restore drill implemented in Roadmap Step 2; daily timer installed,
   enabled, and accepted through a timer-triggered production run in Step 7;
-  multi-run retention and final clean-machine qualification remain Step 7
+  multi-run retention and final clean-machine qualification remain post-V1 work
 - Current finance backup: `money-tracker-backup` creates verified encrypted
   Restic snapshots of the authoritative database, receipt archive, and runtime
   configuration, and restores them into explicitly isolated targets
@@ -11,7 +11,8 @@
 Backup is part of the authoritative finance-data system, not an optional
 post-release enhancement. Run the restore drill below before storing
 irreplaceable personal data; timer-to-service acceptance has passed, while
-multi-run retention evidence and clean-machine qualification are still open.
+multi-run retention evidence and clean-machine qualification are still open
+post-V1 follow-ups under the owner's 2026-09-24 personal-release decision.
 
 ## Recovery objectives
 
@@ -25,7 +26,8 @@ Initial policy targets:
 - seven daily, five weekly, and twelve monthly retained snapshots;
 - an owner-selected external folder or disk;
 - a Restic recovery secret copied outside the workstation;
-- restore on an empty local installation as a release gate.
+- restore into empty isolated database and archive targets as the personal V1
+  release gate; rebuild an empty installation as post-V1 recovery work.
 
 Retention is enforced by the implemented command. A persistent user timer now
 schedules it daily; the owner must explicitly install, enable, and observe the
@@ -276,6 +278,16 @@ also exited zero. This establishes a real calendar catch-up, but only one
 post-acceptance daily backup run has been observed; multi-run repository
 retention remains open.
 
+On 2026-09-24 at 11:53 CEST, another calendar catch-up created verified
+snapshot `3681bda7833b2e95148c41bb595b39bec5adc5a9658cf6e7e0f53c847450c32e`
+and the backup service exited zero. Its ordinary isolated `restore-drill`
+passed at revision `20260923_0008` with one profile/default source, 43
+expenses, 74 idempotency records, 107 inbox rows, 137 outbox rows, 55 pending
+actions, and zero referenced receipts. The generated database and archive were
+removed. The separately held pre-upgrade snapshot remained present after
+retention. Two calendar-triggered runs are not evidence that every 7/5/12
+retention bucket has aged into enforcement.
+
 ### Legacy default-source recovery (2026-09-23)
 
 An isolated drill of production snapshot
@@ -337,6 +349,36 @@ therefore accepted; using that copy in the clean-machine restore remains open.
 - Test access to the off-workstation copy during restore drills.
 
 Encryption without a recoverable key is equivalent to data loss.
+
+### Check the off-workstation copy for the personal V1
+
+On the workstation, open the saved secret on the phone and type it into this
+hidden prompt. Do not paste it into a chat, shell command, document, or PR.
+The comparison prints only a result and exits nonzero on mismatch. The local
+secret has already unlocked the repository for the verified backup and drill;
+matching it proves the phone copy is the same value, not that an empty machine
+can be rebuilt. Record only `recovery-secret-match` as evidence.
+
+    uv run --env-file .env python -c '
+    import getpass
+    import hmac
+    import os
+    import sys
+    from pathlib import Path
+
+    if not sys.stdin.isatty():
+        raise SystemExit("interactive terminal required")
+    try:
+        local = Path(os.environ["MONEY_TRACKER_RESTIC_PASSWORD_FILE"]).read_text(
+            encoding="utf-8"
+        ).rstrip("\r\n")
+    except OSError:
+        raise SystemExit("configured recovery secret unavailable") from None
+    entered = getpass.getpass("Recovery secret from phone: ")
+    matched = hmac.compare_digest(entered, local)
+    print("recovery-secret-match" if matched else "recovery-secret-mismatch")
+    raise SystemExit(0 if matched else 1)
+    '
 
 ## Implemented restore drill
 
@@ -412,10 +454,11 @@ stable reason codes, and counts. A failure names a reason code such as
 `expense_reconciliation_invalid` or `receipt_checksum_mismatch` and never a
 path, an amount, or a category name.
 
-## Planned clean-machine restore sequence
+## Planned post-V1 clean-machine restore sequence
 
-Step 7 must still qualify a restore onto an empty installation. The required
-semantic sequence around the implemented command is:
+The personal V1 accepts an isolated-target drill rather than claiming an empty
+installation can be rebuilt. Post-V1 recovery work must qualify that stronger
+claim. The required semantic sequence around the implemented command is:
 
 1. choose an empty isolated target and record the selected snapshot;
 2. install compatible pinned application/database versions without starting

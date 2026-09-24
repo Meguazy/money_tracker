@@ -1,6 +1,7 @@
 # Operations Guide
 
-- Status: Steps 1–5.5 complete; Step 7 operational hardening in progress;
+- Status: Steps 1–5.5 complete; Step 7 personal release in progress under the
+  owner's 2026-09-24 bounded-risk decision;
   retention timers accepted, upgrade/rollback procedure implemented, and
   release-readiness audit recorded on 2026-09-23
 - Current executable operations: local inference/CLI, dedicated application
@@ -29,8 +30,9 @@
   expense, wallet, budget, pending category-proposal, and versioned receipt-review
   repository operations, a safe local receipt-media adapter, and verified
   encrypted backup with an isolated restore drill
-- Planned operations: multi-run backup-retention evidence, clean-machine restore,
-  workflow-worker receipt wiring, receipt extraction, and media deletion
+- Planned post-V1 operations: multi-run backup-retention evidence,
+  clean-machine restore, workflow-worker receipt wiring, receipt extraction,
+  and media deletion
 
 These guides describe accepted operational behavior and the controls future
 steps must implement. A section labelled `planned` is not a runnable procedure.

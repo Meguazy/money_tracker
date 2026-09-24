@@ -43,6 +43,9 @@ Architecture and delivery detail live in the
 - Advice is read-only, on demand, and grounded in deterministic tool results.
 - Telegram is the primary channel and its 24-hour backlog limit is accepted.
 - The dashboard is local to the workstation.
+- The personal V1 recovery gate is an isolated restore of a current encrypted
+  snapshot; clean-machine recovery and whole-machine-loss protection are not
+  claimed for this one-workstation release.
 
 ## Change control
 

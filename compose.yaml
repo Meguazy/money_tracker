@@ -34,7 +34,7 @@ x-langfuse-environment: &langfuse-environment
 
 services:
   application-postgres:
-    image: docker.io/library/postgres:17@sha256:67f41722b7a8cbdb868a44a4995c846eddfdc2973bccb291ce937dce88ad5675
+    image: docker.io/library/postgres:17@sha256:d74eeac9a635390a49bc21bd49fccd973de707e2a53a76ac49b552b8712ec46f
     restart: unless-stopped
     environment:
       POSTGRES_USER: money_tracker_admin
@@ -104,7 +104,7 @@ services:
       start_period: 30s
 
   postgres:
-    image: docker.io/library/postgres:17@sha256:67f41722b7a8cbdb868a44a4995c846eddfdc2973bccb291ce937dce88ad5675
+    image: docker.io/library/postgres:17@sha256:d74eeac9a635390a49bc21bd49fccd973de707e2a53a76ac49b552b8712ec46f
     profiles: ["observability"]
     restart: unless-stopped
     environment:
@@ -142,7 +142,7 @@ services:
       start_period: 1s
 
   redis:
-    image: docker.io/library/redis:7@sha256:71da9275c5f3fcb97d0fa0c8c5b36cc995327265420f17a04bfd544f458059f7
+    image: docker.io/library/redis:7@sha256:c6eabf748fc7a61dbb5a705c78bcf3d6377b1127a97d0ce965c11c44ba46896f
     profiles: ["observability"]
     restart: unless-stopped
     environment:
@@ -161,7 +161,7 @@ services:
       retries: 10
 
   minio:
-    image: cgr.dev/chainguard/minio:latest@sha256:22bf0ad174612a0106dfbbb95818f307525dd32c5a6ec119ecd7273815abe456
+    image: cgr.dev/chainguard/minio:latest@sha256:4cf4831a2bbcf13ddca09c1cbcc9faff716dd3c4247e0babc32864b8ee8e0034
     profiles: ["observability"]
     restart: unless-stopped
     entrypoint: sh

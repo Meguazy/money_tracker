@@ -8,16 +8,16 @@ dependencies = [
     "alembic>=1.18,<2.0",
     "fastapi>=0.116,<1.0",
     "httpx>=0.28,<1.0",
-    "langchain>=1.0,<2.0",
-    "langchain-openai>=1.0,<2.0",
-    "langfuse>=4.7,<5.0",
-    "langgraph>=1.0,<2.0",
+    "langchain>=1.4.2,<2.0",
+    "langchain-openai>=1.6.6,<2.0",
+    "langfuse>=4.15.6,<5.0",
+    "langgraph>=1.2.12,<2.0",
     "langgraph-checkpoint-postgres>=3.1,<4.0",
     "pillow>=12.3,<13.0",
     "psycopg[binary,pool]>=3.3,<4.0",
     "pydantic>=2.13,<3.0",
     "pyyaml>=6.0,<7.0",
-    "uvicorn>=0.35,<1.0",
+    "uvicorn>=0.54.0,<1.0",
 ]
 
 [project.scripts]
@@ -44,7 +44,7 @@ dev = [
     "pip-audit>=2.10,<3.0",
     "pytest>=9.0,<10.0",
     "pytest-cov>=7.0,<8.0",
-    "ruff>=0.14,<1.0",
+    "ruff>=0.16.9,<1.0",
     "types-pyyaml>=6.0,<7.0",
 ]
 

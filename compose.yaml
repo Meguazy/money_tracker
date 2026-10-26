@@ -161,7 +161,7 @@ services:
       retries: 10
 
   minio:
-    image: cgr.dev/chainguard/minio:latest@sha256:22bf0ad174612a0106dfbbb95818f307525dd32c5a6ec119ecd7273815abe456
+    image: cgr.dev/chainguard/minio:latest@sha256:268d68a2a3b6fc65f905a61f84d7eab6345ce6bff14f551e2b028ec31e6a1341
     profiles: ["observability"]
     restart: unless-stopped
     entrypoint: sh

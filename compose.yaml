@@ -142,7 +142,7 @@ services:
       start_period: 1s
 
   redis:
-    image: docker.io/library/redis:7@sha256:71da9275c5f3fcb97d0fa0c8c5b36cc995327265420f17a04bfd544f458059f7
+    image: docker.io/library/redis:7@sha256:2e3eb11462c4e3759e6972678dd051d150ff54b1e60714b3c33b701260172a90
     profiles: ["observability"]
     restart: unless-stopped
     environment:
@@ -161,7 +161,7 @@ services:
       retries: 10
 
   minio:
-    image: cgr.dev/chainguard/minio:latest@sha256:22bf0ad174612a0106dfbbb95818f307525dd32c5a6ec119ecd7273815abe456
+    image: cgr.dev/chainguard/minio:latest@sha256:9158c67aa441627c366442e84656f689e16bec4809851ec64318561a365b69e4
     profiles: ["observability"]
     restart: unless-stopped
     entrypoint: sh
